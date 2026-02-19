@@ -342,8 +342,8 @@ impl OrderStoring for Postgres {
                             let uid = OrderUid(order.uid.0);
                             let result = full_order_with_quote_into_model_order(order, quote.as_ref());
                             yield (uid, result);
-                        }
-                        Err(e) => { 
+                        },
+                        Err(e) => {
                             tracing::error!(?e, "database::orders::many_full_orders_with_quotes");
                         }
                     }

@@ -93,8 +93,7 @@ mod tests {
             .collect();
         assert_eq!(entries.len(), 1);
         assert!(entries[0].get("order").is_some());
-        let response_order: Order =
-            serde_json::from_value(entries[0]["order"].clone()).unwrap();
+        let response_order: Order = serde_json::from_value(entries[0]["order"].clone()).unwrap();
         assert_eq!(response_order, order);
     }
 
