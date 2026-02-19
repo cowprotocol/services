@@ -29,7 +29,7 @@ pub async fn get_next_auction_id(ex: &mut PgConnection) -> Result<AuctionId, sql
 pub async fn insert_auction_with_id(
     ex: &mut PgConnection,
     id: AuctionId,
-    data: &JsonValue,
+    json: &str,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 WITH deleted AS (
@@ -39,7 +39,7 @@ INSERT INTO auctions (id, json)
 VALUES ($1, $2);
     "#;
 
-    sqlx::query(QUERY).bind(id).bind(data).execute(ex).await?;
+    sqlx::query(QUERY).bind(id).bind(json).execute(ex).await?;
     Ok(())
 }
 
@@ -105,7 +105,10 @@ mod tests {
 
         let value = JsonValue::Number(1.into());
         let id = get_next_auction_id(&mut db).await.unwrap();
-        insert_auction_with_id(&mut db, id, &value).await.unwrap();
+        let value_str = serde_json::to_string(&value).unwrap();
+        insert_auction_with_id(&mut db, id, &value_str)
+            .await
+            .unwrap();
         let (id_, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
         assert_eq!(id, id_);
         assert_eq!(value, value_);
@@ -113,7 +116,10 @@ mod tests {
         let value = JsonValue::Number(2.into());
         let id_ = get_next_auction_id(&mut db).await.unwrap();
         assert_eq!(id + 1, id_);
-        insert_auction_with_id(&mut db, id_, &value).await.unwrap();
+        let value_str = serde_json::to_string(&value).unwrap();
+        insert_auction_with_id(&mut db, id_, &value_str)
+            .await
+            .unwrap();
         let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
         assert_eq!(value, value_);
         assert_eq!(id_, id);

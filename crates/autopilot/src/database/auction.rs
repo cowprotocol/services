@@ -116,14 +116,17 @@ impl Postgres {
     pub async fn replace_current_auction(
         &self,
         new_auction_id: dto::AuctionId,
-        new_auction_data: &dto::RawAuctionData,
+        new_auction_data: dto::RawAuctionData,
     ) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["insert_auction_with_id"])
             .start_timer();
 
-        let data = serde_json::to_value(new_auction_data)?;
+        let data = tokio::task::spawn_blocking(move || serde_json::to_string(&new_auction_data))
+            .await
+            .expect("all errors bubble up")?;
+
         let mut ex = self.pool.acquire().await?;
         database::auction::insert_auction_with_id(&mut ex, new_auction_id, &data).await?;
         Ok(())
