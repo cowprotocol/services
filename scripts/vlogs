@@ -55,11 +55,19 @@ case "$ENV" in
   *)       echo "Unknown env: $ENV (use prod or staging)" >&2; exit 1 ;;
 esac
 
+PAYLOAD=$(jq -n \
+  --arg uid "$DS_UID" \
+  --arg expr "$EXPR | sort by (_time) asc" \
+  --argjson maxLines "$MAX_LINES" \
+  --arg from "$FROM" \
+  --arg to "$TO" \
+  '{queries: [{refId: "A", datasource: {type: "victoriametrics-logs-datasource", uid: $uid}, expr: $expr, queryType: "instant", maxLines: $maxLines}], from: $from, to: $to}')
+
 RESPONSE=$(curl -s --max-time 60 \
   "${GRAFANA_URL}/api/ds/query?ds_type=victoriametrics-logs-datasource" \
   -H 'content-type: application/json' \
   -H "Authorization: Bearer ${GRAFANA_API_TOKEN}" \
-  -d "{\"queries\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"victoriametrics-logs-datasource\",\"uid\":\"${DS_UID}\"},\"expr\":\"${EXPR} | sort by (_time) asc\",\"queryType\":\"instant\",\"maxLines\":${MAX_LINES}}],\"from\":\"${FROM}\",\"to\":\"${TO}\"}")
+  -d "$PAYLOAD")
 
 if [[ -z "$RESPONSE" ]]; then
   echo "Error: empty response (timeout or connection failure)" >&2
