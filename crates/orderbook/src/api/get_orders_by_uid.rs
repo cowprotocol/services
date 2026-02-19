@@ -34,13 +34,7 @@ pub async fn get_orders_by_uid_handler(
 fn get_orders_by_uid_response(result: Result<BoxStream<'static, Result<Order>>>) -> Response {
     match result {
         Ok(stream) => {
-            let orders = stream.filter_map(async |item| match item {
-                Ok(order) => Some(order),
-                Err(err) => {
-                    tracing::warn!(?err, "failed to fetch order");
-                    None
-                }
-            });
+            let orders = stream.filter_map(async |item| item.inspect_err(|err| tracing::warn!(?err, "failed to fetch order")).ok();
             streaming_response(orders)
         }
         Err(err) => {
