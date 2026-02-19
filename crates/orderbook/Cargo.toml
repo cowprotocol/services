@@ -33,7 +33,6 @@ futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
-hyper = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true }
 model = { workspace = true }

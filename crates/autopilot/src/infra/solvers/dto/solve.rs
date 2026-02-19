@@ -90,8 +90,8 @@ impl InjectIntoHttpRequest for Request {
             // manually set the content type header for JSON since
             // we can't use `request.json(self)`
             .header(
-                hyper::header::CONTENT_TYPE,
-                hyper::header::HeaderValue::from_static("application/json")
+                reqwest::header::CONTENT_TYPE,
+                reqwest::header::HeaderValue::from_static("application/json")
             )
     }
 

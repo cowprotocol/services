@@ -41,10 +41,10 @@ use {
         providers::Provider,
         signers::local::PrivateKeySigner,
     },
+    axum::http::StatusCode,
     bigdecimal::{BigDecimal, FromPrimitive},
     ethrpc::Web3,
     futures::future::join_all,
-    hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::{serialization::HexOrDecimalU256, testing::ApproxEq},
     serde::{Deserialize, de::IntoDeserializer},
@@ -954,7 +954,7 @@ impl Setup {
                 flashloans: solution.flashloans.clone(),
             });
         }
-        let orderbook = Orderbook::start(&orders);
+        let orderbook = Orderbook::start(&orders).await;
         let quotes = orders
             .into_iter()
             .map(|order| blockchain.quote(&order))
@@ -1229,7 +1229,7 @@ pub struct SolveOk<'a> {
 impl<'a> Solve<'a> {
     /// Expect the /solve endpoint to have returned a 200 OK response.
     pub fn ok(self) -> SolveOk<'a> {
-        assert_eq!(self.status, hyper::StatusCode::OK);
+        assert_eq!(self.status, axum::http::StatusCode::OK);
         SolveOk {
             body: self.body,
             trades: self.trades,
@@ -1238,7 +1238,7 @@ impl<'a> Solve<'a> {
     }
 
     pub fn err(self) -> SolveErr {
-        assert_ne!(self.status, hyper::StatusCode::OK);
+        assert_ne!(self.status, axum::http::StatusCode::OK);
         SolveErr { body: self.body }
     }
 }
@@ -1401,7 +1401,7 @@ pub struct Reveal {
 impl Reveal {
     /// Expect the /reveal endpoint to have returned a 200 OK response.
     pub fn ok(self) -> RevealOk {
-        assert_eq!(self.status, hyper::StatusCode::OK);
+        assert_eq!(self.status, axum::http::StatusCode::OK);
         RevealOk { body: self.body }
     }
 
@@ -1477,7 +1477,7 @@ pub struct Quote<'a> {
 impl<'a> Quote<'a> {
     /// Expect the /quote endpoint to have returned a 200 OK response.
     pub fn ok(self) -> QuoteOk<'a> {
-        assert_eq!(self.status, hyper::StatusCode::OK);
+        assert_eq!(self.status, axum::http::StatusCode::OK);
         QuoteOk {
             trades: self.trades,
             body: self.body,
@@ -1687,7 +1687,7 @@ impl Settle {
     pub fn err(self) -> SettleErr {
         match self.status {
             SettleStatus::Err { status_code, body } => {
-                assert_eq!(status_code, hyper::StatusCode::BAD_REQUEST);
+                assert_eq!(status_code, axum::http::StatusCode::BAD_REQUEST);
                 SettleErr { body }
             }
             _ => panic!("expected a 400 BAD REQUEST response"),

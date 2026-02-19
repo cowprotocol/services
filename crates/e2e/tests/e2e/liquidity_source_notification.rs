@@ -167,7 +167,7 @@ async fn liquidity_source_notification(web3: Web3) {
     let liquorice_api = api::liquorice::server::LiquoriceApi::start().await;
 
     // CoW services setup
-    let liquorice_solver_api_mock = Mock::default();
+    let liquorice_solver_api_mock = Mock::new().await;
     let services = Services::new(&onchain).await;
 
     colocation::start_driver_with_config_override(

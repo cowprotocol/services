@@ -2,6 +2,7 @@
 
 use {
     clap::{Parser, Subcommand},
+    shared::arguments::TracingArguments,
     std::{net::SocketAddr, path::PathBuf},
 };
 
@@ -20,6 +21,9 @@ pub struct Args {
     /// Whether to use JSON format for the logs.
     #[clap(long, env, default_value = "false")]
     pub use_json_logs: bool,
+
+    #[clap(flatten)]
+    pub tracing: TracingArguments,
 
     /// The socket address to bind to.
     #[arg(long, env, default_value = "127.0.0.1:7872")]

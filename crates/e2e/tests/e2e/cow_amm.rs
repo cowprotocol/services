@@ -161,7 +161,7 @@ async fn cow_amm_jit(web3: Web3) {
     // for the actual solver competition. That way we can handcraft a solution
     // for this test and don't have to implement complete support for CoW AMMs
     // in the baseline solver.
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -534,7 +534,7 @@ async fn cow_amm_driver_support(web3: Web3) {
     );
 
     // spawn a mock solver so we can later assert things about the received auction
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
     colocation::start_driver_with_config_override(
         onchain.contracts(),
         vec![
@@ -821,7 +821,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Start system with the mocked solver. Baseline is still required for the
     // native price estimation.
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
     colocation::start_driver(
         onchain.contracts(),
         vec![

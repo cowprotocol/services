@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Query Victoria Logs via Grafana API
+# Usage: vlogs <expr> [--from <time>] [--to <time>] [--max <lines>] [--env <prod|staging>] [--raw]
+#
+# Examples:
+#   vlogs "order cancelled 0xabc123..."
+#   vlogs "NOT container:controller order created" --from now-24h --max 50
+#   vlogs "network:mainnet settlement failed" --from now-6h --env prod
+#   vlogs "error" --raw   # output full JSON instead of just log lines
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$SCRIPT_DIR/.env.claude"
+
+# Defaults
+FROM="now-12h"
+TO="now"
+MAX_LINES=100
+ENV="prod"
+RAW=false
+
+# Parse arguments
+EXPR=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --from) FROM="$2"; shift 2 ;;
+    --to) TO="$2"; shift 2 ;;
+    --max) MAX_LINES="$2"; shift 2 ;;
+    --env) ENV="$2"; shift 2 ;;
+    --raw) RAW=true; shift ;;
+    --help|-h)
+      sed -n '2,8p' "$0"
+      exit 0
+      ;;
+    *)
+      if [[ -z "$EXPR" ]]; then
+        EXPR="$1"
+      else
+        EXPR="$EXPR $1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$EXPR" ]]; then
+  echo "Usage: vlogs <expr> [--from <time>] [--to <time>] [--max <lines>] [--env <prod|staging>] [--raw]" >&2
+  exit 1
+fi
+
+case "$ENV" in
+  prod)    DS_UID="vm-auth-prod" ;;
+  staging) DS_UID="vm-auth-staging" ;;
+  *)       echo "Unknown env: $ENV (use prod or staging)" >&2; exit 1 ;;
+esac
+
+PAYLOAD=$(jq -n \
+  --arg uid "$DS_UID" \
+  --arg expr "$EXPR | sort by (_time) asc" \
+  --argjson maxLines "$MAX_LINES" \
+  --arg from "$FROM" \
+  --arg to "$TO" \
+  '{queries: [{refId: "A", datasource: {type: "victoriametrics-logs-datasource", uid: $uid}, expr: $expr, queryType: "instant", maxLines: $maxLines}], from: $from, to: $to}')
+
+RESPONSE=$(curl -s --max-time 60 \
+  "${GRAFANA_URL}/api/ds/query?ds_type=victoriametrics-logs-datasource" \
+  -H 'content-type: application/json' \
+  -H "Authorization: Bearer ${GRAFANA_API_TOKEN}" \
+  -d "$PAYLOAD")
+
+if [[ -z "$RESPONSE" ]]; then
+  echo "Error: empty response (timeout or connection failure)" >&2
+  exit 1
+fi
+
+if [[ "$RAW" == "true" ]]; then
+  echo "$RESPONSE" | jq .
+else
+  echo "$RESPONSE" | jq -r '.results.A.frames[0].data.values[1][]' 2>/dev/null || {
+    echo "No results or unexpected response:" >&2
+    echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE" >&2
+  }
+fi

@@ -85,71 +85,44 @@ cast call $SETTLEMENT_CONTRACT "preSignature(bytes)" $ORDER_UID --rpc-url $RPC
 
 Logs are stored in Victoria Logs and accessible via Grafana API.
 
-**Query template (bash):**
+**Query using `scripts/vlogs`:**
 ```bash
-# Set time range (milliseconds)
-NOW_MS=$(($(date +%s) * 1000))
-FROM_MS=$((NOW_MS - 43200000))  # 12 hours ago
+# Basic: search by order UID (use full UID with 0x prefix)
+scripts/vlogs "NOT container:controller ORDER_UID"
 
-# Set search term (use full order UID with 0x prefix)
-SEARCH_TERM="0xd997dc715a7610c75e5f97548685befacb7ea5ad878cb4bac1816903514ed84d1dffc418c0d83bd8b98ab3d2e07b83bf5439f4236981a392"
-
-# Query Victoria Logs
-# - NOT container:controller excludes nginx access logs
-# - network:$NETWORK filters to specific chain (mainnet, bnb, arbitrum-one, base, etc)
-source .env.claude
-curl -s "${GRAFANA_URL}/api/ds/query?ds_type=victoriametrics-logs-datasource" \
-  -H 'accept: application/json' \
-  -H 'content-type: application/json' \
-  -H "x-datasource-uid: ${VICTORIA_LOGS_DATASOURCE_UID}" \
-  -H 'x-plugin-id: victoriametrics-logs-datasource' \
-  -H "Authorization: Bearer ${GRAFANA_API_TOKEN}" \
-  --data-raw "{\"queries\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"victoriametrics-logs-datasource\",\"uid\":\"${VICTORIA_LOGS_DATASOURCE_UID}\"},\"editorMode\":\"code\",\"expr\":\"NOT container:controller ${SEARCH_TERM} | sort by (_time) asc\",\"queryType\":\"instant\",\"maxLines\":100}],\"from\":\"${FROM_MS}\",\"to\":\"${NOW_MS}\"}" \
-  | jq -r '.results.A.frames[0].data.values[1][]'
-```
-
-**Key query parameters:**
-- `expr`: Search term (just text, e.g., order UID or auction ID). Add `| sort by (_time) asc` for chronological order
-- `queryType`: Use `"instant"` to get log lines. Use `"hits"` to get histogram/counts
-- `maxLines`: Number of log lines to return
-- `from`/`to`: Millisecond timestamps
-
-**Example searches:**
-```bash
-# Search by order UID for a specific network, excluding nginx
-"expr": "NOT container:controller network:bnb ORDER_UID | sort by (_time) asc"
+# Filter by network
+scripts/vlogs "NOT container:controller network:bnb ORDER_UID"
 
 # Search by auction ID
-"expr": "NOT container:controller 22788649 | sort by (_time) asc"
+scripts/vlogs "NOT container:controller 22788649"
 
 # Search by solver name + auction
-"expr": "NOT container:controller baseline 22788649 | sort by (_time) asc"
+scripts/vlogs "NOT container:controller baseline 22788649"
 
-# Filter by log content on specific network
-"expr": "NOT container:controller network:mainnet order cancelled | sort by (_time) asc"
+# Custom time range and max lines
+scripts/vlogs "NOT container:controller ORDER_UID" --from now-24h --max 200
 
-# Search by request_id to trace quote→bid issues (useful when order was placed with quote from solver X but that solver never bid)
-"expr": "NOT container:controller $REQUEST_ID | sort by (_time) asc"
+# Full JSON output (includes labels like network, pod, parsed fields)
+scripts/vlogs "NOT container:controller ORDER_UID" --raw
 ```
 
-**Useful filters:**
+**Useful filters (part of the expr):**
 - `NOT container:controller` — excludes nginx access logs (REQUIRED for order UID searches)
-- `network:$NETWORK` — filter by chain (works for some log sources, not all)
+- `network:$NETWORK` — filter by chain (mainnet, bnb, arbitrum-one, base, etc)
 
 **Note:** Victoria Logs uses simple text matching. Always use the **full order UID with 0x prefix** for reliable matching.
 
-**IMPORTANT - Run targeted lifecycle queries:** Always use `NOT container:controller` to exclude nginx:
+**IMPORTANT - Run targeted lifecycle queries in parallel** (use FULL order UID with 0x):
 
 ```bash
-# Run these queries IN PARALLEL to quickly find all lifecycle events (use FULL order UID with 0x):
-"expr": "NOT container:controller order created ORDER_UID | sort by (_time) asc"
-"expr": "NOT container:controller order cancelled ORDER_UID | sort by (_time) asc"
-"expr": "NOT container:controller proposed solution ORDER_UID | sort by (_time) asc"
-"expr": "NOT container:controller settlement failed ORDER_UID | sort by (_time) asc"
-"expr": "NOT container:controller filtered ORDER_UID | sort by (_time) asc"
+scripts/vlogs "NOT container:controller order created ORDER_UID"
+scripts/vlogs "NOT container:controller order cancelled ORDER_UID"
+scripts/vlogs "NOT container:controller proposed solution ORDER_UID"
+scripts/vlogs "NOT container:controller settlement failed ORDER_UID"
+scripts/vlogs "NOT container:controller filtered ORDER_UID"
 
-# Find discarded solutions where order appears in calldata (use regex with order UID bytes without 0x prefix)
-"expr": "discarded .*ORDER_UID_WITHOUT_0X.* | sort by (_time) asc"
+# Find discarded solutions where order appears in calldata (use order UID bytes without 0x prefix)
+scripts/vlogs "discarded .*ORDER_UID_WITHOUT_0X.*"
 ```
 
 **What to look for:**
