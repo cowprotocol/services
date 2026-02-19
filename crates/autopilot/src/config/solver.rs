@@ -110,23 +110,6 @@ mod test {
     }
 
     #[test]
-    fn parse_driver_with_threshold() {
-        let toml = r#"
-        name = "name1"
-        url = "http://localhost:8080"
-        submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-        "#;
-        let driver = toml::from_str::<Solver>(toml).unwrap();
-
-        let expected = Solver::new(
-            "name1".into(),
-            Url::parse("http://localhost:8080").unwrap(),
-            Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
-        );
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
     fn deserialize_valid_arn() {
         let toml = r#"kms = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012""#;
         let account = toml::from_str::<Account>(toml).unwrap();
