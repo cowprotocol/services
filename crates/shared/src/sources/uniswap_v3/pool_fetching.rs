@@ -23,7 +23,6 @@ use {
         alloy::ProviderLabelingExt,
         block_stream::{BlockRetrieving, RangeInclusive},
     },
-    itertools::{Either, Itertools},
     model::TokenPair,
     num::{BigInt, Zero, rational::Ratio},
     number::serialization::HexOrDecimalU256,
@@ -210,11 +209,18 @@ impl PoolsCheckpointHandler {
         match pool_ids.peek() {
             Some(_) => {
                 let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
-                let (existing_pools, missing_pools): (HashMap<Address, PoolInfo>, Vec<Address>) =
-                    pool_ids.partition_map(|pool_id| match pools_checkpoint.pools.get(pool_id) {
-                        Some(entry) => Either::Left((*pool_id, entry.clone())),
-                        _ => Either::Right(pool_id),
-                    });
+                let mut existing_pools = HashMap::<Address, PoolInfo>::default();
+                let missing_pools = pool_ids
+                    .filter(|pool_id| match pools_checkpoint.pools.get(*pool_id) {
+                        Some(entry) => {
+                            // avoid entry.clone() or ARC it?
+                            existing_pools.insert(**pool_id, entry.clone());
+                            false
+                        }
+                        None => true,
+                    })
+                    .collect::<Vec<_>>();
+
                 tracing::trace!(
                     "cache hit: {:?}, cache miss: {:?}",
                     existing_pools.keys(),
