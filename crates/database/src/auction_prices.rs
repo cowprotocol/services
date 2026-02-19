@@ -142,6 +142,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(output, 3.into());
+        assert_eq!(output, BigDecimal::from(3));
     }
 }
