@@ -265,14 +265,15 @@ where
     async fn event_block_range(&self) -> Result<EventRange> {
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             let last_handled_block = self.store.last_event_block().await?;
-            self.block_retriever
+            &self
+                .block_retriever
                 .blocks(RangeInclusive::try_new(
                     last_handled_block,
                     last_handled_block,
                 )?)
                 .await?
         } else {
-            self.last_handled_blocks.clone()
+            &self.last_handled_blocks
         };
 
         let current_block = self.block_retriever.current_block().await?;
@@ -361,7 +362,7 @@ where
         let (latest_blocks, is_reorg) = match history_range {
             Some(_) => (latest_blocks, true),
             None => {
-                let (latest_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
+                let (latest_blocks, is_reorg) = detect_reorg_path(handled_blocks, &latest_blocks);
                 (latest_blocks.to_vec(), is_reorg)
             }
         };
@@ -506,6 +507,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn past_events_by_block_hashes(
         &self,
         blocks: &[BlockNumberHash],
@@ -541,6 +543,7 @@ where
         (blocks_filtered, events)
     }
 
+    #[instrument(skip_all)]
     async fn past_events_by_block_number_range(
         &self,
         block_range: &RangeInclusive<u64>,
@@ -548,6 +551,7 @@ where
         self.contract.get_events_by_block_range(block_range).await
     }
 
+    #[instrument(skip_all)]
     fn update_last_handled_blocks(&mut self, blocks: &[BlockNumberHash]) {
         tracing::debug!(
             "blocks to update into last_handled_blocks: {:?} - {:?}, last_handled_blocks: {:?} - \
@@ -570,7 +574,7 @@ where
             .last_handled_blocks
             .len()
             .saturating_sub(MAX_REORG_BLOCK_COUNT as usize);
-        self.last_handled_blocks = self.last_handled_blocks[start_index..].to_vec();
+        self.last_handled_blocks.drain(..start_index);
         tracing::debug!(
             "last_handled_blocks after update: {:?} - {:?}",
             self.last_handled_blocks.first(),

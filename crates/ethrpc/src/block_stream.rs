@@ -357,10 +357,12 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 
 #[async_trait::async_trait]
 impl BlockRetrieving for AlloyProvider {
+    #[instrument(skip_all)]
     async fn current_block(&self) -> Result<BlockInfo> {
         get_block_at_id(self, BlockId::latest()).await?.try_into()
     }
 
+    #[instrument(skip_all)]
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
         let block = get_block_at_id(self, BlockId::number(number)).await?;
         Ok((block.header.number, block.header.hash))
@@ -369,6 +371,7 @@ impl BlockRetrieving for AlloyProvider {
     /// Gets all blocks requested in the range. For successful results it's
     /// enforced that all the blocks are present, in the correct order and that
     /// there are no reorgs in the block range.
+    #[instrument(skip_all)]
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let (start, end) = range.into_inner();
 
