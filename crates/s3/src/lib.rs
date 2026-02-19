@@ -35,18 +35,9 @@ impl Uploader {
 
     /// Upload the bytes json encoded to the configured S3 bucket. Returns the
     /// key under which the file can be queried
-    pub async fn upload(
-        &self,
-        id: String,
-        content: impl Serialize + Send + Sync + 'static,
-    ) -> Result<String> {
-        let encoded = tokio::task::spawn_blocking(move || {
-            let bytes = serde_json::to_vec(&content)?;
-            Self::gzip(&bytes)
-        })
-        .await
-        .expect("all errors handled by bubbling up")?;
-
+    pub async fn upload(&self, id: String, content: impl Serialize) -> Result<String> {
+        let bytes = serde_json::to_vec(&content)?;
+        let encoded = self.gzip(&bytes)?;
         let key = std::path::Path::new(&self.filename_prefix)
             .join(format!("{id}.json"))
             .to_str()
@@ -84,7 +75,7 @@ impl Uploader {
     }
 
     /// Compresses the input bytes using Gzip.
-    fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
+    fn gzip(&self, bytes: &[u8]) -> Result<Vec<u8>> {
         let mut encoder = GzEncoder::new(bytes, Compression::best());
         let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
         encoder.read_to_end(&mut encoded).context("gzip encoding")?;
@@ -118,7 +109,7 @@ mod tests {
 
         let uploader = Uploader::new(config).await;
         let key = uploader
-            .upload("test".to_string(), value.clone().into_bytes())
+            .upload("test".to_string(), value.as_bytes())
             .await
             .unwrap();
 
