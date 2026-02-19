@@ -201,6 +201,12 @@ Otterscan is especially useful for debugging failed transactions:
    - AMM interactions (Uniswap, etc.)
    - Post-interactions
 
+![Failed transaction overview](docs/images/otterscan-failed-tx.png)
+*Overview of a failed transaction showing the "Fail" status badge and decoded input data.*
+
+![Failed transaction trace](docs/images/otterscan-revert-trace.png)
+*Trace tab of a failed transaction showing where the call reverted.*
+
 See the [Otterscan documentation](https://docs.otterscan.io/) for more details on trace analysis.
 
 ### Example: Tracing a CoW Swap Settlement
