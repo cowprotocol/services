@@ -467,6 +467,8 @@ async fn single_replace_order_test(web3: Web3) {
     onchain.set_solver_allowed(solver.address(), false).await;
 
     let services = Services::new(&onchain).await;
+    let (_config_file, config_arg) =
+        autopilot::config::Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
@@ -474,7 +476,7 @@ async fn single_replace_order_test(web3: Web3) {
                 // with the solver being banned. To allow us to still create
                 // orders we override the quote verification to be disabled.
                 api: vec!["--quote-verification=prefer".into()],
-                ..Default::default()
+                autopilot: vec![config_arg],
             },
             solver.clone(),
         )

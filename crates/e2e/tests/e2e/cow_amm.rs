@@ -6,10 +6,7 @@ use {
             ext::{AnvilApi, ImpersonateConfig},
         },
     },
-    autopilot::config::{
-        Configuration,
-        solver::{Account, Solver},
-    },
+    autopilot::config::{Configuration, solver::Solver},
     contracts::alloy::{
         ERC20,
         support::{Balances, Signatures},
@@ -42,11 +39,7 @@ use {
         SigningScheme,
         Solution,
     },
-    std::{
-        collections::{HashMap, HashSet},
-        str::FromStr,
-    },
-    url::Url,
+    std::collections::{HashMap, HashSet},
 };
 
 #[tokio::test]
@@ -188,20 +181,14 @@ async fn cow_amm_jit(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
 
-    let config_file = Configuration {
-        drivers: vec![Solver::new(
-            "mock_solver".to_string(),
-            Url::from_str("http://localhost:11088/mock_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file, config_arg) =
+        Configuration::test("mock_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -566,27 +553,20 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     );
     let services = Services::new(&onchain).await;
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![
-            Solver::new(
-                "test_solver".to_string(),
-                Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(solver.address()),
-            ),
-            Solver::new(
-                "mock_solver".to_string(),
-                Url::from_str("http://localhost:11088/mock_solver").unwrap(),
-                Account::Address(solver.address()),
-            ),
+            Solver::test("test_solver", solver.address()),
+            Solver::test("mock_solver", solver.address()),
         ],
+        ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 // it uses an older helper contract that was deployed before the desired cow amm
@@ -844,20 +824,14 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
 
-    let config_file = Configuration {
-        drivers: vec![Solver::new(
-            "mock_solver".to_string(),
-            Url::from_str("http://localhost:11088/mock_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file, config_arg) =
+        Configuration::test("mock_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
             ],

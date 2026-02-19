@@ -1,5 +1,5 @@
 use {
-    crate::arguments::{FeeFactor, TokenBucketFeeOverride},
+    crate::{arguments::TokenBucketFeeOverride, fee_factor::FeeFactor},
     alloy::primitives::{Address, U256},
 };
 

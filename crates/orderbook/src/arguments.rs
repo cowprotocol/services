@@ -3,7 +3,8 @@ use {
     chrono::{DateTime, Utc},
     reqwest::Url,
     shared::{
-        arguments::{FeeFactor, display_secret_option},
+        arguments::display_secret_option,
+        fee_factor::FeeFactor,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },

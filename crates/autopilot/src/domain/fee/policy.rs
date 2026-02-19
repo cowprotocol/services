@@ -1,10 +1,10 @@
 use {
     crate::{
-        arguments,
         boundary,
+        config::fee_policy::FeePolicyKind,
         domain::{self, fee::Quote},
     },
-    shared::{arguments::FeeFactor, fee::VolumeFeePolicy},
+    shared::{fee::VolumeFeePolicy, fee_factor::FeeFactor},
 };
 
 pub enum Policy {
@@ -27,24 +27,24 @@ pub struct Volume {
     factor: FeeFactor,
 }
 
-impl From<arguments::FeePolicyKind> for Policy {
-    fn from(policy_arg: arguments::FeePolicyKind) -> Self {
+impl From<FeePolicyKind> for Policy {
+    fn from(policy_arg: FeePolicyKind) -> Self {
         match policy_arg {
-            arguments::FeePolicyKind::Surplus {
+            FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
             } => Policy::Surplus(Surplus {
                 factor,
                 max_volume_factor,
             }),
-            arguments::FeePolicyKind::PriceImprovement {
+            FeePolicyKind::PriceImprovement {
                 factor,
                 max_volume_factor,
             } => Policy::PriceImprovement(PriceImprovement {
                 factor,
                 max_volume_factor,
             }),
-            arguments::FeePolicyKind::Volume { factor } => Policy::Volume(Volume { factor }),
+            FeePolicyKind::Volume { factor } => Policy::Volume(Volume { factor }),
         }
     }
 }
