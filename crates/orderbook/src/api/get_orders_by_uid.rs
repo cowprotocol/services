@@ -18,11 +18,8 @@ use {
 
 pub async fn get_orders_by_uid_handler(
     State(state): State<Arc<AppState>>,
-    body: body::Bytes,
+    orders: Request<Vec<OrderUid>>
 ) -> Response {
-    let Ok(orders) = serde_json::from_slice::<Vec<OrderUid>>(&body) else {
-        return StatusCode::BAD_REQUEST.into_response();
-    };
 
     if orders.len() > ORDER_UID_LIMIT {
         return StatusCode::BAD_REQUEST.into_response();
