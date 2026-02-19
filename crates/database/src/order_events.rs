@@ -126,8 +126,8 @@ mod tests {
             byte_array::ByteArray,
             order_events::{OrderEvent, OrderEventLabel},
         },
+        chrono::TimeZone,
         sqlx::Connection,
-        std::time::Duration,
     };
 
     #[tokio::test]
@@ -206,7 +206,7 @@ mod tests {
         let mut ex = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut ex).await.unwrap();
 
-        let early = Utc::now();
+        let early = Utc.with_ymd_and_hms(2026, 2, 19, 0, 0, 0).unwrap();
         let uid_a = ByteArray([1; 56]);
         let uid_b = ByteArray([2; 56]);
         let event_a = OrderEvent {
@@ -222,7 +222,7 @@ mod tests {
         };
         insert_order_event(&mut ex, &event_b).await.unwrap();
 
-        let later = early + Duration::from_secs(1);
+        let later = Utc.with_ymd_and_hms(2027, 2, 19, 0, 0, 0).unwrap();
         insert_order_events(&mut ex, &[uid_a, uid_b], later, OrderEventLabel::Invalid)
             .await
             .unwrap();
