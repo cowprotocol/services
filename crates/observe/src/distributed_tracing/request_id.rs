@@ -18,6 +18,7 @@
 //! request.
 
 use {
+    axum::http::{HeaderMap, HeaderValue},
     std::{
         fmt,
         sync::{OnceLock, atomic::AtomicUsize},
@@ -30,7 +31,6 @@ use {
         span::Attributes,
     },
     tracing_subscriber::{Layer, Registry, layer::Context, registry::LookupSpan},
-    warp::http::{HeaderMap, HeaderValue},
 };
 
 pub(crate) fn request_id(headers: &HeaderMap<HeaderValue>) -> String {

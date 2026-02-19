@@ -1,8 +1,8 @@
 use {
+    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559},
+    alloy::primitives::U256,
     anyhow::{Context, Result},
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
     number::serialization::HexOrDecimalU256,
-    primitive_types::U256,
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
@@ -68,12 +68,16 @@ impl DriverGasEstimator {
             .context("failed to parse driver response")?;
 
         Ok(GasPrice1559 {
-            base_fee_per_gas: response.base_fee_per_gas.to_f64_lossy(),
-            max_fee_per_gas: response.max_fee_per_gas.to_f64_lossy(),
-            max_priority_fee_per_gas: response.max_priority_fee_per_gas.to_f64_lossy(),
+            base_fee_per_gas: f64::from(response.base_fee_per_gas),
+            max_fee_per_gas: f64::from(response.max_fee_per_gas),
+            max_priority_fee_per_gas: f64::from(response.max_priority_fee_per_gas),
         })
     }
+}
 
+#[async_trait::async_trait]
+impl GasPriceEstimating for DriverGasEstimator {
+    #[instrument(skip(self))]
     async fn estimate(&self) -> Result<GasPrice1559> {
         // Lock cache for entire duration of this method to prevent concurrent network
         // requests
@@ -93,17 +97,5 @@ impl DriverGasEstimator {
         });
 
         Ok(price)
-    }
-}
-
-#[async_trait::async_trait]
-impl GasPriceEstimating for DriverGasEstimator {
-    #[instrument(skip(self))]
-    async fn estimate_with_limits(
-        &self,
-        _gas_limit: f64,
-        _time_limit: Duration,
-    ) -> Result<GasPrice1559> {
-        self.estimate().await
     }
 }

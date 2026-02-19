@@ -36,7 +36,7 @@ use {
         signature::{Signature, SigningScheme},
     },
     num::FromPrimitive,
-    number::conversions::{alloy::big_decimal_to_u256, big_decimal_to_big_uint},
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
@@ -140,6 +140,13 @@ pub fn order_quote_into_model(
         _ => quote.metadata.clone(),
     };
 
+    let fee_amount = crate::fee::FeeParameters {
+        gas_amount: quote.gas_amount,
+        gas_price: quote.gas_price,
+        sell_token_price: quote.sell_token_price,
+    }
+    .fee();
+
     Ok(OrderQuote {
         gas_amount: BigDecimal::from_f64(quote.gas_amount).context("gas_amount is not U256")?,
         gas_price: BigDecimal::from_f64(quote.gas_price).context("gas_price is not U256")?,
@@ -147,6 +154,7 @@ pub fn order_quote_into_model(
             .context("gas_price is not U256")?,
         sell_amount: big_decimal_to_u256(&quote.sell_amount).context("sell_amount is not U256")?,
         buy_amount: big_decimal_to_u256(&quote.buy_amount).context("buy_amount is not U256")?,
+        fee_amount,
         solver: Address::new(quote.solver.0),
         verified: quote.verified,
         metadata,

@@ -1,13 +1,14 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, OrderUid, eth, fee::FeeFactor},
+        domain::{self, OrderUid, eth},
     },
     alloy::primitives::{Address, U256},
     app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
+    shared::arguments::FeeFactor,
 };
 
 #[serde_as]
@@ -238,8 +239,8 @@ impl From<boundary::Signature> for domain::auction::order::Signature {
 impl From<domain::auction::order::EcdsaSignature> for boundary::EcdsaSignature {
     fn from(signature: domain::auction::order::EcdsaSignature) -> Self {
         Self {
-            r: signature.r.0.into(),
-            s: signature.s.0.into(),
+            r: signature.r,
+            s: signature.s,
             v: signature.v,
         }
     }
@@ -248,8 +249,8 @@ impl From<domain::auction::order::EcdsaSignature> for boundary::EcdsaSignature {
 impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
     fn from(signature: boundary::EcdsaSignature) -> Self {
         Self {
-            r: signature.r.0.into(),
-            s: signature.s.0.into(),
+            r: signature.r,
+            s: signature.s,
             v: signature.v,
         }
     }
@@ -277,16 +278,16 @@ impl FeePolicy {
                 factor,
                 max_volume_factor,
             } => Self::Surplus {
-                factor: factor.into(),
-                max_volume_factor: max_volume_factor.into(),
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
             },
             domain::fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
             } => Self::PriceImprovement {
-                factor: factor.into(),
-                max_volume_factor: max_volume_factor.into(),
+                factor: factor.get(),
+                max_volume_factor: max_volume_factor.get(),
                 quote: Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
@@ -295,7 +296,7 @@ impl FeePolicy {
                 },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume {
-                factor: factor.into(),
+                factor: factor.get(),
             },
         }
     }

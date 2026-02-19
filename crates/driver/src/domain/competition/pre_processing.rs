@@ -12,7 +12,6 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{
@@ -127,7 +126,7 @@ impl DataAggregator {
             eth.web3(),
             shared::signature_validator::Contracts {
                 settlement: eth.contracts().settlement().clone(),
-                vault_relayer: eth.contracts().vault_relayer().0.into_legacy(),
+                vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
             eth.balance_overrider(),
@@ -298,9 +297,9 @@ impl Utilities {
                             .app_data
                             .flashloan()
                             .map(|loan| BalanceOverrideRequest {
-                                token: loan.token.into_legacy(),
-                                amount: loan.amount.into_legacy(),
-                                holder: loan.receiver.into_legacy(),
+                                token: loan.token,
+                                amount: loan.amount,
+                                holder: loan.receiver,
                             })
                     } else {
                         None
@@ -315,7 +314,7 @@ impl Utilities {
             .into_iter()
             .zip(balances)
             .filter_map(|(query, balance)| {
-                let balance = balance.ok()?.into_alloy();
+                let balance = balance.ok()?;
                 Some((
                     (
                         order::Trader(query.owner),

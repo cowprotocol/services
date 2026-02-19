@@ -1,0 +1,12 @@
+[package]
+name = "winner-selection"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alloy = { workspace = true }
+itertools = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+number = { path = "../number" }

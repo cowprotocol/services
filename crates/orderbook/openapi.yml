@@ -31,6 +31,10 @@ servers:
     url: "https://api.cow.fi/lens"
   - description: Lens (Staging)
     url: "https://barn.api.cow.fi/lens"
+  - description: Linea (Prod)
+    url: "https://api.cow.fi/linea"
+  - description: Linea (Staging)
+    url: "https://barn.api.cow.fi/linea"
   - description: BNB (Prod)
     url: "https://api.cow.fi/bnb"
   - description: BNB (Staging)
@@ -845,11 +849,45 @@ components:
           description: Unix timestamp (`uint32`) until which the order is valid.
           type: integer
         appData:
-          $ref: "#/components/schemas/AppDataHash"
+          description: >
+            The app data associated with the order. In quote responses, this can be
+            either the full app data JSON string or the app data hash, depending on
+            what was provided in the quote request.
+          oneOf:
+            - $ref: "#/components/schemas/AppData"
+            - $ref: "#/components/schemas/AppDataHash"
+        appDataHash:
+          description: >
+            The hash of the app data. Only present when the full app data is also
+            provided in the `appData` field.
+          allOf:
+            - $ref: "#/components/schemas/AppDataHash"
         feeAmount:
-          description: sellAmount in atoms to cover network fees. Needs to be zero (and incorporated into the limit price) when placing the order
+          description: |
+            The fee amount in sell token atoms. For quote responses, this represents
+            the estimated network fee, calculated as:
+            `feeAmount = ceil((gasAmount * gasPrice) / sellTokenPrice)`.
+
+            When creating an order, this should be set to zero as fees are now
+            computed dynamically by solvers.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        gasAmount:
+          description: |
+            The estimated gas units required to execute the quoted trade.
+          type: string
+          example: "150000"
+        gasPrice:
+          description: |
+            The estimated gas price at the time of quoting, measured in Wei per gas unit.
+          type: string
+          example: "15000000000"
+        sellTokenPrice:
+          description: |
+            Represents how much one atomic unit of the sell token is worth
+            in the network's native token (in Wei or the equivalent atom).
+          type: string
+          example: "0.0004"
         kind:
           description: The kind is either a buy or sell order.
           allOf:
@@ -858,14 +896,23 @@ components:
           description: Is the order fill-or-kill or partially fillable?
           type: boolean
         sellTokenBalance:
+          description: >
+            Where the sell token should be drawn from. Defaults to `erc20` for
+            standard ERC-20 token transfers.
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
           default: erc20
         buyTokenBalance:
+          description: >
+            Where the buy token should be transferred to. Defaults to `erc20` for
+            standard ERC-20 token transfers.
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
           default: erc20
         signingScheme:
+          description: >
+            The signing scheme to use for the order. Defaults to `eip712` for
+            standard typed data signing.
           allOf:
             - $ref: "#/components/schemas/SigningScheme"
           default: eip712
@@ -877,6 +924,9 @@ components:
         - validTo
         - appData
         - feeAmount
+        - gasAmount
+        - gasPrice
+        - sellTokenPrice
         - kind
         - partiallyFillable
     OrderCreation:
@@ -1030,11 +1080,24 @@ components:
           type: string
           example: "2020-12-03T18:35:18.814523Z"
         class:
-          $ref: "#/components/schemas/OrderClass"
+          description: >
+            The class of the order (market, limit, or liquidity). Determines
+            how fees are handled.
+          allOf:
+            - $ref: "#/components/schemas/OrderClass"
         owner:
-          $ref: "#/components/schemas/Address"
+          description: >
+            The address that signed the order and owns it. For regular orders,
+            this is the trader. For EIP 1271 orders, it's the respective contract
+            (see `onchainUser` for the actual trader).
+          allOf:
+            - $ref: "#/components/schemas/Address"
         uid:
-          $ref: "#/components/schemas/UID"
+          description: >
+            Unique identifier of the order. Computed as the EIP-712 hash of the
+            order data combined with the owner address and valid_to timestamp.
+          allOf:
+            - $ref: "#/components/schemas/UID"
         availableBalance:
           description: >
             Unused field that is currently always set to `null` and will be
@@ -1091,6 +1154,10 @@ components:
             traded otherwise and should not expect to get surplus.
           type: boolean
         ethflowData:
+          description: >
+            Additional data specific to ethflow orders. Only present for orders
+            placed through the EthFlow contract, which allows trading native ETH
+            directly without wrapping to WETH first.
           allOf:
             - $ref: "#/components/schemas/EthflowData"
         onchainUser:
@@ -1127,6 +1194,22 @@ components:
             `OrderCreation` for more information.
           type: string
           nullable: true
+        settlementContract:
+          description: >
+            The address of the CoW Protocol settlement contract that this order
+            is valid for. Orders are only valid on the settlement contract they
+            were signed for.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        quote:
+          description: >
+            If the order was created with a quote, this field contains the original
+            quote data for reference. Includes gas estimation and pricing information
+            captured at the time of quoting, which can be used to analyze order
+            execution and calculate fees.
+          allOf:
+            - $ref: "#/components/schemas/StoredOrderQuote"
+          nullable: true
       required:
         - creationDate
         - class
@@ -1138,10 +1221,37 @@ components:
         - executedFeeAmount
         - invalidated
         - status
+        - settlementContract
     Order:
+      description: >
+        An order as returned by the API. Combines the order creation data,
+        order metadata, and any associated interactions.
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
         - $ref: "#/components/schemas/OrderMetaData"
+        - type: object
+          properties:
+            interactions:
+              description: >
+                Optional pre and post interactions associated with the order.
+                Pre-interactions are executed before the order's trade, and
+                post-interactions are executed after.
+              type: object
+              properties:
+                pre:
+                  description: >
+                    Interactions to be executed before the order's trade.
+                    These can be used for setup operations like token approvals.
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/InteractionData"
+                post:
+                  description: >
+                    Interactions to be executed after the order's trade.
+                    These can be used for cleanup or follow-up operations.
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/InteractionData"
     AuctionOrder:
       description: >
         A solvable order included in the current batch auction. Contains the
@@ -1727,9 +1837,16 @@ components:
       type: object
       properties:
         quote:
-          $ref: "#/components/schemas/OrderParameters"
+          description: >
+            The quoted order parameters. These values can be used directly to
+            create and sign an order.
+          allOf:
+            - $ref: "#/components/schemas/OrderParameters"
         from:
-          $ref: "#/components/schemas/Address"
+          description: >
+            The address of the trader for whom the quote was requested.
+          allOf:
+            - $ref: "#/components/schemas/Address"
         expiration:
           description: |
             Expiration date of the offered fee. Order service might not accept
@@ -1749,17 +1866,9 @@ components:
         protocolFeeBps:
           description: >
             Protocol fee in basis points (e.g., "2" for 0.02%). This represents
-            the volume-based fee policy. Only present when configured.
+            the volume-based fee policy. Only present when a volume fee is configured.
           type: string
           example: "2"
-        protocolFeeSellAmount:
-          description: >
-            Protocol fee amount in sell token. For SELL orders, this amount is
-            already included in the returned sellAmount. For BUY orders, this
-            amount is applied before network fees are added to sellAmount. Only
-            present when a volume fee is configured.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
       required:
         - quote
         - expiration
@@ -1873,20 +1982,116 @@ components:
           type: string
           description: The total surplus.
     InteractionData:
+      description: >
+        Represents a smart contract interaction that can be executed as part of
+        an order's pre or post hooks.
       type: object
       properties:
         target:
-          $ref: "#/components/schemas/Address"
+          description: The address of the contract to call.
+          allOf:
+            - $ref: "#/components/schemas/Address"
         value:
-          $ref: "#/components/schemas/TokenAmount"
-        call_data:
-          type: array
-          items:
-            $ref: "#/components/schemas/CallData"
-          description: The call data to be used for the interaction.
+          description: >
+            The amount of native token (ETH, xDAI, etc.) in Wei to send with the
+            interaction call.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        callData:
+          description: >
+            The calldata to be sent to the target contract. Encoded as a hex
+            string with `0x` prefix.
+          allOf:
+            - $ref: "#/components/schemas/CallData"
+      required:
+        - target
+        - value
+        - callData
+    StoredOrderQuote:
+      description: |
+        Quote data stored with an order. This represents the original quote used to
+        create the order, containing gas estimation and pricing information captured
+        at the time of quoting.
+
+        Note: This is different from `OrderQuoteResponse` which is returned by the
+        `POST /api/v1/quote` endpoint and contains order parameters to sign.
+      type: object
+      properties:
+        gasAmount:
+          description: |
+            The estimated gas units required to execute the quoted trade.
+            Measured in gas units (not Wei). Used together with `gasPrice` and
+            `sellTokenPrice` to calculate the network fee in sell token atoms.
+          type: string
+          example: "150000"
+        gasPrice:
+          description: |
+            The estimated gas price at the time of quoting, measured in Wei per gas unit.
+            The network fee in Wei can be calculated as: `feeInWei = gasAmount * gasPrice`.
+          type: string
+          example: "15000000000"
+        sellTokenPrice:
+          description: |
+            The price of the sell token expressed in native token atoms per sell token atom.
+
+            Units: `native token atoms / sell token atoms`
+
+            **Example calculation (Mainnet, selling USDC):**
+            - Sell token: USDC (6 decimals)
+            - Native token: ETH (18 decimals)
+            - Market price: 1 ETH = 1000 USDC
+
+            `sellTokenPrice = 1 × 10^18 wei / (1000 × 10^6 USDC atoms) = 10^9`
+
+            This value is used to convert network fees (in native token) to sell token amounts.
+          type: string
+          example: "1000000000"
+        sellAmount:
+          description: The quoted sell amount in atoms of the sell token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: The quoted buy amount in atoms of the buy token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        feeAmount:
+          description: |
+            The fee amount in atoms of the sell token, calculated from the gas parameters
+            at the time of quoting.
+
+            Computed as: `ceil((gasAmount * gasPrice) / sellTokenPrice)`.
+
+            This represents the network fee that was estimated when the quote was created.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        solver:
+          description: The address of the solver that provided this quote.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        verified:
+          description: |
+            Whether the quote was verified through simulation. A verified quote
+            provides higher confidence that the trade will execute successfully.
+          type: boolean
+        metadata:
+          description: |
+            Additional metadata about the quote execution plan (e.g., the route taken).
+            This field is only populated for orders that are no longer fillable
+            (filled, cancelled, or expired) to prevent solvers from copying
+            execution strategies for active orders.
+          type: object
+      required:
+        - gasAmount
+        - gasPrice
+        - sellTokenPrice
+        - sellAmount
+        - buyAmount
+        - feeAmount
+        - solver
+        - verified
     Quote:
       description: |
-        A calculated order quote.
+        A calculated order quote used in solver auctions.
       type: object
       properties:
         sellAmount:

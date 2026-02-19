@@ -9,8 +9,6 @@ use {
         byte_array::ByteArray,
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
     },
-    ethcontract::EventMetadata,
-    ethrpc::alloy::conversions::IntoLegacy,
     number::conversions::u256_to_big_decimal,
     std::convert::TryInto,
 };
@@ -114,13 +112,6 @@ pub async fn replace_events(
     Ok(())
 }
 
-pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
-    EventIndex {
-        block_number: i64::try_from(meta.block_number).unwrap_or(i64::MAX),
-        log_index: i64::try_from(meta.log_index).unwrap_or(i64::MAX),
-    }
-}
-
 pub fn log_to_event_index(log: &Log) -> Option<EventIndex> {
     Some(EventIndex {
         block_number: log.block_number.and_then(|n| i64::try_from(n).ok())?,
@@ -138,9 +129,9 @@ pub fn bytes_to_order_uid(bytes: &[u8]) -> Result<OrderUid> {
 fn convert_trade(trade: &GPv2Settlement::Trade, log: ValidatedLog) -> Result<(EventIndex, Event)> {
     let event = Trade {
         order_uid: bytes_to_order_uid(&trade.orderUid.0)?,
-        sell_amount_including_fee: u256_to_big_decimal(&trade.sellAmount.into_legacy()),
-        buy_amount: u256_to_big_decimal(&trade.buyAmount.into_legacy()),
-        fee_amount: u256_to_big_decimal(&trade.feeAmount.into_legacy()),
+        sell_amount_including_fee: u256_to_big_decimal(&trade.sellAmount),
+        buy_amount: u256_to_big_decimal(&trade.buyAmount),
+        fee_amount: u256_to_big_decimal(&trade.feeAmount),
     };
     Ok((log.into(), Event::Trade(event)))
 }

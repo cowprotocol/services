@@ -7,12 +7,12 @@ use {
     std::collections::HashMap,
 };
 
-mod participant;
+mod bid;
 mod participation_guard;
 pub mod winner_selection;
 
 pub use {
-    participant::{Participant, Ranked, Unranked},
+    bid::{Bid, RankType, Ranked, Scored, Unscored},
     participation_guard::SolverParticipationGuard,
 };
 
@@ -23,48 +23,33 @@ pub struct Solution {
     /// A solution ID provided by the solver.
     id: SolutionId,
     solver: Address,
-    /// Score reported by the solver in their response.
-    score: Score,
     orders: HashMap<domain::OrderUid, TradedOrder>,
     prices: auction::Prices,
-    /// Score computed by the autopilot based on the solution
-    /// of the solver.
-    // TODO: refactor this to compute the score in the constructor
-    computed_score: Option<Score>,
 }
 
 impl Solution {
     pub fn new(
         id: SolutionId,
         solver: Address,
-        score: Score,
         orders: HashMap<domain::OrderUid, TradedOrder>,
         prices: auction::Prices,
     ) -> Self {
         Self {
             id,
             solver,
-            score,
             orders,
             prices,
-            computed_score: None,
         }
     }
+}
 
+impl Solution {
     pub fn id(&self) -> SolutionId {
         self.id
     }
 
     pub fn solver(&self) -> Address {
         self.solver
-    }
-
-    pub fn score(&self) -> Score {
-        self.score
-    }
-
-    pub fn computed_score(&self) -> Option<&Score> {
-        self.computed_score.as_ref()
     }
 
     pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> + std::fmt::Debug {

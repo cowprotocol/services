@@ -31,3 +31,12 @@ impl EthUnit for u128 {
         U256::from(self)
     }
 }
+impl EthUnit for f64 {
+    fn atom(self) -> U256 {
+        U256::from(self as u128)
+    }
+
+    fn eth(self) -> U256 {
+        U256::from((self * 1e18) as u128)
+    }
+}

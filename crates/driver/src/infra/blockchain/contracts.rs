@@ -8,7 +8,7 @@ use {
         WETH9,
         support::Balances,
     },
-    ethrpc::{Web3, alloy::conversions::IntoAlloy},
+    ethrpc::Web3,
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -163,22 +163,6 @@ impl Contracts {
     ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
         &self.cow_amm_helper_by_factory
     }
-}
-
-/// Returns the address of a contract for the specified network, or `None` if
-/// there is no known deployment for the contract on that network.
-pub fn deployment_address(
-    contract: &ethcontract::Contract,
-    chain: Chain,
-) -> Option<eth::ContractAddress> {
-    Some(
-        contract
-            .networks
-            .get(&chain.id().to_string())?
-            .address
-            .into_alloy()
-            .into(),
-    )
 }
 
 #[derive(Debug, Error)]

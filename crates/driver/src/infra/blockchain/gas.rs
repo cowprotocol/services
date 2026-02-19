@@ -9,14 +9,12 @@ use {
         infra::{config::file::GasEstimatorType, mempool},
     },
     ethrpc::Web3,
-    gas_estimation::{
-        DEFAULT_GAS_LIMIT,
-        DEFAULT_TIME_LIMIT,
+    shared::gas_price_estimation::{
         GasPriceEstimating,
-        nativegasestimator::{NativeGasEstimator, Params},
+        alloy::Eip1559GasPriceEstimator,
+        eth_node::NodeGasPriceEstimator,
     },
-    shared::gas_price_estimation::alloy::AlloyGasPriceEstimator,
-    std::{sync::Arc, time::Duration},
+    std::sync::Arc,
 };
 
 type MaxAdditionalTip = eth::U256;
@@ -37,39 +35,18 @@ impl GasPriceEstimator {
         mempools: &[mempool::Config],
     ) -> Result<Self, Error> {
         let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
-            GasEstimatorType::Native {
-                max_reward_percentile,
-                max_block_percentile,
-                min_block_percentile,
-            } => Arc::new(
-                NativeGasEstimator::new(
-                    web3.transport().clone(),
-                    Some(Params {
-                        max_reward_percentile: *max_reward_percentile,
-                        max_block_percentile: *max_block_percentile,
-                        min_block_percentile: *min_block_percentile,
-                        ..Default::default()
-                    }),
-                )
-                .await
-                .map_err(Error::GasPrice)?,
-            ),
-            GasEstimatorType::Web3 => Arc::new(web3.legacy.clone()),
-            GasEstimatorType::Alloy => Arc::new(AlloyGasPriceEstimator::new(web3.alloy.clone())),
+            GasEstimatorType::Web3 => Arc::new(NodeGasPriceEstimator::new(web3.alloy.clone())),
+            GasEstimatorType::Alloy => Arc::new(Eip1559GasPriceEstimator::new(web3.alloy.clone())),
         };
+        // TODO: simplify logic by moving gas price adjustments out of the individual
+        // mempool configs
         let additional_tip = mempools
             .iter()
-            .map(|mempool| match mempool.kind {
-                mempool::Kind::MEVBlocker {
-                    max_additional_tip,
-                    additional_tip_percentage,
-                    ..
-                } => (max_additional_tip, additional_tip_percentage),
-                mempool::Kind::Public {
-                    max_additional_tip,
-                    additional_tip_percentage,
-                    ..
-                } => (max_additional_tip, additional_tip_percentage),
+            .map(|mempool| {
+                (
+                    mempool.max_additional_tip,
+                    mempool.additional_tip_percentage,
+                )
             })
             .next()
             .unwrap_or((eth::U256::ZERO, 0.));
@@ -98,12 +75,8 @@ impl GasPriceEstimator {
     /// If additional tip is configured, it will be added to the gas price. This
     /// is to increase the chance of a transaction being included in a block, in
     /// case private submission networks are used.
-    pub async fn estimate(&self, time_limit: Option<Duration>) -> Result<eth::GasPrice, Error> {
-        let estimate = self
-            .gas
-            .estimate_with_limits(DEFAULT_GAS_LIMIT, time_limit.unwrap_or(DEFAULT_TIME_LIMIT))
-            .await
-            .map_err(Error::GasPrice)?;
+    pub async fn estimate(&self) -> Result<eth::GasPrice, Error> {
+        let estimate = self.gas.estimate().await.map_err(Error::GasPrice)?;
 
         let max_priority_fee_per_gas = {
             // the driver supports tweaking the tx gas price tip in case the gas

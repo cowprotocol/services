@@ -1,11 +1,7 @@
 use {
-    ::alloy::primitives::Address,
+    ::alloy::primitives::{Address, U256},
     e2e::setup::{safe::Safe, *},
-    ethcontract::U256,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
@@ -36,17 +32,14 @@ async fn smart_contract_orders(web3: Web3) {
     let safe = Safe::deploy(trader, web3.alloy.clone()).await;
 
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            100_000u64.eth().into_legacy(),
-            100_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     token.mint(safe.address(), 10u64.eth()).await;
 
     // Approve GPv2 for trading
     safe.exec_alloy_call(
         token
-            .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+            .approve(onchain.contracts().allowance, 10u64.eth())
             .into_transaction_request(),
     )
     .await;
@@ -167,21 +160,13 @@ async fn erc1271_gas_limit(web3: Web3) {
         .unwrap();
 
     let cow = onchain
-        .deploy_cow_weth_pool(
-            1_000_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_cow_weth_pool(1_000_000u64.eth(), 1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts and approve relayer
     cow.fund(*trader.address(), 5u64.eth()).await;
     trader
-        .approve(
-            *cow.address(),
-            onchain.contracts().allowance.into_alloy(),
-            10u64.eth(),
-        )
+        .approve(*cow.address(), onchain.contracts().allowance, 10u64.eth())
         .from(solver.address())
         .send_and_watch()
         .await
@@ -199,8 +184,7 @@ async fn erc1271_gas_limit(web3: Web3) {
         .await;
 
     // Use 1M gas units during signature verification
-    let mut signature = [0; 32];
-    U256::exp10(6).to_big_endian(&mut signature);
+    let signature = U256::from(1_000_000).to_be_bytes::<32>();
 
     let order = OrderCreation {
         sell_token: *cow.address(),

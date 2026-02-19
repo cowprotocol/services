@@ -29,10 +29,7 @@ use {
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number::conversions::{
-        alloy::{big_decimal_to_u256, u256_to_big_decimal},
-        big_decimal_to_big_uint,
-    },
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -418,7 +415,7 @@ impl Postgres {
                 )
                 .await
                 .map_err(anyhow::Error::from)?
-                .and_then(|price| number::conversions::alloy::big_decimal_to_u256(&price)))
+                .and_then(|price| big_decimal_to_u256(&price)))
             })
         )?;
 
@@ -1111,19 +1108,20 @@ mod tests {
             call_data: vec![byte; byte as _],
         };
 
+        let fee_parameters = FeeParameters {
+            sell_token_price: 2.5,
+            gas_amount: 0.01,
+            gas_price: 0.003,
+        };
         let quote = Quote {
             id: Some(5),
             sell_amount: alloy::primitives::U256::from(1),
             buy_amount: alloy::primitives::U256::from(2),
+            fee_amount: fee_parameters.fee(),
             data: QuoteData {
-                fee_parameters: FeeParameters {
-                    sell_token_price: 2.5,
-                    gas_amount: 0.01,
-                    gas_price: 0.003,
-                },
+                fee_parameters,
                 ..Default::default()
             },
-            ..Default::default()
         };
 
         let uid = OrderUid([0x42; 56]);

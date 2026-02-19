@@ -32,7 +32,7 @@ async fn route(
     eth: axum::extract::State<Ethereum>,
 ) -> Result<Json<GasPriceResponse>, (hyper::StatusCode, axum::Json<Error>)> {
     // For simplicity we use the default time limit (None)
-    let gas_price = eth.gas_price(None).await?;
+    let gas_price = eth.gas_price().await?;
 
     Ok(Json(GasPriceResponse {
         max_fee_per_gas: gas_price.max().0.0,

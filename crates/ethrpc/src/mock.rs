@@ -4,6 +4,7 @@ use {
     crate::{Web3, alloy::MutWallet},
     alloy::providers::{Provider, ProviderBuilder, mock::Asserter},
     ethcontract::{
+        dyns::DynTransport,
         futures::future::{self, Ready},
         jsonrpc::{Call, Id, MethodCall, Params},
         web3::{self, BatchTransport, RequestId, Transport},
@@ -19,6 +20,32 @@ use {
         },
     },
 };
+
+impl Web3<MockTransport> {
+    pub fn with_asserter(asserter: Asserter) -> Self {
+        Web3 {
+            legacy: web3::Web3::new(MockTransport::new()),
+            // this will not behave like the original mock transport but it's only used
+            // in one place so let's keep this for now and fix it when we switch to
+            // alloy in the 1 place that uses the mock provider.
+            alloy: ProviderBuilder::new()
+                .connect_mocked_client(asserter)
+                .erased(),
+            wallet: MutWallet::default(),
+        }
+    }
+
+    // HACK(jmg-duarte): used to convert a MockTransport -> DynTransport so we can
+    // remove ethcontract imports from shared should be fixed in a follow up PR,
+    // removing web3 from ethrpc
+    pub fn erased(self) -> Web3<DynTransport> {
+        Web3 {
+            legacy: web3::Web3::new(DynTransport::new(self.legacy.transport().clone())),
+            alloy: self.alloy,
+            wallet: self.wallet,
+        }
+    }
+}
 
 pub fn web3() -> Web3<MockTransport> {
     Web3 {

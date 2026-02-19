@@ -15,10 +15,12 @@ use {
             solver::{ManageNativeToken, Solver},
         },
     },
+    alloy::network::TxSigner,
     chrono::Utc,
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
+    number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
     std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},
@@ -116,6 +118,9 @@ impl Solution {
                     },
                     jit.executed(),
                     Fee::Dynamic(jit.fee()),
+                    // JIT orders don't get haircut because they supply private
+                    // liquidity which should not prone to negative slippage.
+                    eth::U256::ZERO,
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );
@@ -338,10 +343,8 @@ impl Solution {
         // Scale prices
         let mut prices = self.prices.clone();
         for (token, price) in other.prices.iter() {
-            let scaled = number::conversions::alloy::big_rational_to_u256(
-                &(number::conversions::alloy::u256_to_big_rational(price) * &factor),
-            )
-            .map_err(error::Merge::Math)?;
+            let scaled = big_rational_to_u256(&(u256_to_big_rational(price) * &factor))
+                .map_err(error::Merge::Math)?;
             match prices.entry(*token) {
                 Entry::Occupied(entry) => {
                     // This shouldn't fail unless there are rounding errors given that the scaling
@@ -394,7 +397,7 @@ impl Solution {
 
     /// Return the trades which fulfill non-liquidity auction orders. These are
     /// the orders placed by end users.
-    fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
+    pub fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
             Trade::Fulfillment(fulfillment) => Some(fulfillment),
             Trade::Jit(_) => None,
@@ -543,8 +546,8 @@ fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
             let first_price = first[token];
             let second_price = second[token];
             BigRational::new(
-                number::conversions::alloy::u256_to_big_int(&first_price),
-                number::conversions::alloy::u256_to_big_int(&second_price),
+                u256_to_big_int(&first_price),
+                u256_to_big_int(&second_price),
             )
         })
         .collect();
