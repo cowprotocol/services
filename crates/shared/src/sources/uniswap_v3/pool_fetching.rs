@@ -420,7 +420,6 @@ fn append_events(
     pools: &mut HashMap<Address, Arc<PoolInfo>>,
     events: Vec<WithAddress<UniswapV3PoolEvents>>,
 ) {
-    // deep clone map
     for event in events {
         if let Some(pool) = pools.get_mut(&event.address()).map(Arc::make_mut) {
             let pool = &mut pool.state;
