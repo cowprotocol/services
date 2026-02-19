@@ -7,6 +7,7 @@ use {
             types::{Transaction, TransactionReceipt},
         },
     },
+    autopilot::config::Configuration,
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     futures::StreamExt,
@@ -137,8 +138,6 @@ async fn test_cancel_on_expiry(web3: Web3) {
 }
 
 async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
-    use autopilot::config::Configuration;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
@@ -252,8 +251,6 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 }
 
 async fn test_execute_same_sell_and_buy_token(web3: Web3) {
-    use autopilot::config::Configuration;
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
