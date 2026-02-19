@@ -13,7 +13,7 @@ alloy = { workspace = true, default-features = false, features = ["json-rpc", "p
 alloy-signer = {workspace = true, default-features = false, features = ["eip712"]}
 anyhow = { workspace = true }
 app-data = { workspace = true }
-autopilot = { workspace = true }
+autopilot = { workspace = true, features = ["test-util"] }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
@@ -26,13 +26,12 @@ driver = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
 hex-literal = { workspace = true }
-hyper = { workspace = true }
 itertools = { workspace = true }
 model = { workspace = true, features = ["e2e"] }
 number = { workspace = true }
 observe = { workspace = true }
 orderbook = { workspace = true, features = ["e2e"] }
-reqwest = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["blocking", "query"] }
 serde_json = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }

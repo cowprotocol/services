@@ -15,7 +15,7 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-    autopilot::infra::persistence::dto,
+    autopilot::{config::Configuration, infra::persistence::dto},
     clap::Parser,
     model::{
         AuctionId,
@@ -26,7 +26,7 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     sqlx::Connection,
     std::{
         collections::{HashMap, hash_map::Entry},
@@ -157,9 +157,7 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
-            "--baseline-sources=None".to_string(),
             "--network-block-interval=1s".to_string(),
-            "--solver-competition-auth=super_secret_key".to_string(),
             format!(
                 "--settlement-contract-address={:?}",
                 self.contracts.gp_settlement.address()
@@ -218,8 +216,14 @@ impl<'a> Services<'a> {
         .collect();
         let args = ignore_overwritten_cli_params(args);
 
-        let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
-        let join_handle = tokio::task::spawn(autopilot::run(args, control));
+        let args = autopilot::arguments::CliArguments::try_parse_from(args)
+            .map_err(|err| err.to_string())
+            .unwrap();
+        let config = autopilot::config::Configuration::from_path(&args.config)
+            .await
+            .unwrap();
+        tracing::info!("Loaded config: {:?}", config);
+        let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
         self.wait_until_autopilot_ready().await;
 
         join_handle
@@ -268,8 +272,18 @@ impl<'a> Services<'a> {
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
-        self.start_protocol_with_args(Default::default(), solver)
-            .await;
+        // HACK: config is required so in the cases where it isn't passed (like the API
+        // version test), so we create a dummy one
+        let (_config_file, cli_arg) =
+            Configuration::test("test_solver", solver.address()).to_cli_args();
+        self.start_protocol_with_args(
+            ExtraServiceArgs {
+                api: Default::default(),
+                autopilot: vec![cli_arg],
+            },
+            solver,
+        )
+        .await;
     }
 
     pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
@@ -300,14 +314,11 @@ impl<'a> Services<'a> {
             colocation::LiquidityProvider::UniswapV2,
             false,
         );
+
         self.start_autopilot(
             None,
             [
                 vec![
-                    format!(
-                        "--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
-                        const_hex::encode(solver.address())
-                    ),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
                     "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -351,6 +362,10 @@ impl<'a> Services<'a> {
             haircut_bps: 0,
         }];
 
+        // Create TOML config file for the driver
+        let (_config_file, config_arg) =
+            Configuration::test("test_solver", solver.address()).to_cli_args();
+
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
                 colocation::start_baseline_solver(
@@ -367,7 +382,7 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", const_hex::encode(solver.address())),
+                config_arg.clone(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/baseline_solver,Driver|test_solver|http://localhost:11088/test_solver".to_string(),
             ];
@@ -377,10 +392,7 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                format!(
-                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"

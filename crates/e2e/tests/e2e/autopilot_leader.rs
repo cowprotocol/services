@@ -1,5 +1,5 @@
 use {
-    autopilot::shutdown_controller::ShutdownController,
+    autopilot::{config::Configuration, shutdown_controller::ShutdownController},
     e2e::setup::{
         OnchainComponents,
         Services,
@@ -86,26 +86,43 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     );
 
     // Configure autopilot-leader only with test_solver
-    let autopilot_leader = services.start_autopilot_with_shutdown_controller(None, vec![
-        format!("--drivers=test_solver|http://localhost:11088/test_solver|{}|requested-timeout-on-problems",
-            const_hex::encode(solver1.address())),
-        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-        "--metrics-address=0.0.0.0:9590".to_string(),
-        "--api-address=0.0.0.0:12088".to_string(),
-        "--enable-leader-lock=true".to_string(),
-    ], control).await;
+    let (_config_file_leader, config_arg_leader) =
+        Configuration::test("test_solver", solver1.address()).to_cli_args();
+
+    let autopilot_leader = services
+        .start_autopilot_with_shutdown_controller(
+            None,
+            vec![
+                config_arg_leader,
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+                "--metrics-address=0.0.0.0:9590".to_string(),
+                "--api-address=0.0.0.0:12088".to_string(),
+                "--enable-leader-lock=true".to_string(),
+            ],
+            control,
+        )
+        .await;
 
     // Configure autopilot-backup only with test_solver2
-    let _autopilot_follower = services.start_autopilot(None, vec![
-        format!("--drivers=test_solver2|http://localhost:11088/test_solver2|{}|requested-timeout-on-problems",
-            const_hex::encode(solver2.address())),
-        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2".to_string(),
-        "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-        "--metrics-address=0.0.0.0:9591".to_string(),
-        "--api-address=0.0.0.0:12089".to_string(),
-        "--enable-leader-lock=true".to_string(),
-    ]).await;
+    let (_config_file_follower, config_arg_follower) =
+        Configuration::test("test_solver2", solver2.address()).to_cli_args();
+
+    let _autopilot_follower = services
+        .start_autopilot(
+            None,
+            vec![
+                config_arg_follower,
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
+                    .to_string(),
+                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
+                "--metrics-address=0.0.0.0:9591".to_string(),
+                "--api-address=0.0.0.0:12089".to_string(),
+                "--enable-leader-lock=true".to_string(),
+            ],
+        )
+        .await;
 
     services
         .start_api(vec![

@@ -12,8 +12,12 @@
 //! cluster.
 
 use {
-    axum::{Router, body::Body, http::Request, response::IntoResponse},
-    hyper::body::to_bytes,
+    axum::{
+        Router,
+        body::Body,
+        http::Request,
+        response::{IntoResponse, Response},
+    },
     std::{collections::VecDeque, net::SocketAddr, sync::Arc},
     tokio::{sync::RwLock, task::JoinHandle},
     url::Url,
@@ -99,21 +103,20 @@ async fn serve(listen_addr: SocketAddr, backends: Vec<Url>, state: ProxyState) {
     let app = Router::new().fallback(proxy_handler);
 
     tracing::info!(?listen_addr, ?backends, "starting reverse proxy");
-    axum::Server::bind(&listen_addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind(listen_addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn handle_request(
     client: reqwest::Client,
     state: ProxyState,
     req: Request<Body>,
-) -> impl IntoResponse {
+) -> Response {
     let (parts, body) = req.into_parts();
 
     // Convert body to bytes once for reuse across retries
-    let body_bytes = match to_bytes(body).await {
+    // SAFETY: usize::MAX is ok here because it's a test
+    let body_bytes = match axum::body::to_bytes(body, usize::MAX).await {
         Ok(bytes) => bytes,
         Err(err) => {
             return (

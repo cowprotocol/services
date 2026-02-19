@@ -18,26 +18,17 @@ use {
         ChainalysisOracle,
         GPv2Settlement,
         HooksTrampoline,
-        IUniswapV3Factory,
         WETH9,
         support::Balances,
     },
-    futures::{FutureExt, StreamExt},
-    model::{DomainSeparator, order::BUY_ETH_ADDRESS},
+    model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
-        bad_token::{
-            cache::CachingDetector,
-            instrumented::InstrumentedBadTokenDetectorExt,
-            list_based::{ListBasedDetector, UnknownTokenStrategy},
-            token_owner_finder,
-            trace_call::TraceCallDetector,
-        },
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
@@ -47,15 +38,13 @@ use {
             PriceEstimating,
             QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
-            native::NativePriceEstimating,
+            native::{FallbackNativePriceEstimator, NativePriceEstimating},
         },
         signature_validator,
-        sources::{self, BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
-    std::{convert::Infallible, future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     tokio::task::{self, JoinHandle},
-    warp::Filter,
 };
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -78,12 +67,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let simulation_web3 = args
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -155,8 +144,6 @@ pub async fn run(args: Arguments) {
             }
         }
     });
-    let vault =
-        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.provider.clone()));
 
     let hooks_contract = match args.shared.hooks_contract_address {
         Some(address) => HooksTrampoline::Instance::new(address, web3.provider.clone()),
@@ -205,75 +192,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     ));
 
-    let baseline_sources = args
-        .shared
-        .baseline_sources
-        .clone()
-        .unwrap_or_else(|| sources::defaults_for_network(&chain));
-    tracing::info!(?baseline_sources, "using baseline sources");
-    let univ2_sources = baseline_sources
-        .iter()
-        .filter_map(|source: &BaselineSource| {
-            UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
-        })
-        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
-    let pair_providers: Vec<_> = futures::stream::iter(univ2_sources)
-        .then(|source: UniV2BaselineSourceParameters| {
-            let web3 = &web3;
-            async move { source.into_source(web3).await.unwrap().pair_provider }
-        })
-        .collect()
-        .await;
-
-    let base_tokens = Arc::new(BaseTokens::new(
-        *native_token.address(),
-        &args.shared.base_tokens,
-    ));
-    let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter());
-    allowed_tokens.push(BUY_ETH_ADDRESS);
-    let unsupported_tokens = args.unsupported_tokens.clone();
-
-    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
-        .await
-        .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
-        .ok();
-
-    let finder = token_owner_finder::init(
-        &args.token_owner_finder,
-        web3.clone(),
-        &chain,
-        &http_factory,
-        &pair_providers,
-        vault.as_ref(),
-        uniswapv3_factory.as_ref(),
-        &base_tokens,
-        *settlement_contract.address(),
-    )
-    .await
-    .expect("failed to initialize token owner finders");
-
-    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
-        CachingDetector::new(
-            Box::new(TraceCallDetector::new(
-                shared::ethrpc::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
-                *settlement_contract.address(),
-                finder,
-            )),
-            args.shared.token_quality_cache_expiry,
-            args.shared.token_quality_cache_prefetch_time,
-        )
-    });
-    let bad_token_detector = Arc::new(
-        ListBasedDetector::new(
-            allowed_tokens,
-            unsupported_tokens,
-            trace_call_detector
-                .map(|detector| UnknownTokenStrategy::Forward(detector))
-                .unwrap_or(UnknownTokenStrategy::Allow),
-        )
-        .instrumented(),
-    );
+    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
 
     let current_block_stream = args
         .shared
@@ -302,12 +221,11 @@ pub async fn run(args: Arguments) {
                 .call()
                 .await
                 .expect("failed to query solver authenticator address"),
-            base_tokens: base_tokens.clone(),
             block_stream: current_block_stream.clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
-            bad_token_detector: bad_token_detector.clone(),
+            deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
         },
@@ -320,14 +238,33 @@ pub async fn run(args: Arguments) {
         args.price_estimation.native_price_cache_max_age,
         prices,
     );
+    let primary = price_estimator_factory
+        .native_price_estimator(
+            args.native_price_estimators.as_slice(),
+            args.fast_price_estimation_results_required,
+            &native_token,
+        )
+        .await
+        .expect("failed to build primary native price estimator");
+
+    let inner: Box<dyn NativePriceEstimating> =
+        if let Some(ref fallback_config) = args.native_price_estimators_fallback {
+            let fallback = price_estimator_factory
+                .native_price_estimator(
+                    fallback_config.as_slice(),
+                    args.fast_price_estimation_results_required,
+                    &native_token,
+                )
+                .await
+                .expect("failed to build fallback native price estimator");
+            Box::new(FallbackNativePriceEstimator::new(primary, fallback))
+        } else {
+            primary
+        };
+
     let native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
         price_estimator_factory
-            .caching_native_price_estimator(
-                args.native_price_estimators.as_slice(),
-                args.fast_price_estimation_results_required,
-                &native_token,
-                cache,
-            )
+            .caching_native_price_estimator_from_inner(inner, cache)
             .await,
     );
 
@@ -409,7 +346,7 @@ pub async fn run(args: Arguments) {
         )),
         validity_configuration,
         args.eip1271_skip_creation_validation,
-        bad_token_detector.clone(),
+        deny_listed_tokens.clone(),
         hooks_contract,
         optimal_quoter.clone(),
         balance_fetcher,
@@ -448,17 +385,15 @@ pub async fn run(args: Arguments) {
     ));
 
     check_database_connection(orderbook.as_ref()).await;
-    let quotes = Arc::new(
-        QuoteHandler::new(
-            order_validator,
-            optimal_quoter,
-            app_data.clone(),
-            args.volume_fee_config,
-            args.shared.volume_fee_bucket_overrides.clone(),
-            args.shared.enable_sell_equals_buy_volume_fee,
-        )
-        .with_fast_quoter(fast_quoter),
-    );
+    let quotes = QuoteHandler::new(
+        order_validator,
+        optimal_quoter,
+        app_data.clone(),
+        args.volume_fee_config,
+        args.shared.volume_fee_bucket_overrides.clone(),
+        args.shared.enable_sell_equals_buy_volume_fee,
+    )
+    .with_fast_quoter(fast_quoter);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
@@ -539,14 +474,14 @@ fn serve_api(
     database: Postgres,
     database_replica: Postgres,
     orderbook: Arc<Orderbook>,
-    quotes: Arc<QuoteHandler>,
+    quotes: QuoteHandler,
     app_data: Arc<crate::app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(
+    let app = api::handle_all_routes(
         database,
         database_replica,
         orderbook,
@@ -554,19 +489,24 @@ fn serve_api(
         app_data,
         native_price_estimator,
         quote_timeout,
-    )
-    .boxed();
+    );
     tracing::info!(%address, "serving order book");
-    let warp_svc = warp::service(filter);
-    let make_svc = hyper::service::make_service_fn(move |_| {
-        let svc = warp_svc.clone();
-        async move { Ok::<_, Infallible>(svc) }
-    });
-    let server = hyper::Server::bind(&address)
-        .serve(make_svc)
-        .with_graceful_shutdown(shutdown_receiver)
-        .map(|_| ());
-    task::spawn(server)
+
+    task::spawn(async move {
+        let listener = match tokio::net::TcpListener::bind(address).await {
+            Ok(listener) => listener,
+            Err(err) => {
+                tracing::error!(?err, "failed to bind server");
+                return;
+            }
+        };
+        if let Err(err) = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_receiver)
+            .await
+        {
+            tracing::error!(?err, "server error");
+        }
+    })
 }
 
 /// Check that important constants such as the EIP 712 Domain Separator and

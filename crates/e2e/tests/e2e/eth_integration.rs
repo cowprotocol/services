@@ -8,7 +8,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]

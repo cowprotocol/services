@@ -4,6 +4,7 @@ use {
         providers::ext::{AnvilApi, ImpersonateConfig},
         signers::SignerSync,
     },
+    autopilot::config::Configuration,
     chrono::Utc,
     contracts::alloy::{ERC20, LiquoriceSettlement},
     driver::infra,
@@ -162,7 +163,7 @@ async fn liquidity_source_notification(web3: Web3) {
     let liquorice_api = api::liquorice::server::LiquoriceApi::start().await;
 
     // CoW services setup
-    let liquorice_solver_api_mock = Mock::default();
+    let liquorice_solver_api_mock = Mock::new().await;
     let services = Services::new(&onchain).await;
 
     colocation::start_driver_with_config_override(
@@ -199,16 +200,16 @@ http-timeout = "10s"
             liquorice_api.port
         )),
     );
+    let (_config_file, config_arg) =
+        Configuration::test("liquorice_solver", solver.address()).to_cli_args();
+
     services
         .start_autopilot(
             None,
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                format!(
-                    "--drivers=liquorice_solver|http://localhost:11088/liquorice_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                config_arg,
             ],
         )
         .await;

@@ -3,6 +3,7 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, anyhow},
     bytes_hex::BytesHex,
+    moka::sync::Cache,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     serde_with::serde_as,
@@ -340,6 +341,34 @@ impl Root {
             metadata,
             backend: None,
         }
+    }
+}
+
+/// Caches whether a given app data document contains wrappers, keyed by
+/// hash. This avoids re-parsing the same JSON across orders and auction
+/// cycles. We're using the default TinyLFU eviction policy, but the capacity is
+/// large enough that we don't expect eviction to be a problem in practice, but
+/// we limit the size to prevent potential memory exhaustion attacks.
+pub struct WrapperCache(Cache<AppDataHash, bool>);
+
+impl WrapperCache {
+    pub fn new(capacity: u64) -> Self {
+        Self(Cache::new(capacity))
+    }
+
+    /// Returns `true` if order appData contains non-empty wrappers
+    pub fn has_wrappers(&self, hash: &AppDataHash, document: Option<&str>) -> bool {
+        if let Some(cached) = self.0.get(hash) {
+            return cached;
+        }
+        let result = document.is_some_and(|doc| {
+            serde_json::from_str::<Root>(doc)
+                .ok()
+                .and_then(|root| root.metadata)
+                .is_some_and(|m| !m.wrappers.is_empty())
+        });
+        self.0.insert(*hash, result);
+        result
     }
 }
 
@@ -768,6 +797,24 @@ mod tests {
             "#,
             ProtocolAppData::default(),
         );
+    }
+
+    #[test]
+    fn wrapper_cache_detects_wrappers() {
+        let cache = WrapperCache::new(100);
+        let h = |b: u8| AppDataHash([b; 32]);
+
+        assert!(!cache.has_wrappers(&h(1), None));
+        assert!(!cache.has_wrappers(&h(2), Some("{}")));
+        assert!(!cache.has_wrappers(&h(3), Some(r#"{"metadata": {}}"#)));
+        assert!(!cache.has_wrappers(&h(4), Some(r#"{"metadata": {"wrappers": []}}"#)));
+        assert!(cache.has_wrappers(
+            &h(5),
+            Some(r#"{"metadata": {"wrappers": [{"address": "0x0000000000000000000000000000000000000001", "data": "0x"}]}}"#),
+        ));
+
+        // Second call hits the cache
+        assert!(cache.has_wrappers(&h(5), None));
     }
 
     #[test]

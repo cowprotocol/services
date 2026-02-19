@@ -183,26 +183,24 @@ Use `$ETH_MAINNET_RPC` from `.env.claude` for mainnet. Use `cast` or whatever to
 
 ## Grafana Logs Access
 
-Query logs via the Grafana API (credentials in `.env.claude`):
+Use the `scripts/vlogs` wrapper to query Victoria Logs:
 
 ```bash
-source .env.claude && curl -s -H "Authorization: Bearer $GRAFANA_API_TOKEN" \
-  "$GRAFANA_URL/api/ds/query" \
-  -X POST -H "Content-Type: application/json" \
-  -d '{
-    "queries": [{
-      "refId": "A",
-      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "'"$VICTORIA_LOGS_DATASOURCE_UID"'"},
-      "expr": "<search_term>",
-      "queryType": "instant"
-    }],
-    "from": "now-1h",
-    "to": "now"
-  }'
+# Basic usage
+scripts/vlogs "<expr>" [--from <time>] [--to <time>] [--max <lines>] [--env <prod|staging>] [--raw]
+
+# Examples
+scripts/vlogs "NOT container:controller order created 0xabc..." --from now-24h
+scripts/vlogs "NOT container:controller network:mainnet settlement failed" --from now-6h --max 50
+scripts/vlogs "error" --env staging --from now-1h
+scripts/vlogs "NOT container:controller 0xabc..." --raw  # full JSON with labels
 ```
-Adjust expr for search terms (e.g., plasma, ink, error)
-Adjust from/to for time range (e.g., now-15m, now-24h)
-Parse log lines with: | jq -r '.results.A.frames[0].data.values[1][]'
+
+Defaults: `--from now-12h`, `--to now`, `--max 100`, `--env prod`
+
+Datasource UIDs (hardcoded in script): `vm-auth-prod` (production), `vm-auth-staging` (staging)
+
+With `--raw`, each log entry has an `all` field containing the full unparsed JSON log message (with timestamp, level, fields, spans, trace_id). Useful for extracting structured data like `order_uid`, `quote_id`, `request_id`, etc.
 
 ## Etherscan API (V2)
 

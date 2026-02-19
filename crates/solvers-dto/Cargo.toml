@@ -14,6 +14,7 @@ chrono = { workspace = true, features = ["serde"] }
 const-hex = { workspace = true }
 number = { workspace = true }
 serde = { workspace = true }
+serde-ext = { workspace = true }
 serde_with = { workspace = true }
 
 [lints]

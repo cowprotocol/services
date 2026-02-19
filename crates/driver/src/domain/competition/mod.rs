@@ -19,10 +19,11 @@ use {
             simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
         },
-        util::{Bytes, math},
+        util::math,
     },
+    alloy::primitives::Bytes,
+    axum::{body::Body, http::Request},
     futures::{StreamExt, future::Either, stream::FuturesUnordered},
-    hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
     std::{
         cmp::Reverse,
@@ -113,14 +114,14 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: RequestBytes) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, request: Request<Body>) -> Result<Option<Solved>, Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");
 
         let tasks = self
             .fetcher
-            .start_or_get_tasks_for_auction(auction)
+            .start_or_get_tasks_for_auction(request)
             .await
             .map_err(|err| {
                 tracing::error!(?err, "pre-processing auction failed");
@@ -461,6 +462,11 @@ impl Competition {
                     // the flashloan to be repaid for now.
                     return order.receiver.as_ref() == Some(settlement_contract);
                 }
+            }
+
+            // wrappers can produce the required funds at settlement time
+            if !order.app_data.wrappers().is_empty() {
+                return true;
             }
 
             let remaining_balance = match balances.get_mut(&(
@@ -846,22 +852,22 @@ pub struct PriceLimits {
 #[derive(Debug)]
 pub struct Revealed {
     /// The internalized calldata is the final calldata that appears onchain.
-    pub internalized_calldata: Bytes<Vec<u8>>,
+    pub internalized_calldata: Bytes,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
-    pub uninternalized_calldata: Bytes<Vec<u8>>,
+    pub uninternalized_calldata: Bytes,
 }
 
 #[derive(Debug)]
 pub struct Settled {
     /// The transaction hash in which the solution was submitted.
     pub tx_hash: eth::TxId,
-    pub internalized_calldata: Bytes<Vec<u8>>,
+    pub internalized_calldata: Bytes,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
-    pub uninternalized_calldata: Bytes<Vec<u8>>,
+    pub uninternalized_calldata: Bytes,
 }
 
 #[derive(Debug, thiserror::Error)]

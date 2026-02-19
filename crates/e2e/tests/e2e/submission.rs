@@ -7,6 +7,7 @@ use {
             types::{Transaction, TransactionReceipt},
         },
     },
+    autopilot::config::Configuration,
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     futures::StreamExt,
@@ -16,7 +17,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, testing::ApproxEq, units::EthUnit},
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     std::time::Duration,
 };
 
@@ -156,11 +157,13 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--same-tokens-policy=allow-sell".to_string()],
-                ..Default::default()
+                autopilot: vec![config_arg],
             },
             solver.clone(),
         )
@@ -267,11 +270,13 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--same-tokens-policy=allow-sell".to_string()],
-                ..Default::default()
+                autopilot: vec![config_arg],
             },
             solver.clone(),
         )

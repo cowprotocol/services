@@ -8,7 +8,6 @@ use {
     alloy::primitives::{Address, B256, U256, address},
     anyhow::{Context, Result},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
-    derivative::Derivative,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
     observe::tracing::tracing_headers,
@@ -82,16 +81,24 @@ impl Default for OrdersQuery {
 }
 
 #[serde_as]
-#[derive(Debug, Derivative, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[derivative(Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
-    #[derivative(Default(value = "DateTime::<Utc>::MIN_UTC"))]
     pub created_at: DateTime<Utc>,
     #[serde(with = "bytes_hex")]
     pub order_hash: Vec<u8>,
     #[serde_as(as = "DisplayFromStr")]
     pub remaining_fillable_taker_amount: u128,
+}
+
+impl Default for OrderMetadata {
+    fn default() -> Self {
+        Self {
+            created_at: DateTime::<Utc>::MIN_UTC,
+            order_hash: Default::default(),
+            remaining_fillable_taker_amount: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
@@ -104,15 +111,13 @@ pub struct ZeroExSignature {
 }
 
 #[serde_as]
-#[derive(Debug, Derivative, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[derivative(Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     /// The ID of the Ethereum chain where the `verifying_contract` is located.
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be
     /// filled.
-    #[derivative(Default(value = "NaiveDateTime::MAX.and_utc().timestamp() as u64"))]
     #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the
@@ -154,6 +159,28 @@ pub struct Order {
     /// Address of the contract where the transaction should be sent, usually
     /// this is the 0x exchange proxy contract.
     pub verifying_contract: Address,
+}
+
+impl Default for Order {
+    fn default() -> Self {
+        Self {
+            chain_id: Default::default(),
+            expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
+            fee_recipient: Default::default(),
+            maker: Default::default(),
+            maker_amount: Default::default(),
+            maker_token: Default::default(),
+            pool: Default::default(),
+            salt: Default::default(),
+            sender: Default::default(),
+            signature: Default::default(),
+            taker: Default::default(),
+            taker_amount: Default::default(),
+            taker_token: Default::default(),
+            taker_token_fee_amount: Default::default(),
+            verifying_contract: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]

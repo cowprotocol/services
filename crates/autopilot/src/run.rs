@@ -1,7 +1,8 @@
 use {
     crate::{
-        arguments::{Account, Arguments},
+        arguments::CliArguments,
         boundary,
+        config::{Configuration, solver::Account},
         database::{
             Postgres,
             ethflow_events::event_retriever::EthFlowRefundRetriever,
@@ -27,23 +28,15 @@ use {
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
+    contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
-    futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
     shared::{
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
-        bad_token::{
-            cache::CachingDetector,
-            instrumented::InstrumentedBadTokenDetectorExt,
-            list_based::{ListBasedDetector, UnknownTokenStrategy},
-            token_owner_finder,
-            trace_call::TraceCallDetector,
-        },
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
@@ -51,8 +44,6 @@ use {
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
         },
-        signature_validator,
-        sources::{BaselineSource, uniswap_v2::UniV2BaselineSourceParameters},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -93,7 +84,7 @@ impl Liveness {
 
 /// Creates Web3 transport based on the given config.
 #[instrument(skip_all)]
-async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
+async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::blockchain::Rpc {
     infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
         .expect("connect ethereum RPC")
@@ -103,7 +94,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
     ethrpc(
         url,
-        &shared::ethrpc::Arguments {
+        &shared::web3::Arguments {
             ethrpc_max_batch_size: 0,
             ethrpc_max_concurrent_requests: 0,
             ethrpc_batch_delay: Default::default(),
@@ -133,7 +124,14 @@ async fn ethereum(
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
-    let args = Arguments::parse_from(args);
+    let args = CliArguments::parse_from(args);
+
+    let config = Configuration::from_path(&args.config)
+        .await
+        .expect("failed to load configuration file")
+        .validate()
+        .expect("failed to validate configuration file");
+
     let obs_config = observe::Config::new(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
@@ -151,19 +149,19 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
-    if args.drivers.is_empty() {
-        panic!("colocation is enabled but no drivers are configured");
-    }
-
     if args.shadow.is_some() {
-        shadow_mode(args).await;
+        shadow_mode(args, config).await;
     } else {
-        run(args, ShutdownController::default()).await;
+        run(args, config, ShutdownController::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
+pub async fn run(
+    args: CliArguments,
+    config: Configuration,
+    shutdown_controller: ShutdownController,
+) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         args.db_write_url.as_str(),
@@ -180,12 +178,12 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let simulation_web3 = args
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::ethrpc::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -241,27 +239,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         }
         addr
     });
-    let vault =
-        vault_address.map(|address| BalancerV2Vault::Instance::new(address, web3.provider.clone()));
-
-    let uniswapv3_factory = IUniswapV3Factory::Instance::deployed(&web3.provider)
-        .instrument(info_span!("uniswapv3_deployed"))
-        .await
-        .inspect_err(|err| tracing::warn!(%err, "error while fetching IUniswapV3Factory instance"))
-        .ok();
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
-    let signature_validator = signature_validator::validator(
-        &web3,
-        signature_validator::Contracts {
-            settlement: eth.contracts().settlement().clone(),
-            signatures: eth.contracts().signatures().clone(),
-            vault_relayer,
-        },
-        balance_overrider.clone(),
-    );
 
     let balance_fetcher = account_balances::cached(
         &web3,
@@ -285,72 +266,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .expect("failed to create gas price estimator"),
     );
 
-    let baseline_sources = args
-        .shared
-        .baseline_sources
-        .clone()
-        .unwrap_or_else(|| shared::sources::defaults_for_network(&chain));
-    tracing::info!(?baseline_sources, "using baseline sources");
-    let univ2_sources = baseline_sources
-        .iter()
-        .filter_map(|source: &BaselineSource| {
-            UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
-        })
-        .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
-    let pair_providers: Vec<_> = futures::stream::iter(univ2_sources)
-        .then(|source: UniV2BaselineSourceParameters| {
-            let web3 = &web3;
-            async move { source.into_source(web3).await.unwrap().pair_provider }
-        })
-        .collect()
-        .instrument(info_span!("pair_providers"))
-        .await;
-
-    let base_tokens = Arc::new(BaseTokens::new(
-        *eth.contracts().weth().address(),
-        &args.shared.base_tokens,
-    ));
-    let mut allowed_tokens = args.allowed_tokens.clone();
-    allowed_tokens.extend(base_tokens.tokens().iter());
-    allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
-    let unsupported_tokens = args.unsupported_tokens.clone();
-
-    let finder = token_owner_finder::init(
-        &args.token_owner_finder,
-        web3.clone(),
-        &chain,
-        &http_factory,
-        &pair_providers,
-        vault.as_ref(),
-        uniswapv3_factory.as_ref(),
-        &base_tokens,
-        *eth.contracts().settlement().address(),
-    )
-    .instrument(info_span!("token_owner_finder_init"))
-    .await
-    .expect("failed to initialize token owner finders");
-
-    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
-        CachingDetector::new(
-            Box::new(TraceCallDetector::new(
-                shared::ethrpc::web3(&args.shared.ethrpc, tracing_node_url, "trace"),
-                *eth.contracts().settlement().address(),
-                finder,
-            )),
-            args.shared.token_quality_cache_expiry,
-            args.shared.token_quality_cache_prefetch_time,
-        )
-    });
-    let bad_token_detector = Arc::new(
-        ListBasedDetector::new(
-            allowed_tokens,
-            unsupported_tokens,
-            trace_call_detector
-                .map(|detector| UnknownTokenStrategy::Forward(detector))
-                .unwrap_or(UnknownTokenStrategy::Allow),
-        )
-        .instrumented(),
-    );
+    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
@@ -375,12 +291,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
                 .call()
                 .await
                 .expect("failed to query solver authenticator address"),
-            base_tokens: base_tokens.clone(),
             block_stream: eth.current_block().clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
-            bad_token_detector: bad_token_detector.clone(),
+            deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
         },
@@ -531,15 +446,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             args.banned_users_max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
-        bad_token_detector.clone(),
+        deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
-        signature_validator.clone(),
         *eth.contracts().weth().address(),
-        args.limit_order_price_factor
-            .try_into()
-            .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFees::new(
-            &args.fee_policies_config,
+            &config.fee_policies,
             args.shared.volume_fee_bucket_overrides.clone(),
             args.shared.enable_sell_equals_buy_volume_fee,
         ),
@@ -547,8 +458,6 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.run_loop_native_price_timeout,
         *eth.contracts().settlement().address(),
         args.disable_order_balance_filter,
-        args.disable_1271_order_sig_filter,
-        args.disable_1271_order_balance_filter,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
@@ -671,19 +580,14 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         enable_leader_lock: args.enable_leader_lock,
     };
 
-    let drivers_futures = args
+    let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::try_new(
-                driver.url,
-                driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
-                driver.submission_account,
-            )
-            .await
-            .map(Arc::new)
-            .expect("failed to load solver configuration")
+            infra::Driver::try_new(driver.url, driver.name.clone(), driver.submission_account)
+                .await
+                .map(Arc::new)
+                .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
@@ -715,7 +619,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     api_task.await.ok();
 }
 
-async fn shadow_mode(args: Arguments) -> ! {
+async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let orderbook = infra::shadow::Orderbook::new(
@@ -723,14 +627,13 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers_futures = args
+    let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
-                driver.fairness_threshold.map(Into::into),
                 // HACK: the auction logic expects all drivers
                 // to use a different submission address. But
                 // in the shadow environment all drivers use
@@ -752,7 +655,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::ethrpc::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let weth = WETH9::Instance::deployed(&web3.provider)
         .await
         .expect("couldn't find deployed WETH contract");

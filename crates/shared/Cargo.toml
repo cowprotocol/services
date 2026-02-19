@@ -24,7 +24,6 @@ contracts = { workspace = true }
 dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
-derivative = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
@@ -41,7 +40,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
-reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
+reqwest = { workspace = true, features = ["cookies", "gzip", "json", "query"] }
 rust_decimal = { workspace = true, features = ["maths"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -53,6 +52,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }
 
+moka = { workspace = true, features = ["sync"] }
 mockall = { workspace = true, optional = true }
 
 [dev-dependencies]

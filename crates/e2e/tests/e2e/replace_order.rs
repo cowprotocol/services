@@ -12,7 +12,7 @@ use {
         orderbook::{OrderCancellationError, OrderReplacementError},
     },
     reqwest::StatusCode,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 // Parse OrderReplacementError from HTTP response
@@ -23,7 +23,7 @@ fn parse_order_replacement_error(status: StatusCode, body: &str) -> Option<Order
     let error: ApiError = serde_json::from_str(body).ok()?;
 
     match status {
-        StatusCode::BAD_REQUEST => match error.error_type {
+        StatusCode::BAD_REQUEST => match error.error_type.as_ref() {
             "InvalidSignature" => Some(OrderReplacementError::InvalidSignature),
             "OldOrderActivelyBidOn" => Some(OrderReplacementError::OldOrderActivelyBidOn),
             _ => None,
@@ -46,7 +46,7 @@ fn parse_order_cancellation_error(
     let error: ApiError = serde_json::from_str(body).ok()?;
 
     match status {
-        StatusCode::BAD_REQUEST => match error.error_type {
+        StatusCode::BAD_REQUEST => match error.error_type.as_ref() {
             "InvalidSignature" => Some(OrderCancellationError::InvalidSignature),
             "AlreadyCancelled" => Some(OrderCancellationError::AlreadyCancelled),
             "OrderFullyExecuted" => Some(OrderCancellationError::OrderFullyExecuted),
@@ -467,6 +467,8 @@ async fn single_replace_order_test(web3: Web3) {
     onchain.set_solver_allowed(solver.address(), false).await;
 
     let services = Services::new(&onchain).await;
+    let (_config_file, config_arg) =
+        autopilot::config::Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
@@ -474,7 +476,7 @@ async fn single_replace_order_test(web3: Web3) {
                 // with the solver being banned. To allow us to still create
                 // orders we override the quote verification to be disabled.
                 api: vec!["--quote-verification=prefer".into()],
-                ..Default::default()
+                autopilot: vec![config_arg],
             },
             solver.clone(),
         )

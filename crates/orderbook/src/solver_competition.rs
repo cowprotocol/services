@@ -24,7 +24,7 @@ pub trait SolverCompetitionStoring: Send + Sync {
     async fn load_competition(
         &self,
         identifier: Identifier,
-    ) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError>;
+    ) -> Result<SolverCompetitionAPI, crate::solver_competition::LoadSolverCompetitionError>;
 
     /// Retrieves the solver competition for the most recent auction.
     ///

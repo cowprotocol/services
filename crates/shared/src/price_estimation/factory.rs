@@ -13,10 +13,8 @@ use {
     },
     crate::{
         arguments,
-        bad_token::BadTokenDetecting,
-        baseline_solver::BaseTokens,
+        bad_token::list_based::DenyListedTokens,
         code_fetching::CachedCodeFetcher,
-        ethrpc::Web3,
         gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
         price_estimation::{
@@ -26,6 +24,7 @@ use {
         },
         tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
+        web3::Web3,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
@@ -61,14 +60,13 @@ pub struct Network {
     pub native_token: Address,
     pub settlement: Address,
     pub authenticator: Address,
-    pub base_tokens: Arc<BaseTokens>,
     pub block_stream: CurrentBlockWatcher,
 }
 
 /// The shared components needed for creating price estimators.
 pub struct Components {
     pub http_factory: HttpClientFactory,
-    pub bad_token_detector: Arc<dyn BadTokenDetecting>,
+    pub deny_listed_tokens: DenyListedTokens,
     pub tokens: Arc<dyn TokenInfoFetching>,
     pub code_fetcher: Arc<CachedCodeFetcher>,
 }
@@ -306,7 +304,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         SanitizedPriceEstimator::new(
             estimator,
             self.network.native_token,
-            self.components.bad_token_detector.clone(),
+            self.components.deny_listed_tokens.clone(),
             false, // not estimating native price
         )
     }
@@ -320,7 +318,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         SanitizedPriceEstimator::new(
             estimator,
             self.network.native_token,
-            self.components.bad_token_detector.clone(),
+            self.components.deny_listed_tokens.clone(),
             true, // estimating native price
         )
     }
@@ -395,6 +393,17 @@ impl<'a> PriceEstimatorFactory<'a> {
             .native_price_estimator(native, results_required, weth)
             .await
             .expect("failed to build native price estimator");
+        self.caching_native_price_estimator_from_inner(inner, cache)
+            .await
+    }
+
+    /// Creates a [`CachingNativePriceEstimator`] from a pre-built inner
+    /// estimator.
+    pub async fn caching_native_price_estimator_from_inner(
+        &mut self,
+        inner: Box<dyn NativePriceEstimating>,
+        cache: native_price_cache::Cache,
+    ) -> native_price_cache::CachingNativePriceEstimator {
         let approximation_tokens = self
             .build_approximation_tokens()
             .await

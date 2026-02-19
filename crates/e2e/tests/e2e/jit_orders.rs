@@ -1,5 +1,6 @@
 use {
     ::alloy::primitives::U256,
+    autopilot::config::Configuration,
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -7,7 +8,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     solvers_dto::solution::{Asset, Solution},
     std::collections::HashMap,
 };
@@ -57,7 +58,7 @@ async fn single_limit_order_test(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
 
     // Start system
     colocation::start_driver(
@@ -87,14 +88,15 @@ async fn single_limit_order_test(web3: Web3) {
 
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
+
+    let (_config_file, config_arg) =
+        Configuration::test("mock_solver", solver.address()).to_cli_args();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],

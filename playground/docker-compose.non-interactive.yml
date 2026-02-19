@@ -115,7 +115,7 @@ services:
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
-      - GAS_ESTIMATORS=Web3
+      - GAS_ESTIMATORS=Web3,Alloy
       - PRICE_ESTIMATORS=None
       - NATIVE_PRICE_ESTIMATORS=baseline
       - BLOCK_STREAM_POLL_INTERVAL=1s

@@ -30,10 +30,8 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
-http-body = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
-hyper = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true }
@@ -43,9 +41,10 @@ number = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["query"] }
 s3 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }

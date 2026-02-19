@@ -8,7 +8,7 @@ use {
     },
     number::units::EthUnit,
     orderbook::dto::order::Status,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]

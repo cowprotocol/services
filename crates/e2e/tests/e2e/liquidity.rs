@@ -6,6 +6,7 @@ use {
             ext::{AnvilApi, ImpersonateConfig},
         },
     },
+    autopilot::config::Configuration,
     chrono::{NaiveDateTime, Utc},
     contracts::alloy::{ERC20, IZeroex},
     e2e::{
@@ -189,16 +190,16 @@ async fn zero_ex_liquidity(web3: Web3) {
         },
         false,
     );
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
+
     services
         .start_autopilot(
             None,
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                format!(
-                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                config_arg,
             ],
         )
         .await;

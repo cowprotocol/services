@@ -8,7 +8,7 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[tokio::test]
@@ -173,11 +173,12 @@ async fn erc1271_gas_limit(web3: Web3) {
         .unwrap();
 
     let services = Services::new(&onchain).await;
+    let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--max-gas-per-order=1000000".to_string()],
-                ..Default::default()
+                autopilot: vec![config_arg],
             },
             solver,
         )

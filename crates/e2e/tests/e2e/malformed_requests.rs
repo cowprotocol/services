@@ -6,7 +6,7 @@ use {
     orderbook::api::Error,
     reqwest::StatusCode,
     serde_json::json,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 const VALID_ORDER_UID: &str = "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
@@ -53,8 +53,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid OrderUid ({description}): {uid}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid OrderUid ({description}): {uid}"
         );
     }
 
@@ -76,8 +76,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid Address ({description}): {addr}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid Address ({description}): {addr}"
         );
     }
 
@@ -90,8 +90,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid token Address ({description}): {addr}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid token Address ({description}): {addr}"
         );
     }
 
@@ -113,19 +113,21 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid tx hash ({description}): {hash}"
+            StatusCode::BAD_REQUEST,
+            "Expected 400 for invalid tx hash ({description}): {hash}"
         );
     }
 
     // Test malformed auction IDs
-    let invalid_auction_ids: Vec<(&str, &str)> = vec![
-        ("not-a-number", "non-numeric"),
-        ("-1", "negative number"),
-        ("99999999999999999999999", "u64 overflow"),
-    ];
-
-    for (id, description) in invalid_auction_ids {
+    for (id, description, expected_status) in [
+        ("not-a-number", "non-numeric", StatusCode::BAD_REQUEST),
+        ("-1", "negative number", StatusCode::BAD_REQUEST),
+        (
+            "99999999999999999999999",
+            "u64 overflow",
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
         let response = client
             .get(format!("{API_HOST}/api/v1/solver_competition/{id}"))
             .send()
@@ -134,8 +136,8 @@ async fn http_validation(web3: Web3) {
 
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "Expected 404 for invalid AuctionId ({description}): {id}"
+            expected_status,
+            "Expected {expected_status} for invalid AuctionId ({description}): {id}"
         );
     }
 
@@ -213,8 +215,8 @@ async fn http_validation(web3: Web3) {
 
     assert_eq!(
         response.status(),
-        StatusCode::BAD_REQUEST,
-        "Missing required fields should return 400"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Missing required fields should return 422"
     );
 
     // Wrong field types
@@ -236,8 +238,8 @@ async fn http_validation(web3: Web3) {
 
     assert_eq!(
         response.status(),
-        StatusCode::BAD_REQUEST,
-        "Wrong field types should return 400"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Wrong field types should return 422"
     );
 
     // Invalid enum value
@@ -256,8 +258,8 @@ async fn http_validation(web3: Web3) {
 
     assert_eq!(
         response.status(),
-        StatusCode::BAD_REQUEST,
-        "Invalid enum value should return 400"
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Invalid enum value should return 422"
     );
 
     // Test error response formats
@@ -270,11 +272,13 @@ async fn http_validation(web3: Web3) {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body_text = response.text().await.unwrap();
     assert!(
-        body_text.contains("deserialize error") || body_text.contains("missing field"),
+        body_text.contains("deserialize")
+            || body_text.contains("missing field")
+            || body_text.contains("Failed to deserialize"),
         "Deserialization error should contain helpful description. Got: {body_text}"
     );
 

@@ -19,7 +19,7 @@ use {
             solvers::dto::{settle, solve},
         },
         leader_lock_tracker::LeaderLockTracker,
-        maintenance::MaintenanceSync,
+        maintenance::{MaintenanceSync, SyncTarget},
         run::Liveness,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
@@ -192,6 +192,7 @@ impl RunLoop {
         });
     }
 
+    #[instrument(skip_all)]
     async fn update_caches(&self, prev_block: &mut Option<B256>, is_leader: bool) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
@@ -208,7 +209,12 @@ impl RunLoop {
             current_block
         };
 
-        self.run_maintenance(&auction_block).await;
+        {
+            let _timer = Metrics::get().service_maintenance_time.start_timer();
+            self.maintenance
+                .wait_until_block_processed(SyncTarget::PartiallyProcessed(auction_block.number))
+                .await;
+        }
 
         match self
             .solvable_orders_cache
@@ -252,16 +258,6 @@ impl RunLoop {
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
-    }
-
-    /// Runs maintenance on all components to ensure the system uses
-    /// the latest available state.
-    async fn run_maintenance(&self, block: &BlockInfo) {
-        let start = Instant::now();
-        self.maintenance
-            .wait_until_block_processed(block.number)
-            .await;
-        Metrics::ran_maintenance(start.elapsed());
     }
 
     async fn cut_auction(&self) -> Option<domain::Auction> {
@@ -370,8 +366,7 @@ impl RunLoop {
                 solution,
                 solution_uid,
                 block_deadline,
-            )
-            .await;
+            );
         }
         tracing::trace!(auction_id = ?auction.id, "settlement execution started");
         observe::unsettled(&ranking, &auction);
@@ -379,7 +374,7 @@ impl RunLoop {
 
     /// Starts settlement execution in a background task. The function is async
     /// only to get access to the locks.
-    async fn start_settlement_execution(
+    fn start_settlement_execution(
         self: &Arc<Self>,
         auction_id: Id,
         single_run_start: Instant,
@@ -566,7 +561,8 @@ impl RunLoop {
             auction,
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
-        );
+        )
+        .await;
 
         let mut bids = futures::future::join_all(
             self.drivers
@@ -696,6 +692,7 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
+    #[instrument(skip_all, fields(driver = driver.name, solution_uid))]
     async fn settle(
         &self,
         driver: &infra::Driver,
@@ -842,7 +839,9 @@ impl RunLoop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
             // Run maintenance to ensure the system processed the last available block so
             // it's possible to find the tx in the DB in the next line.
-            self.run_maintenance(&block).await;
+            self.maintenance
+                .wait_until_block_processed(SyncTarget::FullyProcessed(block.number))
+                .await;
 
             match self
                 .persistence
@@ -869,6 +868,7 @@ impl RunLoop {
 
     /// Removes orders that are currently being settled to avoid solver
     /// solutions conflicting with each other.
+    #[instrument(skip_all)]
     async fn remove_in_flight_orders(
         &self,
         mut auction: domain::RawAuctionData,
@@ -1063,12 +1063,6 @@ impl Metrics {
     fn post_processed(elapsed: Duration) {
         Self::get()
             .auction_postprocessing_time
-            .observe(elapsed.as_secs_f64());
-    }
-
-    fn ran_maintenance(elapsed: Duration) {
-        Self::get()
-            .service_maintenance_time
             .observe(elapsed.as_secs_f64());
     }
 

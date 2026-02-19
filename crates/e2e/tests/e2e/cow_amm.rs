@@ -6,6 +6,7 @@ use {
             ext::{AnvilApi, ImpersonateConfig},
         },
     },
+    autopilot::config::{Configuration, solver::Solver},
     contracts::alloy::{
         ERC20,
         support::{Balances, Signatures},
@@ -29,7 +30,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
     solvers_dto::solution::{
         BuyTokenBalance,
         Call,
@@ -153,7 +154,7 @@ async fn cow_amm_jit(web3: Web3) {
     // for the actual solver competition. That way we can handcraft a solution
     // for this test and don't have to implement complete support for CoW AMMs
     // in the baseline solver.
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -179,14 +180,15 @@ async fn cow_amm_jit(web3: Web3) {
         false,
     );
     let services = Services::new(&onchain).await;
+
+    let (_config_file, config_arg) =
+        Configuration::test("mock_solver", solver.address()).to_cli_args();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -517,7 +519,7 @@ async fn cow_amm_driver_support(web3: Web3) {
     );
 
     // spawn a mock solver so we can later assert things about the received auction
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
     colocation::start_driver_with_config_override(
         onchain.contracts(),
         vec![
@@ -551,11 +553,20 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     );
     let services = Services::new(&onchain).await;
 
+    let (_config_file, config_arg) = Configuration {
+        drivers: vec![
+            Solver::test("test_solver", solver.address()),
+            Solver::test("mock_solver", solver.address()),
+        ],
+        ..Default::default()
+    }
+    .to_cli_args();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!("--drivers=test_solver|http://localhost:11088/test_solver|{},mock_solver|http://localhost:11088/mock_solver|{}", const_hex::encode(solver.address()), const_hex::encode(solver.address())),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 // it uses an older helper contract that was deployed before the desired cow amm
@@ -786,7 +797,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Start system with the mocked solver. Baseline is still required for the
     // native price estimation.
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -812,14 +823,15 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         true,
     );
     let services = Services::new(&onchain).await;
+
+    let (_config_file, config_arg) =
+        Configuration::test("mock_solver", solver.address()).to_cli_args();
+
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
-                    const_hex::encode(solver.address())
-                ),
+                config_arg,
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
             ],

@@ -1,27 +1,21 @@
 use {
     crate::{database::INSERT_BATCH_SIZE_DEFAULT, infra},
-    alloy::primitives::{Address, U256},
-    anyhow::{Context, anyhow, ensure},
-    chrono::{DateTime, Utc},
-    clap::ValueEnum,
+    alloy::primitives::Address,
+    anyhow::Context,
     shared::{
-        arguments::{FeeFactor, display_list, display_option, display_secret_option},
-        bad_token::token_owner_finder,
+        arguments::{display_option, display_secret_option},
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{
-        fmt::{self, Display, Formatter},
-        net::SocketAddr,
-        num::NonZeroUsize,
-        str::FromStr,
-        time::Duration,
-    },
+    std::{net::SocketAddr, num::NonZeroUsize, path::PathBuf, str::FromStr, time::Duration},
     url::Url,
 };
 
 #[derive(clap::Parser)]
-pub struct Arguments {
+pub struct CliArguments {
+    #[clap(long, env)]
+    pub config: PathBuf,
+
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
 
@@ -30,9 +24,6 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub http_client: http_client::Arguments,
-
-    #[clap(flatten)]
-    pub token_owner_finder: token_owner_finder::Arguments,
 
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
@@ -54,11 +45,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ethflow_indexing_start: Option<u64>,
 
-    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
-    /// to be used exclusively for tracing calls.
-    #[clap(long, env)]
-    pub tracing_node_url: Option<Url>,
-
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
@@ -78,12 +64,6 @@ pub struct Arguments {
     /// Skip syncing past events (useful for local deployments)
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub skip_event_sync: bool,
-
-    /// List of token addresses that should be allowed regardless of whether the
-    /// bad token detector thinks they are bad. Base tokens are
-    /// automatically allowed.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<Address>,
 
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
@@ -135,11 +115,6 @@ pub struct Arguments {
     )]
     pub max_auction_age: Duration,
 
-    /// Used to filter out limit orders with prices that are too far from the
-    /// market price. 0 means no filtering.
-    #[clap(long, env, default_value = "0")]
-    pub limit_order_price_factor: f64,
-
     /// The URL of a list of tokens our settlement contract is willing to
     /// internalize.
     #[clap(long, env)]
@@ -158,11 +133,6 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub trusted_tokens_update_interval: Duration,
-
-    /// A list of drivers in the following format:
-    /// `<NAME>|<URL>|<SUBMISSION_ADDRESS>|<FAIRNESS_THRESHOLD>`
-    #[clap(long, env, use_value_delimiter = true)]
-    pub drivers: Vec<Solver>,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
@@ -199,10 +169,6 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub solve_deadline: Duration,
-
-    /// Describes how the protocol fees should be calculated.
-    #[clap(flatten)]
-    pub fee_policies_config: FeePoliciesConfig,
 
     /// Arguments for uploading information to S3.
     #[clap(flatten)]
@@ -258,17 +224,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub disable_order_balance_filter: bool,
 
-    // Configures whether the autopilot filters out EIP-1271 orders even if their signatures are
-    // invalid. This is useful as a workaround to let flashloan orders go through as they rely
-    // on preHooks behing executed to make the signatures valid.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_sig_filter: bool,
-
-    /// Configures whether the autopilot skips balance checks for EIP-1271
-    /// orders.
-    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
-    pub disable_1271_order_balance_filter: bool,
-
     /// Enables the usage of leader lock in the database
     /// The second instance of autopilot will act as a follower
     /// and not cut any auctions.
@@ -303,22 +258,20 @@ pub struct Arguments {
     pub native_price_prefetch_time: Duration,
 }
 
-impl std::fmt::Display for Arguments {
+impl std::fmt::Display for CliArguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self {
+            config,
             shared,
             order_quoting,
             http_client,
-            token_owner_finder,
             price_estimation,
             database_pool,
-            tracing_node_url,
             ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
             api_address,
             skip_event_sync,
-            allowed_tokens,
             unsupported_tokens,
             native_price_estimators,
             api_native_price_estimators,
@@ -326,15 +279,12 @@ impl std::fmt::Display for Arguments {
             banned_users,
             banned_users_max_cache_size,
             max_auction_age,
-            limit_order_price_factor,
             trusted_tokens_url,
             trusted_tokens,
             trusted_tokens_update_interval,
-            drivers,
             submission_deadline,
             shadow,
             solve_deadline,
-            fee_policies_config,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_write_url,
@@ -349,28 +299,23 @@ impl std::fmt::Display for Arguments {
             archive_node_url,
             max_solutions_per_solver,
             disable_order_balance_filter,
-            disable_1271_order_balance_filter,
-            disable_1271_order_sig_filter,
             enable_leader_lock,
             max_maintenance_timeout,
             native_price_cache_refresh,
             native_price_prefetch_time,
         } = self;
-
+        write!(f, "{}", config.display())?;
         write!(f, "{shared}")?;
         write!(f, "{order_quoting}")?;
         write!(f, "{http_client}")?;
-        write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
         write!(f, "{database_pool}")?;
-        display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
         writeln!(f, "api_address: {api_address}")?;
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
-        writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         display_option(
@@ -388,18 +333,15 @@ impl std::fmt::Display for Arguments {
             "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
         )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
-        writeln!(f, "limit_order_price_factor: {limit_order_price_factor:?}")?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
         writeln!(f, "trusted_tokens: {trusted_tokens:?}")?;
         writeln!(
             f,
             "trusted_tokens_update_interval: {trusted_tokens_update_interval:?}"
         )?;
-        display_list(f, "drivers", drivers.iter())?;
         writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;
-        writeln!(f, "fee_policies_config: {fee_policies_config:?}")?;
         writeln!(
             f,
             "order_events_cleanup_interval: {order_events_cleanup_interval:?}"
@@ -431,14 +373,6 @@ impl std::fmt::Display for Arguments {
             f,
             "disable_order_balance_filter: {disable_order_balance_filter}"
         )?;
-        writeln!(
-            f,
-            "disable_1271_order_balance_filter: {disable_1271_order_balance_filter}"
-        )?;
-        writeln!(
-            f,
-            "disable_1271_order_sig_filter: {disable_1271_order_sig_filter}"
-        )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
         writeln!(
@@ -450,222 +384,6 @@ impl std::fmt::Display for Arguments {
             "native_price_prefetch_time: {native_price_prefetch_time:?}"
         )?;
         Ok(())
-    }
-}
-
-/// External solver driver configuration
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Solver {
-    pub name: String,
-    pub url: Url,
-    pub submission_account: Account,
-    pub fairness_threshold: Option<U256>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Account {
-    /// AWS KMS is used to retrieve the solver public key
-    Kms(Arn),
-    /// Solver public key
-    Address(Address),
-}
-
-// Wrapper type for AWS ARN identifiers
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Arn(pub String);
-
-impl FromStr for Arn {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Could be more strict here, but this should suffice to catch unintended
-        // configuration mistakes
-        if s.starts_with("arn:aws:kms:") {
-            Ok(Self(s.to_string()))
-        } else {
-            Err(anyhow!("Invalid ARN identifier: {}", s))
-        }
-    }
-}
-
-impl Display for Solver {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({})", self.name, self.url)
-    }
-}
-
-impl FromStr for Solver {
-    type Err = anyhow::Error;
-
-    fn from_str(solver: &str) -> anyhow::Result<Self> {
-        let parts: Vec<&str> = solver.split('|').collect();
-        ensure!(parts.len() >= 3, "not enough arguments for external solver");
-        let (name, url) = (parts[0], parts[1]);
-        let url: Url = url.parse()?;
-        let submission_account = match Arn::from_str(parts[2]) {
-            Ok(value) => Account::Kms(value),
-            _ => {
-                Account::Address(Address::from_str(parts[2]).context("failed to parse submission")?)
-            }
-        };
-
-        let fairness_threshold = parts
-            .get(3)
-            .and_then(|value| U256::from_str_radix(value, 10).ok());
-
-        Ok(Self {
-            name: name.to_owned(),
-            url,
-            fairness_threshold,
-            submission_account,
-        })
-    }
-}
-
-#[derive(clap::Parser, Debug, Clone)]
-pub struct FeePoliciesConfig {
-    /// Describes how the protocol fees should be calculated.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub fee_policies: Vec<FeePolicy>,
-
-    /// Maximum partner fee allowed. If the partner fee specified is greater
-    /// than this maximum, the partner fee will be capped
-    #[clap(long, env, default_value = "0.01")]
-    pub fee_policy_max_partner_fee: FeeFactor,
-
-    /// Volume fee policies that will become effective at a future timestamp.
-    #[clap(flatten)]
-    pub upcoming_fee_policies: UpcomingFeePolicies,
-}
-
-/// A fee policy to be used for orders base on it's class.
-/// Examples:
-/// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
-///
-/// - Surplus with cap for market orders: surplus:0.5:0.06:market
-///
-/// - Price improvement with a high enough cap for any order class:
-///   price_improvement:0.5:0.9:any
-///
-/// - Price improvement with cap for limit orders:
-///   price_improvement:0.5:0.06:limit
-///
-/// - Volume based fee for any order class: volume:0.1:any
-#[derive(Debug, Clone)]
-pub struct FeePolicy {
-    pub fee_policy_kind: FeePolicyKind,
-    pub fee_policy_order_class: FeePolicyOrderClass,
-}
-
-/// Fee policies that will become effective at a future timestamp.
-#[derive(clap::Parser, Debug, Clone)]
-pub struct UpcomingFeePolicies {
-    #[clap(
-        id = "upcoming_fee_policies",
-        long = "upcoming-fee-policies",
-        env = "UPCOMING_FEE_POLICIES",
-        use_value_delimiter = true
-    )]
-    pub fee_policies: Vec<FeePolicy>,
-
-    #[clap(
-        long = "upcoming-fee-policies-timestamp",
-        env = "UPCOMING_FEE_POLICIES_TIMESTAMP"
-    )]
-    pub effective_from_timestamp: Option<DateTime<Utc>>,
-}
-
-#[derive(clap::Parser, Debug, Clone)]
-pub enum FeePolicyKind {
-    /// How much of the order's surplus should be taken as a protocol fee.
-    Surplus {
-        factor: FeeFactor,
-        max_volume_factor: FeeFactor,
-    },
-    /// How much of the order's price improvement should be taken as a protocol
-    /// fee where price improvement is a difference between the executed price
-    /// and the best quote.
-    PriceImprovement {
-        factor: FeeFactor,
-        max_volume_factor: FeeFactor,
-    },
-    /// How much of the order's volume should be taken as a protocol fee.
-    Volume { factor: FeeFactor },
-}
-
-#[derive(clap::Parser, clap::ValueEnum, Clone, Debug)]
-pub enum FeePolicyOrderClass {
-    /// If a fee policy needs to be applied to in-market orders.
-    Market,
-    /// If a fee policy needs to be applied to limit orders.
-    Limit,
-    /// If a fee policy needs to be applied regardless of the order class.
-    Any,
-}
-
-impl FromStr for FeePolicy {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts = s.split(':');
-        let kind = parts.next().context("missing fee policy kind")?;
-        let fee_policy_kind = match kind {
-            "surplus" => {
-                let factor = parts
-                    .next()
-                    .context("missing surplus factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid surplus factor: {}", e))?;
-                let max_volume_factor = parts
-                    .next()
-                    .context("missing max volume factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid max volume factor: {}", e))?;
-                Ok(FeePolicyKind::Surplus {
-                    factor: factor.try_into()?,
-                    max_volume_factor: max_volume_factor.try_into()?,
-                })
-            }
-            "priceImprovement" => {
-                let factor = parts
-                    .next()
-                    .context("missing price improvement factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid price improvement factor: {}", e))?;
-                let max_volume_factor = parts
-                    .next()
-                    .context("missing price improvement max volume factor")?
-                    .parse::<f64>()
-                    .map_err(|e| {
-                        anyhow::anyhow!("invalid price improvement max volume factor: {}", e)
-                    })?;
-                Ok(FeePolicyKind::PriceImprovement {
-                    factor: factor.try_into()?,
-                    max_volume_factor: max_volume_factor.try_into()?,
-                })
-            }
-            "volume" => {
-                let factor = parts
-                    .next()
-                    .context("missing volume factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid volume factor: {}", e))?;
-                Ok(FeePolicyKind::Volume {
-                    factor: factor.try_into()?,
-                })
-            }
-            _ => Err(anyhow::anyhow!("invalid fee policy kind: {}", kind)),
-        }?;
-        let fee_policy_order_class = FeePolicyOrderClass::from_str(
-            parts.next().context("missing fee policy order class")?,
-            true,
-        )
-        .map_err(|e| anyhow::anyhow!("invalid fee policy order class: {}", e))?;
-
-        Ok(FeePolicy {
-            fee_policy_kind,
-            fee_policy_order_class,
-        })
     }
 }
 
@@ -709,81 +427,5 @@ impl FromStr for CowAmmConfig {
             helper,
             index_start,
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use {super::*, alloy::primitives::address};
-
-    #[test]
-    fn test_fee_factor_limits() {
-        let policies = vec![
-            "volume:1.0:market",
-            "volume:-1.0:limit",
-            "surplus:1.0:0.5:any",
-            "surplus:0.5:1.0:limit",
-            "surplus:0.5:-1.0:market",
-            "surplus:-1.0:0.5:limit",
-            "priceImprovement:1.0:0.5:market",
-            "priceImprovement:-1.0:0.5:any",
-            "priceImprovement:0.5:1.0:market",
-            "priceImprovement:0.5:-1.0:limit",
-        ];
-
-        for policy in policies {
-            assert!(
-                FeePolicy::from_str(policy)
-                    .err()
-                    .unwrap()
-                    .to_string()
-                    .contains("Factor must be in the range [0, 1)"),
-            )
-        }
-    }
-
-    #[test]
-    fn parse_driver_submission_account_address() {
-        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
-        let driver = Solver::from_str(argument).unwrap();
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            fairness_threshold: None,
-            submission_account: Account::Address(address!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            )),
-        };
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
-    fn parse_driver_submission_account_arn() {
-        let argument = "name1|http://localhost:8080|arn:aws:kms:supersecretstuff";
-        let driver = Solver::from_str(argument).unwrap();
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            fairness_threshold: None,
-            submission_account: Account::Kms(
-                Arn::from_str("arn:aws:kms:supersecretstuff").unwrap(),
-            ),
-        };
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
-    fn parse_driver_with_threshold() {
-        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000";
-        let driver = Solver::from_str(argument).unwrap();
-        let expected = Solver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(address!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            )),
-            fairness_threshold: Some(U256::from(10).pow(U256::from(18))),
-        };
-        assert_eq!(driver, expected);
     }
 }

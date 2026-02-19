@@ -1,5 +1,6 @@
 pub mod arguments;
 pub mod boundary;
+pub mod config;
 pub mod database;
 pub mod domain;
 pub mod event_updater;

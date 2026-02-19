@@ -18,7 +18,7 @@ use {
     },
     ethrpc::alloy::CallBuilderExt,
     model::DomainSeparator,
-    shared::ethrpc::Web3,
+    shared::web3::Web3,
 };
 
 #[derive(Default)]

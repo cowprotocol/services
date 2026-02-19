@@ -43,7 +43,7 @@ impl Registry {
         &self,
         hash: Option<AppDataHash>,
         document: &[u8],
-    ) -> Result<(Registered, AppDataHash), RegisterError> {
+    ) -> Result<Register, RegisterError> {
         let validated = self
             .validator
             .validate(document)
@@ -60,8 +60,14 @@ impl Registry {
             .insert_full_app_data(&validated.hash, &validated.document)
             .await
         {
-            Ok(()) => Ok((Registered::New, validated.hash)),
-            Err(InsertError::Duplicate) => Ok((Registered::AlreadyExisted, validated.hash)),
+            Ok(()) => Ok(Register {
+                status: RegistrationStatus::New,
+                hash: validated.hash,
+            }),
+            Err(InsertError::Duplicate) => Ok(Register {
+                status: RegistrationStatus::AlreadyExisted,
+                hash: validated.hash,
+            }),
             Err(InsertError::Mismatch(existing)) => Err(RegisterError::DataMismatch { existing }),
             Err(InsertError::Other(err)) => Err(RegisterError::Other(err)),
         }
@@ -95,11 +101,16 @@ impl Registry {
 }
 
 #[derive(Debug)]
-pub enum Registered {
+pub enum RegistrationStatus {
     /// The app data was newly added to the registry.
     New,
     /// An identical app data was already registered.
     AlreadyExisted,
+}
+
+pub struct Register {
+    pub status: RegistrationStatus,
+    pub hash: AppDataHash,
 }
 
 #[derive(Debug, thiserror::Error)]
