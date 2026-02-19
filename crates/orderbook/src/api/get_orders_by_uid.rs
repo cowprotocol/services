@@ -13,6 +13,7 @@ use {
     std::sync::Arc,
 };
 
+#[expect(clippy::large_enum_variant)]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 enum OrderResultEntry {
