@@ -4,10 +4,9 @@ use {
     crate::liquidity::Settleable,
     alloy::primitives::{Address, U256},
     anyhow::Result,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::order::{Order, OrderKind},
+    number::u256_ext::U256Ext,
     shared::{
-        conversions::U256Ext as _,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         http_solver::model::InternalizationStrategy,
     },
@@ -91,10 +90,10 @@ impl Trade {
         encode_trade(
             &self.order.data,
             &self.order.signature,
-            self.order.metadata.owner.into_legacy(),
+            self.order.metadata.owner,
             sell_token_index,
             buy_token_index,
-            self.executed_amount.into_legacy(),
+            self.executed_amount,
         )
     }
 }

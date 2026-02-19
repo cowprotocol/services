@@ -8,7 +8,6 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered},
     indexmap::IndexSet,
     itertools::Itertools,
@@ -17,7 +16,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::alloy::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
@@ -343,7 +342,7 @@ impl SolvableOrdersCache {
             .into_iter()
             .zip(fetched_balances)
             .filter_map(|(query, balance)| match balance {
-                Ok(balance) => Some((query, balance.into_alloy())),
+                Ok(balance) => Some((query, balance)),
                 Err(err) => {
                     tracing::warn!(
                         owner = ?query.owner,
@@ -514,7 +513,7 @@ async fn find_invalid_signature_orders(
                 let (hash, signer, _) = order.metadata.uid.parts();
                 match signature_validator
                     .validate_signature(SignatureCheck {
-                        signer: signer.into_legacy(),
+                        signer,
                         hash: hash.0,
                         signature: signature.clone(),
                         interactions: order.interactions.pre.clone(),
@@ -901,7 +900,6 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{Address, B256},
-        ethrpc::alloy::conversions::IntoLegacy,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
@@ -1288,7 +1286,7 @@ mod tests {
         signature_validator
             .expect_validate_signature()
             .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(22).into_legacy(),
+                signer: Address::repeat_byte(22),
                 hash: [2; 32],
                 signature: vec![2, 2],
                 interactions: vec![InteractionData {
@@ -1302,7 +1300,7 @@ mod tests {
         signature_validator
             .expect_validate_signature()
             .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(44).into_legacy(),
+                signer: Address::repeat_byte(44),
                 hash: [4; 32],
                 signature: vec![4, 4, 4, 4],
                 interactions: vec![],
@@ -1312,7 +1310,7 @@ mod tests {
         signature_validator
             .expect_validate_signature()
             .with(eq(SignatureCheck {
-                signer: Address::repeat_byte(55).into_legacy(),
+                signer: Address::repeat_byte(55),
                 hash: [5; 32],
                 signature: vec![5, 5, 5, 5, 5],
                 interactions: vec![],

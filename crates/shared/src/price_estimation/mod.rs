@@ -5,9 +5,8 @@ use {
         trade_finding::{Interaction, QuoteExecution},
     },
     alloy::primitives::{Address, U256},
-    anyhow::{Result, ensure},
+    anyhow::{Context, Result, ensure},
     bigdecimal::BigDecimal,
-    ethcontract::H160,
     futures::future::BoxFuture,
     itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -76,6 +75,7 @@ impl FromStr for ExternalSolver {
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
+    Forwarder(Url),
     OneInchSpotPriceApi,
     CoinGecko,
 }
@@ -83,7 +83,8 @@ pub enum NativePriceEstimator {
 impl Display for NativePriceEstimator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let formatter = match self {
-            NativePriceEstimator::Driver(s) => format!("{}|{}", &s.name, s.url),
+            NativePriceEstimator::Driver(s) => format!("Driver|{}|{}", &s.name, s.url),
+            NativePriceEstimator::Forwarder(url) => format!("Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
             NativePriceEstimator::CoinGecko => "CoinGecko".into(),
         };
@@ -133,12 +134,18 @@ impl FromStr for NativePriceEstimator {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        let (variant, args) = s.split_once('|').unwrap_or((s, ""));
+        match variant {
             "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
             "CoinGecko" => Ok(NativePriceEstimator::CoinGecko),
-            estimator => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
-                estimator,
+            "Driver" => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
+                args,
             )?)),
+            "Forwarder" => Ok(NativePriceEstimator::Forwarder(
+                args.parse()
+                    .context("Forwarder price estimator invalid URL")?,
+            )),
+            _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
         }
     }
 }
@@ -285,7 +292,10 @@ where
             "invalid pair values delimiter character, expected: 'value1|value2', got: '{input}'"
         )
     })?;
-    Ok((input[..pos].parse()?, input[pos + 1..].parse()?))
+    Ok((
+        input[..pos].trim().parse()?,
+        input[pos + 1..].trim().parse()?,
+    ))
 }
 
 #[derive(clap::Parser)]
@@ -531,7 +541,7 @@ pub struct Estimate {
     /// full gas cost when settling this order alone on gp
     pub gas: u64,
     /// Address of the solver that provided the quote.
-    pub solver: H160,
+    pub solver: Address,
     /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
     /// Data associated with this estimation.
@@ -615,7 +625,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, clap::Parser};
+    use {super::*, alloy::primitives::address, clap::Parser};
 
     #[test]
     fn string_repr_round_trip_native_price_estimators() {
@@ -637,9 +647,10 @@ mod tests {
             )
             .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
-            "one|http://localhost:1111/,two|http://localhost:2222/;three|http://localhost:3333/,four|http://localhost:4444/",
+            &NativePriceEstimator::Forwarder("http://localhost:9588".parse().unwrap()).to_string(),
+            "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;Driver|three|http://localhost:3333/,Driver|four|http://localhost:4444/",
             &format!(
-                "one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/",
+                "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;{},Driver|four|http://localhost:4444/",
                 NativePriceEstimator::OneInchSpotPriceApi
             ),
         ] {
@@ -707,20 +718,20 @@ mod tests {
 
     #[test]
     fn test_parse_tuple() {
-        let result = parse_tuple::<H160, H160>(
+        let result = parse_tuple::<Address, Address>(
             "0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
         )
         .unwrap();
         assert_eq!(
             result.0,
-            H160::from_str("0102030405060708091011121314151617181920").unwrap()
+            address!("0102030405060708091011121314151617181920")
         );
         assert_eq!(
             result.1,
-            H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+            address!("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
         );
 
-        let result = parse_tuple::<H160, H160>(
+        let result = parse_tuple::<Address, Address>(
             "0102030405060708091011121314151617181920 a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
         );
         assert!(result.is_err());
@@ -728,8 +739,8 @@ mod tests {
         // test parsing with delimiter
         #[derive(Parser)]
         struct Cli {
-            #[arg(value_delimiter = ',', value_parser = parse_tuple::<H160, H160>)]
-            param: Vec<(H160, H160)>,
+            #[arg(value_delimiter = ',', value_parser = parse_tuple::<Address, Address>)]
+            param: Vec<(Address, Address)>,
         }
         let cli = Cli::parse_from(vec![
             "",
@@ -740,15 +751,15 @@ mod tests {
         assert_eq!(
             cli.param[0],
             (
-                H160::from_str("0102030405060708091011121314151617181920").unwrap(),
-                H160::from_str("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+                address!("0102030405060708091011121314151617181920"),
+                address!("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
             )
         );
         assert_eq!(
             cli.param[1],
             (
-                H160::from_str("f102030405060708091011121314151617181920").unwrap(),
-                H160::from_str("f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0").unwrap()
+                address!("f102030405060708091011121314151617181920"),
+                address!("f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
             )
         );
     }

@@ -21,7 +21,6 @@ sqlx = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 const-hex = { workspace = true }
-hex-literal = { workspace = true }
 
 [lints]
 workspace = true

@@ -5,6 +5,7 @@ use {
     alloy::primitives::U256,
     anyhow::{Context as _, Result},
     num::{BigInt, BigRational, CheckedDiv, Integer as _, ToPrimitive as _},
+    number::conversions::{big_int_to_u256, u256_to_big_int},
     shared::{external_prices::ExternalPrices, http_solver::model::TokenAmount},
     std::{borrow::Cow, cmp, sync::LazyLock},
 };
@@ -30,7 +31,7 @@ impl SlippageContext<'_> {
         let relative_ratio = |token_amount: &TokenAmount| -> Result<Cow<BigRational>> {
             let (relative, _) = self.calculator.compute(
                 self.prices.price(&token_amount.token),
-                number::conversions::alloy::u256_to_big_int(&token_amount.amount),
+                u256_to_big_int(&token_amount.amount),
             )?;
             Ok(relative)
         };
@@ -68,10 +69,8 @@ impl SlippageContext<'_> {
             },
         };
 
-        let absolute = absolute_slippage_amount(
-            &relative,
-            &number::conversions::alloy::u256_to_big_int(&execution.input_max.amount),
-        );
+        let absolute =
+            absolute_slippage_amount(&relative, &u256_to_big_int(&execution.input_max.amount));
         let slippage = SlippageAmount::from_num(&relative, &absolute)?;
 
         if *relative < self.calculator.relative {
@@ -113,7 +112,7 @@ impl SlippageCalculator {
     pub fn from_bps(relative_bps: u32, absolute: Option<U256>) -> Self {
         Self {
             relative: BigRational::new(relative_bps.into(), BPS_BASE.into()),
-            absolute: absolute.map(|value| number::conversions::alloy::u256_to_big_int(&value)),
+            absolute: absolute.map(|value| u256_to_big_int(&value)),
         }
     }
 
@@ -178,7 +177,7 @@ impl SlippageAmount {
         let relative = relative
             .to_f64()
             .context("relative slippage ratio is not a number")?;
-        let absolute = number::conversions::alloy::big_int_to_u256(absolute)?;
+        let absolute = big_int_to_u256(absolute)?;
 
         Ok(Self { relative, absolute })
     }

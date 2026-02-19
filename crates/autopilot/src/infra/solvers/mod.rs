@@ -1,9 +1,9 @@
 use {
     self::dto::{reveal, settle, solve},
     crate::{arguments::Account, domain::eth, infra::solvers::dto::notify, util},
+    alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
     chrono::{DateTime, Utc},
-    ethrpc::alloy::conversions::IntoAlloy,
     observe::tracing::tracing_headers,
     reqwest::{Client, StatusCode},
     std::{sync::Arc, time::Duration},
@@ -48,15 +48,15 @@ impl Driver {
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
-                let config = ethcontract::aws_config::load_from_env().await;
-                let account =
-                    ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
-                        .await
-                        .map_err(|_| {
-                            tracing::error!(?name, ?key_id, "Unable to load KMS account");
-                            Error::UnableToLoadKmsAccount
-                        })?;
-                account.public_address().into_alloy()
+                let config = alloy::signers::aws::aws_config::load_from_env().await;
+                let client = alloy::signers::aws::aws_sdk_kms::Client::new(&config);
+                let account = AwsSigner::new(client, key_id.0.clone(), None)
+                    .await
+                    .map_err(|_| {
+                        tracing::error!(?name, ?key_id, "Unable to load KMS account");
+                        Error::UnableToLoadKmsAccount
+                    })?;
+                account.address()
             }
             Account::Address(address) => address,
         };
@@ -74,6 +74,7 @@ impl Driver {
             fairness_threshold,
             client: Client::builder()
                 .timeout(RESPONSE_TIME_LIMIT)
+                .tcp_keepalive(Duration::from_secs(60))
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,

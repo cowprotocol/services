@@ -1,14 +1,16 @@
 use {
     self::contracts::Contracts,
     crate::{boundary, domain::eth},
-    alloy::{primitives::U256, providers::Provider},
-    chain::Chain,
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-        extensions::DebugNamespace,
+    alloy::{
+        providers::{Provider, ext::DebugApi},
+        rpc::types::{
+            TransactionReceipt,
+            trace::geth::{GethDebugBuiltInTracerType, GethDebugTracingOptions, GethTrace},
+        },
     },
+    anyhow::bail,
+    chain::Chain,
+    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     thiserror::Error,
     url::Url,
 };
@@ -110,16 +112,16 @@ impl Ethereum {
     }
 
     pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
-        let (transaction, receipt, traces) = tokio::try_join!(
-            self.web3.eth().transaction(hash.0.into_legacy().into()),
-            self.web3.eth().transaction_receipt(hash.0.into_legacy()),
+        let (receipt, traces): (Option<TransactionReceipt>, GethTrace) = tokio::try_join!(
+            self.web3.alloy.get_transaction_receipt(hash.0),
             // Use unbuffered transport for the Debug API since not all providers support
             // batched debug calls.
-            self.unbuffered_web3
-                .debug()
-                .transaction(hash.0.into_legacy()),
+            self.unbuffered_web3.alloy.debug_trace_transaction(
+                hash.0,
+                GethDebugTracingOptions::new_tracer(GethDebugBuiltInTracerType::CallTracer),
+            )
         )?;
-        let transaction = transaction.ok_or(Error::TransactionNotFound)?;
+
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
         let block_hash =
             receipt
@@ -129,54 +131,47 @@ impl Ethereum {
                 )))?;
         let block = self
             .web3
-            .eth()
-            .block(block_hash.into())
+            .alloy
+            .get_block_by_hash(block_hash)
             .await?
             .ok_or(Error::TransactionNotFound)?;
-        into_domain(transaction, receipt, traces, block.timestamp.into_alloy())
+
+        into_domain(receipt, traces, block.header.timestamp)
             .map_err(Error::IncompleteTransactionData)
     }
 }
 
 fn into_domain(
-    transaction: web3::types::Transaction,
-    receipt: web3::types::TransactionReceipt,
-    trace_calls: ethrpc::extensions::CallFrame,
-    timestamp: U256,
+    receipt: TransactionReceipt,
+    trace: GethTrace,
+    timestamp: u64,
 ) -> anyhow::Result<eth::Transaction> {
+    let trace_calls = match trace {
+        GethTrace::CallTracer(call_frame) => call_frame.into(),
+        trace => bail!("unsupported trace call {trace:?}"),
+    };
+
     Ok(eth::Transaction {
-        hash: transaction.hash.into_alloy().into(),
-        from: transaction
-            .from
-            .map(IntoAlloy::into_alloy)
-            .ok_or(anyhow::anyhow!("missing from"))?,
+        hash: receipt.transaction_hash.into(),
+        from: receipt.from,
         block: receipt
             .block_number
             .ok_or(anyhow::anyhow!("missing block_number"))?
-            .0[0]
             .into(),
-        gas: receipt
-            .gas_used
-            .ok_or(anyhow::anyhow!("missing gas_used"))?
-            .into_alloy()
-            .into(),
-        gas_price: receipt
-            .effective_gas_price
-            .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
-            .into_alloy()
-            .into(),
+        gas: receipt.gas_used.into(),
+        gas_price: receipt.effective_gas_price.into(),
         timestamp: u32::try_from(timestamp)?,
-        trace_calls: trace_calls.into(),
+        trace_calls,
     })
 }
 
-impl From<ethrpc::extensions::CallFrame> for eth::CallFrame {
-    fn from(frame: ethrpc::extensions::CallFrame) -> Self {
-        eth::CallFrame {
-            from: frame.from.into_alloy(),
-            to: frame.to.map(IntoAlloy::into_alloy),
-            input: frame.input.0.into(),
-            calls: frame.calls.into_iter().map(Into::into).collect(),
+impl From<alloy::rpc::types::trace::geth::CallFrame> for eth::CallFrame {
+    fn from(value: alloy::rpc::types::trace::geth::CallFrame) -> Self {
+        Self {
+            from: value.from,
+            to: value.to,
+            input: value.input,
+            calls: value.calls.into_iter().map(Into::into).collect(),
         }
     }
 }

@@ -1,5 +1,4 @@
 mod bytes;
-pub mod conv;
 pub mod http;
 pub mod math;
 mod percent;

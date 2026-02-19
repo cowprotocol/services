@@ -11,7 +11,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    ethrpc::{alloy::conversions::IntoAlloy, block_stream::BlockRetrieving},
+    ethrpc::block_stream::BlockRetrieving,
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
@@ -46,16 +46,16 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
 
     Ok(liquidity::Liquidity {
         id,
-        gas: eth::Gas(pool.pool.gas_stats.mean_gas.into_alloy()),
+        gas: eth::Gas(pool.pool.gas_stats.mean_gas),
         kind: liquidity::Kind::UniswapV3(Pool {
             router: handler.inner.router.into(),
-            address: pool.pool.address.into_alloy().into(),
+            address: pool.pool.address.into(),
             tokens: liquidity::TokenPair::try_new(
-                pool.pool.tokens[0].id.into_alloy().into(),
-                pool.pool.tokens[1].id.into_alloy().into(),
+                pool.pool.tokens[0].id.into(),
+                pool.pool.tokens[1].id.into(),
             )?,
-            sqrt_price: SqrtPrice(pool.pool.state.sqrt_price.into_alloy()),
-            liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
+            sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
+            liquidity: Liquidity(u128::try_from(pool.pool.state.liquidity)?),
             tick: Tick(pool.pool.state.tick.try_into()?),
             liquidity_net: pool
                 .pool

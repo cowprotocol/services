@@ -13,7 +13,6 @@ use {
     },
     crate::trade_finding::{TradeError, TradeFinding},
     anyhow::{Result, anyhow},
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::future::FutureExt,
     rate_limit::RateLimiter,
     std::sync::Arc,
@@ -88,7 +87,7 @@ impl Inner {
         Ok(Estimate {
             out_amount: quote.out_amount,
             gas: quote.gas_estimate,
-            solver: quote.solver.into_legacy(),
+            solver: quote.solver,
             verified: false,
             execution: quote.execution,
         })

@@ -17,6 +17,7 @@ use {
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         ethrpc::Web3,
+        gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
         price_estimation::{
             ExternalSolver,
@@ -31,7 +32,6 @@ use {
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
     ethrpc::block_stream::CurrentBlockWatcher,
-    gas_estimation::GasPriceEstimating,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
@@ -181,6 +181,16 @@ impl<'a> PriceEstimatorFactory<'a> {
         weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
+            NativePriceEstimatorSource::Forwarder(url) => {
+                let name = format!("Forwarder|{}", url);
+                Ok((
+                    name.clone(),
+                    Arc::new(InstrumentedPriceEstimator::new(
+                        native::Forwarder::new(self.components.http_factory.create(), url.clone()),
+                        name,
+                    )),
+                ))
+            }
             NativePriceEstimatorSource::Driver(driver) => {
                 let native_token_price_estimation_amount =
                     self.native_token_price_estimation_amount()?;
@@ -189,7 +199,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     driver.name.clone(),
                     Arc::new(InstrumentedPriceEstimator::new(
                         NativePriceEstimator::new(
-                            Arc::new(self.sanitized(estimator)),
+                            Arc::new(self.sanitized_native_price(estimator)),
                             self.network.native_token,
                             native_token_price_estimation_amount,
                         ),
@@ -298,6 +308,21 @@ impl<'a> PriceEstimatorFactory<'a> {
             estimator,
             self.network.native_token,
             self.components.bad_token_detector.clone(),
+            false, // not estimating native price
+        )
+    }
+
+    /// Creates a SanitizedPriceEstimator that is used for native price
+    /// estimations
+    fn sanitized_native_price(
+        &self,
+        estimator: Arc<dyn PriceEstimating>,
+    ) -> SanitizedPriceEstimator {
+        SanitizedPriceEstimator::new(
+            estimator,
+            self.network.native_token,
+            self.components.bad_token_detector.clone(),
+            true, // estimating native price
         )
     }
 

@@ -4,7 +4,7 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{AlloyEventRetriever, AlloyEventRetrieving, EventHandler},
+        event_handling::{AlloyEventRetrieving, EventHandler},
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::{
@@ -14,17 +14,17 @@ use {
     },
     BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::BalancerV2BasePoolFactoryEvents,
     alloy::{
+        primitives::B256,
         providers::DynProvider,
         rpc::types::{Filter, FilterSet, Log},
         sol_types::SolEvent,
     },
     anyhow::Result,
-    contracts::{
-        alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
-        errors::EthcontractErrorType,
+    contracts::alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
+    ethrpc::{
+        alloy::errors::ContractErrorExt,
+        block_stream::{BlockNumberHash, BlockRetrieving},
     },
-    ethcontract::{BlockId, H256, errors::MethodError},
-    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
     futures::future,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
@@ -51,7 +51,7 @@ impl AlloyEventRetrieving for BasePoolFactoryContract {
 /// Type alias for the internal event updater type.
 type PoolUpdater<Factory> = Mutex<
     EventHandler<
-        AlloyEventRetriever<BasePoolFactoryContract>,
+        BasePoolFactoryContract,
         PoolStorage<Factory>,
         (BalancerV2BasePoolFactoryEvents, Log),
     >,
@@ -85,7 +85,7 @@ where
     ) -> Self {
         let updater = Mutex::new(EventHandler::new(
             block_retreiver,
-            AlloyEventRetriever(BasePoolFactoryContract(base_pool_factory(factory_instance))),
+            BasePoolFactoryContract(base_pool_factory(factory_instance)),
             PoolStorage::new(initial_pools, fetcher.clone()),
             start_sync_at_block,
         ));
@@ -98,7 +98,7 @@ impl<Factory> InternalPoolFetching for Registry<Factory>
 where
     Factory: FactoryIndexing,
 {
-    async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<H256> {
+    async fn pool_ids_for_token_pairs(&self, token_pairs: HashSet<TokenPair>) -> HashSet<B256> {
         self.updater
             .lock()
             .await
@@ -106,13 +106,11 @@ where
             .pool_ids_for_token_pairs(&token_pairs)
     }
 
-    async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
-        let block = BlockId::Number(block.into());
-
+    async fn pools_by_id(&self, pool_ids: HashSet<B256>, block: Block) -> Result<Vec<Pool>> {
         let pool_infos = self.updater.lock().await.store().pools_by_id(&pool_ids);
         let pool_futures = pool_infos
             .into_iter()
-            .map(|pool_info| self.fetcher.fetch_pool(&pool_info, block))
+            .map(|pool_info| self.fetcher.fetch_pool(&pool_info, block.into()))
             .collect::<Vec<_>>();
 
         let pools = future::join_all(pool_futures).await;
@@ -148,18 +146,13 @@ fn collect_pool_results(pools: Vec<Result<PoolStatus>>) -> Result<Vec<Pool>> {
         .into_iter()
         .filter_map(|pool| match pool {
             Ok(pool) => Some(Ok(pool.active()?)),
-            Err(err) if is_contract_error(&err) => None,
-            Err(err) => Some(Err(err)),
+            // Error issued by the contract alloy contract calls
+            Err(err) => match err.downcast_ref::<alloy::contract::Error>() {
+                Some(err) if err.is_contract_error() => None,
+                _ => Some(Err(err)),
+            },
         })
         .collect()
-}
-
-fn is_contract_error(err: &anyhow::Error) -> bool {
-    matches!(
-        err.downcast_ref::<MethodError>()
-            .map(EthcontractErrorType::classify),
-        Some(EthcontractErrorType::Contract),
-    )
 }
 
 #[cfg(test)]
@@ -170,7 +163,7 @@ mod tests {
             pools::{PoolKind, weighted},
             swap::fixed_point::Bfp,
         },
-        contracts::errors::{testing_contract_error, testing_node_error},
+        ethrpc::alloy::errors::{testing_alloy_contract_error, testing_alloy_node_error},
     };
 
     #[tokio::test]
@@ -185,14 +178,14 @@ mod tests {
                 }),
             })),
             Ok(PoolStatus::Paused),
-            Err(testing_contract_error().into()),
+            Err(testing_alloy_contract_error().into()),
         ];
         assert_eq!(collect_pool_results(results).unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn collecting_results_forwards_node_error() {
-        let node_err = Err(testing_node_error().into());
+        let node_err = Err(testing_alloy_node_error().into());
         assert!(collect_pool_results(vec![node_err]).is_err());
     }
 }

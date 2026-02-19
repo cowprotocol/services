@@ -8,8 +8,8 @@ use {
         interaction::InteractionData,
         order::{Order, OrderClass, OrderKind},
     },
+    number::u256_ext::U256Ext,
     shared::{
-        conversions::U256Ext,
         encoded_settlement::EncodedSettlement,
         http_solver::model::InternalizationStrategy,
         interaction::Interaction,
@@ -701,11 +701,11 @@ pub mod tests {
         );
         assert_eq!(
             finished_settlement.trades[1].1, // <-- is the buy token index of liquidity order
-            3.into()
+            U256::from(3)
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of normal order
-            1.into()
+            U256::ONE
         );
     }
 
@@ -745,11 +745,11 @@ pub mod tests {
         );
         assert_eq!(
             finished_settlement.trades[0].0, // <-- is the sell token index of liquidity order
-            0.into()
+            U256::ZERO
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of liquidity order
-            1.into()
+            U256::ONE
         );
     }
 
@@ -986,11 +986,11 @@ pub mod tests {
 
         // dropping unnecessary tokens did not change the sell_token_index
         let updated_sell_token_index = encoded_trade.0;
-        assert_eq!(updated_sell_token_index, 0.into());
+        assert_eq!(updated_sell_token_index, U256::ZERO);
 
         // dropping unnecessary tokens decreased the buy_token_index by one
         let updated_buy_token_index = encoded_trade.1;
-        assert_eq!(updated_buy_token_index, 1.into());
+        assert_eq!(updated_buy_token_index, U256::ONE);
     }
 
     #[derive(Debug)]

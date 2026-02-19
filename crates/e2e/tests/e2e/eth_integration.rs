@@ -1,19 +1,14 @@
 use {
+    ::alloy::{primitives::Address, providers::Provider},
     e2e::setup::*,
-    ethcontract::prelude::Address,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -30,10 +25,7 @@ async fn eth_integration(web3: Web3) {
 
     // Create & mint tokens to trade, pools for fee connections
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            100_000u64.eth().into_legacy(),
-            100_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     token.mint(trader_a.address(), 51u64.eth()).await;
     token.mint(trader_b.address(), 51u64.eth()).await;
@@ -41,24 +33,20 @@ async fn eth_integration(web3: Web3) {
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 51u64.eth())
+        .approve(onchain.contracts().allowance, 51u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 51u64.eth())
+        .approve(onchain.contracts().allowance, 51u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
         .unwrap();
 
-    let trader_a_eth_balance_before = web3
-        .eth()
-        .balance(trader_a.address().into_legacy(), None)
-        .await
-        .unwrap();
+    let trader_a_eth_balance_before = web3.alloy.get_balance(trader_a.address()).await.unwrap();
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
@@ -69,7 +57,7 @@ async fn eth_integration(web3: Web3) {
             let request = OrderQuoteRequest {
                 sell_token,
                 buy_token,
-                from: Address::default().into_alloy(),
+                from: Address::default(),
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(43u64.eth()).unwrap(),
@@ -99,7 +87,7 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     services.create_order(&order_buy_eth_a).await.unwrap();
     let order_buy_eth_b = OrderCreation {
@@ -114,27 +102,18 @@ async fn eth_integration(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     services.create_order(&order_buy_eth_b).await.unwrap();
 
     tracing::info!("Waiting for trade.");
     onchain.mint_block().await;
     let trade_happened = || async {
-        let balance_a = web3
-            .eth()
-            .balance(trader_a.address().into_legacy(), None)
-            .await
-            .unwrap();
-        let balance_b = web3
-            .eth()
-            .balance(trader_b.address().into_legacy(), None)
-            .await
-            .unwrap();
+        let balance_a = web3.alloy.get_balance(trader_a.address()).await.unwrap();
+        let balance_b = web3.alloy.get_balance(trader_b.address()).await.unwrap();
 
-        let trader_a_eth_decreased =
-            (balance_a - trader_a_eth_balance_before) == 49u64.eth().into_legacy();
-        let trader_b_eth_increased = balance_b >= 49u64.eth().into_legacy();
+        let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == 49u64.eth();
+        let trader_b_eth_increased = balance_b >= 49u64.eth();
         trader_a_eth_decreased && trader_b_eth_increased
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

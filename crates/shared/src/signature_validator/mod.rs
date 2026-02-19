@@ -3,12 +3,11 @@ use {
         BalanceOverrideRequest,
         BalanceOverriding,
     },
-    alloy::primitives::FixedBytes,
+    alloy::primitives::{Address, FixedBytes},
     contracts::alloy::GPv2Settlement,
-    ethrpc::{Web3, alloy::conversions::IntoAlloy},
+    ethrpc::Web3,
     hex_literal::hex,
     model::interaction::InteractionData,
-    primitive_types::H160,
     std::sync::Arc,
     thiserror::Error,
 };
@@ -18,7 +17,7 @@ mod simulation;
 /// Structure used to represent a signature.
 #[derive(Clone, Eq, PartialEq)]
 pub struct SignatureCheck {
-    pub signer: H160,
+    pub signer: Address,
     pub hash: [u8; 32],
     pub signature: Vec<u8>,
     pub interactions: Vec<InteractionData>,
@@ -97,7 +96,7 @@ pub fn check_erc1271_result(result: FixedBytes<4>) -> Result<(), SignatureValida
 pub struct Contracts {
     pub settlement: GPv2Settlement::Instance,
     pub signatures: contracts::alloy::support::Signatures::Instance,
-    pub vault_relayer: H160,
+    pub vault_relayer: Address,
 }
 
 /// Creates the default [`SignatureValidating`] instance.
@@ -110,7 +109,7 @@ pub fn validator(
         web3,
         contracts.settlement,
         *contracts.signatures.address(),
-        contracts.vault_relayer.into_alloy(),
+        contracts.vault_relayer,
         balance_overrider,
     ))
 }

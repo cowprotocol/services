@@ -1,17 +1,12 @@
 use {
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -26,10 +21,7 @@ async fn vault_balances(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     token.mint(trader.address(), 10u64.eth()).await;
@@ -45,11 +37,7 @@ async fn vault_balances(web3: Web3) {
     onchain
         .contracts()
         .balancer_vault
-        .setRelayerApproval(
-            trader.address(),
-            onchain.contracts().allowance.into_alloy(),
-            true,
-        )
+        .setRelayerApproval(trader.address(), onchain.contracts().allowance, true)
         .from(trader.address())
         .send_and_watch()
         .await
@@ -72,7 +60,7 @@ async fn vault_balances(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
     onchain.mint_block().await;

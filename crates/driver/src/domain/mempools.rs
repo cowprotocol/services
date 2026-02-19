@@ -67,18 +67,13 @@ impl Mempools {
     /// Defines if the mempools are configured in a way that guarantees that
     /// settled solution will not revert.
     pub fn revert_protection(&self) -> RevertProtection {
-        if self.mempools.iter().any(|mempool| {
-            matches!(
-                mempool.config().kind,
-                infra::mempool::Kind::Public {
-                    revert_protection: infra::mempool::RevertProtection::Disabled,
-                    ..
-                }
-            )
-        }) {
-            RevertProtection::Disabled
-        } else {
-            RevertProtection::Enabled
+        match self
+            .mempools
+            .iter()
+            .all(|mempool| mempool.reverts_can_get_mined())
+        {
+            true => RevertProtection::Disabled,
+            false => RevertProtection::Enabled,
         }
     }
 
@@ -93,7 +88,7 @@ impl Mempools {
         // enabled and the settlement may revert in this mempool.
         if settlement.may_revert()
             && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.may_revert()
+            && mempool.reverts_can_get_mined()
         {
             return Err(Error::Disabled);
         }
@@ -110,7 +105,7 @@ impl Mempools {
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
         // invalid which doesn't make sense to submit to the mempool anymore.
-        if let Err(err) = self.ethereum.estimate_gas(tx).await {
+        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
             if err.is_revert() {
                 tracing::info!(
                     ?err,
@@ -138,13 +133,11 @@ impl Mempools {
         // deadline
         let current_gas_price = self
             .ethereum
-            .gas_price(None)
+            .gas_price()
             .await
             .context("failed to compute current gas price")?;
         let submission_block = self.ethereum.current_block().borrow().number;
         let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
-        let estimated_gas_price =
-            current_gas_price * GAS_PRICE_BUMP.powi(blocks_until_deadline as i32);
 
         // if there is still a tx pending we also have to make sure we outbid that one
         // enough to make the node replace it in the mempool
@@ -153,11 +146,11 @@ impl Mempools {
             .await;
         let final_gas_price = match &replacement_gas_price {
             Ok(Some(replacement_gas_price))
-                if replacement_gas_price.max() > estimated_gas_price.max() =>
+                if replacement_gas_price.max() > current_gas_price.max() =>
             {
                 *replacement_gas_price
             }
-            _ => estimated_gas_price,
+            _ => current_gas_price,
         };
 
         tracing::debug!(
@@ -222,7 +215,7 @@ impl Mempools {
                             });
                         }
                         // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(tx).await {
+                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
                             if err.is_revert() {
                                 tracing::info!(
                                     settle_tx_hash = ?hash,
@@ -277,7 +270,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         original_tx_gas_price: eth::GasPrice,
         solver: &Solver,
-        nonce: eth::U256,
+        nonce: u64,
     ) -> Result<TxId, Error> {
         let fallback_gas_price = original_tx_gas_price * GAS_PRICE_BUMP;
         let replacement_gas_price = self
@@ -324,7 +317,7 @@ impl Mempools {
         &self,
         mempool: &infra::Mempool,
         solver: &Solver,
-        nonce: eth::U256,
+        nonce: u64,
     ) -> anyhow::Result<Option<eth::GasPrice>> {
         let pending_tx = match mempool
             .find_pending_tx_in_mempool(solver.address(), nonce)

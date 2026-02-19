@@ -1,19 +1,14 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::{EcdsaSigningScheme, Signature, SigningScheme},
     },
     number::units::EthUnit,
     orderbook::dto::order::Status,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -30,13 +25,13 @@ async fn test(web3: Web3) {
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     // Use a shallow pool to make partial fills easier to setup.
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth().into_legacy(), 10u64.eth().into_legacy())
+        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth(), 10u64.eth())
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 4u64.eth())
+        .approve(onchain.contracts().allowance, 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -72,7 +67,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let uid = services.create_order(&order).await.unwrap();
 
@@ -118,10 +113,7 @@ async fn test(web3: Web3) {
         .unwrap();
 
     let tx_hash = services.get_trades(&uid).await.unwrap()[0].tx_hash.unwrap();
-    let competition = services
-        .get_solver_competition(tx_hash.into_legacy())
-        .await
-        .unwrap();
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
     assert!(!competition.solutions.is_empty());
     assert!(competition.auction.orders.contains(&uid));
     let latest_competition = services.get_latest_solver_competition().await.unwrap();

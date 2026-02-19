@@ -1,6 +1,6 @@
 use {
+    crate::gas_price_estimation::{GasPriceEstimating, price::GasPrice1559},
     anyhow::Result,
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
 };
 
 #[derive(Default)]
@@ -14,7 +14,7 @@ impl FakeGasPriceEstimator {
 
 #[async_trait::async_trait]
 impl GasPriceEstimating for FakeGasPriceEstimator {
-    async fn estimate_with_limits(&self, _: f64, _: std::time::Duration) -> Result<GasPrice1559> {
+    async fn estimate(&self) -> Result<GasPrice1559> {
         Ok(self.0)
     }
 }

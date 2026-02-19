@@ -13,7 +13,6 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         order::{
@@ -286,7 +285,7 @@ impl Orderbook {
             .validate_and_construct_order(
                 payload,
                 &self.domain_separator,
-                self.settlement_contract.into_legacy(),
+                self.settlement_contract,
                 full_app_data_override,
             )
             .await?;

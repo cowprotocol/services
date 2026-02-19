@@ -4,8 +4,8 @@ use {
         domain::{
             competition::{
                 auction::{self, Auction},
-                bad_tokens,
                 order,
+                risk_detector,
                 solution::{self, Solution},
             },
             eth,
@@ -20,9 +20,14 @@ use {
         },
         util,
     },
+    alloy::{
+        consensus::SignableTransaction,
+        network::TxSigner,
+        primitives::Address,
+        signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
+    },
     anyhow::Result,
     derive_more::{From, Into},
-    ethrpc::alloy::conversions::IntoAlloy,
     num::BigRational,
     observe::tracing::tracing_headers,
     reqwest::header::HeaderName,
@@ -102,6 +107,50 @@ pub struct Solver {
 }
 
 #[derive(Debug, Clone)]
+pub enum Account {
+    PrivateKey(PrivateKeySigner),
+    Kms(AwsSigner),
+    Address(Address),
+}
+
+#[async_trait::async_trait]
+impl TxSigner<Signature> for Account {
+    fn address(&self) -> Address {
+        match self {
+            Account::PrivateKey(local_signer) => local_signer.address(),
+            Account::Kms(aws_signer) => aws_signer.address(),
+            Account::Address(address) => *address,
+        }
+    }
+
+    async fn sign_transaction(
+        &self,
+        tx: &mut dyn SignableTransaction<Signature>,
+    ) -> alloy::signers::Result<Signature> {
+        match self {
+            Account::PrivateKey(local_signer) => local_signer.sign_transaction(tx).await,
+            Account::Kms(aws_signer) => aws_signer.sign_transaction(tx).await,
+            // The address actually can't sign anything but for TxSigner only the Tx matters
+            Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
+                alloy::signers::UnsupportedSignerOperation::SignHash,
+            )),
+        }
+    }
+}
+
+impl From<PrivateKeySigner> for Account {
+    fn from(value: PrivateKeySigner) -> Self {
+        Self::PrivateKey(value)
+    }
+}
+
+impl From<AwsSigner> for Account {
+    fn from(value: AwsSigner) -> Self {
+        Self::Kms(value)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Config {
     /// The endpoint of the solver, including the path (commonly "/solve").
     pub endpoint: url::Url,
@@ -111,7 +160,7 @@ pub struct Config {
     /// Whether or not liquidity is used by this solver.
     pub liquidity: Liquidity,
     /// The private key of this solver, used for settlement submission.
-    pub account: ethcontract::Account,
+    pub account: Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
@@ -130,7 +179,7 @@ pub struct Config {
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
     pub response_size_limit_max_bytes: usize,
-    pub bad_token_detection: BadTokenDetection,
+    pub bad_order_detection: BadOrderDetection,
     /// Max size of the pending settlements queue.
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
@@ -138,6 +187,10 @@ pub struct Config {
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
+    /// Quote haircut in basis points (0-10000). Applied to solver-reported
+    /// economics to make competition bids more conservative. Does not modify
+    /// interaction calldata. Default: 0 (no haircut).
+    pub haircut_bps: u32,
 }
 
 impl Solver {
@@ -159,6 +212,7 @@ impl Solver {
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
+                .tcp_keepalive(Duration::from_secs(60))
                 .build()?,
             config,
             eth,
@@ -166,8 +220,8 @@ impl Solver {
         })
     }
 
-    pub fn bad_token_detection(&self) -> &BadTokenDetection {
-        &self.config.bad_token_detection
+    pub fn bad_order_detection(&self) -> &BadOrderDetection {
+        &self.config.bad_order_detection
     }
 
     pub fn persistence(&self) -> Persistence {
@@ -190,11 +244,11 @@ impl Solver {
 
     /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
-        self.config.account.address().into_alloy()
+        self.config.account.address()
     }
 
     /// The account which should be used to sign settlements for this solver.
-    pub fn account(&self) -> ethcontract::Account {
+    pub fn account(&self) -> Account {
         self.config.account.clone()
     }
 
@@ -226,6 +280,11 @@ impl Solver {
 
     pub fn fetch_liquidity_at_block(&self) -> infra::liquidity::AtBlock {
         self.config.fetch_liquidity_at_block.clone()
+    }
+
+    /// Quote haircut in basis points (0-10000) for conservative bidding.
+    pub fn haircut_bps(&self) -> u32 {
+        self.config.haircut_bps
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -292,7 +351,11 @@ impl Solver {
         if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
-        super::observe::sending_solve_request(self.config.name.as_str(), timeout);
+        super::observe::sending_solve_request(
+            self.config.name.as_str(),
+            timeout,
+            auction.id().is_none(),
+        );
         let started_at = std::time::Instant::now();
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
         super::observe::solver_response(
@@ -300,6 +363,7 @@ impl Solver {
             res.as_deref(),
             self.config.name.as_str(),
             started_at.elapsed(),
+            auction.id().is_none(),
         );
         let res = res?;
         let res: solvers_dto::solution::Solutions =
@@ -426,13 +490,15 @@ impl Error {
 }
 
 #[derive(Debug, Clone)]
-pub struct BadTokenDetection {
+pub struct BadOrderDetection {
     /// Tokens that are explicitly allow- or deny-listed.
-    pub tokens_supported: HashMap<eth::TokenAddress, bad_tokens::Quality>,
+    pub tokens_supported: HashMap<eth::TokenAddress, risk_detector::Quality>,
     pub enable_simulation_strategy: bool,
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
     pub metrics_strategy_required_measurements: u32,
     pub metrics_strategy_log_only: bool,
-    pub metrics_strategy_token_freeze_time: Duration,
+    pub metrics_strategy_order_freeze_time: Duration,
+    pub metrics_strategy_cache_gc_interval: Duration,
+    pub metrics_strategy_cache_max_age: Duration,
 }

@@ -30,9 +30,12 @@ use {
         recent_block_cache::{Block, CacheConfig},
         token_info::TokenInfoFetching,
     },
-    alloy::{primitives::Address, providers::DynProvider},
+    alloy::{
+        eips::BlockNumberOrTag,
+        primitives::{Address, B256},
+        providers::{DynProvider, Provider},
+    },
     anyhow::{Context, Result},
-    clap::ValueEnum,
     contracts::alloy::{
         BalancerV2ComposableStablePoolFactory,
         BalancerV2ComposableStablePoolFactoryV3,
@@ -48,7 +51,6 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
     },
-    ethcontract::{BlockId, H256},
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     model::TokenPair,
     reqwest::{Client, Url},
@@ -76,7 +78,7 @@ pub trait BalancerPoolEvaluating {
 
 #[derive(Clone, Debug)]
 pub struct CommonPoolState {
-    pub id: H256,
+    pub id: B256,
     pub address: Address,
     pub swap_fee: Bfp,
     pub paused: bool,
@@ -90,7 +92,7 @@ pub struct WeightedPool {
 }
 
 impl WeightedPool {
-    pub fn new_unpaused(pool_id: H256, weighted_state: weighted::PoolState) -> Self {
+    pub fn new_unpaused(pool_id: B256, weighted_state: weighted::PoolState) -> Self {
         WeightedPool {
             common: CommonPoolState {
                 id: pool_id,
@@ -112,7 +114,7 @@ pub struct StablePool {
 }
 
 impl StablePool {
-    pub fn new_unpaused(pool_id: H256, stable_state: stable::PoolState) -> Self {
+    pub fn new_unpaused(pool_id: B256, stable_state: stable::PoolState) -> Self {
         StablePool {
             common: CommonPoolState {
                 id: pool_id,
@@ -165,25 +167,7 @@ pub struct BalancerPoolFetcher {
     // being problematic because their token balance becomes out of sync leading to simulation
     // failures.
     // https://forum.balancer.fi/t/medium-severity-bug-found/3161
-    pool_id_deny_list: Vec<H256>,
-}
-
-/// An enum containing all supported Balancer factory types.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ValueEnum)]
-#[clap(rename_all = "verbatim")]
-pub enum BalancerFactoryKind {
-    Weighted,
-    WeightedV3,
-    WeightedV4,
-    Weighted2Token,
-    StableV2,
-    LiquidityBootstrapping,
-    NoProtocolFeeLiquidityBootstrapping,
-    ComposableStable,
-    ComposableStableV3,
-    ComposableStableV4,
-    ComposableStableV5,
-    ComposableStableV6,
+    pool_id_deny_list: Vec<B256>,
 }
 
 pub enum BalancerFactoryInstance {
@@ -243,126 +227,10 @@ impl BalancerFactoryInstance {
     }
 }
 
-impl BalancerFactoryKind {
-    /// Returns a vector with supported factories for the specified chain ID.
-    pub fn for_chain(chain_id: u64) -> Vec<Self> {
-        match chain_id {
-            1 | 123456789 => Self::value_variants().to_owned(), // Mainnet and MainnetFork use same factories
-            5 => vec![
-                Self::Weighted,
-                Self::WeightedV3,
-                Self::WeightedV4,
-                Self::Weighted2Token,
-                Self::StableV2,
-                Self::ComposableStable,
-                Self::ComposableStableV3,
-                Self::ComposableStableV4,
-                Self::ComposableStableV5,
-                Self::ComposableStableV6,
-            ],
-            100 => vec![
-                Self::WeightedV3,
-                Self::WeightedV4,
-                Self::StableV2,
-                Self::ComposableStableV3,
-                Self::ComposableStableV4,
-                Self::ComposableStableV5,
-                Self::ComposableStableV6,
-            ],
-            11155111 => vec![
-                Self::WeightedV4,
-                Self::ComposableStableV4,
-                Self::ComposableStableV5,
-                Self::ComposableStableV6,
-                Self::NoProtocolFeeLiquidityBootstrapping,
-            ],
-            _ => Default::default(),
-        }
-    }
-}
-
 /// All balancer related contracts that we expect to exist.
 pub struct BalancerContracts {
     pub vault: BalancerV2Vault::Instance,
     pub factories: Vec<BalancerFactoryInstance>,
-}
-
-impl BalancerContracts {
-    pub async fn try_new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "balancerV2".into());
-        let vault = BalancerV2Vault::Instance::deployed(&web3.alloy)
-            .await
-            .context("Cannot retrieve balancer vault")?;
-
-        macro_rules! instance {
-            ($factory:ident) => {{
-                $factory::Instance::deployed(&web3.alloy)
-                    .await
-                    .context(format!(
-                        "Cannot retrieve Balancer factory {}",
-                        stringify!($factory)
-                    ))?
-            }};
-        }
-
-        let mut factories = Vec::new();
-        for kind in factory_kinds {
-            let instance = match &kind {
-                BalancerFactoryKind::Weighted => {
-                    BalancerFactoryInstance::Weighted(instance!(BalancerV2WeightedPoolFactory))
-                }
-                BalancerFactoryKind::WeightedV3 => {
-                    BalancerFactoryInstance::WeightedV3(instance!(BalancerV2WeightedPoolFactoryV3))
-                }
-                BalancerFactoryKind::WeightedV4 => {
-                    BalancerFactoryInstance::WeightedV4(instance!(BalancerV2WeightedPoolFactoryV4))
-                }
-                BalancerFactoryKind::Weighted2Token => BalancerFactoryInstance::Weighted2Token(
-                    instance!(BalancerV2WeightedPool2TokensFactory),
-                ),
-                BalancerFactoryKind::StableV2 => {
-                    BalancerFactoryInstance::StableV2(instance!(BalancerV2StablePoolFactoryV2))
-                }
-                BalancerFactoryKind::LiquidityBootstrapping => {
-                    BalancerFactoryInstance::LiquidityBootstrapping(instance!(
-                        BalancerV2LiquidityBootstrappingPoolFactory
-                    ))
-                }
-                BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
-                    BalancerFactoryInstance::NoProtocolFeeLiquidityBootstrapping(instance!(
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory
-                    ))
-                }
-                BalancerFactoryKind::ComposableStable => BalancerFactoryInstance::ComposableStable(
-                    instance!(BalancerV2ComposableStablePoolFactory),
-                ),
-                BalancerFactoryKind::ComposableStableV3 => {
-                    BalancerFactoryInstance::ComposableStableV3(instance!(
-                        BalancerV2ComposableStablePoolFactoryV3
-                    ))
-                }
-                BalancerFactoryKind::ComposableStableV4 => {
-                    BalancerFactoryInstance::ComposableStableV4(instance!(
-                        BalancerV2ComposableStablePoolFactoryV4
-                    ))
-                }
-                BalancerFactoryKind::ComposableStableV5 => {
-                    BalancerFactoryInstance::ComposableStableV5(instance!(
-                        BalancerV2ComposableStablePoolFactoryV5
-                    ))
-                }
-                BalancerFactoryKind::ComposableStableV6 => {
-                    BalancerFactoryInstance::ComposableStableV6(instance!(
-                        BalancerV2ComposableStablePoolFactoryV6
-                    ))
-                }
-            };
-
-            factories.push(instance);
-        }
-
-        Ok(Self { vault, factories })
-    }
 }
 
 impl BalancerPoolFetcher {
@@ -376,7 +244,7 @@ impl BalancerPoolFetcher {
         client: Client,
         web3: Web3,
         contracts: &BalancerContracts,
-        deny_listed_pool_ids: Vec<H256>,
+        deny_listed_pool_ids: Vec<B256>,
     ) -> Result<Self> {
         let pool_initializer = BalancerSubgraphClient::from_subgraph_url(subgraph_url, client)?;
         let web3 = ethrpc::instrumented::instrument_with_label(&web3, "balancerV2".into());
@@ -458,12 +326,11 @@ async fn create_aggregate_pool_fetcher(
     let registered_pools = pool_initializer.initialize_pools().await?;
     let fetched_block_number = registered_pools.fetched_block_number;
     let fetched_block_hash = web3
-        .eth()
-        .block(BlockId::Number(fetched_block_number.into()))
+        .alloy
+        .get_block_by_number(BlockNumberOrTag::Number(fetched_block_number))
         .await?
         .context("failed to get block by block number")?
-        .hash
-        .context("missing hash from block")?;
+        .hash();
     let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
@@ -554,7 +421,7 @@ fn create_internal_pool_fetcher<Factory>(
     token_infos: Arc<dyn TokenInfoFetching>,
     factory_instance: &BalancerFactoryInstance,
     registered_pools: RegisteredPools,
-    fetched_block_hash: H256,
+    fetched_block_hash: B256,
 ) -> Result<Box<dyn InternalPoolFetching>>
 where
     Factory: FactoryIndexing,
@@ -581,20 +448,23 @@ where
 /// the pool. For example the GNO-BAL pool with ID
 /// `0x36128d5436d2d70cab39c9af9cce146c38554ff0000200000000000000000009`:
 /// <https://etherscan.io/address/0x36128D5436d2d70cab39C9AF9CcE146C38554ff0>
-fn pool_address_from_id(pool_id: H256) -> Address {
-    Address::from_slice(&pool_id.0[..20])
+fn pool_address_from_id(pool_id: B256) -> Address {
+    Address::from_slice(&pool_id.as_slice()[..20])
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address, hex_literal::hex};
+    use {
+        super::*,
+        alloy::primitives::{address, b256},
+    };
 
     #[test]
     fn can_extract_address_from_pool_id() {
         assert_eq!(
-            pool_address_from_id(H256(hex!(
+            pool_address_from_id(b256!(
                 "36128d5436d2d70cab39c9af9cce146c38554ff0000200000000000000000009"
-            ))),
+            )),
             address!("36128d5436d2d70cab39c9af9cce146c38554ff0"),
         );
     }

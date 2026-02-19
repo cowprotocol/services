@@ -24,15 +24,11 @@ use {
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
-    alloy::{eips::BlockNumberOrTag, primitives::Address},
+    alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9},
-    ethrpc::{
-        Web3,
-        alloy::conversions::IntoLegacy,
-        block_stream::block_number_to_block_number_hash,
-    },
+    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     futures::StreamExt,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -49,7 +45,6 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        event_handling::AlloyEventRetriever,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         order_quoting::{self, OrderQuoter},
@@ -188,12 +183,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
     });
 
     let chain_id = web3
-        .eth()
-        .chain_id()
+        .alloy
+        .get_chain_id()
         .instrument(info_span!("chain_id"))
         .await
-        .expect("Could not get chainId")
-        .as_u64();
+        .expect("Could not get chainId");
     if let Some(expected_chain_id) = args.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
@@ -229,8 +223,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         .vaultRelayer()
         .call()
         .await
-        .expect("Couldn't get vault relayer address")
-        .into_legacy();
+        .expect("Couldn't get vault relayer address");
 
     let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
         let chain_id = chain.id();
@@ -271,7 +264,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             eth.contracts().settlement().clone(),
             eth.contracts().balances().clone(),
             vault_relayer,
-            vault_address.map(IntoLegacy::into_legacy),
+            vault_address,
             balance_overrider,
         ),
         eth.current_block().clone(),
@@ -455,10 +448,10 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         }
     };
     let settlement_event_indexer = EventUpdater::new(
-        AlloyEventRetriever(boundary::events::settlement::GPv2SettlementContract::new(
+        boundary::events::settlement::GPv2SettlementContract::new(
             web3.alloy.clone(),
             *eth.contracts().settlement().address(),
-        )),
+        ),
         boundary::events::settlement::Indexer::new(
             db_write.clone(),
             settlement_observer,
@@ -524,7 +517,11 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(&args.fee_policies_config),
+        domain::ProtocolFees::new(
+            &args.fee_policies_config,
+            args.shared.volume_fee_bucket_overrides.clone(),
+            args.shared.enable_sell_equals_buy_volume_fee,
+        ),
         cow_amm_registry.clone(),
         args.run_loop_native_price_timeout,
         *eth.contracts().settlement().address(),
@@ -535,6 +532,15 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
+
+    let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
+    let api_task = tokio::spawn(infra::api::serve(
+        args.api_address,
+        native_price_estimator.clone(),
+        args.price_estimation.quote_timeout,
+        api_shutdown_receiver,
+    ));
+
     observe::metrics::serve_metrics(
         liveness.clone(),
         args.metrics_address,
@@ -588,10 +594,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            AlloyEventRetriever(EthFlowRefundRetriever::new(
-                web3.clone(),
-                args.ethflow_contracts.clone(),
-            )),
+            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -607,7 +610,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
-            eth.contracts().settlement().address().into_legacy(),
+            *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
         );
 
@@ -623,10 +626,7 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            AlloyEventRetriever(CoWSwapOnchainOrdersContract::new(
-                web3.clone(),
-                args.ethflow_contracts,
-            )),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -701,6 +701,9 @@ pub async fn run(args: Arguments, shutdown_controller: ShutdownController) {
         competition_updates_sender,
     );
     run.run_forever(shutdown_controller).await;
+
+    api_shutdown_sender.send(()).ok();
+    api_task.await.ok();
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -753,11 +756,10 @@ async fn shadow_mode(args: Arguments) -> ! {
 
     let trusted_tokens = {
         let chain_id = web3
-            .eth()
-            .chain_id()
+            .alloy
+            .get_chain_id()
             .await
-            .expect("Could not get chainId")
-            .as_u64();
+            .expect("Could not get chainId");
         if let Some(expected_chain_id) = args.shared.chain_id {
             assert_eq!(
                 chain_id, expected_chain_id,

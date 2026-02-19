@@ -1,14 +1,12 @@
 use {
+    alloy::{primitives::Address, signers::local::PrivateKeySigner},
     app_data::AppDataHash,
-    ethcontract::common::abi::ethereum_types::Address,
-    ethrpc::alloy::conversions::IntoAlloy,
     model::{
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
         signature::EcdsaSigningScheme,
     },
     solvers_dto::solution::{Asset, Kind},
-    web3::signing::SecretKeyRef,
 };
 
 #[derive(Clone, Debug)]
@@ -28,7 +26,7 @@ impl JitOrder {
         OrderData {
             sell_token: self.sell.token,
             buy_token: self.buy.token,
-            receiver: Some(self.receiver.into_alloy()),
+            receiver: Some(self.receiver),
             sell_amount: self.sell.amount,
             buy_amount: self.buy.amount,
             valid_to: self.valid_to,
@@ -45,7 +43,7 @@ impl JitOrder {
         self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> (solvers_dto::solution::JitOrder, OrderUid) {
         let data = self.data();
         let signature = model::signature::EcdsaSignature::sign(

@@ -6,15 +6,13 @@ use {
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
     },
-    alloy::primitives::Address,
+    alloy::{eips::BlockId, primitives::Address},
     anyhow::{Result, anyhow},
     contracts::alloy::{
         BalancerV2WeightedPool,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
-    ethcontract::BlockId,
-    ethrpc::alloy::conversions::IntoLegacy,
     futures::{FutureExt as _, future::BoxFuture},
     std::collections::BTreeMap,
 };
@@ -79,7 +77,7 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory::Instance {
             .call()
             .await?
             .into_iter()
-            .map(|weight| Bfp::from_wei(weight.into_legacy()))
+            .map(Bfp::from_wei)
             .collect();
 
         Ok(PoolInfo {
@@ -149,13 +147,11 @@ mod tests {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
         alloy::{
-            primitives::Address,
+            primitives::{Address, B256, U256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
             sol_types::SolCall,
         },
-        ethcontract::H256,
-        ethcontract_mock::Mock,
-        ethrpc::alloy::conversions::IntoAlloy,
+        ethrpc::{Web3, mock::MockTransport},
         futures::future,
         maplit::btreemap,
     };
@@ -164,7 +160,7 @@ mod tests {
     fn convert_graph_pool_to_weighted_pool_info() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
@@ -186,15 +182,15 @@ mod tests {
             PoolInfo::from_graph_data(&pool, 42).unwrap(),
             PoolInfo {
                 common: common::PoolInfo {
-                    id: H256([2; 32]),
+                    id: B256::repeat_byte(2),
                     address: Address::repeat_byte(1),
                     tokens: vec![Address::repeat_byte(0x11), Address::repeat_byte(0x22)],
                     scaling_factors: vec![Bfp::exp10(17), Bfp::exp10(16)],
                     block_created: 42,
                 },
                 weights: vec![
-                    Bfp::from_wei(1_337_000_000_000_000_000u128.into()),
-                    Bfp::from_wei(4_200_000_000_000_000_000u128.into()),
+                    Bfp::from_wei(U256::from(1_337_000_000_000_000_000_u128)),
+                    Bfp::from_wei(U256::from(4_200_000_000_000_000_000_u128)),
                 ],
             },
         );
@@ -204,7 +200,7 @@ mod tests {
     fn errors_when_converting_wrong_pool_type() {
         let pool = PoolData {
             pool_type: PoolType::Stable,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0xfa),
             swap_enabled: true,
@@ -243,14 +239,14 @@ mod tests {
         let get_normalized_weights_response =
             BalancerV2WeightedPool::BalancerV2WeightedPool::getNormalizedWeightsCall::abi_encode_returns(
                 &weights.iter()
-                    .map(|w| w.as_uint256().into_alloy())
+                    .map(|w| w.as_uint256())
                     .collect()
             );
         asserter.push_success(&get_normalized_weights_response);
 
         let pool = factory
             .specialize_pool_info(common::PoolInfo {
-                id: H256([0x90; 32]),
+                id: B256::repeat_byte(0x90),
                 tokens: vec![
                     Address::repeat_byte(1),
                     Address::repeat_byte(2),
@@ -274,23 +270,22 @@ mod tests {
                 scaling_factor: Bfp::exp10(0),
             },
             Address::repeat_byte(2) => common::TokenState {
-                balance: 10_000_000.into(),
+                balance: U256::from(10_000_000),
                 scaling_factor: Bfp::exp10(12),
             },
         };
         let weights = [bfp!("0.8"), bfp!("0.2")];
         let swap_fee = bfp!("0.003");
 
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
+        let asserter = Asserter::new();
+        asserter.push_success(&10);
+        let web3 = Web3::<MockTransport>::with_asserter(asserter);
 
-        let factory = BalancerV2WeightedPoolFactory::Instance::new(
-            Address::default(),
-            ethrpc::mock::web3().alloy,
-        );
+        let factory =
+            BalancerV2WeightedPoolFactory::Instance::new(Address::default(), web3.alloy.clone());
         let pool_info = PoolInfo {
             common: common::PoolInfo {
-                id: H256([0x90; 32]),
+                id: B256::repeat_byte(0x90),
                 address: Address::repeat_byte(0x90),
                 tokens: tokens.keys().copied().collect(),
                 scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
@@ -305,7 +300,7 @@ mod tests {
         };
 
         let pool_state = {
-            let block = web3.eth().block_number().await.unwrap();
+            let block = web3.alloy.get_block_number().await.unwrap();
 
             let pool_state = factory.fetch_pool_state(
                 &pool_info,
