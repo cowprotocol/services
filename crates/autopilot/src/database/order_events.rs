@@ -3,10 +3,7 @@ use {
     crate::domain,
     anyhow::Result,
     chrono::{DateTime, Utc},
-    database::{
-        byte_array::ByteArray,
-        order_events::{self, OrderEvent},
-    },
+    database::{byte_array::ByteArray, order_events},
     sqlx::{Acquire, Error, PgConnection},
     tokio::time::Instant,
 };
@@ -25,21 +22,14 @@ pub async fn store_order_events(
     timestamp: DateTime<Utc>,
 ) {
     let start = Instant::now();
+    let order_uids: Vec<_> = order_uids.into_iter().map(|o| ByteArray(o.0)).collect();
     let count = order_uids.len();
 
     let insert = async move {
         let mut ex = ex.begin().await?;
-
-        for uid in order_uids {
-            let event = OrderEvent {
-                order_uid: ByteArray(uid.0),
-                timestamp,
-                label,
-            };
-
-            order_events::insert_order_event(&mut ex, &event).await?;
+        for chunk in order_uids.chunks(100) {
+            order_events::insert_order_events(&mut ex, chunk, timestamp, label).await?;
         }
-
         ex.commit().await
     };
 
