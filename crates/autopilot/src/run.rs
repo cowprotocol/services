@@ -407,10 +407,10 @@ pub async fn run(
         boundary::web3_client(url, &args.shared.ethrpc)
     });
 
-    let mut cow_amm_registry = cow_amm::Registry::new(BlockRetriever {
+    let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
         provider: archive_node_web3.provider,
         block_stream: eth.current_block().clone(),
-    });
+    }));
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(

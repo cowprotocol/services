@@ -19,22 +19,22 @@ use {
 /// CoW AMM indexer which stores events in-memory.
 #[derive(Clone)]
 pub struct Registry {
-    web3: BlockRetriever,
+    block_retriever: Arc<BlockRetriever>,
     storage: Arc<RwLock<Vec<Storage>>>,
     maintenance_tasks: Vec<Arc<dyn Maintaining>>,
 }
 
 impl Registry {
-    pub fn new(web3: BlockRetriever) -> Self {
+    pub fn new(block_retriever: Arc<BlockRetriever>) -> Self {
         Self {
             storage: Default::default(),
-            web3,
+            block_retriever,
             maintenance_tasks: vec![],
         }
     }
 
     fn provider(&self) -> &AlloyProvider {
-        &self.web3.provider
+        &self.block_retriever.provider
     }
 
     /// Registers a new listener to detect CoW AMMs deployed by `factory`.
@@ -60,11 +60,10 @@ impl Registry {
         self.storage.write().await.push(storage.clone());
 
         let indexer = Factory {
-            provider: self.web3.provider.clone(),
+            provider: self.provider().clone(),
             address: factory,
         };
-        let event_handler =
-            EventHandler::new(Arc::new(self.provider().clone()), indexer, storage, None);
+        let event_handler = EventHandler::new(self.block_retriever.clone(), indexer, storage, None);
         let token_balance_maintainer =
             EmptyPoolRemoval::new(self.storage.clone(), self.provider().clone());
 
@@ -98,7 +97,7 @@ impl Registry {
 impl std::fmt::Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("Registry")
-            .field("web3", &self.web3)
+            .field("web3", &self.block_retriever)
             .field("storage", &self.storage)
             .finish()
     }
