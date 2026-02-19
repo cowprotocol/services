@@ -440,8 +440,9 @@ impl Solver {
         solution_id: Option<solution::Id>,
         kind: notify::Kind,
     ) {
-        let body =
-            serde_json::to_vec(&dto::notification::new(auction_id, solution_id, kind)).unwrap().into();
+        let body = serde_json::to_vec(&dto::notification::new(auction_id, solution_id, kind))
+            .unwrap()
+            .into();
         let url = shared::url::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
         let mut req = self.client.post(url).body(body).headers(tracing_headers());
