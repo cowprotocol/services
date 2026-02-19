@@ -1,12 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    autopilot::{
-        config::{
-            Configuration,
-            solver::{Account, Solver},
-        },
-        shutdown_controller::ShutdownController,
-    },
+    autopilot::{config::Configuration, shutdown_controller::ShutdownController},
     driver::domain::eth::NonZeroU256,
     e2e::setup::{colocation, wait_for_condition, *},
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
@@ -17,8 +11,7 @@ use {
     },
     number::units::EthUnit,
     shared::web3::Web3,
-    std::{ops::DerefMut, str::FromStr},
-    url::Url,
+    std::ops::DerefMut,
 };
 
 #[tokio::test]
@@ -225,19 +218,13 @@ async fn fallback_native_price_estimator(web3: Web3) {
     );
 
     let (manual_shutdown, control) = ShutdownController::new_manual_shutdown();
-    let autopilot_config_file = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-    }
-    .to_temp_path();
+    let (_autopilot_config_file, cli_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     let autopilot_handle = services
         .start_autopilot_with_shutdown_controller(
             None,
             vec![
-                format!("--config={}", autopilot_config_file.path().display()),
+                cli_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),

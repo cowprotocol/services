@@ -1,11 +1,5 @@
 use {
-    autopilot::{
-        config::{
-            Configuration,
-            solver::{Account, Solver},
-        },
-        shutdown_controller::ShutdownController,
-    },
+    autopilot::{config::Configuration, shutdown_controller::ShutdownController},
     e2e::setup::{
         OnchainComponents,
         Services,
@@ -18,8 +12,6 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
-    std::str::FromStr,
-    url::Url,
 };
 
 #[tokio::test]
@@ -94,20 +86,14 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     );
 
     // Configure autopilot-leader only with test_solver
-    let config_file_leader = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver1.address()),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file_leader, config_arg_leader) =
+        Configuration::test("test_solver", solver1.address()).to_cli_args();
 
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
             None,
             vec![
-                format!("--config={}", config_file_leader.path().display()),
+                config_arg_leader,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -120,20 +106,14 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await;
 
     // Configure autopilot-backup only with test_solver2
-    let config_file_follower = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver2".to_string(),
-            Url::from_str("http://localhost:11088/test_solver2").unwrap(),
-            Account::Address(solver2.address()),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file_follower, config_arg_follower) =
+        Configuration::test("test_solver2", solver2.address()).to_cli_args();
 
     let _autopilot_follower = services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file_follower.path().display()),
+                config_arg_follower,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),

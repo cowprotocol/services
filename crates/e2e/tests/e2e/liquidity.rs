@@ -6,10 +6,7 @@ use {
             ext::{AnvilApi, ImpersonateConfig},
         },
     },
-    autopilot::config::{
-        Configuration,
-        solver::{Account, Solver},
-    },
+    autopilot::config::Configuration,
     chrono::{NaiveDateTime, Utc},
     contracts::alloy::{ERC20, IZeroex},
     e2e::{
@@ -31,8 +28,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    std::str::FromStr,
-    url::Url,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -195,14 +190,8 @@ async fn zero_ex_liquidity(web3: Web3) {
         },
         false,
     );
-    let config_file = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(
@@ -210,7 +199,7 @@ async fn zero_ex_liquidity(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                format!("--config={}", config_file.path().display()),
+                config_arg,
             ],
         )
         .await;

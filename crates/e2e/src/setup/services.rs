@@ -15,13 +15,7 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-    autopilot::{
-        config::{
-            Configuration,
-            solver::{Account, Solver},
-        },
-        infra::persistence::dto,
-    },
+    autopilot::{config::Configuration, infra::persistence::dto},
     clap::Parser,
     model::{
         AuctionId,
@@ -228,6 +222,7 @@ impl<'a> Services<'a> {
         let config = autopilot::config::Configuration::from_path(&args.config)
             .await
             .unwrap();
+        tracing::info!("Loaded config: {:?}", config);
         let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
         self.wait_until_autopilot_ready().await;
 
@@ -277,8 +272,18 @@ impl<'a> Services<'a> {
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
-        self.start_protocol_with_args(Default::default(), solver)
-            .await;
+        // HACK: config is required so in the cases where it isn't passed (like the API
+        // version test), so we create a dummy one
+        let (_config_file, cli_arg) =
+            Configuration::test("test_solver", solver.address()).to_cli_args();
+        self.start_protocol_with_args(
+            ExtraServiceArgs {
+                api: Default::default(),
+                autopilot: vec![cli_arg],
+            },
+            solver,
+        )
+        .await;
     }
 
     pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
@@ -310,22 +315,10 @@ impl<'a> Services<'a> {
             false,
         );
 
-        let config_file = Configuration {
-            // replace the --drivers argument with a vec of Solver structs
-            drivers: vec![Solver::new(
-                "test_solver".to_string(),
-                Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(solver.address()),
-            )],
-        }
-        .to_temp_path();
-
         self.start_autopilot(
             None,
             [
                 vec![
-                    // The config gets parsed as an extra argument, it will read the correct path
-                    format!("--config={}", config_file.path().display()),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
                     "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -370,14 +363,8 @@ impl<'a> Services<'a> {
         }];
 
         // Create TOML config file for the driver
-        let config_file = Configuration {
-            drivers: vec![Solver::new(
-                "test_solver".to_string(),
-                Url::parse("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(solver.address()),
-            )],
-        }
-        .to_temp_path();
+        let (_config_file, config_arg) =
+            Configuration::test("test_solver", solver.address()).to_cli_args();
 
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
@@ -395,7 +382,7 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg.clone(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/baseline_solver,Driver|test_solver|http://localhost:11088/test_solver".to_string(),
             ];
@@ -405,7 +392,7 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"

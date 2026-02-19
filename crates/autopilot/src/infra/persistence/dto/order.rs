@@ -8,7 +8,7 @@ use {
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    shared::arguments::FeeFactor,
+    shared::fee_factor::FeeFactor,
 };
 
 #[serde_as]
