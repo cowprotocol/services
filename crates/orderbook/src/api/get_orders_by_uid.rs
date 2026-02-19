@@ -112,8 +112,8 @@ mod tests {
             .map(|line| serde_json::from_slice(line).unwrap())
             .collect();
         assert_eq!(entries.len(), 1);
-        let error = entries[0].get("error").expect("should have error key");
-        assert!(error.get("orderUid").is_some());
+        let error = entries[0].get("error").expect("error key exists");
+        assert!(error.get("uid").is_some());
         assert!(error.get("description").is_some());
     }
 
