@@ -8,7 +8,7 @@ use {
     },
     anyhow::{Context, Result},
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    futures::{Stream, StreamExt, future},
+    futures::{Stream, StreamExt},
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::{Instrument, instrument},
@@ -102,6 +102,7 @@ where
 {
     type Event = (T::Event, Log);
 
+    #[instrument(skip_all)]
     async fn get_events_by_block_hash(&self, block_hash: B256) -> Result<Vec<Self::Event>> {
         let filter = self.filter().at_block_hash(block_hash);
         let events = self
@@ -513,30 +514,27 @@ where
         blocks: &[BlockNumberHash],
     ) -> (Vec<BlockNumberHash>, Vec<E>) {
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
-        for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
-            for (i, result) in future::join_all(
-                chunk
-                    .iter()
-                    .map(|block| self.contract.get_events_by_block_hash(block.1)),
-            )
-            .await
-            .into_iter()
-            .enumerate()
-            {
-                match result {
-                    Ok(e) => {
-                        if !e.is_empty() {
-                            tracing::debug!(
-                                "events fetched for block: {:?}, events: {}",
-                                blocks[i],
-                                e.len(),
-                            );
-                        }
-                        blocks_filtered.push(blocks[i]);
-                        events.extend(e);
+        let mut stream = futures::stream::iter(blocks.iter().cloned().enumerate().map(
+            async move |(index, block)| {
+                (index, self.contract.get_events_by_block_hash(block.1).await)
+            },
+        ))
+        .buffered(MAX_PARALLEL_RPC_CALLS);
+
+        while let Some((index, result)) = stream.next().await {
+            match result {
+                Ok(e) => {
+                    if !e.is_empty() {
+                        tracing::debug!(
+                            "events fetched for block: {:?}, events: {}",
+                            blocks[index],
+                            e.len(),
+                        );
                     }
-                    Err(_) => return (blocks_filtered, events),
+                    blocks_filtered.push(blocks[index]);
+                    events.extend(e);
                 }
+                Err(_) => return (blocks_filtered, events),
             }
         }
 
