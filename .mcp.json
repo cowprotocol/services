@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "postgres-protocol": {
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "set -a && source .env.claude && set +a && npx -y @modelcontextprotocol/server-postgres \"${COW_DB_URL}\""
+      ]
+    },
+    "postgres-analytics": {
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "set -a && source .env.claude && set +a && npx -y @modelcontextprotocol/server-postgres \"${COW_ANALYTICS_DB_URL}\""
+      ]
+    },
+    "fetch": {
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "set -a && source .env.claude && set +a && /opt/homebrew/bin/uvx mcp-server-fetch"
+      ]
+    }
+  }
+}

@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = {workspace = true}
+alloy = {workspace = true, features = ["rpc"]}
 app-data = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
@@ -15,7 +15,6 @@ const-hex = { workspace = true }
 number = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
-web3 = { workspace = true }
 
 [lints]
 workspace = true

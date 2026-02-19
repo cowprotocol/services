@@ -5,7 +5,7 @@ use {
         liquidity::{ExactOutput, MaxInput},
     },
     num::{BigRational, CheckedDiv, CheckedMul},
-    shared::conversions::U256Ext,
+    number::{conversions::big_rational_to_u256, u256_ext::U256Ext},
 };
 
 #[derive(Clone)]
@@ -42,8 +42,8 @@ impl Parameters {
         let slippage = if let Some(price) = self.prices.get(&interaction.input.token) {
             let amount = price.in_eth(interaction.input.amount);
             let relative = amount.0.to_big_rational() * &self.relative;
-            let relative = number::conversions::alloy::big_rational_to_u256(&relative)
-                .map_err(|_| super::error::Math::DivisionByZero)?;
+            let relative =
+                big_rational_to_u256(&relative).map_err(|_| super::error::Math::DivisionByZero)?;
 
             // Final slippage considers min/max caps
             let slippage = relative.clamp(
@@ -63,8 +63,8 @@ impl Parameters {
         } else if let Some(price) = self.prices.get(&interaction.output.token) {
             let amount = price.in_eth(interaction.output.amount);
             let relative = amount.0.to_big_rational() * &self.relative;
-            let relative = number::conversions::alloy::big_rational_to_u256(&relative)
-                .map_err(|_| super::error::Math::DivisionByZero)?;
+            let relative =
+                big_rational_to_u256(&relative).map_err(|_| super::error::Math::DivisionByZero)?;
 
             // Final slippage considers min/max caps
             let slippage = relative.clamp(
@@ -87,18 +87,18 @@ impl Parameters {
                 .checked_div(&interaction.output.amount)
                 .ok_or(super::error::Math::DivisionByZero)?
         } else {
-            tracing::warn!(
+            tracing::trace!(
                 input_token = ?interaction.input.token,
                 output_token = ?interaction.output.token,
                 "unable to compute capped slippage; falling back to relative slippage",
             );
             let relative = interaction.input.amount.0.to_big_rational() * &self.relative;
-            number::conversions::alloy::big_rational_to_u256(&relative)
+            big_rational_to_u256(&relative)
                 .map_err(|_| super::error::Math::DivisionByZero)?
                 .into()
         };
 
-        tracing::debug!(?interaction, ?slippage, "applying slippage to liquidity",);
+        tracing::trace!(?interaction, ?slippage, "applying slippage to liquidity",);
         Ok((
             MaxInput(eth::Asset {
                 amount: interaction.input.amount + slippage,

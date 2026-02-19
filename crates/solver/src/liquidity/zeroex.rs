@@ -383,7 +383,7 @@ pub mod tests {
         let sell_token = Address::with_last_byte(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             Default::default(),
-            ethrpc::mock::web3().alloy,
+            ethrpc::mock::web3().provider,
         ));
         let allowances =
             Allowances::new(*zeroex.address(), hashmap! { sell_token => U256::from(99) });
@@ -429,7 +429,7 @@ pub mod tests {
         let sell_token = Address::with_last_byte(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             Default::default(),
-            ethrpc::mock::web3().alloy,
+            ethrpc::mock::web3().provider,
         ));
         let allowances = Allowances::new(
             *zeroex.address(),

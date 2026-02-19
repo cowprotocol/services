@@ -12,8 +12,8 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
+    hyper::body::Bytes as RequestBytes,
     itertools::Itertools,
     model::{
         interaction::InteractionData,
@@ -74,7 +74,7 @@ impl std::fmt::Debug for Utilities {
 #[derive(Debug)]
 struct ControlBlock {
     /// Auction for which the data aggregation task was spawned.
-    solve_request: Arc<String>,
+    solve_request: RequestBytes,
     /// Data aggregation task.
     tasks: DataFetchingTasks,
 }
@@ -91,7 +91,7 @@ impl DataAggregator {
     /// only once for all connected solvers to share.
     pub async fn start_or_get_tasks_for_auction(
         &self,
-        request: Arc<String>,
+        request: RequestBytes,
     ) -> Result<DataFetchingTasks> {
         let mut lock = self.control.lock().await;
         let current_auction = &lock.solve_request;
@@ -100,7 +100,7 @@ impl DataAggregator {
         // requests per auction. That means we can use the significantly
         // cheaper string comparison instead of parsing the JSON to compare
         // the auction ids.
-        if &request == current_auction {
+        if request == current_auction {
             let id = lock.tasks.auction.clone().await.id;
             init_auction_id_in_span(id.map(|i| i.0));
             tracing::debug!("await running data aggregation task");
@@ -127,7 +127,7 @@ impl DataAggregator {
             eth.web3(),
             shared::signature_validator::Contracts {
                 settlement: eth.contracts().settlement().clone(),
-                vault_relayer: eth.contracts().vault_relayer().0.into_legacy(),
+                vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),
             },
             eth.balance_overrider(),
@@ -140,7 +140,7 @@ impl DataAggregator {
             .map(|(factory, helper)| (factory.0, helper.0))
             .collect();
         let cow_amm_cache =
-            cow_amm::Cache::new(eth.web3().alloy.clone(), cow_amm_helper_by_factory);
+            cow_amm::Cache::new(eth.web3().provider.clone(), cow_amm_helper_by_factory);
 
         Self {
             utilities: Arc::new(Utilities {
@@ -165,7 +165,7 @@ impl DataAggregator {
         }
     }
 
-    async fn assemble_tasks(&self, request: Arc<String>) -> Result<DataFetchingTasks> {
+    async fn assemble_tasks(&self, request: RequestBytes) -> Result<DataFetchingTasks> {
         let auction = self.utilities.parse_request(request).await?;
 
         let balances =
@@ -212,14 +212,14 @@ impl Utilities {
     /// Parses the JSON body of the `/solve` request during the unified
     /// auction pre-processing since eagerly deserializing these requests
     /// is surprisingly costly because their are so big.
-    async fn parse_request(&self, solve_request: Arc<String>) -> Result<Arc<Auction>> {
+    async fn parse_request(&self, solve_request: RequestBytes) -> Result<Arc<Auction>> {
         let auction_dto: SolveRequest = {
             let _timer = metrics::get().processing_stage_timer("parse_dto");
             let _timer2 =
                 observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
             // deserialization takes tens of milliseconds so run it on a blocking task
             tokio::task::spawn_blocking(move || {
-                serde_json::from_str(&solve_request).context("could not parse solve request")
+                serde_json::from_slice(&solve_request).context("could not parse solve request")
             })
             .await
             .context("failed to await blocking task")??
@@ -298,9 +298,9 @@ impl Utilities {
                             .app_data
                             .flashloan()
                             .map(|loan| BalanceOverrideRequest {
-                                token: loan.token.into_legacy(),
-                                amount: loan.amount.into_legacy(),
-                                holder: loan.receiver.into_legacy(),
+                                token: loan.token,
+                                amount: loan.amount,
+                                holder: loan.receiver,
                             })
                     } else {
                         None
@@ -315,7 +315,7 @@ impl Utilities {
             .into_iter()
             .zip(balances)
             .filter_map(|(query, balance)| {
-                let balance = balance.ok()?.into_alloy();
+                let balance = balance.ok()?;
                 Some((
                     (
                         order::Trader(query.owner),

@@ -243,28 +243,28 @@ async fn create_config_file(
 
     for mempool in &config.mempools {
         match mempool {
-            Mempool::Public => {
-                write!(
-                    file,
-                    r#"[[submission.mempool]]
-                    mempool = "public"
-                    additional-tip-percentage = 0.0
-                    "#,
-                )
-                .unwrap();
-            }
-            Mempool::Private { url } => {
-                write!(
-                    file,
-                    r#"[[submission.mempool]]
-                    mempool = "mev-blocker"
-                    additional-tip-percentage = 0.0
+            Mempool::Default => write!(
+                file,
+                r#"[[submission.mempool]]
                     url = "{}"
+                    additional-tip-percentage = 0.0
                     "#,
-                    url.clone().unwrap_or(blockchain.web3_url.clone()),
-                )
-                .unwrap();
-            }
+                blockchain.web3_url,
+            )
+            .unwrap(),
+            Mempool::Private {
+                url,
+                mines_reverting_txs,
+            } => write!(
+                file,
+                r#"[[submission.mempool]]
+                    url = "{}"
+                    additional-tip-percentage = 0.0
+                    mines-reverting-txs = {mines_reverting_txs}
+                    "#,
+                url.clone().unwrap_or(blockchain.web3_url.clone()),
+            )
+            .unwrap(),
         }
     }
 
@@ -314,11 +314,12 @@ async fn create_config_file(
                endpoint = "http://{}"
                absolute-slippage = "{}"
                relative-slippage = "{}"
-               account = "0x{}"
+               account = "{}"
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
                fee-handler = {}
                merge-solutions = {}
+               haircut-bps = {}
                "#,
             solver.name,
             addr,
@@ -328,11 +329,12 @@ async fn create_config_file(
                 .map(|abs| abs.0)
                 .unwrap_or_default(),
             solver.slippage.relative,
-            const_hex::encode(solver.private_key.secret_bytes()),
+            solver.signer.to_bytes(),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
+            solver.haircut_bps,
         )
         .unwrap();
     }

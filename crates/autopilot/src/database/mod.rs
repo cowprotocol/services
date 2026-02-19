@@ -1,7 +1,11 @@
 use {
     num::ToPrimitive,
-    sqlx::{Executor, PgConnection, PgPool},
-    std::{num::NonZeroUsize, time::Duration},
+    shared::arguments::DB_MAX_CONNECTIONS_DEFAULT,
+    sqlx::{Executor, PgConnection, PgPool, postgres::PgPoolOptions},
+    std::{
+        num::{NonZeroU32, NonZeroUsize},
+        time::Duration,
+    },
     tracing::Instrument,
 };
 
@@ -15,9 +19,21 @@ pub mod onchain_order_events;
 pub mod order_events;
 mod quotes;
 
+pub const INSERT_BATCH_SIZE_DEFAULT: NonZeroUsize = NonZeroUsize::new(500).unwrap();
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub insert_batch_size: NonZeroUsize,
+    pub max_pool_size: NonZeroU32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            insert_batch_size: INSERT_BATCH_SIZE_DEFAULT,
+            max_pool_size: DB_MAX_CONNECTIONS_DEFAULT,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -27,15 +43,15 @@ pub struct Postgres {
 }
 
 impl Postgres {
-    pub async fn new(url: &str, insert_batch_size: NonZeroUsize) -> sqlx::Result<Self> {
-        let pool = PgPool::connect(url).await?;
+    pub async fn new(url: &str, config: Config) -> sqlx::Result<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(config.max_pool_size.get())
+            .connect(url)
+            .await?;
 
         Self::start_db_metrics_job(pool.clone());
 
-        Ok(Self {
-            pool,
-            config: Config { insert_batch_size },
-        })
+        Ok(Self { pool, config })
     }
 
     fn start_db_metrics_job(pool: PgPool) {
@@ -57,7 +73,7 @@ impl Postgres {
     }
 
     pub async fn with_defaults() -> sqlx::Result<Self> {
-        Self::new("postgresql://", NonZeroUsize::new(500).unwrap()).await
+        Self::new("postgresql://", Default::default()).await
     }
 
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {
@@ -76,10 +92,6 @@ impl Postgres {
             let count = estimate_rows_in_table(&mut ex, table).await?;
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
-
-        // update unused app data metric
-        let count = count_unused_app_data(&mut ex).await?;
-        metrics.unused_app_data.set(count);
 
         Ok(())
     }
@@ -109,31 +121,11 @@ async fn analyze_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<()> {
     ex.execute(sqlx::query(&query)).await.map(|_| ())
 }
 
-async fn count_unused_app_data(ex: &mut PgConnection) -> sqlx::Result<i64> {
-    let query = r#"
-        SELECT
-            COUNT(*)
-        FROM app_data AS a
-        LEFT JOIN orders o
-            ON a.contract_app_data = o.app_data
-        WHERE
-            o.app_data IS NULL
-        ;
-    "#;
-    sqlx::query_scalar(query).fetch_one(ex).await
-}
-
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// Number of rows in db tables.
     #[metric(labels("table"))]
     table_rows: prometheus::IntGaugeVec,
-
-    /// Number of unused app data entries.
-    ///
-    /// These are entries in the `app_data` table that do not have a
-    /// corresponding order in the `orders` table.
-    unused_app_data: prometheus::IntGauge,
 
     /// Timing of db queries.
     #[metric(

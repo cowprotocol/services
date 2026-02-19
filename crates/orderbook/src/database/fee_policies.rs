@@ -8,7 +8,7 @@ use {
     database::{OrderUid, auction::AuctionId},
     model::fee_policy::{ExecutedProtocolFee, FeePolicy, Quote},
     num::BigRational,
-    number::conversions::alloy::{big_decimal_to_u256, big_rational_to_u256},
+    number::conversions::{big_decimal_to_u256, big_rational_to_u256},
     std::collections::HashMap,
 };
 

@@ -11,16 +11,15 @@ name = "ethrpc"
 path = "src/lib.rs"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "transports", "transport-ws", "provider-ws", "reqwest", "signers", "signer-aws", "signer-local", "eips", "reqwest-default-tls", "pubsub", "contract"] }
+alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "rpc-types-trace", "transports", "transport-ws", "provider-ws", "provider-debug-api", "reqwest", "signers", "signer-aws", "signer-local", "eips", "reqwest-default-tls", "pubsub", "contract"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-ethcontract = { workspace = true }
-futures = { workspace = true }
 const-hex = { workspace = true }
-hex-literal = { workspace = true }
+futures = { workspace = true }
 itertools = { workspace = true }
+jsonrpc-core.workspace = true
+mockall = { workspace = true, optional = true }
 observe = { workspace = true }
-primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
@@ -33,13 +32,9 @@ tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
-web3 = { workspace = true }
-mockall = { workspace = true, optional = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-maplit = { workspace = true }
-testlib = { workspace = true }
 
 [features]
 test-util = ["dep:mockall"]

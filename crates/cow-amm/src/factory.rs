@@ -30,6 +30,6 @@ impl AlloyEventRetrieving for Factory {
     }
 
     fn provider(&self) -> &DynProvider {
-        &self.web3.alloy
+        &self.web3.provider
     }
 }

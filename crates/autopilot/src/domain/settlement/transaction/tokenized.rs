@@ -3,10 +3,9 @@ use {
         boundary,
         domain::{self, auction::order, eth},
     },
+    alloy::primitives::U256,
     app_data::AppDataHash,
     contracts::alloy::GPv2Settlement,
-    ethcontract::U256,
-    ethrpc::alloy::conversions::IntoLegacy,
 };
 
 /// Recover order uid from order data and signature
@@ -15,7 +14,7 @@ pub fn order_uid(
     tokens: &[alloy::primitives::Address],
     domain_separator: &eth::DomainSeparator,
 ) -> Result<domain::OrderUid, error::Uid> {
-    let flags = TradeFlags(trade.flags.into_legacy());
+    let flags = TradeFlags(trade.flags);
     let signature =
         crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.signature.0)
             .map_err(error::Uid::Signature)?;

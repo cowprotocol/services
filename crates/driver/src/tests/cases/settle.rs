@@ -7,10 +7,10 @@ use {
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
+    alloy::providers::Provider,
     futures::future::join_all,
     itertools::Itertools,
     std::{sync::Arc, time::Duration},
-    web3::Transport,
 };
 
 /// Run a matrix of tests for all meaningful combinations of order kind and
@@ -59,7 +59,7 @@ async fn solution_not_available() {
 }
 
 /// Checks that settlements with revert risk are not submitted via public
-/// mempool.
+/// mempool if at least 1 revert protected mempool exists.
 #[tokio::test]
 #[ignore]
 async fn private_rpc_with_high_risk_solution() {
@@ -69,9 +69,10 @@ async fn private_rpc_with_high_risk_solution() {
         .order(ab_order())
         .solution(ab_solution())
         .mempools(vec![
-            tests::setup::Mempool::Public,
+            tests::setup::Mempool::Default,
             tests::setup::Mempool::Private {
                 url: Some("http://non-existant:8545".to_string()),
+                mines_reverting_txs: false,
             },
         ])
         .done()
@@ -117,8 +118,8 @@ async fn submits_huge_solution() {
     // half of the block gas limit, we want it to be submitted/settled as long as it
     // fits in the block.
     test.web3()
-        .transport()
-        .execute("evm_setBlockGasLimit", vec![serde_json::json!(9_000_000)])
+        .provider
+        .raw_request::<_, bool>("evm_setBlockGasLimit".into(), (9_000_000,))
         .await
         .unwrap();
     test.settle(id).await.ok().await;
@@ -204,6 +205,7 @@ async fn discards_excess_settle_and_solve_requests() {
     test.solve().await.err().kind("TooManyPendingSettlements");
 
     // Enable auto mining to process all the settlement requests.
+    // *Note that processing the settlement requests will change the gas estimates!*
     test.set_auto_mining(true).await;
 
     // The first settlement must be successful.

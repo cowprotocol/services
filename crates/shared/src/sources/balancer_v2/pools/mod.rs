@@ -15,8 +15,8 @@ pub mod weighted;
 
 use {
     super::graph_api::PoolData,
+    alloy::{eips::BlockId, primitives::B256},
     anyhow::Result,
-    ethcontract::{BlockId, H256},
     futures::future::BoxFuture,
 };
 
@@ -24,7 +24,7 @@ use {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pool {
     /// The ID of the pool.
-    pub id: H256,
+    pub id: B256,
     /// The pool-specific kind and state.
     pub kind: PoolKind,
 }

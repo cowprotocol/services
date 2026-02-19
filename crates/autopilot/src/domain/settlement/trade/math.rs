@@ -1,23 +1,17 @@
 pub use error::Error;
 use {
     super::ExecutedProtocolFee,
-    crate::{
-        domain::{
-            self,
-            OrderUid,
-            auction::{
-                self,
-                order::{self, Side},
-            },
-            eth,
-            fee,
-            settlement::transaction::{ClearingPrices, Prices},
-        },
-        util::conv::U256Ext,
+    crate::domain::{
+        self,
+        OrderUid,
+        auction::{self, order},
+        eth,
+        fee,
+        settlement::transaction::{ClearingPrices, Prices},
     },
-    alloy::primitives::{U512, ruint::UintTryFrom},
     error::Math,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
+    number::u256_ext::U256Ext,
     std::collections::HashMap,
 };
 
@@ -34,67 +28,6 @@ pub struct Trade {
 }
 
 impl Trade {
-    /// Score defined as (surplus + protocol fees) first converted to buy
-    /// amounts and then converted to the native token.
-    ///
-    /// [CIP-38](https://forum.cow.fi/t/cip-38-solver-computed-fees-rank-by-surplus/2061>) as the
-    /// base of the score computation.
-    /// [Draft CIP](https://forum.cow.fi/t/cip-draft-updating-score-definition-for-buy-orders/2930)
-    /// as the latest revision to avoid edge cases for certain buy orders.
-    ///
-    /// Denominated in NATIVE token
-    pub fn score(
-        &self,
-        fee_policies: &HashMap<OrderUid, impl AsRef<[fee::Policy]>>,
-        native_prices: &domain::auction::Prices,
-    ) -> Result<eth::Ether, Error> {
-        let native_price_buy = native_prices
-            .get(&self.buy.token)
-            .ok_or(Error::MissingPrice(self.buy.token))?;
-
-        let surplus_in_surplus_token = {
-            let user_surplus = self.surplus_over_limit_price()?.0;
-            let fees: eth::U256 = self.protocol_fees(fee_policies)?.into_iter().try_fold(
-                eth::U256::ZERO,
-                |acc, i| {
-                    acc.checked_add(i.fee.amount.0)
-                        .ok_or(Error::Math(Math::Overflow))
-                },
-            )?;
-            user_surplus
-                .checked_add(fees)
-                .ok_or(Error::Math(Math::Overflow))?
-        };
-
-        let score = match self.side {
-            // `surplus` of sell orders is already in buy tokens so we simply convert it to ETH
-            Side::Sell => native_price_buy.in_eth(eth::TokenAmount(surplus_in_surplus_token)),
-            Side::Buy => {
-                // `surplus` of buy orders is in sell tokens. We start with following formula:
-                // buy_amount / sell_amount == buy_price / sell_price
-                //
-                // since `surplus` of buy orders is in sell tokens we convert to buy amount via:
-                // buy_amount == (buy_price / sell_price) * surplus
-                //
-                // to avoid loss of precision because we work with integers we first multiply
-                // and then divide:
-                // buy_amount = surplus * buy_price / sell_price
-                let surplus_in_buy_tokens = surplus_in_surplus_token
-                    .widening_mul(self.buy.amount.0)
-                    .checked_div(U512::from(self.sell.amount.0))
-                    .ok_or(Error::Math(Math::DivisionByZero))?;
-                let surplus_in_buy_tokens: eth::U256 =
-                    eth::U256::uint_try_from(surplus_in_buy_tokens)
-                        .map_err(|_| Error::Math(Math::Overflow))?;
-
-                // Afterwards we convert the buy token surplus to the native token.
-                native_price_buy.in_eth(surplus_in_buy_tokens.into())
-            }
-        };
-
-        Ok(score)
-    }
-
     /// A general surplus function.
     ///
     /// Can return different types of surplus based on the input parameters.
@@ -321,8 +254,8 @@ impl Trade {
             } => {
                 let surplus = self.surplus_over_limit_price()?;
                 std::cmp::min(
-                    self.surplus_fee(surplus, (*factor).into())?,
-                    self.volume_fee((*max_volume_factor).into())?,
+                    self.surplus_fee(surplus, (*factor).get())?,
+                    self.volume_fee((*max_volume_factor).get())?,
                 )
             }
             fee::Policy::PriceImprovement {
@@ -332,11 +265,11 @@ impl Trade {
             } => {
                 let price_improvement = self.price_improvement(quote)?;
                 std::cmp::min(
-                    self.surplus_fee(price_improvement, (*factor).into())?,
-                    self.volume_fee((*max_volume_factor).into())?,
+                    self.surplus_fee(price_improvement, (*factor).get())?,
+                    self.volume_fee((*max_volume_factor).get())?,
                 )
             }
-            fee::Policy::Volume { factor } => self.volume_fee((*factor).into())?,
+            fee::Policy::Volume { factor } => self.volume_fee((*factor).get())?,
         };
         Ok(fee)
     }

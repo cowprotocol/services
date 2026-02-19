@@ -705,7 +705,7 @@ mod tests {
         }
 
         // Sort expected trades by block_number DESC (matching query ORDER BY)
-        expected_trades.sort_by(|a, b| b.block_number.cmp(&a.block_number));
+        expected_trades.sort_by_key(|trade| std::cmp::Reverse(trade.block_number));
 
         // Test limit: get first 2 trades (blocks 4 and 3 in DESC order)
         let result = trades(&mut db, Some(&owner), None, 0, 2)

@@ -133,7 +133,7 @@ where
     R: PoolReading + Send + Sync + 'static,
     F: FnOnce(Web3, PairProvider) -> R,
 {
-    let router = IUniswapLikeRouter::Instance::new(config.router.0, eth.web3().alloy.clone());
+    let router = IUniswapLikeRouter::Instance::new(config.router.0, eth.web3().provider.clone());
     let settlement = eth.contracts().settlement().clone();
     let pool_fetcher = {
         let factory = router.factory().call().await?;

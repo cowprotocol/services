@@ -9,11 +9,12 @@ use {
         },
         token_info::TokenInfoFetching,
     },
-    alloy::primitives::Address,
+    alloy::{
+        eips::BlockId,
+        primitives::{Address, B256, U256},
+    },
     anyhow::{Context, Result, anyhow, ensure},
     contracts::alloy::{BalancerV2BasePool, BalancerV2Vault},
-    ethcontract::{BlockId, H256, U256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
     futures::{FutureExt as _, future::BoxFuture},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
@@ -89,7 +90,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
     ) -> Result<PoolInfo> {
         let pool = self.base_pool_at(pool_address);
 
-        let pool_id = pool.getPoolId().call().await?.into_legacy();
+        let pool_id = pool.getPoolId().call().await?;
         let tokens = self
             .vault
             .getPoolTokens(pool_id.0.into())
@@ -112,7 +113,6 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
-        let block = block.into_alloy();
         let pool_address = pool.address;
         let pool_id = pool.id;
         let vault = self.vault.clone();
@@ -150,7 +150,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         async move {
             let (paused, swap_fee, pool_tokens) =
                 futures::try_join!(fetch_paused, fetch_swap_fee, pool_tokens)?;
-            let swap_fee = Bfp::from_wei(swap_fee.into_legacy());
+            let swap_fee = Bfp::from_wei(swap_fee);
 
             let balances = pool_tokens.balances;
             let tokens = pool_tokens.tokens.into_iter().collect::<Vec<_>>();
@@ -160,7 +160,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
                     (
                         address,
                         TokenState {
-                            balance: balance.into_legacy(),
+                            balance,
                             scaling_factor,
                         },
                     )
@@ -227,7 +227,7 @@ where
 /// Common pool data shared across all Balancer pools.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
-    pub id: H256,
+    pub id: B256,
     pub address: Address,
     pub tokens: Vec<Address>,
     pub scaling_factors: Vec<Bfp>,
@@ -371,11 +371,9 @@ mod tests {
         },
         anyhow::bail,
         contracts::alloy::BalancerV2Vault,
-        ethcontract::U256,
         maplit::{btreemap, hashmap},
         mockall::predicate,
         std::future,
-        web3::types::BlockNumber,
     };
 
     #[tokio::test]
@@ -401,7 +399,7 @@ mod tests {
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: tokens.to_vec(),
                     balances: vec![],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -431,7 +429,7 @@ mod tests {
         assert_eq!(
             pool_info,
             PoolInfo {
-                id: pool_id.into_legacy(),
+                id: pool_id,
                 address: *pool.address(),
                 tokens: tokens.to_vec(),
                 scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
@@ -442,7 +440,7 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_common_pool_state() {
-        let pool_id = H256([0x90; 32]);
+        let pool_id = B256::repeat_byte(0x90);
         let tokens = [
             Address::repeat_byte(1),
             Address::repeat_byte(2),
@@ -463,14 +461,14 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &bfp!("0.003").as_uint256().into_alloy(),
+                &bfp!("0.003").as_uint256(),
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -478,11 +476,8 @@ mod tests {
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: tokens.to_vec(),
-                    balances: balances
-                        .iter()
-                        .map(|b| b.as_uint256().into_alloy())
-                        .collect(),
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    balances: balances.iter().map(|b| b.as_uint256()).collect(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -503,10 +498,8 @@ mod tests {
         };
 
         let pool_state = {
-            let pool_state = pool_info_fetcher.fetch_common_pool_state(
-                &pool_info,
-                BlockId::Number(BlockNumber::Number(1.into())),
-            );
+            let pool_state =
+                pool_info_fetcher.fetch_common_pool_state(&pool_info, BlockId::Number(1.into()));
 
             pool_state.await.unwrap()
         };
@@ -554,15 +547,15 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &U256::zero().into_alloy(),
+                &U256::ZERO,
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -570,8 +563,8 @@ mod tests {
             BalancerV2Vault::BalancerV2Vault::getPoolTokensCall::abi_encode_returns(
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: vec![Address::repeat_byte(1), Address::repeat_byte(4)],
-                    balances: vec![U256::zero().into_alloy(), U256::zero().into_alloy()],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    balances: vec![U256::ZERO, U256::ZERO],
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -592,10 +585,8 @@ mod tests {
         };
 
         let pool_state = {
-            let pool_state = pool_info_fetcher.fetch_common_pool_state(
-                &pool_info,
-                BlockId::Number(BlockNumber::Number(1.into())),
-            );
+            let pool_state =
+                pool_info_fetcher.fetch_common_pool_state(&pool_info, BlockId::Number(1.into()));
 
             pool_state.await
         };
@@ -619,20 +610,20 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &swap_fee.as_uint256().into_alloy(),
+                &swap_fee.as_uint256(),
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
         let pool_info = weighted::PoolInfo {
             common: PoolInfo {
-                id: H256([0x90; 32]),
+                id: B256::repeat_byte(0x90),
                 address: *pool.address(),
                 tokens: vec![
                     Address::repeat_byte(1),
@@ -679,15 +670,15 @@ mod tests {
                     balances: pool_state
                         .tokens
                         .values()
-                        .map(|token| token.common.balance.into_alloy())
+                        .map(|token| token.common.balance)
                         .collect(),
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
 
         let mut factory = MockFactoryIndexing::new();
-        let block_id = BlockId::Number(BlockNumber::Number(1.into()));
+        let block_id = BlockId::Number(1.into());
         factory
             .expect_fetch_pool_state()
             .with(
@@ -734,15 +725,15 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: true,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &U256::zero().into_alloy(),
+                &U256::ZERO,
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -751,7 +742,7 @@ mod tests {
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: vec![],
                     balances: vec![],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -791,7 +782,7 @@ mod tests {
 
         let pool_status = {
             pool_info_fetcher
-                .fetch_pool(&pool_info, BlockId::Number(BlockNumber::Number(1.into())))
+                .fetch_pool(&pool_info, BlockId::Number(1.into()))
                 .await
                 .unwrap()
         };
@@ -813,15 +804,15 @@ mod tests {
             BalancerV2BasePool::BalancerV2BasePool::getPausedStateCall::abi_encode_returns(
                 &BalancerV2BasePool::BalancerV2BasePool::getPausedStateReturn {
                     paused: false,
-                    pauseWindowEndTime: U256::zero().into_alloy(),
-                    bufferPeriodEndTime: U256::zero().into_alloy(),
+                    pauseWindowEndTime: U256::ZERO,
+                    bufferPeriodEndTime: U256::ZERO,
                 },
             );
         asserter.push_success(&get_paused_state_response);
 
         let get_swap_fee_percentage_response =
             BalancerV2BasePool::BalancerV2BasePool::getSwapFeePercentageCall::abi_encode_returns(
-                &U256::zero().into_alloy(),
+                &U256::ZERO,
             );
         asserter.push_success(&get_swap_fee_percentage_response);
 
@@ -830,7 +821,7 @@ mod tests {
                 &BalancerV2Vault::BalancerV2Vault::getPoolTokensReturn {
                     tokens: vec![],
                     balances: vec![],
-                    lastChangeBlock: U256::zero().into_alloy(),
+                    lastChangeBlock: U256::ZERO,
                 },
             );
         asserter.push_success(&get_pool_tokens_response);
@@ -863,7 +854,7 @@ mod tests {
 
         let pool_status = {
             pool_info_fetcher
-                .fetch_pool(&pool_info, BlockId::Number(BlockNumber::Number(1.into())))
+                .fetch_pool(&pool_info, BlockId::Number(1.into()))
                 .await
                 .unwrap()
         };
@@ -881,7 +872,7 @@ mod tests {
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::Instance::new(
                 Address::repeat_byte(0xba),
-                ethrpc::mock::web3().alloy,
+                ethrpc::mock::web3().provider,
             ),
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
@@ -907,7 +898,7 @@ mod tests {
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::Instance::new(
                 Address::repeat_byte(0xba),
-                ethrpc::mock::web3().alloy,
+                ethrpc::mock::web3().provider,
             ),
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
@@ -919,7 +910,7 @@ mod tests {
     fn convert_graph_pool_to_common_pool_info() {
         let pool = PoolData {
             pool_type: PoolType::Stable,
-            id: H256([4; 32]),
+            id: B256::repeat_byte(4),
             address: Address::repeat_byte(3),
             factory: Address::repeat_byte(0xfb),
             swap_enabled: true,
@@ -940,7 +931,7 @@ mod tests {
         assert_eq!(
             PoolInfo::from_graph_data(&pool, 42).unwrap(),
             PoolInfo {
-                id: H256([4; 32]),
+                id: B256::repeat_byte(4),
                 address: Address::repeat_byte(3),
                 tokens: vec![Address::repeat_byte(0x33), Address::repeat_byte(0x44)],
                 scaling_factors: vec![Bfp::exp10(15), Bfp::exp10(0)],
@@ -953,7 +944,7 @@ mod tests {
     fn pool_conversion_insufficient_tokens() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0),
             swap_enabled: true,
@@ -970,7 +961,7 @@ mod tests {
     fn pool_conversion_invalid_decimals() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
+            id: B256::repeat_byte(2),
             address: Address::repeat_byte(1),
             factory: Address::repeat_byte(0),
             swap_enabled: true,

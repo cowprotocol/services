@@ -17,10 +17,7 @@ use {
         },
     },
     anyhow::{Context, anyhow},
-    ethrpc::{
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-        block_stream::CurrentBlockWatcher,
-    },
+    ethrpc::block_stream::CurrentBlockWatcher,
     futures::FutureExt,
     observe::tracing::tracing_headers,
     reqwest::{Client, header},
@@ -59,9 +56,9 @@ impl ExternalTradeFinder {
     async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
             let order = dto::Order {
-                sell_token: query.sell_token.into_legacy(),
-                buy_token: query.buy_token.into_legacy(),
-                amount: query.in_amount.get().into_legacy(),
+                sell_token: query.sell_token,
+                buy_token: query.buy_token,
+                amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
             };
@@ -133,19 +130,19 @@ impl From<dto::QuoteKind> for TradeKind {
 impl From<dto::LegacyQuote> for LegacyTrade {
     fn from(quote: dto::LegacyQuote) -> Self {
         Self {
-            out_amount: quote.amount.into_alloy(),
+            out_amount: quote.amount,
             gas_estimate: quote.gas,
             interactions: quote
                 .interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target.into_alloy(),
-                    value: interaction.value.into_alloy(),
+                    target: interaction.target,
+                    value: interaction.value,
                     data: interaction.call_data,
                 })
                 .collect(),
-            solver: quote.solver.into_alloy(),
-            tx_origin: quote.tx_origin.map(IntoAlloy::into_alloy),
+            solver: quote.solver,
+            tx_origin: quote.tx_origin,
         }
     }
 }
@@ -153,18 +150,14 @@ impl From<dto::LegacyQuote> for LegacyTrade {
 impl From<dto::Quote> for Trade {
     fn from(quote: dto::Quote) -> Self {
         Self {
-            clearing_prices: quote
-                .clearing_prices
-                .into_iter()
-                .map(|(k, v)| (k.into_alloy(), v.into_alloy()))
-                .collect(),
+            clearing_prices: quote.clearing_prices,
             gas_estimate: quote.gas,
             pre_interactions: quote
                 .pre_interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target.into_alloy(),
-                    value: interaction.value.into_alloy(),
+                    target: interaction.target,
+                    value: interaction.value,
                     data: interaction.call_data,
                 })
                 .collect(),
@@ -172,13 +165,13 @@ impl From<dto::Quote> for Trade {
                 .interactions
                 .into_iter()
                 .map(|interaction| Interaction {
-                    target: interaction.target.into_alloy(),
-                    value: interaction.value.into_alloy(),
+                    target: interaction.target,
+                    value: interaction.value,
                     data: interaction.call_data,
                 })
                 .collect(),
-            solver: quote.solver.into_alloy(),
-            tx_origin: quote.tx_origin.map(IntoAlloy::into_alloy),
+            solver: quote.solver,
+            tx_origin: quote.tx_origin,
             jit_orders: quote.jit_orders,
         }
     }
@@ -196,8 +189,8 @@ impl From<dto::Error> for PriceEstimationError {
 impl From<dto::Interaction> for Interaction {
     fn from(interaction: dto::Interaction) -> Self {
         Self {
-            target: interaction.target.into_alloy(),
-            value: interaction.value.into_alloy(),
+            target: interaction.target,
+            value: interaction.value,
             data: interaction.call_data,
         }
     }
@@ -226,9 +219,9 @@ impl TradeFinding for ExternalTradeFinder {
             gas_estimate,
             solver: trade.solver(),
             execution: QuoteExecution {
-                interactions: map_interactions_data(&trade.interactions()),
-                pre_interactions: map_interactions_data(&trade.pre_interactions()),
-                jit_orders: trade.jit_orders(),
+                interactions: map_interactions_data(trade.interactions()),
+                pre_interactions: map_interactions_data(trade.pre_interactions()),
+                jit_orders: trade.jit_orders().cloned().collect(),
             },
         })
     }
@@ -241,9 +234,9 @@ impl TradeFinding for ExternalTradeFinder {
 
 pub(crate) mod dto {
     use {
+        alloy::primitives::{Address, U256},
         app_data::AppDataHash,
         bytes_hex::BytesHex,
-        ethcontract::{H160, U256},
         model::{
             order::{BuyTokenDestination, OrderKind, SellTokenSource},
             signature::SigningScheme,
@@ -258,8 +251,8 @@ pub(crate) mod dto {
     #[derive(Clone, Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Order {
-        pub sell_token: H160,
-        pub buy_token: H160,
+        pub sell_token: Address,
+        pub buy_token: Address,
         #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub kind: OrderKind,
@@ -281,10 +274,10 @@ pub(crate) mod dto {
         #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub interactions: Vec<Interaction>,
-        pub solver: H160,
+        pub solver: Address,
         pub gas: Option<u64>,
         #[serde(default)]
-        pub tx_origin: Option<H160>,
+        pub tx_origin: Option<Address>,
     }
 
     #[serde_as]
@@ -292,14 +285,14 @@ pub(crate) mod dto {
     #[serde(rename_all = "camelCase")]
     pub struct Quote {
         #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-        pub clearing_prices: HashMap<H160, U256>,
+        pub clearing_prices: HashMap<Address, U256>,
         #[serde(default)]
         pub pre_interactions: Vec<Interaction>,
         #[serde(default)]
         pub interactions: Vec<Interaction>,
-        pub solver: H160,
+        pub solver: Address,
         pub gas: Option<u64>,
-        pub tx_origin: Option<H160>,
+        pub tx_origin: Option<Address>,
         #[serde(default)]
         pub jit_orders: Vec<JitOrder>,
     }
@@ -308,7 +301,7 @@ pub(crate) mod dto {
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Interaction {
-        pub target: H160,
+        pub target: Address,
         #[serde_as(as = "HexOrDecimalU256")]
         pub value: U256,
         #[serde_as(as = "BytesHex")]
@@ -319,15 +312,15 @@ pub(crate) mod dto {
     #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct JitOrder {
-        pub buy_token: H160,
-        pub sell_token: H160,
+        pub buy_token: Address,
+        pub sell_token: Address,
         #[serde_as(as = "HexOrDecimalU256")]
         pub sell_amount: U256,
         #[serde_as(as = "HexOrDecimalU256")]
         pub buy_amount: U256,
         #[serde_as(as = "HexOrDecimalU256")]
         pub executed_amount: U256,
-        pub receiver: H160,
+        pub receiver: Address,
         pub valid_to: u32,
         pub app_data: AppDataHash,
         pub side: Side,

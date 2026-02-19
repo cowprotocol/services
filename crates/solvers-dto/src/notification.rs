@@ -1,12 +1,13 @@
 use {
     super::serialize,
-    alloy::primitives::{Address, B256, U256},
-    chrono::{DateTime, Utc},
+    alloy::{
+        primitives::{Address, B256, U256},
+        rpc::types::AccessList,
+    },
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::collections::BTreeSet,
-    web3::types::AccessList,
 };
 
 #[serde_as]
@@ -67,10 +68,6 @@ pub enum Kind {
     Expired,
     Fail,
     PostprocessingTimedOut,
-    Banned {
-        reason: BanReason,
-        until: DateTime<Utc>,
-    },
     DeserializationError {
         reason: String,
     },
@@ -89,11 +86,4 @@ pub struct Tx {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     pub access_list: AccessList,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "reason")]
-pub enum BanReason {
-    UnsettledConsecutiveAuctions,
-    HighSettleFailureRate,
 }

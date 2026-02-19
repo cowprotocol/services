@@ -1,12 +1,7 @@
-//! This script is used to vendor Truffle JSON artifacts to be used for code
-//! generation with `ethcontract`. This is done instead of fetching contracts
-//! at build time to reduce the risk of failure.
-
 use {
     anyhow::Result,
-    contracts::paths,
-    ethcontract_generate::Source,
-    serde_json::{Map, Value},
+    reqwest::Url,
+    serde_json::{Map, Value, json},
     std::{
         fs,
         path::{Path, PathBuf},
@@ -225,7 +220,7 @@ struct Vendor {
 
 impl Vendor {
     fn try_new() -> Result<Self> {
-        let artifacts = paths::contract_artifacts_dir();
+        let artifacts = contract_artifacts_dir();
         tracing::info!("vendoring contract artifacts to '{}'", artifacts.display());
         fs::create_dir_all(&artifacts)?;
         Ok(Self { artifacts })
@@ -262,6 +257,46 @@ impl Vendor {
     }
 }
 
+struct Src(Url);
+
+impl Src {
+    fn npm(path: &str) -> Result<Self> {
+        Ok(Self(Url::parse(&format!("https://unpkg.com/{path}"))?))
+    }
+
+    fn github(path: &str) -> Result<Self> {
+        Ok(Self(Url::parse(&format!(
+            "https://raw.githubusercontent.com/{path}"
+        ))?))
+    }
+
+    fn fetch_json(self) -> Result<serde_json::Value> {
+        // Best-effort coercion of an ABI or artifact JSON document into an artifact JSON document.
+        // Approach taken from ethcontract_generate::source::abi_or_artifact, which is called for each JSON fetch
+        let value = match reqwest::blocking::get(self.0)?.json::<serde_json::Value>()? {
+            serde_json::Value::Array(values) => {
+                json!({"abi": values})
+            }
+            value @ serde_json::Value::Object(_) => value,
+            value => {
+                tracing::warn!(
+                    "unexpected value format, expected an array or object, got {value:?}"
+                );
+                value
+            }
+        };
+        Ok(value)
+    }
+}
+
+impl std::fmt::Debug for Src {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Src")
+            .field("url", &self.0.as_str())
+            .finish()
+    }
+}
+
 struct VendorContext<'a> {
     artifacts: &'a Path,
     properties: &'a [(&'a str, &'a str)],
@@ -269,14 +304,11 @@ struct VendorContext<'a> {
 
 impl VendorContext<'_> {
     fn npm(&self, name: &str, path: &str) -> Result<&Self> {
-        self.vendor_source(name, Source::npm(path))
+        self.vendor_source(name, Src::npm(path)?)
     }
 
     fn github(&self, name: &str, path: &str) -> Result<&Self> {
-        self.vendor_source(
-            name,
-            Source::http(&format!("https://raw.githubusercontent.com/{path}"))?,
-        )
+        self.vendor_source(name, Src::github(path)?)
     }
 
     fn manual(&self, name: &str, reason: &str) -> &Self {
@@ -294,24 +326,23 @@ impl VendorContext<'_> {
         current_value.clone()
     }
 
-    fn vendor_source(&self, name: &str, source: Source) -> Result<&Self> {
+    fn vendor_source(&self, name: &str, source: Src) -> Result<&Self> {
         tracing::info!("retrieving {:?}", source);
-        let artifact_json = source.artifact_json()?;
+        let artifact_json = source.fetch_json()?;
 
         tracing::debug!("pruning artifact JSON");
         let pruned_artifact_json = {
-            let json = serde_json::from_str::<Value>(&artifact_json)?;
             let mut pruned = Map::new();
             for (property, paths) in self.properties {
                 if let Some(value) = paths
                     .split(',')
-                    .map(|path| Self::retrieve_value_from_path(&json, path))
+                    .map(|path| Self::retrieve_value_from_path(&artifact_json, path))
                     .find(|value| !value.is_null())
                 {
                     pruned.insert(property.to_string(), value);
                 }
             }
-            serde_json::to_string(&pruned)?
+            serde_json::to_string_pretty(&pruned)?
         };
 
         let path = self.artifacts.join(name).with_extension("json");
@@ -320,4 +351,9 @@ impl VendorContext<'_> {
 
         Ok(self)
     }
+}
+
+/// Path to the directory containing the vendored contract artifacts.
+pub fn contract_artifacts_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("artifacts")
 }

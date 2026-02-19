@@ -1,4 +1,4 @@
-use {ethcontract::Account, primitive_types::H160, std::sync::LazyLock};
+use {alloy::primitives::Address, std::sync::LazyLock};
 
 #[macro_use]
 pub mod macros;
@@ -8,7 +8,6 @@ pub mod arguments;
 pub mod bad_token;
 pub mod baseline_solver;
 pub mod code_fetching;
-pub mod conversions;
 pub mod current_block;
 pub mod db_order_conversions;
 pub mod encoded_settlement;
@@ -32,7 +31,6 @@ pub mod request_sharing;
 pub mod signature_validator;
 pub mod sources;
 pub mod subgraph;
-pub mod submitter_constants;
 pub mod tenderly_api;
 pub mod token_info;
 pub mod token_list;
@@ -50,5 +48,4 @@ pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
 
 // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
 // specified, so we need to use a random account when sending a simulation tx.
-pub static SIMULATION_ACCOUNT: LazyLock<Account> =
-    LazyLock::new(|| Account::Local(H160::random(), None));
+pub static SIMULATION_ACCOUNT: LazyLock<Address> = LazyLock::new(|| Address::random());

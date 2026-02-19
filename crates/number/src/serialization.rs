@@ -1,47 +1,19 @@
 use {
-    primitive_types::U256,
-    serde::{Deserializer, Serializer, de},
+    alloy::primitives::U256,
+    serde::{Deserialize, Deserializer, Serializer},
     serde_with::{DeserializeAs, SerializeAs},
-    std::fmt,
 };
 
 /// (De)serialization structure able to deserialize decimal and hexadecimal
 /// numbers, serializes as decimal.
 pub struct HexOrDecimalU256;
 
-impl<'de> DeserializeAs<'de, alloy::primitives::U256> for HexOrDecimalU256 {
-    fn deserialize_as<D>(deserializer: D) -> Result<alloy::primitives::U256, D::Error>
+impl<'de> DeserializeAs<'de, U256> for HexOrDecimalU256 {
+    fn deserialize_as<D>(deserializer: D) -> Result<U256, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct Visitor {}
-        impl de::Visitor<'_> for Visitor {
-            type Value = alloy::primitives::U256;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(
-                    formatter,
-                    "a u256 encoded either as 0x hex prefixed or decimal encoded string"
-                )
-            }
-
-            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if s.trim().starts_with("0x") {
-                    alloy::primitives::U256::from_str_radix(s, 16).map_err(|err| {
-                        de::Error::custom(format!("failed to decode {s:?} as hex u256: {err}"))
-                    })
-                } else {
-                    alloy::primitives::U256::from_str_radix(s, 10).map_err(|err| {
-                        de::Error::custom(format!("failed to decode {s:?} as decimal u256: {err}"))
-                    })
-                }
-            }
-        }
-
-        deserializer.deserialize_str(Visitor {})
+        U256::deserialize(deserializer)
     }
 }
 
@@ -50,91 +22,7 @@ impl SerializeAs<U256> for HexOrDecimalU256 {
     where
         S: Serializer,
     {
-        serialize(source, serializer)
-    }
-}
-
-impl<'de> DeserializeAs<'de, U256> for HexOrDecimalU256 {
-    fn deserialize_as<D>(deserializer: D) -> Result<U256, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserialize(deserializer)
-    }
-}
-
-impl SerializeAs<alloy::primitives::U256> for HexOrDecimalU256 {
-    fn serialize_as<S>(source: &alloy::primitives::U256, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+        // alloy::primitives::U256 serializes as hex, this gives us decimals instead
         serializer.serialize_str(&source.to_string())
-    }
-}
-
-pub fn serialize<S>(value: &U256, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    // `primitive_types::U256::to_string()` is so slow that
-    // it's still faster to first convert to alloy's U256
-    // and convert that to string...
-    let mut buf = [0u8; 32];
-    value.to_big_endian(&mut buf);
-    let value = alloy::primitives::U256::from_be_bytes(buf);
-    serializer.serialize_str(&value.to_string())
-}
-
-pub fn deserialize<'de, D>(deserializer: D) -> Result<U256, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct Visitor {}
-    impl de::Visitor<'_> for Visitor {
-        type Value = U256;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            write!(
-                formatter,
-                "a u256 encoded either as 0x hex prefixed or decimal encoded string"
-            )
-        }
-
-        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            if s.trim().starts_with("0x") {
-                U256::from_str_radix(s, 16).map_err(|err| {
-                    de::Error::custom(format!("failed to decode {s:?} as hex u256: {err}"))
-                })
-            } else {
-                U256::from_dec_str(s).map_err(|err| {
-                    de::Error::custom(format!("failed to decode {s:?} as decimal u256: {err}"))
-                })
-            }
-        }
-    }
-
-    deserializer.deserialize_str(Visitor {})
-}
-
-#[cfg(test)]
-mod tests {
-    use {
-        super::*,
-        serde::de::{
-            IntoDeserializer,
-            value::{Error as ValueError, StrDeserializer},
-        },
-    };
-
-    #[test]
-    fn test_deserialization() {
-        let deserializer: StrDeserializer<ValueError> = "0x10".into_deserializer();
-        assert_eq!(deserialize(deserializer), Ok(16.into()));
-
-        let deserializer: StrDeserializer<ValueError> = "10".into_deserializer();
-        assert_eq!(deserialize(deserializer), Ok(10.into()));
     }
 }

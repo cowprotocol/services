@@ -8,7 +8,8 @@ use {
     crate::price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
     alloy::{
         dyn_abi::SolType,
-        primitives::Address,
+        primitives::{Address, U256},
+        rpc::types::state::StateOverride,
         sol_types::{SolCall, sol_data},
         transports::RpcError,
     },
@@ -18,12 +19,7 @@ use {
         GPv2Settlement,
         support::Signatures,
     },
-    ethcontract::state_overrides::StateOverrides,
-    ethrpc::{
-        Web3,
-        alloy::conversions::{IntoAlloy, IntoLegacy},
-    },
-    primitive_types::U256,
+    ethrpc::{Web3, alloy::ProviderLabelingExt},
     std::sync::Arc,
     tracing::instrument,
 };
@@ -47,7 +43,7 @@ impl Validator {
         vault_relayer: Address,
         balance_overrider: Arc<dyn BalanceOverriding>,
     ) -> Self {
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
+        let web3 = web3.labeled("signatureValidation");
         Self {
             signatures_address,
             settlement,
@@ -67,7 +63,7 @@ impl Validator {
         // change), the order's validity can be directly determined by whether
         // the signature matches the expected hash of the order data, checked
         // with isValidSignature method called on the owner's contract
-        let contract = ERC1271SignatureValidator::new(check.signer.into_alloy(), &self.web3.alloy);
+        let contract = ERC1271SignatureValidator::new(check.signer, &self.web3.provider);
         let magic_bytes = contract
             .isValidSignature(check.hash.into(), check.signature.clone().into())
             .call()
@@ -99,7 +95,7 @@ impl Validator {
         &self,
         check: SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
-        let overrides: StateOverrides = match &check.balance_override {
+        let overrides: StateOverride = match &check.balance_override {
             Some(overrides) => self
                 .balance_overrider
                 .state_override(overrides.clone())
@@ -118,7 +114,7 @@ impl Validator {
                 settlement: *self.settlement.address(),
                 vaultRelayer: self.vault_relayer,
             },
-            signer: check.signer.into_alloy(),
+            signer: check.signer,
             order: check.hash.into(),
             signature: check.signature.clone().into(),
             interactions: check
@@ -134,8 +130,8 @@ impl Validator {
         let simulation = self
             .settlement
             .simulateDelegatecall(self.signatures_address, validate_call.abi_encode().into())
-            .state(overrides.clone().into_alloy())
-            .from(crate::SIMULATION_ACCOUNT.address().into_alloy());
+            .state(overrides.clone())
+            .from(*crate::SIMULATION_ACCOUNT);
 
         let result = simulation.clone().call().await;
 
@@ -151,14 +147,12 @@ impl Validator {
             })
             .map_err(|_| SignatureValidationError::Invalid)?;
 
-        let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0)
-            .with_context(|| {
-                format!(
-                    "could not decode signature check result: {}",
-                    const_hex::encode(&response_bytes.0)
-                )
-            })?
-            .into_legacy();
+        let gas_used = <sol_data::Uint<256>>::abi_decode(&response_bytes.0).with_context(|| {
+            format!(
+                "could not decode signature check result: {}",
+                const_hex::encode(&response_bytes.0)
+            )
+        })?;
 
         Ok(Simulation { gas_used })
     }

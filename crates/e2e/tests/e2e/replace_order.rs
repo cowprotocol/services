@@ -1,25 +1,68 @@
 use {
     ::alloy::primitives::U256,
-    e2e::{nodes::local_node::TestNodeApi, setup::*},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    e2e::setup::*,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
     orderbook::{
-        api::IntoWarpReply,
+        api::Error as ApiError,
         orderbook::{OrderCancellationError, OrderReplacementError},
     },
     reqwest::StatusCode,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    warp::reply::Reply,
-    web3::signing::SecretKeyRef,
 };
+
+// Parse OrderReplacementError from HTTP response
+// Flow: JSON -> orderbook::api::Error -> OrderReplacementError
+// Note: Returns None for unknown error types (cannot construct Other variant
+// without anyhow::Error)
+fn parse_order_replacement_error(status: StatusCode, body: &str) -> Option<OrderReplacementError> {
+    let error: ApiError = serde_json::from_str(body).ok()?;
+
+    match status {
+        StatusCode::BAD_REQUEST => match error.error_type.as_ref() {
+            "InvalidSignature" => Some(OrderReplacementError::InvalidSignature),
+            "OldOrderActivelyBidOn" => Some(OrderReplacementError::OldOrderActivelyBidOn),
+            _ => None,
+        },
+        StatusCode::UNAUTHORIZED if error.error_type == "WrongOwner" => {
+            Some(OrderReplacementError::WrongOwner)
+        }
+        _ => None,
+    }
+}
+
+// Parse OrderCancellationError from HTTP response
+// Flow: JSON -> orderbook::api::Error -> OrderCancellationError
+// Note: Returns None for unknown error types (cannot construct Other variant
+// without anyhow::Error)
+fn parse_order_cancellation_error(
+    status: StatusCode,
+    body: &str,
+) -> Option<OrderCancellationError> {
+    let error: ApiError = serde_json::from_str(body).ok()?;
+
+    match status {
+        StatusCode::BAD_REQUEST => match error.error_type.as_ref() {
+            "InvalidSignature" => Some(OrderCancellationError::InvalidSignature),
+            "AlreadyCancelled" => Some(OrderCancellationError::AlreadyCancelled),
+            "OrderFullyExecuted" => Some(OrderCancellationError::OrderFullyExecuted),
+            "OrderExpired" => Some(OrderCancellationError::OrderExpired),
+            "OnChainOrder" => Some(OrderCancellationError::OnChainOrder),
+            _ => None,
+        },
+        StatusCode::NOT_FOUND if error.error_type == "OrderNotFound" => {
+            Some(OrderCancellationError::OrderNotFound)
+        }
+        StatusCode::UNAUTHORIZED if error.error_type == "WrongOwner" => {
+            Some(OrderCancellationError::WrongOwner)
+        }
+        _ => None,
+    }
+}
 
 #[tokio::test]
 #[ignore]
@@ -45,10 +88,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -106,17 +146,14 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
     // disable auto mining to prevent order being immediately executed
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(false)
-        .await
-        .unwrap();
+    web3.provider.evm_set_automine(false).await.unwrap();
 
     // Place Orders
     let services = Services::new(&onchain).await;
@@ -134,7 +171,7 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let balance_before = token_a.balanceOf(trader.address()).call().await.unwrap();
     onchain.mint_block().await;
@@ -171,26 +208,24 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let response = services.create_order(&new_order).await;
     let (error_code, error_message) = response.err().unwrap();
 
     assert_eq!(error_code, StatusCode::BAD_REQUEST);
-
-    let expected_response = OrderReplacementError::OldOrderActivelyBidOn
-        .into_warp_reply()
-        .into_response()
-        .into_body();
-    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
-        .await
-        .unwrap();
-    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
-    assert_eq!(error_message, expected_body);
+    let parsed_error = parse_order_replacement_error(error_code, &error_message)
+        .expect("Failed to parse error response");
+    assert!(
+        matches!(parsed_error, OrderReplacementError::OldOrderActivelyBidOn),
+        "Expected OldOrderActivelyBidOn error, got: {:?} (body: {})",
+        parsed_error,
+        error_message
+    );
 
     // Continue automining so our order can be executed
-    web3.api::<TestNodeApi<_>>()
-        .set_automine_enabled(true)
+    web3.provider
+        .evm_set_automine(true)
         .await
         .expect("Must be able to disable auto-mining");
 
@@ -209,15 +244,14 @@ async fn try_replace_unreplaceable_order_test(web3: Web3) {
     let (error_code, error_message) = response.err().unwrap();
 
     assert_eq!(error_code, StatusCode::BAD_REQUEST);
-    let expected_response = OrderCancellationError::OrderFullyExecuted
-        .into_warp_reply()
-        .into_response()
-        .into_body();
-    let expected_body_bytes = warp::hyper::body::to_bytes(expected_response)
-        .await
-        .unwrap();
-    let expected_body = String::from_utf8(expected_body_bytes.to_vec()).unwrap();
-    assert_eq!(error_message, expected_body);
+    let parsed_error = parse_order_cancellation_error(error_code, &error_message)
+        .expect("Failed to parse error response");
+    assert!(
+        matches!(parsed_error, OrderCancellationError::OrderFullyExecuted),
+        "Expected OrderFullyExecuted error, got: {:?} (body: {})",
+        parsed_error,
+        error_message
+    );
 }
 
 async fn try_replace_someone_else_order_test(web3: Web3) {
@@ -226,10 +260,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -288,14 +319,14 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -320,7 +351,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
 
@@ -343,7 +374,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     let balance_before = token_a.balanceOf(trader_a.address()).call().await.unwrap();
     let response = services.create_order(&new_order).await;
@@ -367,10 +398,7 @@ async fn single_replace_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -428,7 +456,7 @@ async fn single_replace_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 15u64.eth())
+        .approve(onchain.contracts().allowance, 15u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -465,7 +493,7 @@ async fn single_replace_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
 
@@ -498,7 +526,7 @@ async fn single_replace_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let new_order_uid = services.create_order(&new_order).await.unwrap();
 

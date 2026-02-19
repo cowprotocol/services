@@ -29,7 +29,6 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
                 EtherExt,
-                is_approximately_equal,
             },
             setup::{
                 blockchain::{Blockchain, Interaction, Trade},
@@ -37,15 +36,17 @@ use {
             },
         },
     },
-    alloy::primitives::{Address, U256, address},
+    alloy::{
+        primitives::{Address, U256, address, b256},
+        providers::Provider,
+        signers::local::PrivateKeySigner,
+    },
     bigdecimal::{BigDecimal, FromPrimitive},
-    ethcontract::dyns::DynTransport,
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::Web3,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
-    number::serialization::HexOrDecimalU256,
-    secp256k1::SecretKey,
+    number::{serialization::HexOrDecimalU256, testing::ApproxEq},
     serde::{Deserialize, de::IntoDeserializer},
     serde_with::serde_as,
     solvers_dto::solution::Flashloan,
@@ -348,7 +349,7 @@ pub struct Solver {
     /// How much ETH balance should the solver be funded with? 1 ETH by default.
     balance: eth::U256,
     /// The private key for this solver.
-    private_key: ethcontract::PrivateKey,
+    signer: PrivateKeySigner,
     /// The slippage for this solver.
     slippage: Slippage,
     /// The fraction of time used for solving
@@ -358,6 +359,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
+    /// Haircut in basis points (0-10000) for conservative bidding.
+    haircut_bps: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -370,10 +373,9 @@ pub fn test_solver() -> Solver {
     Solver {
         name: solver::NAME.to_owned(),
         balance: eth::U256::from(10).pow(eth::U256::from(18)),
-        private_key: ethcontract::PrivateKey::from_slice(
-            const_hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
-                .unwrap(),
-        )
+        signer: PrivateKeySigner::from_bytes(&b256!(
+            "a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326"
+        ))
         .unwrap(),
         slippage: Slippage {
             relative: BigDecimal::from_f64(0.3).unwrap(),
@@ -385,12 +387,13 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
+        haircut_bps: 0,
     }
 }
 
 impl Solver {
     pub fn address(&self) -> eth::Address {
-        self.private_key.public_address().into_alloy()
+        self.signer.address()
     }
 
     pub fn name(self, name: &str) -> Self {
@@ -422,6 +425,13 @@ impl Solver {
     pub fn merge_solutions(mut self) -> Self {
         self.merge_solutions = true;
         self
+    }
+
+    pub fn haircut_bps(self, haircut_bps: u32) -> Self {
+        Self {
+            haircut_bps,
+            ..self
+        }
     }
 }
 
@@ -471,10 +481,12 @@ fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
 
 #[derive(Debug)]
 pub enum Mempool {
-    Public,
+    /// Uses the driver's main RPC URL
+    Default,
     Private {
         /// Uses ethrpc node if None
         url: Option<String>,
+        mines_reverting_txs: bool,
     },
 }
 
@@ -483,7 +495,7 @@ pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec![Mempool::Public],
+        mempools: vec![Mempool::Default],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
@@ -513,7 +525,8 @@ pub struct Setup {
     balances_address: Option<eth::Address>,
     /// Ensure the Signatures contract is deployed on a specific address?
     signatures_address: Option<eth::Address>,
-    /// Via which mempool the solutions should be submitted
+    /// Mempools that should be used for solution submission in addition
+    /// to the main RPC URL.
     mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
@@ -890,17 +903,14 @@ impl Setup {
             ..
         } = self;
 
-        // Hardcoded trader account. Don't use this account for anything else!!!
-        let trader_secret_key = SecretKey::from_slice(
-            &const_hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
-                .unwrap(),
-        )
-        .unwrap();
-
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            main_trader_secret_key: trader_secret_key,
+            // This PK is publicly known - don't send any funds to its account onchain!!!
+            main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
+                "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
+            ))
+            .unwrap(),
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
             balances_address: self.balances_address,
@@ -958,7 +968,7 @@ impl Setup {
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
                 fee_handler: solver.fee_handler,
-                private_key: solver.private_key.clone(),
+                private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
@@ -968,6 +978,7 @@ impl Setup {
             (solver.clone(), instance.addr)
         }))
         .await;
+
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -1120,7 +1131,7 @@ impl Test {
 
     pub async fn settle_with_solver(&self, solver_name: &str, solution_id: u64) -> Settle {
         let submission_deadline_latest_block: u64 =
-            u64::try_from(self.web3().eth().block_number().await.unwrap()).unwrap()
+            self.web3().provider.get_block_number().await.unwrap()
                 + self.settle_submission_deadline;
         let old_balances = self.balances().await;
         let res = self
@@ -1175,16 +1186,15 @@ impl Test {
             "ETH",
             self.blockchain
                 .web3
-                .eth()
-                .balance(self.trader_address.into_legacy(), None)
+                .provider
+                .get_balance(self.trader_address)
                 .await
-                .map(IntoAlloy::into_alloy)
                 .unwrap(),
         );
         balances
     }
 
-    pub fn web3(&self) -> &web3::Web3<DynTransport> {
+    pub fn web3(&self) -> &Web3 {
         &self.blockchain.web3
     }
 
@@ -1256,7 +1266,7 @@ impl SolveOk<'_> {
     /// Extracts the first solution from the response. This is expected to be
     /// always valid if there is a valid solution, as we expect from driver to
     /// not send multiple solutions (yet).
-    fn solution(&self) -> serde_json::Value {
+    pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
@@ -1357,14 +1367,8 @@ impl SolveOk<'_> {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (quoted_order.sell, quoted_order.buy),
             };
-            assert!(is_approximately_equal(
-                u256(trade.get("executedSell").unwrap()),
-                expected_sell
-            ));
-            assert!(is_approximately_equal(
-                u256(trade.get("executedBuy").unwrap()),
-                expected_buy
-            ));
+            assert!(u256(trade.get("executedSell").unwrap()).is_approx_eq(&expected_sell, None));
+            assert!(u256(trade.get("executedBuy").unwrap()).is_approx_eq(&expected_buy, None));
         }
         self
     }
@@ -1488,6 +1492,11 @@ pub struct QuoteOk<'a> {
 }
 
 impl QuoteOk<'_> {
+    /// Get the JSON response body.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {

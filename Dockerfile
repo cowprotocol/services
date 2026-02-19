@@ -19,7 +19,6 @@ RUN rustup install stable && rustup default stable
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 RUSTFLAGS="${RUSTFLAGS}" cargo build --release ${CARGO_BUILD_FEATURES} && \
-    cp target/release/alerter / && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
     cp target/release/orderbook / && \
@@ -31,10 +30,6 @@ FROM docker.io/debian:bookworm-slim AS intermediate
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y ca-certificates tini gettext-base && \
     apt-get clean
-
-FROM intermediate AS alerter
-COPY --from=cargo-build /alerter /usr/local/bin/alerter
-ENTRYPOINT [ "alerter" ]
 
 FROM intermediate AS autopilot
 COPY --from=cargo-build /autopilot /usr/local/bin/autopilot
@@ -60,11 +55,10 @@ ENTRYPOINT [ "solvers" ]
 FROM intermediate
 
 RUN apt-get update && apt-get install -y netcat-openbsd
-COPY --from=cargo-build /alerter /usr/local/bin/alerter
 COPY --from=cargo-build /autopilot /usr/local/bin/autopilot
 COPY --from=cargo-build /driver /usr/local/bin/driver
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--"]

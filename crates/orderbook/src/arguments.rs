@@ -3,12 +3,11 @@ use {
     chrono::{DateTime, Utc},
     reqwest::Url,
     shared::{
-        arguments::{display_option, display_secret_option},
-        bad_token::token_owner_finder,
+        arguments::{FeeFactor, display_secret_option},
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
+    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
 };
 
 #[derive(clap::Parser)]
@@ -23,15 +22,10 @@ pub struct Arguments {
     pub http_client: http_client::Arguments,
 
     #[clap(flatten)]
-    pub token_owner_finder: token_owner_finder::Arguments,
-
-    #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
-    /// to be used exclusively for tracing calls.
-    #[clap(long, env)]
-    pub tracing_node_url: Option<Url>,
+    #[clap(flatten)]
+    pub database_pool: shared::arguments::DatabasePoolConfig,
 
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
@@ -102,20 +96,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "2")]
     pub fast_price_estimation_results_required: NonZeroUsize,
 
-    /// List of token addresses that should be allowed regardless of whether the
-    /// bad token detector thinks they are bad. Base tokens are
-    /// automatically allowed.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub allowed_tokens: Vec<Address>,
-
     /// Skip EIP-1271 order signature validation on creation.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub eip1271_skip_creation_validation: bool,
-
-    /// If solvable orders haven't been successfully updated in this many blocks
-    /// attempting to get them errors and our liveness check fails.
-    #[clap(long, env, default_value = "24")]
-    pub solvable_orders_max_update_age_blocks: u64,
 
     /// Max number of limit orders per user.
     #[clap(long, env, default_value = "10")]
@@ -150,6 +133,11 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub volume_fee_config: Option<VolumeFeeConfig>,
+
+    /// Controls if same sell and buy token orders are allowed.
+    /// Disallowed by default.
+    #[clap(long, env, default_value = "disallow")]
+    pub same_tokens_policy: shared::order_validation::SameTokensPolicy,
 }
 
 /// Volume-based protocol fee factor to be applied to quotes.
@@ -173,51 +161,14 @@ pub struct VolumeFeeConfig {
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FeeFactor(f64);
-
-impl FeeFactor {
-    /// Number of basis points that make up 100%.
-    pub const MAX_BPS: u32 = 10_000;
-
-    /// Converts the fee factor to basis points (BPS).
-    /// For example, 0.0002 -> 2 BPS
-    pub fn to_bps(&self) -> u64 {
-        (self.0 * f64::from(Self::MAX_BPS)).round() as u64
-    }
-}
-
-/// TryFrom implementation for the cases we want to enforce the constraint [0,
-/// 1)
-impl TryFrom<f64> for FeeFactor {
-    type Error = anyhow::Error;
-
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        anyhow::ensure!(
-            (0.0..1.0).contains(&value),
-            "Factor must be in the range [0, 1)"
-        );
-        Ok(FeeFactor(value))
-    }
-}
-
-impl FromStr for FeeFactor {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<f64>().map(FeeFactor::try_from)?
-    }
-}
-
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let Arguments {
             shared,
             order_quoting,
             http_client,
-            token_owner_finder,
             price_estimation,
-            tracing_node_url,
+            database_pool,
             bind_address,
             min_order_validity_period,
             max_order_validity_period,
@@ -225,9 +176,7 @@ impl std::fmt::Display for Arguments {
             unsupported_tokens,
             banned_users,
             banned_users_max_cache_size,
-            allowed_tokens,
             eip1271_skip_creation_validation,
-            solvable_orders_max_update_age_blocks,
             native_price_estimators,
             fast_price_estimation_results_required,
             max_limit_orders_per_user,
@@ -240,14 +189,14 @@ impl std::fmt::Display for Arguments {
             active_order_competition_threshold,
             skip_domain_separator_verification,
             volume_fee_config,
+            same_tokens_policy,
         } = self;
 
         write!(f, "{shared}")?;
         write!(f, "{order_quoting}")?;
         write!(f, "{http_client}")?;
-        write!(f, "{token_owner_finder}")?;
         write!(f, "{price_estimation}")?;
-        display_option(f, "tracing_node_url", tracing_node_url)?;
+        write!(f, "{database_pool}")?;
         writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
@@ -270,14 +219,9 @@ impl std::fmt::Display for Arguments {
             f,
             "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
         )?;
-        writeln!(f, "allowed_tokens: {allowed_tokens:?}")?;
         writeln!(
             f,
             "eip1271_skip_creation_validation: {eip1271_skip_creation_validation}"
-        )?;
-        writeln!(
-            f,
-            "solvable_orders_max_update_age_blocks: {solvable_orders_max_update_age_blocks}",
         )?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
         writeln!(
@@ -298,6 +242,7 @@ impl std::fmt::Display for Arguments {
             "skip_domain_separator_verification: {skip_domain_separator_verification}"
         )?;
         writeln!(f, "volume_fee_config: {volume_fee_config:?}")?;
+        writeln!(f, "same_tokens_policy: {same_tokens_policy:?}")?;
 
         Ok(())
     }

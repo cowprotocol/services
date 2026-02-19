@@ -9,7 +9,10 @@ use {
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
-    alloy::primitives::{Address, B256, U256, U512},
+    alloy::{
+        primitives::{Address, B256, U256, U512, b256, keccak256},
+        signers::local::PrivateKeySigner,
+    },
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
@@ -26,7 +29,6 @@ use {
         str::FromStr,
     },
     strum::{AsRefStr, EnumString, VariantNames},
-    web3::signing::{self, Key, SecretKeyRef},
 };
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -158,9 +160,9 @@ impl OrderBuilder {
         mut self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
-        let owner = Address::new(key.address().0);
+        let owner = key.address();
         self.0.metadata.owner = owner;
         self.0.metadata.uid = self.0.data.uid(domain, owner);
         self.0.signature =
@@ -253,7 +255,7 @@ impl OrderData {
         hash_data[351] = self.partially_fillable as u8;
         hash_data[352..384].copy_from_slice(&self.sell_token_balance.as_bytes());
         hash_data[384..416].copy_from_slice(&self.buy_token_balance.as_bytes());
-        signing::keccak256(&hash_data)
+        *keccak256(hash_data)
     }
 
     pub fn token_pair(&self) -> Option<TokenPair> {
@@ -262,10 +264,7 @@ impl OrderData {
 
     pub fn uid(&self, domain: &DomainSeparator, owner: Address) -> OrderUid {
         OrderUid::from_parts(
-            B256::new(super::signature::hashed_eip712_message(
-                domain,
-                &self.hash_struct(),
-            )),
+            super::signature::hashed_eip712_message(domain, &self.hash_struct()),
             owner,
             self.valid_to,
         )
@@ -376,7 +375,7 @@ impl OrderCreation {
         mut self,
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         self.signature =
             EcdsaSignature::sign(signing_scheme, domain, &self.data().hash_struct(), key)
@@ -515,15 +514,15 @@ impl OrderCancellations {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut encoded_uids = Vec::with_capacity(32 * self.order_uids.len());
         for order_uid in &self.order_uids {
-            encoded_uids.extend_from_slice(&signing::keccak256(&order_uid.0));
+            encoded_uids.extend_from_slice(keccak256(order_uid.0).as_slice());
         }
 
-        let array_hash = signing::keccak256(&encoded_uids);
+        let array_hash = keccak256(&encoded_uids);
 
         let mut hash_data = [0u8; 64];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        hash_data[32..64].copy_from_slice(&array_hash);
-        signing::keccak256(&hash_data)
+        hash_data[32..64].copy_from_slice(array_hash.as_slice());
+        *keccak256(hash_data)
     }
 }
 
@@ -563,12 +562,10 @@ impl Default for OrderCancellation {
         Self::for_order(
             OrderUid::default(),
             &DomainSeparator::default(),
-            SecretKeyRef::new(
-                &secp256k1::SecretKey::from_str(
-                    "0000000000000000000000000000000000000000000000000000000000000001",
-                )
-                .unwrap(),
-            ),
+            &PrivateKeySigner::from_bytes(&b256!(
+                "0000000000000000000000000000000000000000000000000000000000000001"
+            ))
+            .unwrap(),
         )
     }
 }
@@ -582,7 +579,7 @@ impl OrderCancellation {
     pub fn for_order(
         order_uid: OrderUid,
         domain_separator: &DomainSeparator,
-        key: SecretKeyRef,
+        key: &PrivateKeySigner,
     ) -> Self {
         let mut result = Self {
             order_uid,
@@ -601,8 +598,8 @@ impl OrderCancellation {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 64];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        hash_data[32..64].copy_from_slice(&signing::keccak256(&self.order_uid.0));
-        signing::keccak256(&hash_data)
+        hash_data[32..64].copy_from_slice(keccak256(self.order_uid.0).as_slice());
+        *keccak256(hash_data)
     }
 
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<Address> {
@@ -734,6 +731,8 @@ pub struct OrderMetadata {
     pub quote: Option<OrderQuote>,
 }
 
+pub const ORDER_UID_LIMIT: usize = 1024;
+
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
 #[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct OrderUid(pub [u8; 56]);
@@ -760,7 +759,7 @@ impl OrderUid {
         (
             B256::from_slice(&self.0[0..32]),
             Address::from_slice(&self.0[32..52]),
-            u32::from_le_bytes(self.0[52..].try_into().unwrap()),
+            u32::from_be_bytes(self.0[52..].try_into().unwrap()),
         )
     }
 }
@@ -1053,6 +1052,8 @@ pub struct OrderQuote {
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee_amount: U256,
     pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,
@@ -1063,18 +1064,19 @@ mod tests {
     use {
         super::*,
         crate::signature::{EcdsaSigningScheme, SigningScheme},
-        alloy::primitives::address,
+        alloy::primitives::{address, b256},
         chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
-        secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
         testlib::assert_json_matches,
     };
 
     #[test]
     fn deserialization_and_back() {
-        let value = json!(
+        // Input JSON has v=0x01, which gets normalized to v=28 (0x1c) for Solidity
+        // ecrecover compatibility. Serialization then outputs v=0x1c.
+        let input_json = json!(
         {
             "creationDate": "1970-01-01T00:00:03Z",
             "owner": "0x0000000000000000000000000000000000000001",
@@ -1111,6 +1113,7 @@ mod tests {
             },
             "fullAppData": "123",
         });
+
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
             metadata: OrderMetadata {
@@ -1148,88 +1151,166 @@ mod tests {
                 buy_token_balance: BuyTokenDestination::Internal,
             },
             signature: EcdsaSignature {
-                v: 1,
-                r: B256::from_str(
-                    "0200000000000000000000000000000000000000000000000000000000000003",
-                )
-                .unwrap(),
-                s: B256::from_str(
-                    "0400000000000000000000000000000000000000000000000000000000000005",
-                )
-                .unwrap(),
+                // v=0x01 in input gets normalized to 28 for Solidity ecrecover compatibility
+                v: 28,
+                r: b256!("0200000000000000000000000000000000000000000000000000000000000003"),
+                s: b256!("0400000000000000000000000000000000000000000000000000000000000005"),
             }
             .to_signature(signing_scheme),
             interactions: Interactions::default(),
         };
-        let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
+
+        // After deserialization, v=0x01 becomes v=28
+        let deserialized: Order = serde_json::from_value(input_json).unwrap();
         assert_eq!(deserialized, expected);
+
+        // Serialization outputs the normalized v=0x1c (28)
+        let expected_output_json = json!(
+        {
+            "creationDate": "1970-01-01T00:00:03Z",
+            "owner": "0x0000000000000000000000000000000000000001",
+            "uid": "0x1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+            "availableBalance": null,
+            "executedBuyAmount": "3",
+            "executedSellAmount": "5",
+            "executedSellAmountBeforeFees": "4",
+            "executedFeeAmount": "1",
+            "invalidated": true,
+            "sellToken": "0x000000000000000000000000000000000000000a",
+            "buyToken": "0x0000000000000000000000000000000000000009",
+            "receiver": "0x000000000000000000000000000000000000000b",
+            "sellAmount": "1",
+            "buyAmount": "0",
+            "validTo": 4294967295u32,
+            "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
+            "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+            "executedFee": "1",
+            "executedFeeToken": "0x000000000000000000000000000000000000000a",
+            "kind": "buy",
+            "class": "limit",
+            "partiallyFillable": false,
+            "signature": "0x02000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005\
+        1c",
+            "signingScheme": "eip712",
+            "status": "open",
+            "settlementContract": "0x0000000000000000000000000000000000000002",
+            "sellTokenBalance": "external",
+            "buyTokenBalance": "internal",
+            "isLiquidityOrder": false,
+            "interactions": {
+                    "pre": [],
+                    "post": [],
+            },
+            "fullAppData": "123",
+        });
         let serialized = serde_json::to_value(expected).unwrap();
-        assert_json_matches!(serialized, value);
+        assert_json_matches!(serialized, expected_output_json);
     }
 
     #[test]
     fn order_creation_serialization() {
         let owner = Address::repeat_byte(0xff);
-        for (signature, signing_scheme, from, signature_bytes) in [
-            (
-                Signature::default_with(SigningScheme::Eip712),
-                "eip712",
-                Some(owner),
-                "0x0000000000000000000000000000000000000000000000000000000000000000\
-                   0000000000000000000000000000000000000000000000000000000000000000\
-                   00",
-            ),
-            (
-                Signature::default_with(SigningScheme::EthSign),
-                "ethsign",
-                None,
-                "0x0000000000000000000000000000000000000000000000000000000000000000\
-                   0000000000000000000000000000000000000000000000000000000000000000\
-                   00",
-            ),
-            (Signature::PreSign, "presign", Some(owner), "0x"),
-        ] {
-            let order = OrderCreation {
-                sell_token: Address::repeat_byte(0x11),
-                buy_token: Address::repeat_byte(0x22),
-                receiver: Some(Address::repeat_byte(0x33)),
-                sell_amount: alloy::primitives::U256::from(123),
-                buy_amount: alloy::primitives::U256::from(456),
-                valid_to: 1337,
-                app_data: OrderCreationAppData::Hash {
-                    hash: AppDataHash([0x44; 32]),
-                },
-                fee_amount: alloy::primitives::U256::from(789),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                sell_token_balance: SellTokenSource::Erc20,
-                buy_token_balance: BuyTokenDestination::Erc20,
-                from,
-                signature,
-                quote_id: Some(42),
-            };
-            let order_json = json!({
-                "sellToken": "0x1111111111111111111111111111111111111111",
-                "buyToken": "0x2222222222222222222222222222222222222222",
-                "receiver": "0x3333333333333333333333333333333333333333",
-                "sellAmount": "123",
-                "buyAmount": "456",
-                "validTo": 1337,
-                "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
-                "feeAmount": "789",
-                "kind": "sell",
-                "partiallyFillable": false,
-                "sellTokenBalance": "erc20",
-                "buyTokenBalance": "erc20",
-                "quoteId": 42,
-                "signingScheme": signing_scheme,
-                "signature": signature_bytes,
-                "from": from,
-            });
 
-            assert_json_matches!(json!(order), order_json);
-            assert_eq!(order, serde_json::from_value(order_json).unwrap());
-        }
+        let template_order = OrderCreation {
+            sell_token: Address::repeat_byte(0x11),
+            buy_token: Address::repeat_byte(0x22),
+            receiver: Some(Address::repeat_byte(0x33)),
+            sell_amount: alloy::primitives::U256::from(123),
+            buy_amount: alloy::primitives::U256::from(456),
+            valid_to: 1337,
+            app_data: OrderCreationAppData::Hash {
+                hash: AppDataHash([0x44; 32]),
+            },
+            fee_amount: alloy::primitives::U256::from(789),
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+            sell_token_balance: SellTokenSource::Erc20,
+            buy_token_balance: BuyTokenDestination::Erc20,
+            from: Some(owner),
+            signature: Signature::PreSign,
+            quote_id: Some(42),
+        };
+
+        // Test PreSign round-trip (no signature normalization needed)
+        let presign_order = template_order.clone();
+        let presign_json = json!({
+            "sellToken": "0x1111111111111111111111111111111111111111",
+            "buyToken": "0x2222222222222222222222222222222222222222",
+            "receiver": "0x3333333333333333333333333333333333333333",
+            "sellAmount": "123",
+            "buyAmount": "456",
+            "validTo": 1337,
+            "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
+            "feeAmount": "789",
+            "kind": "sell",
+            "partiallyFillable": false,
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "quoteId": 42,
+            "signingScheme": "presign",
+            "signature": "0x",
+            "from": owner,
+        });
+        assert_json_matches!(json!(presign_order), presign_json);
+        assert_eq!(presign_order, serde_json::from_value(presign_json).unwrap());
+
+        // Test ECDSA signature with v normalization.
+        // Input JSON has v=0x00, which normalizes to v=27 (0x1b).
+        let input_json_v0 = json!({
+            "sellToken": "0x1111111111111111111111111111111111111111",
+            "buyToken": "0x2222222222222222222222222222222222222222",
+            "receiver": "0x3333333333333333333333333333333333333333",
+            "sellAmount": "123",
+            "buyAmount": "456",
+            "validTo": 1337,
+            "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
+            "feeAmount": "789",
+            "kind": "sell",
+            "partiallyFillable": false,
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "quoteId": 42,
+            "signingScheme": "eip712",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000\
+                          0000000000000000000000000000000000000000000000000000000000000000\
+                          00",
+            "from": owner,
+        });
+        let expected_order = OrderCreation {
+            signature: Signature::Eip712(EcdsaSignature {
+                r: B256::ZERO,
+                s: B256::ZERO,
+                v: 27, // normalized from v=0
+            }),
+            ..template_order.clone()
+        };
+
+        // Deserialization normalizes v=0 to v=27
+        let deserialized: OrderCreation = serde_json::from_value(input_json_v0).unwrap();
+        assert_eq!(deserialized, expected_order);
+
+        // Serialization outputs normalized v=0x1b
+        let output_json_v27 = json!({
+            "sellToken": "0x1111111111111111111111111111111111111111",
+            "buyToken": "0x2222222222222222222222222222222222222222",
+            "receiver": "0x3333333333333333333333333333333333333333",
+            "sellAmount": "123",
+            "buyAmount": "456",
+            "validTo": 1337,
+            "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
+            "feeAmount": "789",
+            "kind": "sell",
+            "partiallyFillable": false,
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "quoteId": 42,
+            "signingScheme": "eip712",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000\
+                          0000000000000000000000000000000000000000000000000000000000000000\
+                          1b",
+            "from": owner,
+        });
+        assert_json_matches!(json!(expected_order), output_json_v27);
     }
 
     #[test]
@@ -1387,7 +1468,7 @@ mod tests {
                 order_uid: OrderUid(hex!(
                     "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                 )),
-                signature: EcdsaSignature::from_bytes(signature),
+                signature: EcdsaSignature::from_bytes(signature).unwrap(),
                 signing_scheme: *signing_scheme,
             };
             let owner = cancellation.validate(&domain_separator).unwrap();
@@ -1422,18 +1503,11 @@ mod tests {
         assert!(!order.contains_token_from(&hashset!(other_token)));
     }
 
-    pub fn address_from_public_key(key: PublicKey) -> Address {
-        let hash =
-            alloy::primitives::keccak256(&key.serialize_uncompressed()[1..] /* cut '04' */);
-        Address::from_slice(&hash[12..])
-    }
-
     #[test]
     fn order_builder_signature_recovery() {
-        const PRIVATE_KEY: [u8; 32] =
-            hex!("0000000000000000000000000000000000000000000000000000000000000001");
-        let sk = SecretKey::from_slice(&PRIVATE_KEY).unwrap();
-        let public_key = PublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
+        const PRIVATE_KEY: B256 = B256::with_last_byte(1);
+        let signer = PrivateKeySigner::from_bytes(&PRIVATE_KEY).unwrap();
+
         let order = OrderBuilder::default()
             .with_sell_token(Address::ZERO)
             .with_sell_amount(alloy::primitives::U256::from(100))
@@ -1451,7 +1525,7 @@ mod tests {
             .sign_with(
                 EcdsaSigningScheme::Eip712,
                 &DomainSeparator::default(),
-                SecretKeyRef::from(&sk),
+                &signer,
             )
             .build();
 
@@ -1461,14 +1535,13 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(recovered.signer, address_from_public_key(public_key));
+        assert_eq!(recovered.signer, signer.address());
     }
 
     #[test]
     fn debug_order_data() {
         dbg!(Order::default());
     }
-
     #[test]
     fn order_cancellations_struct_hash() {
         // Generated with Ethers.js as a reference EIP-712 hashing impl.
@@ -1485,5 +1558,26 @@ mod tests {
             let cancellations = OrderCancellations { order_uids };
             assert_eq!(cancellations.hash_struct(), struct_hash);
         }
+    }
+
+    #[test]
+    fn order_uid_parts() {
+        let order_hash = B256::random();
+        let user = Address::random();
+        let valid_to = 12341234;
+        let uid = OrderUid::from_parts(order_hash, user, valid_to);
+        let parts = uid.parts();
+        assert_eq!(order_hash, parts.0);
+        assert_eq!(user, parts.1);
+        assert_eq!(valid_to, parts.2);
+
+        let uid = OrderUid::from_str("0x5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e89984d17af2f18f8c54873c0de68a56cc5a23e0f695ba915").unwrap();
+        let (order_hash, user, valid_to) = uid.parts();
+        assert_eq!(
+            order_hash,
+            b256!("0x5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e")
+        );
+        assert_eq!(user, address!("0x89984d17af2f18f8c54873c0de68a56cc5a23e0f"));
+        assert_eq!(valid_to, 1767614741);
     }
 }

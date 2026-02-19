@@ -6,8 +6,7 @@ use {
         native::{NativePriceEstimateResult, NativePriceEstimating},
     },
     alloy::primitives::Address,
-    ethcontract::jsonrpc::futures_util::future::BoxFuture,
-    futures::future::FutureExt,
+    futures::future::{BoxFuture, FutureExt},
     prometheus::{HistogramVec, IntCounterVec},
     std::{
         sync::Arc,

@@ -1,80 +1,72 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
     crate::{
-        api::{self, ApiReply, IntoWarpReply, convert_json_response, error, rich_error},
-        quoter::{OrderQuoteError, QuoteHandler},
+        api::{AppState, error, rich_error},
+        quoter::OrderQuoteError,
     },
-    anyhow::Result,
+    axum::{
+        Json,
+        body,
+        extract::State,
+        response::{IntoResponse, Response},
+    },
     model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
     shared::order_quoting::CalculateQuoteError,
-    std::{convert::Infallible, sync::Arc},
-    thiserror::Error,
-    warp::{Filter, Rejection},
+    std::sync::Arc,
 };
 
-fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
-    warp::path!("v1" / "quote")
-        .and(warp::post())
-        .and(api::extract_payload())
+pub async fn post_quote_handler(State(state): State<Arc<AppState>>, body: body::Bytes) -> Response {
+    // TODO: remove after all downstream callers have been notified of the status
+    // code changes
+    let Ok(request) = serde_json::from_slice::<OrderQuoteRequest>(&body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    state
+        .quotes
+        .calculate_quote(&request)
+        .await
+        .map(Json)
+        .inspect_err(|err| tracing::warn!(%err, ?request, "post_quote error"))
+        .into_response()
 }
 
-pub fn post_quote(
-    quotes: Arc<QuoteHandler>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    post_quote_request().and_then(move |request: OrderQuoteRequest| {
-        let quotes = quotes.clone();
-        async move {
-            let result = quotes
-                .calculate_quote(&request)
-                .await
-                .map_err(OrderQuoteErrorWrapper);
-            if let Err(err) = &result {
-                tracing::warn!(%err, ?request, "post_quote error");
-            }
-            Result::<_, Infallible>::Ok(convert_json_response(result))
-        }
-    })
-}
-
-#[derive(Debug, Error)]
-#[error(transparent)]
-pub struct OrderQuoteErrorWrapper(pub OrderQuoteError);
-impl IntoWarpReply for OrderQuoteErrorWrapper {
-    fn into_warp_reply(self) -> ApiReply {
-        match self.0 {
-            OrderQuoteError::AppData(err) => AppDataValidationErrorWrapper(err).into_warp_reply(),
-            OrderQuoteError::Order(err) => PartialValidationErrorWrapper(err).into_warp_reply(),
-            OrderQuoteError::CalculateQuote(err) => {
-                CalculateQuoteErrorWrapper(err).into_warp_reply()
-            }
+impl IntoResponse for OrderQuoteError {
+    fn into_response(self) -> Response {
+        match self {
+            OrderQuoteError::AppData(err) => AppDataValidationErrorWrapper(err).into_response(),
+            OrderQuoteError::Order(err) => PartialValidationErrorWrapper(err).into_response(),
+            OrderQuoteError::CalculateQuote(err) => CalculateQuoteErrorWrapper(err).into_response(),
         }
     }
 }
 
 pub struct CalculateQuoteErrorWrapper(CalculateQuoteError);
-impl IntoWarpReply for CalculateQuoteErrorWrapper {
-    fn into_warp_reply(self) -> ApiReply {
+impl IntoResponse for CalculateQuoteErrorWrapper {
+    fn into_response(self) -> Response {
         match self.0 {
-            CalculateQuoteError::Price { source, .. } => source.into_warp_reply(),
-            CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } => {
-                warp::reply::with_status(
-                    rich_error(
-                        "SellAmountDoesNotCoverFee",
-                        "The sell amount for the sell order is lower than the fee.",
-                        serde_json::json!({ "fee_amount": fee_amount }),
-                    ),
-                    StatusCode::BAD_REQUEST,
-                )
+            CalculateQuoteError::Price { source, .. } => {
+                super::PriceEstimationErrorWrapper(source).into_response()
             }
-            CalculateQuoteError::QuoteNotVerified => warp::reply::with_status(
+            CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } => (
+                StatusCode::BAD_REQUEST,
+                rich_error(
+                    "SellAmountDoesNotCoverFee",
+                    "The sell amount for the sell order is lower than the fee.",
+                    serde_json::json!({ "fee_amount": fee_amount }),
+                ),
+            )
+                .into_response(),
+            CalculateQuoteError::QuoteNotVerified => (
+                StatusCode::BAD_REQUEST,
                 error(
                     "QuoteNotVerified",
                     "No quote for this trade could be verified to be accurate. Orders for this \
                      trade will likely not be executed.",
                 ),
-                StatusCode::BAD_REQUEST,
-            ),
+            )
+                .into_response(),
             CalculateQuoteError::Other(err) => {
                 tracing::error!(?err, "CalculateQuoteErrorWrapper");
                 crate::api::internal_error_reply()
@@ -91,6 +83,7 @@ mod tests {
         alloy::primitives::Address,
         anyhow::anyhow,
         app_data::AppDataHash,
+        bigdecimal::BigDecimal,
         chrono::{TimeZone, Utc},
         model::{
             order::{BuyTokenDestination, SellTokenSource},
@@ -108,8 +101,7 @@ mod tests {
         reqwest::StatusCode,
         serde_json::json,
         shared::order_quoting::CalculateQuoteError,
-        std::time::Duration,
-        warp::{Reply, test::request},
+        std::{str::FromStr, time::Duration},
     };
 
     #[test]
@@ -270,32 +262,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_quote_request_ok() {
-        let filter = post_quote_request();
-        let request_payload = OrderQuoteRequest::default();
-        let request = request()
-            .path("/v1/quote")
-            .method("POST")
-            .header("content-type", "application/json")
-            .json(&request_payload);
-        let result = request.filter(&filter).await.unwrap();
-        assert_eq!(result, request_payload);
-    }
-
-    #[tokio::test]
-    async fn post_quote_request_err() {
-        let filter = post_quote_request();
-        let request_payload = OrderQuoteRequest::default();
-        // Path is wrong!
-        let request = request()
-            .path("/v1/fee_quote")
-            .method("POST")
-            .header("content-type", "application/json")
-            .json(&request_payload);
-        assert!(request.filter(&filter).await.is_err());
-    }
-
-    #[tokio::test]
     async fn post_quote_response_ok() {
         let quote = OrderQuote {
             sell_token: Default::default(),
@@ -306,6 +272,9 @@ mod tests {
             valid_to: 0,
             app_data: Default::default(),
             fee_amount: Default::default(),
+            gas_amount: BigDecimal::from_str("100000").unwrap(),
+            gas_price: BigDecimal::from_str("10000000000").unwrap(),
+            sell_token_price: BigDecimal::from_str("0.0004").unwrap(),
             kind: Default::default(),
             partially_fillable: false,
             sell_token_balance: Default::default(),
@@ -320,10 +289,7 @@ mod tests {
             verified: false,
             protocol_fee_bps: Some("2".to_string()),
         };
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
-            order_quote_response.clone(),
-        ))
-        .into_response();
+        let response = (StatusCode::OK, Json(order_quote_response.clone())).into_response();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
@@ -333,12 +299,9 @@ mod tests {
 
     #[tokio::test]
     async fn post_quote_response_err() {
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Err(
-            OrderQuoteErrorWrapper(OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(
-                anyhow!("Uh oh - error"),
-            ))),
-        ))
-        .into_response();
+        let response =
+            OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(anyhow!("Uh oh - error")))
+                .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();

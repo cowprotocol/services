@@ -1,18 +1,13 @@
 use {
     ::alloy::primitives::U256,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -27,10 +22,7 @@ async fn test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            10_000u64.eth().into_legacy(),
-            10_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     token_a.mint(trader_a.address(), 50u64.eth()).await;
@@ -84,7 +76,7 @@ async fn test(web3: Web3) {
         .unwrap();
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 500u64.eth())
+        .approve(onchain.contracts().allowance, 500u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -106,7 +98,7 @@ async fn test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let order_uid = services.create_order(&order_a).await.unwrap();
     onchain.mint_block().await;

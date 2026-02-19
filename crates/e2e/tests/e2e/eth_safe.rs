@@ -1,10 +1,7 @@
 use {
     ::alloy::{primitives::U256, providers::Provider},
     e2e::setup::{OnchainComponents, Services, TIMEOUT, run_test, safe::Safe, wait_for_condition},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     model::{
         order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         signature::{Signature, hashed_eip712_message},
@@ -25,25 +22,22 @@ async fn test(web3: Web3) {
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
-    let safe = Safe::deploy(trader.clone(), web3.alloy.clone()).await;
+    let safe = Safe::deploy(trader.clone(), web3.provider.clone()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1000u64.eth(), 1000u64.eth())
         .await;
 
     token.mint(trader.address(), 4u64.eth()).await;
     safe.exec_alloy_call(
         token
-            .approve(onchain.contracts().allowance.into_alloy(), 4u64.eth())
+            .approve(onchain.contracts().allowance, 4u64.eth())
             .into_transaction_request(),
     )
     .await;
     token.mint(safe.address(), 4u64.eth()).await;
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 4u64.eth())
+        .approve(onchain.contracts().allowance, 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -83,7 +77,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
-        let safe_balance = web3.alloy.get_balance(safe.address()).await.unwrap();
+        let safe_balance = web3.provider.get_balance(safe.address()).await.unwrap();
         // the balance is slightly less because of the fee
         U256::from(3_899_000_000_000_000_000_u128) <= safe_balance
             && safe_balance <= U256::from(4_000_000_000_000_000_000_u128)

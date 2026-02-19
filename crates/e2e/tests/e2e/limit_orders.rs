@@ -9,10 +9,7 @@ use {
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
     e2e::setup::*,
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -20,10 +17,8 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{collections::HashMap, ops::DerefMut},
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -60,6 +55,27 @@ async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
 #[ignore]
 async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
+}
+
+/// Test that sell orders with haircut configured execute on-chain with
+/// haircutted amounts. The haircut reduces both the reported buy_amount and
+/// the on-chain buy_amount (they should match). User receives less than
+/// without haircut, with the difference going to the settlement contract.
+#[tokio::test]
+#[ignore]
+async fn local_node_limit_order_with_haircut() {
+    run_test(sell_order_with_haircut_test).await;
+}
+
+/// Test that buy orders with haircut configured execute on-chain with
+/// haircutted amounts. The haircut increases both the reported sell_amount and
+/// the on-chain sell_amount (they should match). Verifies that:
+/// - executedBuy == signedBuyAmount (user gets exactly what they signed for)
+/// - executedSell includes haircut (but still <= sellLimit)
+#[tokio::test]
+#[ignore]
+async fn local_node_buy_order_with_haircut() {
+    run_test(buy_order_with_haircut_test).await;
 }
 
 /// The block number from which we will fetch state for the forked tests.
@@ -100,10 +116,7 @@ async fn single_limit_order_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts
@@ -161,7 +174,7 @@ async fn single_limit_order_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -183,7 +196,7 @@ async fn single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
@@ -224,10 +237,7 @@ async fn two_limit_orders_test(web3: Web3) {
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund trader accounts and prepare funding Uniswap pool
@@ -286,14 +296,14 @@ async fn two_limit_orders_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -315,7 +325,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
 
     let balance_before_a = token_b.balanceOf(trader_a.address()).call().await.unwrap();
@@ -339,7 +349,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     let order_id = services.create_order(&order_b).await.unwrap();
 
@@ -365,10 +375,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let [solver_a, solver_b] = onchain.make_solvers(1u64.eth()).await;
     let [trader_a, trader_b] = onchain.make_accounts(1u64.eth()).await;
     let [token_a, token_b, token_c, token_d] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     // Fund traders
@@ -379,10 +386,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // (base_b). base_a has more liquidity than base_b, leading to the solver that
     // knows about base_a to offer different solution.
     let [base_a, base_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            10_000u64.eth().into_legacy(),
-            10_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
     onchain
         .seed_uni_v2_pool((&token_a, 100_000u64.eth()), (&base_a, 100_000u64.eth()))
@@ -394,14 +398,14 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
         .unwrap();
 
     token_b
-        .approve(onchain.contracts().allowance.into_alloy(), 100u64.eth())
+        .approve(onchain.contracts().allowance, 100u64.eth())
         .from(trader_b.address())
         .send_and_watch()
         .await
@@ -439,6 +443,8 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
+                .to_string(),
         ])
         .await;
 
@@ -455,7 +461,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
@@ -471,7 +477,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        &trader_b.signer,
     );
     let uid_b = services.create_order(&order_b).await.unwrap();
 
@@ -496,10 +502,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 matches!(
                     (
                         services
-                            .get_solver_competition(trade_a.tx_hash.unwrap().into_legacy())
+                            .get_solver_competition(trade_a.tx_hash.unwrap())
                             .await,
                         services
-                            .get_solver_competition(trade_b.tx_hash.unwrap().into_legacy())
+                            .get_solver_competition(trade_b.tx_hash.unwrap())
                             .await
                     ),
                     (Ok(_), Ok(_))
@@ -512,7 +518,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
-        .get_solver_competition(trades[0].tx_hash.unwrap().into_legacy())
+        .get_solver_competition(trades[0].tx_hash.unwrap())
         .await
         .unwrap();
     // Verify that both transactions were properly indexed
@@ -611,19 +617,17 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let solver_address = solver.address();
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token_a] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
     token_a.mint(trader.address(), 1u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
+        .approve(onchain.contracts().allowance, 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -648,6 +652,19 @@ async fn too_many_limit_orders_test(web3: Web3) {
         false,
     );
     services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    const_hex::encode(solver_address)
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
+    services
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
@@ -666,7 +683,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     services.create_order(&order).await.unwrap();
 
@@ -684,7 +701,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let (status, body) = services.create_order(&order).await.unwrap_err();
@@ -696,19 +713,17 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let solver_address = solver.address();
     let [trader] = onchain.make_accounts(1u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
     token.mint(trader.address(), 100u64.eth()).await;
 
     // Approve GPv2 for trading
 
     token
-        .approve(onchain.contracts().allowance.into_alloy(), 101u64.eth())
+        .approve(onchain.contracts().allowance, 101u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -732,6 +747,19 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
+    services
+        .start_autopilot(
+            None,
+            vec![
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    const_hex::encode(solver_address)
+                ),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
     services
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
@@ -765,7 +793,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     assert!(services.create_order(&order).await.is_ok());
 
@@ -782,7 +810,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -801,7 +829,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     assert!(services.create_order(&order).await.is_ok());
 
@@ -818,7 +846,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     let (status, body) = services.create_order(&order).await.unwrap_err();
@@ -835,16 +863,16 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     let token_usdc = ERC20::Instance::new(
         address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_usdt = ERC20::Instance::new(
         address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), 1000u64.matom())
@@ -863,7 +891,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
+        .approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -887,7 +915,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     // Warm up co-located driver by quoting the order (otherwise placing an order
@@ -935,16 +963,16 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     let token_usdc = ERC20::Instance::new(
         address!("ddafbb505ad214d7b80b1f830fccc89b60fb7a83"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     let token_wxdai = ERC20::Instance::new(
         address!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
-        web3.alloy.clone(),
+        web3.provider.clone(),
     );
 
     // Give trader some USDC
-    web3.alloy
+    web3.provider
         .anvil_send_impersonated_transaction_with_config(
             token_usdc
                 .transfer(trader.address(), 1000u64.matom())
@@ -963,7 +991,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     // Approve GPv2 for trading
     token_usdc
-        .approve(onchain.contracts().allowance.into_alloy(), 1000u64.matom())
+        .approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -985,7 +1013,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
     let sell_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
     let buy_token_balance_before = token_wxdai
@@ -1020,7 +1048,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     let [solver] = onchain.make_solvers(10_000u64.eth()).await;
     let [trader_a] = onchain.make_accounts(1u64.eth()).await;
-    let [token_a, unsupported] = onchain.deploy_tokens(solver.account()).await;
+    let [token_a, unsupported] = onchain.deploy_tokens(solver.address()).await;
 
     // Fund trader accounts
     token_a.mint(trader_a.address(), 10u64.eth()).await;
@@ -1028,7 +1056,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Approve GPv2 for trading
 
     token_a
-        .approve(onchain.contracts().allowance.into_alloy(), 10u64.eth())
+        .approve(onchain.contracts().allowance, 10u64.eth())
         .from(trader_a.address())
         .send_and_watch()
         .await
@@ -1084,7 +1112,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        &trader_a.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
@@ -1097,7 +1125,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .create_order(&order.sign(
             EcdsaSigningScheme::Eip712,
             &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+            &trader_a.signer,
         ))
         .await
         .unwrap_err();
@@ -1112,11 +1140,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Create liquidity
     onchain
-        .seed_weth_uni_v2_pools(
-            [&token_a].iter().copied(),
-            1000u64.eth().into_legacy(),
-            1000u64.eth().into_legacy(),
-        )
+        .seed_weth_uni_v2_pools([&token_a].iter().copied(), 1000u64.eth(), 1000u64.eth())
         .await;
 
     // Drive solution
@@ -1158,4 +1182,380 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .await
         .unwrap();
     assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
+}
+
+/// Test that a limit order with haircut configured executes on-chain with
+/// haircutted amounts. The haircut reduces the buy_amount the user receives,
+/// both in reported amounts and on-chain execution (they should match).
+/// The haircut difference goes to the settlement contract.
+async fn sell_order_with_haircut_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader_a] = onchain.make_accounts(1u64.eth()).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Fund trader accounts
+    token_a.mint(trader_a.address(), 10u64.eth()).await;
+
+    // Create and fund Uniswap pool
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_a
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
+            1000u64.eth(),
+            1000u64.eth(),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address(),
+            U256::MAX,
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Approve GPv2 for trading
+    token_a
+        .approve(onchain.contracts().allowance, 10u64.eth())
+        .from(trader_a.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Place Orders
+    let services = Services::new(&onchain).await;
+    // Start protocol with 500 bps (5%) haircut
+    services
+        .start_protocol_with_args_and_haircut(Default::default(), solver, 500)
+        .await;
+
+    // Create order with generous limit to ensure there's slack for haircut
+    // Sell 10 A for at least 5 B (pool has 1:1 ratio so we'd get ~9.9 B without
+    // fees)
+    let order = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: 10u64.eth(),
+        buy_token: *token_b.address(),
+        buy_amount: 5u64.eth(), // Generous limit creates slack for haircut
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader_a.signer,
+    );
+    let trader_balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let settlement_balance_before = token_b
+        .balanceOf(*onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    let order_id = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Drive solution - order should execute even with haircut applied
+    tracing::info!("Waiting for trade with haircut.");
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+        balance_after.checked_sub(trader_balance_before).unwrap() >= 5u64.eth()
+    })
+    .await
+    .unwrap();
+
+    // Verify that haircut DOES affect on-chain execution.
+    // The haircut reduces the buy_amount the user receives, with the difference
+    // going to the settlement contract.
+    let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
+    let settlement_balance_after = token_b
+        .balanceOf(*onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+
+    let trader_received = trader_balance_after
+        .checked_sub(trader_balance_before)
+        .unwrap();
+    let settlement_received = settlement_balance_after
+        .checked_sub(settlement_balance_before)
+        .unwrap();
+
+    // With 500 bps (5%) haircut on ~9.87 ETH buy amount, settlement should receive
+    // ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
+    assert!(
+        settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
+        "Settlement contract should have received haircut (~0.49 ETH), but got {}",
+        settlement_received
+    );
+
+    // Expected trader amount: AMM output minus haircut (~9.87 - 0.49 = ~9.38 ETH).
+    // Haircut reduces what trader receives on-chain.
+    assert!(
+        trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
+        "Trader should have received AMM output minus haircut (~9.38 ETH), but got {}",
+        trader_received
+    );
+
+    // Wait for solver competition data to be indexed
+    tracing::info!("Waiting for solver competition to be indexed");
+    let indexed = || async {
+        onchain.mint_block().await;
+        match services.get_trades(&order_id).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed).await.unwrap();
+
+    let trades = services.get_trades(&order_id).await.unwrap();
+    let tx_hash = trades[0].tx_hash.unwrap();
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+
+    // Find our order in the winning solution
+    let winner = competition
+        .solutions
+        .iter()
+        .find(|s| s.is_winner)
+        .expect("Should have winning solution");
+
+    let reported_order = winner
+        .orders
+        .iter()
+        .find(|o| o.id == order_id)
+        .expect("Order should be in solution");
+
+    let signed_sell_amount = U256::from(order.sell_amount);
+    let reported_sell_amount = reported_order.sell_amount;
+
+    assert!(
+        reported_sell_amount <= signed_sell_amount,
+        "Driver reported sell_amount {} exceeds signed sell_amount {}. Haircut should reduce \
+         surplus/score, not inflate the reported sell amount!",
+        reported_sell_amount,
+        signed_sell_amount
+    );
+}
+
+/// Test that a buy order with haircut configured executes correctly.
+/// For buy orders, the user signs for a specific buy_amount they want to
+/// receive, and sell_amount is the maximum they're willing to pay.
+/// Haircut increases the sell_amount on-chain (user pays more).
+/// Verifies that reported amounts match on-chain execution.
+async fn buy_order_with_haircut_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
+    let [token_a, token_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Create and fund Uniswap pool (1:1 ratio)
+    token_a.mint(solver.address(), 1000u64.eth()).await;
+    token_b.mint(solver.address(), 1000u64.eth()).await;
+    onchain
+        .contracts()
+        .uniswap_v2_factory
+        .createPair(*token_a.address(), *token_b.address())
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_a
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    token_b
+        .approve(
+            *onchain.contracts().uniswap_v2_router.address(),
+            1000u64.eth(),
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    onchain
+        .contracts()
+        .uniswap_v2_router
+        .addLiquidity(
+            *token_a.address(),
+            *token_b.address(),
+            1000u64.eth(),
+            1000u64.eth(),
+            U256::ZERO,
+            U256::ZERO,
+            solver.address(),
+            U256::MAX,
+        )
+        .from(solver.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Fund trader with token_a for selling
+    token_a.mint(trader.address(), 100u64.eth()).await;
+    token_a
+        .approve(onchain.contracts().allowance, 100u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Start protocol with 500 bps (5%) haircut
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args_and_haircut(Default::default(), solver, 500)
+        .await;
+
+    // Create BUY order: want to buy 5 token_b, willing to sell up to 10 token_a.
+    // At 1:1 ratio (with ~0.3% AMM fee), we'd need ~5.04 token_a.
+    // We use a generous sell_limit to ensure the order executes, then verify
+    // that the driver's reported sell_amount doesn't exceed reasonable bounds.
+    let signed_buy_amount = 5u64.eth();
+    let sell_limit = 10u64.eth(); // Generous limit to ensure execution
+    let order = OrderCreation {
+        sell_token: *token_a.address(),
+        sell_amount: sell_limit,
+        buy_token: *token_b.address(),
+        buy_amount: signed_buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Buy,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let order_id = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Wait for trade to execute
+    tracing::info!("Waiting for buy order trade with haircut.");
+    let trader_b_balance_before = token_b.balanceOf(trader.address()).call().await.unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_b.balanceOf(trader.address()).call().await.unwrap();
+        balance_after > trader_b_balance_before
+    })
+    .await
+    .unwrap();
+
+    // Wait for solver competition data to be indexed
+    tracing::info!("Waiting for solver competition to be indexed");
+    let indexed = || async {
+        onchain.mint_block().await;
+        match services.get_trades(&order_id).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed).await.unwrap();
+
+    let trades = services.get_trades(&order_id).await.unwrap();
+    let tx_hash = trades[0].tx_hash.unwrap();
+    let competition = services.get_solver_competition(tx_hash).await.unwrap();
+
+    // Find our order in the winning solution
+    let winner = competition
+        .solutions
+        .iter()
+        .find(|s| s.is_winner)
+        .expect("Should have winning solution");
+
+    let reported_order = winner
+        .orders
+        .iter()
+        .find(|o| o.id == order_id)
+        .expect("Order should be in solution");
+
+    let signed_buy_amount_u256 = U256::from(signed_buy_amount);
+    let sell_limit_u256 = U256::from(sell_limit);
+    let reported_sell_amount = reported_order.sell_amount;
+    let reported_buy_amount = reported_order.buy_amount;
+
+    // For buy orders:
+    // 1. User should get at least what they signed for
+    assert!(
+        reported_buy_amount >= signed_buy_amount_u256,
+        "Buy order: reported buy_amount {} is less than signed buy_amount {}",
+        reported_buy_amount,
+        signed_buy_amount_u256
+    );
+
+    // 2. Don't take more than user's maximum
+    assert!(
+        reported_sell_amount <= sell_limit_u256,
+        "Driver reported sell_amount {} exceeds sell limit {}",
+        reported_sell_amount,
+        sell_limit_u256
+    );
+
+    // 3. For buy orders, haircut INCREASES sell_amount (user pays more). Base
+    //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH. So
+    //    sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5 ETH to
+    //    account for variance.
+    let reasonable_max_sell = 5.5.eth();
+    assert!(
+        reported_sell_amount <= reasonable_max_sell,
+        "Driver reported sell_amount {} exceeds expected max {} (actual needed + haircut is ~5.29 \
+         ETH)",
+        reported_sell_amount,
+        reasonable_max_sell
+    );
 }

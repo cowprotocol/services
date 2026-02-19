@@ -58,17 +58,6 @@ pub fn new(
             notify::Kind::PostprocessingTimedOut => {
                 solvers_dto::notification::Kind::PostprocessingTimedOut
             }
-            notify::Kind::Banned { reason, until } => solvers_dto::notification::Kind::Banned {
-                reason: match reason {
-                    notify::BanReason::UnsettledConsecutiveAuctions => {
-                        solvers_dto::notification::BanReason::UnsettledConsecutiveAuctions
-                    }
-                    notify::BanReason::HighSettleFailureRate => {
-                        solvers_dto::notification::BanReason::HighSettleFailureRate
-                    }
-                },
-                until,
-            },
             notify::Kind::DeserializationError(reason) => {
                 solvers_dto::notification::Kind::DeserializationError { reason }
             }

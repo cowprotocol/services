@@ -13,10 +13,10 @@ use {
         ethrpc::Web3,
         sources::{BaselineSource, swapr::SwaprPoolReader},
     },
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     contracts::alloy::IUniswapLikeRouter,
-    ethcontract::{H160, H256},
-    ethrpc::alloy::conversions::{IntoAlloy, IntoLegacy},
+    ethrpc::alloy::ProviderLabelingExt,
     hex_literal::hex,
     std::{fmt::Display, str::FromStr, sync::Arc},
 };
@@ -42,13 +42,6 @@ pub const SWAPR_INIT: [u8; 32] =
 pub const TESTNET_UNISWAP_INIT: [u8; 32] =
     hex!("0efd7612822d579e24a8851501d8c2ad854264a1050e3dfcee8afcca08f80a86");
 
-#[derive(Debug, Clone, Copy)]
-pub struct UniV2BaselineSourceParameters {
-    router: H160,
-    init_code_digest: H256,
-    pool_reading: PoolReadingStyle,
-}
-
 #[derive(Clone, Copy, Debug, strum::EnumString, strum::Display)]
 enum PoolReadingStyle {
     Default,
@@ -61,6 +54,13 @@ pub struct UniV2BaselineSource {
     pub pool_fetching: Arc<dyn PoolFetching>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct UniV2BaselineSourceParameters {
+    router: Address,
+    init_code_digest: B256,
+    pool_reading: PoolReadingStyle,
+}
+
 impl UniV2BaselineSourceParameters {
     pub fn from_baseline_source(source: BaselineSource, chain: &str) -> Option<Self> {
         use BaselineSource as BS;
@@ -70,38 +70,32 @@ impl UniV2BaselineSourceParameters {
         match source {
             BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
             BS::UniswapV2 => Some(Self {
-                router: contracts::alloy::UniswapV2Router02::deployment_address(&chain_id)
-                    .map(IntoLegacy::into_legacy)?,
+                router: contracts::alloy::UniswapV2Router02::deployment_address(&chain_id)?,
                 init_code_digest: UNISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Honeyswap => Some(Self {
-                router: contracts::alloy::HoneyswapRouter::deployment_address(&chain_id)
-                    .map(IntoLegacy::into_legacy)?,
+                router: contracts::alloy::HoneyswapRouter::deployment_address(&chain_id)?,
                 init_code_digest: HONEYSWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::SushiSwap => Some(Self {
-                router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)
-                    .map(IntoLegacy::into_legacy)?,
+                router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)?,
                 init_code_digest: SUSHISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Swapr => Some(Self {
-                router: contracts::alloy::SwaprRouter::deployment_address(&chain_id)
-                    .map(IntoLegacy::into_legacy)?,
+                router: contracts::alloy::SwaprRouter::deployment_address(&chain_id)?,
                 init_code_digest: SWAPR_INIT.into(),
                 pool_reading: PoolReadingStyle::Swapr,
             }),
             BS::TestnetUniswapV2 => Some(Self {
-                router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain_id)
-                    .map(IntoLegacy::into_legacy)?,
+                router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain_id)?,
                 init_code_digest: TESTNET_UNISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Baoswap => Some(Self {
-                router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)
-                    .map(IntoLegacy::into_legacy)?,
+                router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)?,
                 init_code_digest: BAOSWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
@@ -109,11 +103,9 @@ impl UniV2BaselineSourceParameters {
     }
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
-        let web3 = ethrpc::instrumented::instrument_with_label(web3, "uniswapV2".into());
-        let router = contracts::alloy::IUniswapLikeRouter::Instance::new(
-            self.router.into_alloy(),
-            web3.alloy.clone(),
-        );
+        let web3 = web3.labeled("uniswapV2");
+        let router =
+            contracts::alloy::IUniswapLikeRouter::Instance::new(self.router, web3.provider.clone());
         let factory = router.factory().call().await.context("factory")?;
         let pair_provider = pair_provider::PairProvider {
             factory,
@@ -149,12 +141,12 @@ impl FromStr for UniV2BaselineSourceParameters {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('|');
-        let router: H160 = parts
+        let router: Address = parts
             .next()
             .context("no factory address")?
             .parse()
             .context("parse factory address")?;
-        let init_code_digest: H256 = parts
+        let init_code_digest: B256 = parts
             .next()
             .context("no init code digest")?
             .parse()
@@ -178,7 +170,7 @@ mod tests {
         super::*,
         crate::recent_block_cache::Block,
         alloy::{
-            primitives::{Address, address},
+            primitives::{Address, B256, address},
             providers::Provider,
         },
         maplit::hashset,
@@ -189,8 +181,7 @@ mod tests {
     fn parse_address_init() {
         let arg = "0x0000000000000000000000000000000000000001|0x0000000000000000000000000000000000000000000000000000000000000002";
         let parsed = UniV2BaselineSourceParameters::from_str(arg).unwrap();
-        assert_eq!(parsed.router, H160::from_low_u64_be(1));
-        assert_eq!(parsed.init_code_digest, H256::from_low_u64_be(2));
+        assert_eq!(parsed.init_code_digest, B256::with_last_byte(2));
     }
 
     #[test]
@@ -216,7 +207,7 @@ mod tests {
         token1: Address,
         expected_pool_address: Address,
     ) {
-        let version_ = web3.eth().chain_id().await.unwrap().to_string();
+        let version_ = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version_, version, "wrong node for test");
         let source = UniV2BaselineSourceParameters::from_baseline_source(source, version)
             .unwrap()
@@ -232,7 +223,7 @@ mod tests {
     #[ignore]
     async fn baseline_mainnet() {
         let web3 = ethrpc::Web3::new_from_env();
-        let version = web3.eth().chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version, "1", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "1", source, token0, token1, expected)
@@ -265,7 +256,7 @@ mod tests {
     #[ignore]
     async fn baseline_sepolia() {
         let web3 = ethrpc::Web3::new_from_env();
-        let version = web3.eth().chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version, "11155111", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "11155111", source, token0, token1, expected)
@@ -285,7 +276,7 @@ mod tests {
     #[ignore]
     async fn baseline_xdai() {
         let web3 = ethrpc::Web3::new_from_env();
-        let version = web3.eth().chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         assert_eq!(version, "100", "test must be run with xdai node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "100", source, token0, token1, expected)
@@ -314,7 +305,7 @@ mod tests {
     #[ignore]
     async fn fetch_baoswap_pool() {
         let web3 = Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         let pool_fetcher =
             UniV2BaselineSourceParameters::from_baseline_source(BaselineSource::Baoswap, &version)
                 .unwrap()
@@ -350,7 +341,7 @@ mod tests {
     #[ignore]
     async fn fetch_honeyswap_pool() {
         let web3 = Web3::new_from_env();
-        let version = web3.alloy.get_chain_id().await.unwrap().to_string();
+        let version = web3.provider.get_chain_id().await.unwrap().to_string();
         let pool_fetcher = UniV2BaselineSourceParameters::from_baseline_source(
             BaselineSource::Honeyswap,
             &version,

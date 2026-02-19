@@ -8,8 +8,8 @@ use {
         interaction::InteractionData,
         order::{Order, OrderClass, OrderKind},
     },
+    number::u256_ext::U256Ext,
     shared::{
-        conversions::U256Ext,
         encoded_settlement::EncodedSettlement,
         http_solver::model::InternalizationStrategy,
         interaction::Interaction,
@@ -627,7 +627,7 @@ pub mod tests {
 
     #[test]
     fn settlement_merges_unwraps_for_same_token() {
-        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().alloy);
+        let weth = WETH9::Instance::new([0x42; 20].into(), ethrpc::mock::web3().provider);
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
@@ -701,11 +701,11 @@ pub mod tests {
         );
         assert_eq!(
             finished_settlement.trades[1].1, // <-- is the buy token index of liquidity order
-            3.into()
+            U256::from(3)
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of normal order
-            1.into()
+            U256::ONE
         );
     }
 
@@ -745,11 +745,11 @@ pub mod tests {
         );
         assert_eq!(
             finished_settlement.trades[0].0, // <-- is the sell token index of liquidity order
-            0.into()
+            U256::ZERO
         );
         assert_eq!(
             finished_settlement.trades[0].1, // <-- is the buy token index of liquidity order
-            1.into()
+            U256::ONE
         );
     }
 
@@ -757,11 +757,11 @@ pub mod tests {
     fn settlement_encoder_appends_unwraps_for_different_tokens() {
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
         });
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x02; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::from(2),
         });
 
@@ -786,7 +786,7 @@ pub mod tests {
             alloy::primitives::Bytes::default(),
         );
         let unwrap = UnwrapWethInteraction {
-            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().alloy),
+            weth: WETH9::Instance::new([0x01; 20].into(), ethrpc::mock::web3().provider),
             amount: U256::ONE,
         };
 
@@ -966,7 +966,7 @@ pub mod tests {
             .add_trade(order_1_3, U256::from(11), U256::ZERO)
             .unwrap();
 
-        let weth = WETH9::Instance::new(Address::with_last_byte(2), ethrpc::mock::web3().alloy);
+        let weth = WETH9::Instance::new(Address::with_last_byte(2), ethrpc::mock::web3().provider);
         encoder.add_unwrap(UnwrapWethInteraction {
             weth,
             amount: U256::from(12),
@@ -986,11 +986,11 @@ pub mod tests {
 
         // dropping unnecessary tokens did not change the sell_token_index
         let updated_sell_token_index = encoded_trade.0;
-        assert_eq!(updated_sell_token_index, 0.into());
+        assert_eq!(updated_sell_token_index, U256::ZERO);
 
         // dropping unnecessary tokens decreased the buy_token_index by one
         let updated_buy_token_index = encoded_trade.1;
-        assert_eq!(updated_buy_token_index, 1.into());
+        assert_eq!(updated_buy_token_index, U256::ONE);
     }
 
     #[derive(Debug)]

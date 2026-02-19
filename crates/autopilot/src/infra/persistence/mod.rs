@@ -5,9 +5,10 @@ use {
         domain::{self, eth, settlement::transaction::EncodedTrade},
         infra::persistence::dto::{AuctionId, RawAuctionData},
     },
+    ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::Context,
-    bigdecimal::ToPrimitive,
+    bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
     database::{
@@ -20,7 +21,7 @@ use {
             SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
         },
-        solver_competition_v2::{Order, Solution},
+        solver_competition_v2::{self, Order, Solution},
     },
     domain::auction::order::{
         BuyTokenDestination as DomainBuyTokenDestination,
@@ -28,7 +29,7 @@ use {
         SigningScheme as DomainSigningScheme,
     },
     futures::{StreamExt, TryStreamExt},
-    number::conversions::{alloy::u256_to_big_uint, u256_to_big_decimal},
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::full_order_into_model_order,
     std::{
         collections::{HashMap, HashSet},
@@ -206,7 +207,7 @@ impl Persistence {
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
-        solutions: impl Iterator<Item = &domain::competition::Participant>,
+        solutions: impl Iterator<Item = &domain::competition::Bid>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -220,17 +221,15 @@ impl Persistence {
             auction_id,
             &solutions
                 .enumerate()
-                .map(|(uid, participant)| {
+                .map(|(uid, bid)| {
                     let solution = Solution {
                         uid: uid.try_into().context("uid overflow")?,
-                        id: u256_to_big_decimal(&participant.solution().id().into()),
-                        solver: ByteArray(participant.solution().solver().0.0),
-                        is_winner: participant.is_winner(),
-                        filtered_out: participant.filtered_out(),
-                        score: number::conversions::alloy::u256_to_big_decimal(
-                            &participant.solution().score().get().0,
-                        ),
-                        orders: participant
+                        id: BigDecimal::from(bid.solution().id()),
+                        solver: ByteArray(bid.solution().solver().0.0),
+                        is_winner: bid.is_winner(),
+                        filtered_out: bid.is_filtered_out(),
+                        score: u256_to_big_decimal(&bid.score().get().0),
+                        orders: bid
                             .solution()
                             .orders()
                             .iter()
@@ -238,34 +237,24 @@ impl Persistence {
                                 uid: ByteArray(order_uid.0),
                                 sell_token: ByteArray(order.sell.token.0.0.0),
                                 buy_token: ByteArray(order.buy.token.0.0.0),
-                                limit_sell: number::conversions::alloy::u256_to_big_decimal(
-                                    &order.sell.amount.0,
-                                ),
-                                limit_buy: number::conversions::alloy::u256_to_big_decimal(
-                                    &order.buy.amount.0,
-                                ),
-                                executed_sell: number::conversions::alloy::u256_to_big_decimal(
-                                    &order.executed_sell.0,
-                                ),
-                                executed_buy: number::conversions::alloy::u256_to_big_decimal(
-                                    &order.executed_buy.0,
-                                ),
+                                limit_sell: u256_to_big_decimal(&order.sell.amount.0),
+                                limit_buy: u256_to_big_decimal(&order.buy.amount.0),
+                                executed_sell: u256_to_big_decimal(&order.executed_sell.0),
+                                executed_buy: u256_to_big_decimal(&order.executed_buy.0),
                                 side: order.side.into(),
                             })
                             .collect(),
-                        price_tokens: participant
+                        price_tokens: bid
                             .solution()
                             .prices()
                             .keys()
                             .map(|token| ByteArray(token.0.0.0))
                             .collect(),
-                        price_values: participant
+                        price_values: bid
                             .solution()
                             .prices()
                             .values()
-                            .map(|price| {
-                                number::conversions::alloy::u256_to_big_decimal(&price.get().0)
-                            })
+                            .map(|price| u256_to_big_decimal(&price.get().0))
                             .collect(),
                     };
                     Ok::<_, DatabaseError>(solution)
@@ -305,12 +294,38 @@ impl Persistence {
         order_uids: impl IntoIterator<Item = domain::OrderUid>,
         label: boundary::OrderEventLabel,
     ) {
+        let order_uids: Vec<_> = order_uids.into_iter().collect();
+        self.store_order_events_owned(order_uids, std::convert::identity, label);
+    }
+
+    /// A variants of [`store_order_events`] where [`items`] is already an owned
+    /// collection which allows us to move the logic to convert an item to a
+    /// [`domain::OrderUid`] into the background task as well.
+    pub fn store_order_events_owned<I, F>(
+        &self,
+        items: I,
+        convert: F,
+        label: boundary::OrderEventLabel,
+    ) where
+        I: IntoIterator + Send + 'static,
+        I::Item: Send,
+        F: (Fn(I::Item) -> domain::OrderUid) + Send + 'static,
+    {
         let db = self.postgres.clone();
-        let order_uids = order_uids.into_iter().collect();
         tokio::spawn(
             async move {
-                let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
-                store_order_events(&mut tx, order_uids, label, Utc::now()).await;
+                let order_uids = items.into_iter().map(convert).collect();
+                match db.pool.acquire().await {
+                    Ok(mut tx) => {
+                        store_order_events(&mut tx, order_uids, label, Utc::now()).await;
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            ?err,
+                            "failed to acquire a connection to store order events!"
+                        );
+                    }
+                };
             }
             .instrument(tracing::Span::current()),
         );
@@ -395,7 +410,7 @@ impl Persistence {
                 price_values: auction
                     .prices
                     .values()
-                    .map(|price| number::conversions::alloy::u256_to_big_decimal(&price.get().0))
+                    .map(|price| u256_to_big_decimal(&price.get().0))
                     .collect(),
                 surplus_capturing_jit_order_owners: auction
                     .surplus_capturing_jit_order_owners
@@ -442,7 +457,7 @@ impl Persistence {
             .into_iter()
             .map(|price| {
                 let token = eth::Address::new(price.token.0).into();
-                let price = number::conversions::alloy::big_decimal_to_u256(&price.price)
+                let price = big_decimal_to_u256(&price.price)
                     .ok_or(domain::auction::InvalidPrice)
                     .and_then(|p| domain::auction::Price::try_new(p.into()))
                     .map_err(|_err| error::Auction::InvalidPrice(token));
@@ -543,8 +558,8 @@ impl Persistence {
     /// order creation timestamp, and minimum validity period.
     pub async fn solvable_orders_after(
         &self,
-        mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
-        mut current_quotes: HashMap<domain::OrderUid, domain::Quote>,
+        mut current_orders: HashMap<domain::OrderUid, Arc<model::order::Order>>,
+        mut current_quotes: HashMap<domain::OrderUid, Arc<domain::Quote>>,
         after_timestamp: DateTime<Utc>,
         after_block: u64,
         min_valid_to: u32,
@@ -572,7 +587,7 @@ impl Persistence {
 
         // Fetch the orders that were updated after the given block and were created or
         // cancelled after the given timestamp.
-        let next_orders: HashMap<domain::OrderUid, model::order::Order> = {
+        let next_orders: HashMap<domain::OrderUid, Arc<model::order::Order>> = {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["open_orders_after"])
@@ -585,7 +600,7 @@ impl Persistence {
             )
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order)
-                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    .map(|order| (domain::OrderUid(order.metadata.uid.0), Arc::new(order))),
                 Err(err) => Err(anyhow::Error::from(err)),
             })
             .try_collect()
@@ -597,20 +612,9 @@ impl Persistence {
             .to_u64()
             .context("latest_settlement_block is not u64")?;
 
-        // Blindly insert all new orders into the cache.
+        // Insert new / updated orders or remove invalidated orders
+        // and the associated quote.
         for (uid, order) in next_orders {
-            current_orders.insert(uid, order);
-        }
-
-        // Filter out all the invalid orders.
-        current_orders.retain(|_uid, order| {
-            let expired = order.data.valid_to < min_valid_to
-                || order
-                    .metadata
-                    .ethflow_data
-                    .as_ref()
-                    .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
-
             let invalidated = order.metadata.invalidated;
             let onchain_error = order
                 .metadata
@@ -630,10 +634,30 @@ impl Persistence {
                 }
             };
 
-            !expired && !invalidated && !onchain_error && !fulfilled
-        });
+            if invalidated || onchain_error || fulfilled {
+                current_orders.remove(&uid);
+                current_quotes.remove(&uid);
+            } else {
+                current_orders.insert(uid, order);
+            }
+        }
 
-        current_quotes.retain(|uid, _| current_orders.contains_key(uid));
+        // Filter out all the expired orders and their quotes.
+        current_orders.retain(|uid, order| {
+            let expired = order.data.valid_to < min_valid_to
+                || order
+                    .metadata
+                    .ethflow_data
+                    .as_ref()
+                    .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
+
+            if expired {
+                current_quotes.remove(uid);
+                false
+            } else {
+                true
+            }
+        });
 
         {
             let _timer = Metrics::get()
@@ -659,7 +683,7 @@ impl Persistence {
                 let order_uid = domain::OrderUid(quote.order_uid.0);
                 match dto::quote::into_domain(quote) {
                     Ok(quote) => {
-                        current_quotes.insert(order_uid, quote);
+                        current_quotes.insert(order_uid, Arc::new(quote));
                     }
                     Err(err) => tracing::warn!(?order_uid, ?err, "failed to convert quote from db"),
                 }
@@ -807,18 +831,14 @@ impl Persistence {
                     block_number,
                     Asset {
                         token: ByteArray(order_fee.total.token.0.0.0),
-                        amount: number::conversions::alloy::u256_to_big_decimal(
-                            &order_fee.total.amount.0,
-                        ),
+                        amount: u256_to_big_decimal(&order_fee.total.amount.0),
                     },
                     &order_fee
                         .protocol
                         .into_iter()
                         .map(|executed| Asset {
                             token: ByteArray(executed.fee.token.0.0.0),
-                            amount: number::conversions::alloy::u256_to_big_decimal(
-                                &executed.fee.amount.0,
-                            ),
+                            amount: u256_to_big_decimal(&executed.fee.amount.0),
                         })
                         .collect::<Vec<_>>(),
                 )
@@ -852,11 +872,11 @@ impl Persistence {
                                         .unwrap_or_default(),
                                     sell_token: ByteArray(jit_order.sell.token.0.0.0),
                                     buy_token: ByteArray(jit_order.buy.token.0.0.0),
-                                    sell_amount: number::conversions::alloy::u256_to_big_decimal(&jit_order.sell.amount.0),
-                                    buy_amount: number::conversions::alloy::u256_to_big_decimal(&jit_order.buy.amount.0),
+                                    sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
+                                    buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
                                     valid_to: i64::from(jit_order.valid_to),
                                     app_data: ByteArray(jit_order.app_data.0),
-                                    fee_amount: number::conversions::alloy::u256_to_big_decimal(&jit_order.fee_amount.0),
+                                    fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
                                     kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
                                     signature: jit_order.signature.to_bytes(),
@@ -961,63 +981,6 @@ impl Persistence {
         Ok(())
     }
 
-    /// Finds solvers that won `last_auctions_count` consecutive auctions but
-    /// never settled any of them. The current block is used to prevent
-    /// selecting auctions with deadline after the current block since they
-    /// still can be settled.
-    pub async fn find_non_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-    ) -> anyhow::Result<Vec<eth::Address>> {
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["find_non_settling_solvers"])
-            .start_timer();
-
-        Ok(database::solver_competition_v2::find_non_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-        )
-        .await
-        .context("failed to fetch non-settling solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
-    }
-
-    /// Finds solvers that have a failure settling rate above the given
-    /// ratio. The current block is used to prevent selecting auctions with
-    /// deadline after the current block since they still can be settled.
-    pub async fn find_low_settling_solvers(
-        &self,
-        last_auctions_count: u32,
-        current_block: u64,
-        max_failure_rate: f64,
-        min_wins_threshold: u32,
-    ) -> anyhow::Result<Vec<eth::Address>> {
-        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["find_low_settling_solvers"])
-            .start_timer();
-
-        Ok(database::solver_competition_v2::find_low_settling_solvers(
-            &mut ex,
-            last_auctions_count,
-            current_block,
-            max_failure_rate,
-            min_wins_threshold,
-        )
-        .await
-        .context("solver_competition::find_low_settling_solvers")?
-        .into_iter()
-        .map(|solver| eth::Address(solver.0.into()))
-        .collect())
-    }
-
     pub async fn get_solver_winning_solutions(
         &self,
         auction_id: domain::auction::Id,
@@ -1038,6 +1001,27 @@ impl Persistence {
             .await
             .context("solver_competition::fetch_solver_winning_solutions")?,
         )
+    }
+
+    /// Fetches orders which are currently inflight. Those orders should
+    /// be omitted from the current auction to avoid onchain reverts.
+    pub async fn fetch_in_flight_orders(
+        &self,
+        current_block: u64,
+    ) -> anyhow::Result<HashSet<crate::domain::OrderUid>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["inflight_orders"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let orders =
+            solver_competition_v2::fetch_in_flight_orders(&mut ex, current_block.cast_signed())
+                .await?;
+        Ok(orders
+            .into_iter()
+            .map(|o| crate::domain::OrderUid(o.0))
+            .collect())
     }
 }
 

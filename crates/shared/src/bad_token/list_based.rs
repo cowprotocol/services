@@ -1,146 +1,26 @@
 use {
-    super::{BadTokenDetecting, TokenQuality},
     alloy::primitives::Address,
-    anyhow::Result,
-    std::sync::Arc,
-    tracing::instrument,
+    std::{collections::HashSet, sync::Arc},
 };
 
-/// If a token is neither in the allow nor the deny list treat it this way.
-pub enum UnknownTokenStrategy {
-    Allow,
-    Deny,
-    Forward(Arc<dyn BadTokenDetecting>),
+/// Explicitly deny listed tokens.
+#[derive(Default, Clone)]
+pub struct DenyListedTokens(Arc<Inner>);
+
+#[derive(Default)]
+struct Inner {
+    deny_list: HashSet<Address>,
 }
 
-/// Classify tokens with explicit allow and deny lists.
-pub struct ListBasedDetector {
-    allow_list: Vec<Address>,
-    deny_list: Vec<Address>,
-    strategy: UnknownTokenStrategy,
-}
-
-impl ListBasedDetector {
-    /// Panics if same token is both allowed and denied.
-    pub fn new(
-        allow_list: Vec<Address>,
-        deny_list: Vec<Address>,
-        strategy: UnknownTokenStrategy,
-    ) -> Self {
-        assert!(
-            allow_list.iter().all(|token| !deny_list.contains(token)),
-            "token is allowed and denied"
-        );
-        Self {
-            allow_list,
-            deny_list,
-            strategy,
-        }
-    }
-
-    pub fn deny_list(list: Vec<Address>) -> Self {
-        Self {
-            allow_list: Vec::new(),
-            deny_list: list,
-            strategy: UnknownTokenStrategy::Allow,
-        }
+impl DenyListedTokens {
+    pub fn new(deny_list: Vec<Address>) -> Self {
+        let deny_list = deny_list.into_iter().collect();
+        Self(Arc::new(Inner { deny_list }))
     }
 }
 
-#[async_trait::async_trait]
-impl BadTokenDetecting for ListBasedDetector {
-    #[instrument(skip_all)]
-    async fn detect(&self, token: Address) -> Result<TokenQuality> {
-        if self.allow_list.contains(&token) {
-            return Ok(TokenQuality::Good);
-        }
-
-        if self.deny_list.contains(&token) {
-            return Ok(TokenQuality::Bad {
-                reason: "token is explicitly deny listed".to_string(),
-            });
-        }
-
-        match &self.strategy {
-            UnknownTokenStrategy::Allow => Ok(TokenQuality::Good),
-            UnknownTokenStrategy::Deny => Ok(TokenQuality::Bad {
-                reason: "token is not allow listed".to_string(),
-            }),
-            UnknownTokenStrategy::Forward(inner) => inner.detect(token).await,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, crate::bad_token::MockBadTokenDetecting, futures::FutureExt};
-
-    #[test]
-    fn uses_lists() {
-        // Would panic if used.
-        let inner = MockBadTokenDetecting::new();
-        let detector = ListBasedDetector {
-            allow_list: vec![Address::with_last_byte(0)],
-            deny_list: vec![Address::with_last_byte(1)],
-            strategy: UnknownTokenStrategy::Forward(Arc::new(inner)),
-        };
-
-        let result = detector
-            .detect(Address::with_last_byte(0))
-            .now_or_never()
-            .unwrap();
-        assert!(result.unwrap().is_good());
-
-        let result = detector
-            .detect(Address::with_last_byte(1))
-            .now_or_never()
-            .unwrap();
-        assert!(!result.unwrap().is_good());
-    }
-
-    #[test]
-    fn not_in_list_default() {
-        let detector = ListBasedDetector {
-            allow_list: Vec::new(),
-            deny_list: Vec::new(),
-            strategy: UnknownTokenStrategy::Allow,
-        };
-        let result = detector
-            .detect(Address::with_last_byte(0))
-            .now_or_never()
-            .unwrap();
-        assert!(result.unwrap().is_good());
-
-        let detector = ListBasedDetector {
-            allow_list: Vec::new(),
-            deny_list: Vec::new(),
-            strategy: UnknownTokenStrategy::Deny,
-        };
-        let result = detector
-            .detect(Address::with_last_byte(0))
-            .now_or_never()
-            .unwrap();
-        assert!(!result.unwrap().is_good());
-    }
-
-    #[test]
-    fn not_in_list_forwards() {
-        let mut inner = MockBadTokenDetecting::new();
-        inner
-            .expect_detect()
-            .times(1)
-            .returning(|_| Ok(TokenQuality::Good));
-
-        let detector = ListBasedDetector {
-            allow_list: Vec::new(),
-            deny_list: Vec::new(),
-            strategy: UnknownTokenStrategy::Forward(Arc::new(inner)),
-        };
-
-        let result = detector
-            .detect(Address::with_last_byte(0))
-            .now_or_never()
-            .unwrap();
-        assert!(result.unwrap().is_good());
+impl DenyListedTokens {
+    pub fn contains(&self, token: &Address) -> bool {
+        self.0.deny_list.contains(token)
     }
 }

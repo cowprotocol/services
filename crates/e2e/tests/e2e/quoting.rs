@@ -1,9 +1,6 @@
 use {
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
-    ethrpc::alloy::{
-        CallBuilderExt,
-        conversions::{IntoAlloy, IntoLegacy},
-    },
+    ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -11,14 +8,12 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
     std::{
         sync::Arc,
         time::{Duration, Instant},
     },
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -55,16 +50,13 @@ async fn test(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
+        .approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -206,16 +198,13 @@ async fn uses_stale_liquidity(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(2u64.eth()).await;
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -281,10 +270,7 @@ async fn quote_timeout(web3: Web3) {
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(2u64.eth()).await;
     let [sell_token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     tracing::info!("Starting services.");
@@ -302,6 +288,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
+                haircut_bps: 0,
             },
             SolverEngine {
                 name: "test_quoter".into(),
@@ -309,6 +296,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
+                haircut_bps: 0,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -322,6 +310,8 @@ async fn quote_timeout(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
+            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
+                .to_string(),
             format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms"),
         ])
         .await;
@@ -395,7 +385,7 @@ async fn quote_timeout(web3: Web3) {
     sell_token.mint(trader.address(), 1u64.eth()).await;
 
     sell_token
-        .approve(onchain.contracts().allowance.into_alloy(), 1u64.eth())
+        .approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -414,7 +404,7 @@ async fn quote_timeout(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &trader.signer,
     );
 
     // order creation requests always use the default quote time
@@ -432,17 +422,14 @@ async fn volume_fee(web3: Web3) {
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
-    let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(
-            1_000u64.eth().into_legacy(),
-            1_000u64.eth().into_legacy(),
-        )
+    let [token, override_token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
         .await;
 
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance.into_alloy(), 3u64.eth())
+        .approve(onchain.contracts().allowance, 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -459,12 +446,19 @@ async fn volume_fee(web3: Web3) {
 
     tracing::info!("Starting services with volume fee.");
     let services = Services::new(&onchain).await;
-    // Start API with 0.02% (2 bps) volume fee
+    // Start API with 0.02% (2 bps) default volume fee
+    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must be
+    // in bucket)
     let args = ExtraServiceArgs {
         api: vec![
             "--volume-fee-factor=0.0002".to_string(),
             // Set a past effective timestamp to ensure the fee is applied
             "--volume-fee-effective-timestamp=2000-01-01T10:00:00Z".to_string(),
+            format!(
+                "--volume-fee-bucket-overrides=0.0005:{};{}",
+                onchain.contracts().weth.address(),
+                override_token.address()
+            ),
         ],
         ..Default::default()
     };
@@ -505,4 +499,29 @@ async fn volume_fee(web3: Web3) {
     // Verify protocol fee fields are present
     assert!(buy_quote.protocol_fee_bps.is_some());
     assert_eq!(buy_quote.protocol_fee_bps.as_ref().unwrap(), "2");
+
+    // Test bucket override: override_token should get 5 bps instead of 2 bps
+    tracing::info!("Testing quote with bucket override (5 bps)");
+    let override_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *override_token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(1u64.eth()).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    let override_quote = services.submit_quote(&override_request).await.unwrap();
+
+    // Verify override token gets 5 bps (from bucket override) instead of 2 bps
+    // (default)
+    assert!(override_quote.protocol_fee_bps.is_some());
+    assert_eq!(
+        override_quote.protocol_fee_bps.as_ref().unwrap(),
+        "5",
+        "Bucket override should apply 5 bps, not default 2 bps"
+    );
 }

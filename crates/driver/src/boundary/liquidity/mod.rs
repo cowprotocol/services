@@ -56,7 +56,7 @@ impl Fetcher {
     /// Creates a new fetcher for the specified configuration.
     pub async fn try_new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let block_stream = eth.current_block();
-        let block_retriever = Arc::new(eth.web3().alloy.clone());
+        let block_retriever = Arc::new(eth.web3().provider.clone());
 
         let uni_v2: Vec<_> = future::try_join_all(
             config
@@ -128,6 +128,10 @@ impl Fetcher {
         pairs: &HashSet<liquidity::TokenPair>,
         block: infra::liquidity::AtBlock,
     ) -> Result<Vec<liquidity::Liquidity>> {
+        if pairs.is_empty() {
+            return Ok(vec![]);
+        }
+
         let pairs = pairs
             .iter()
             .map(|pair| {

@@ -71,9 +71,9 @@ pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify it
     /// in subsequent requests (reveal, settle).
     solution_id: u64,
+    submission_address: eth::Address,
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,
-    submission_address: eth::Address,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
     orders: HashMap<OrderId, TradedOrder>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]

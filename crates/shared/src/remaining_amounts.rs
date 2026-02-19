@@ -2,7 +2,7 @@ use {
     alloy::primitives::U256,
     anyhow::{Context, Result},
     model::order::{Order as ModelOrder, OrderKind},
-    number::{conversions::alloy::big_uint_to_u256, ratio_ext::RatioExt},
+    number::{conversions::big_uint_to_u256, ratio_ext::RatioExt},
 };
 
 type Ratio = num::rational::Ratio<U256>;

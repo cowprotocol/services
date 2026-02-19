@@ -15,7 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types", "provider-txpool-api", "rand"] }
+alloy = { workspace = true, features = ["sol-types", "provider-txpool-api", "rand", "provider-anvil-api", "json-rpc", "rpc-types"] }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
@@ -30,6 +30,7 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
+http-body = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 hyper = { workspace = true }
@@ -54,21 +55,17 @@ toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
-web3 = { workspace = true, features = ["http"] }
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
-secp256k1 = { workspace = true }
 
 # TODO These either need to be removed or changed to be direct
 # dependencies rather than workspace dependencies
 anyhow = { workspace = true }
 clap = { workspace = true }
 contracts = { workspace = true }
-ethcontract = { workspace = true }
-gas-estimation = { workspace = true }
 model = { workspace = true }
-observe = { workspace = true, features = ["axum-tracing"] }
+observe = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }

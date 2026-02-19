@@ -82,7 +82,7 @@ services:
       - ENABLE_EIP1271_ORDERS=true
       - PRICE_ESTIMATORS=None
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
@@ -115,7 +115,7 @@ services:
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
       - SETTLE_INTERVAL=15s
-      - GAS_ESTIMATORS=Native,Web3
+      - GAS_ESTIMATORS=Web3,Alloy
       - PRICE_ESTIMATORS=None
       - NATIVE_PRICE_ESTIMATORS=baseline
       - BLOCK_STREAM_POLL_INTERVAL=1s
@@ -123,7 +123,7 @@ services:
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
@@ -202,6 +202,66 @@ services:
     ports:
       - 8000:80
 
+  # Sourcify - Contract verification service
+  sourcify-db:
+    image: postgres:16
+    restart: always
+    environment:
+      - POSTGRES_USER=sourcify
+      - POSTGRES_PASSWORD=sourcify
+      - POSTGRES_DB=sourcify
+    volumes:
+      - sourcify-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sourcify"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sourcify:
+    build:
+      context: .
+      dockerfile: Dockerfile.sourcify
+    restart: always
+    depends_on:
+      sourcify-db:
+        condition: service_healthy
+    environment:
+      - SOURCIFY_POSTGRES_HOST=sourcify-db
+      - SOURCIFY_POSTGRES_PORT=5432
+      - SOURCIFY_POSTGRES_USER=sourcify
+      - SOURCIFY_POSTGRES_PASSWORD=sourcify
+      - SOURCIFY_POSTGRES_DB=sourcify
+      - NODE_ENV=development
+    volumes:
+      - ./sourcify-chains.json:/sourcify/services/server/dist/sourcify-chains.json
+    ports:
+      - 5555:5555
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Otterscan - Local blockchain block explorer for Anvil
+  otterscan:
+    build:
+      context: .
+      dockerfile: Dockerfile.otterscan
+    restart: always
+    environment:
+      - ERIGON_URL=http://127.0.0.1:8545
+      - SOURCIFY_MODE=${SOURCIFY_MODE:-cloud}
+      - LOCAL_SOURCIFY_URL=http://sourcify:5555
+    ports:
+      - 8003:80
+    depends_on:
+      chain:
+        condition: service_healthy
+      sourcify:
+        condition: service_healthy
+
   explorer:
     build:
       context: .
@@ -231,7 +291,6 @@ services:
     volumes:
       - ./grafana-prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
 
-
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -243,3 +302,4 @@ services:
 
 volumes:
   postgres:
+  sourcify-postgres:

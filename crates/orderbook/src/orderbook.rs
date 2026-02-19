@@ -13,7 +13,6 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::alloy::conversions::IntoLegacy,
     model::{
         DomainSeparator,
         order::{
@@ -286,7 +285,7 @@ impl Orderbook {
             .validate_and_construct_order(
                 payload,
                 &self.domain_separator,
-                self.settlement_contract.into_legacy(),
+                self.settlement_contract,
                 full_app_data_override,
             )
             .await?;
@@ -685,7 +684,8 @@ mod tests {
                 ))
             });
 
-        let database = crate::database::Postgres::try_new("postgresql://").unwrap();
+        let database =
+            crate::database::Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order).await.unwrap();
 

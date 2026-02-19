@@ -27,10 +27,8 @@ use {
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
         orders::{Order, OrderClass, insert_quotes},
     },
-    ethcontract::H160,
     ethrpc::{
         Web3,
-        alloy::conversions::IntoLegacy,
         block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
     futures::{StreamExt, stream},
@@ -73,7 +71,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     quoter: Arc<dyn OrderQuoting>,
     custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
-    settlement_contract: H160,
+    settlement_contract: Address,
     metrics: &'static Metrics,
     trampoline: HooksTrampoline::Instance,
 }
@@ -89,7 +87,7 @@ where
         quoter: Arc<dyn OrderQuoting>,
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
-        settlement_contract: H160,
+        settlement_contract: Address,
         trampoline: HooksTrampoline::Instance,
     ) -> Self {
         OnchainOrderParser {
@@ -395,9 +393,11 @@ async fn get_block_numbers_of_events(
     let futures = event_block_numbers
         .into_iter()
         .map(|block_number| async move {
-            let timestamp =
-                timestamp_of_block_in_seconds(&web3.alloy, BlockNumberOrTag::Number(block_number))
-                    .await?;
+            let timestamp = timestamp_of_block_in_seconds(
+                &web3.provider,
+                BlockNumberOrTag::Number(block_number),
+            )
+            .await?;
             Ok((block_number, timestamp))
         });
     let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =
@@ -454,7 +454,7 @@ async fn parse_general_onchain_order_placement_data<I>(
     quoter: &'_ dyn OrderQuoting,
     order_placement_events_and_quotes_zipped: I,
     domain_separator: DomainSeparator,
-    settlement_contract: H160,
+    settlement_contract: Address,
     metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData>
 where
@@ -489,7 +489,7 @@ where
                 order_data,
                 signing_scheme,
                 order_uid,
-                owner.into_legacy(),
+                owner,
                 settlement_contract,
                 metrics,
             );
@@ -499,10 +499,8 @@ where
                     gas_amount: quote.data.fee_parameters.gas_amount,
                     gas_price: quote.data.fee_parameters.gas_price,
                     sell_token_price: quote.data.fee_parameters.sell_token_price,
-                    sell_amount: number::conversions::alloy::u256_to_big_decimal(
-                        &quote.sell_amount,
-                    ),
-                    buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+                    sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                    buy_amount: u256_to_big_decimal(&quote.buy_amount),
                     solver: ByteArray(*quote.data.solver.0),
                     verified: quote.data.verified,
                     metadata: quote.data.metadata.try_into()?,
@@ -574,7 +572,7 @@ async fn get_quote(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
-        Some(order_data.fee_amount.into_legacy()),
+        Some(order_data.fee_amount),
     )
     .await
     .map_err(|err| match err {
@@ -592,8 +590,8 @@ fn convert_onchain_order_placement(
     order_data: OrderData,
     signing_scheme: SigningScheme,
     order_uid: OrderUid,
-    owner: H160,
-    settlement_contract: H160,
+    owner: Address,
+    settlement_contract: Address,
     metrics: &'static Metrics,
 ) -> (OnchainOrderPlacement, Order) {
     // eth flow orders are expected to be within the market price so they are
@@ -611,21 +609,21 @@ fn convert_onchain_order_placement(
 
     let order = database::orders::Order {
         uid: ByteArray(order_uid.0),
-        owner: ByteArray(owner.0),
+        owner: ByteArray(owner.0.0),
         creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
         sell_token: ByteArray(order_data.sell_token.0.0),
         buy_token: ByteArray(order_data.buy_token.0.0),
         receiver: order_data.receiver.map(|addr| ByteArray(addr.0.0)),
-        sell_amount: u256_to_big_decimal(&order_data.sell_amount.into_legacy()),
-        buy_amount: u256_to_big_decimal(&order_data.buy_amount.into_legacy()),
+        sell_amount: u256_to_big_decimal(&order_data.sell_amount),
+        buy_amount: u256_to_big_decimal(&order_data.buy_amount),
         valid_to: order_data.valid_to as i64,
         app_data: ByteArray(order_data.app_data.0),
-        fee_amount: u256_to_big_decimal(&order_data.fee_amount.into_legacy()),
+        fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         kind: order_kind_into(order_data.kind),
         partially_fillable: order_data.partially_fillable,
         signature: order_placement.signature.data.to_vec(),
         signing_scheme: signing_scheme_into(signing_scheme),
-        settlement_contract: ByteArray(settlement_contract.0),
+        settlement_contract: ByteArray(settlement_contract.0.0),
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
         cancellation_timestamp: None,
@@ -784,21 +782,16 @@ mod test {
 
     use {
         super::*,
-        crate::database::Config,
         alloy::primitives::U256,
         contracts::alloy::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
-        ethcontract::H160,
         ethrpc::Web3,
         model::{
             DomainSeparator,
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
             signature::SigningScheme,
         },
-        number::conversions::{
-            alloy::u256_to_big_decimal as alloy_u256_to_big_decimal,
-            u256_to_big_decimal,
-        },
+        number::conversions::u256_to_big_decimal,
         shared::{
             db_order_conversions::{
                 buy_token_destination_into,
@@ -810,7 +803,6 @@ mod test {
             order_quoting::{MockOrderQuoting, Quote, QuoteData},
         },
         sqlx::PgPool,
-        std::num::NonZeroUsize,
     };
 
     #[test]
@@ -980,7 +972,7 @@ mod test {
                 },
             data: Default::default(),
         };
-        let settlement_contract = H160::from([8u8; 20]);
+        let settlement_contract = Address::repeat_byte(8);
         let quote = Quote::default();
         let order_uid = OrderUid([9u8; 56]);
         let signing_scheme = SigningScheme::Eip1271;
@@ -992,7 +984,7 @@ mod test {
             order_data,
             signing_scheme,
             order_uid,
-            owner.into_legacy(),
+            owner,
             settlement_contract,
             Metrics::get(),
         );
@@ -1017,23 +1009,23 @@ mod test {
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
-            owner: ByteArray(owner.into_legacy().0),
+            owner: ByteArray(owner.0.0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
             receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
-            sell_amount: alloy_u256_to_big_decimal(&expected_order_data.sell_amount),
-            buy_amount: alloy_u256_to_big_decimal(&expected_order_data.buy_amount),
+            sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
+            buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
-            fee_amount: alloy_u256_to_big_decimal(&expected_order_data.fee_amount),
+            fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Market,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
-            settlement_contract: ByteArray(settlement_contract.0),
+            settlement_contract: ByteArray(settlement_contract.0.into()),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
@@ -1052,7 +1044,7 @@ mod test {
         let buy_amount = U256::from(11);
         let valid_to = 1u32;
         let app_data = [11u8; 32];
-        let fee_amount = U256::from(0);
+        let fee_amount = U256::ZERO;
         let owner = Address::from([5; 20]);
         let order_data = OrderData {
             sell_token,
@@ -1091,7 +1083,7 @@ mod test {
                 },
             data: Default::default(),
         };
-        let settlement_contract = H160::from([8u8; 20]);
+        let settlement_contract = Address::repeat_byte(8);
         let quote = Quote {
             sell_amount,
             buy_amount: buy_amount / U256::from(2),
@@ -1106,7 +1098,7 @@ mod test {
             order_data,
             signing_scheme,
             order_uid,
-            owner.into_legacy(),
+            owner,
             settlement_contract,
             Metrics::get(),
         );
@@ -1131,23 +1123,23 @@ mod test {
         };
         let expected_order = database::orders::Order {
             uid: ByteArray(order_uid.0),
-            owner: ByteArray(owner.into_legacy().0),
+            owner: ByteArray(owner.0.0),
             creation_timestamp: order.creation_timestamp, /* Using the actual result to keep test
                                                            * simple */
             sell_token: ByteArray(expected_order_data.sell_token.0.0),
             buy_token: ByteArray(expected_order_data.buy_token.0.0),
             receiver: expected_order_data.receiver.map(|addr| ByteArray(addr.0.0)),
-            sell_amount: alloy_u256_to_big_decimal(&expected_order_data.sell_amount),
-            buy_amount: alloy_u256_to_big_decimal(&expected_order_data.buy_amount),
+            sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
+            buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
             valid_to: expected_order_data.valid_to as i64,
             app_data: ByteArray(expected_order_data.app_data.0),
-            fee_amount: u256_to_big_decimal(&fee_amount.into_legacy()),
+            fee_amount: u256_to_big_decimal(&fee_amount),
             kind: order_kind_into(expected_order_data.kind),
             class: OrderClass::Limit,
             partially_fillable: expected_order_data.partially_fillable,
             signature: order_placement.signature.data.to_vec(),
             signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
-            settlement_contract: ByteArray(settlement_contract.0),
+            settlement_contract: ByteArray(settlement_contract.0.into()),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             cancellation_timestamp: None,
@@ -1258,18 +1250,16 @@ mod test {
         let onchain_order_parser = OnchainOrderParser {
             db: Postgres {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
-                config: Config {
-                    insert_batch_size: NonZeroUsize::new(500).unwrap(),
-                },
+                config: Default::default(),
             },
-            trampoline: HooksTrampoline::Instance::deployed(&web3.alloy)
+            trampoline: HooksTrampoline::Instance::deployed(&web3.provider)
                 .await
                 .unwrap(),
             web3,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
             domain_separator,
-            settlement_contract: H160::zero(),
+            settlement_contract: Address::ZERO,
             metrics: Metrics::get(),
         };
         let result = onchain_order_parser
@@ -1303,8 +1293,8 @@ mod test {
             gas_amount: quote.data.fee_parameters.gas_amount,
             gas_price: quote.data.fee_parameters.gas_price,
             sell_token_price: quote.data.fee_parameters.sell_token_price,
-            sell_amount: number::conversions::alloy::u256_to_big_decimal(&quote.sell_amount),
-            buy_amount: number::conversions::alloy::u256_to_big_decimal(&quote.buy_amount),
+            sell_amount: u256_to_big_decimal(&quote.sell_amount),
+            buy_amount: u256_to_big_decimal(&quote.buy_amount),
             solver: ByteArray(*quote.data.solver.0),
             verified: quote.data.verified,
             metadata: quote.data.metadata.try_into().unwrap(),

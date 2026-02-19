@@ -8,7 +8,7 @@ use {
         },
         infra::{self, Ethereum, observe, solver::Solver},
     },
-    alloy::consensus::Transaction,
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
@@ -18,9 +18,9 @@ use {
 
 /// Factor by how much a transaction fee needs to be increased to override a
 /// pending transaction at the same nonce. The correct factor is actually
-/// 1.125 but to avoid rounding issues on chains with very low gas prices
+/// 12.5% but to avoid rounding issues on chains with very low gas prices
 /// we increase slightly more.
-const GAS_PRICE_BUMP: f64 = 1.13;
+const GAS_PRICE_BUMP_PCT: u64 = 13;
 
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
@@ -67,18 +67,13 @@ impl Mempools {
     /// Defines if the mempools are configured in a way that guarantees that
     /// settled solution will not revert.
     pub fn revert_protection(&self) -> RevertProtection {
-        if self.mempools.iter().any(|mempool| {
-            matches!(
-                mempool.config().kind,
-                infra::mempool::Kind::Public {
-                    revert_protection: infra::mempool::RevertProtection::Disabled,
-                    ..
-                }
-            )
-        }) {
-            RevertProtection::Disabled
-        } else {
-            RevertProtection::Enabled
+        match self
+            .mempools
+            .iter()
+            .all(|mempool| mempool.reverts_can_get_mined())
+        {
+            true => RevertProtection::Disabled,
+            false => RevertProtection::Enabled,
         }
     }
 
@@ -93,7 +88,7 @@ impl Mempools {
         // enabled and the settlement may revert in this mempool.
         if settlement.may_revert()
             && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.may_revert()
+            && mempool.reverts_can_get_mined()
         {
             return Err(Error::Disabled);
         }
@@ -110,22 +105,26 @@ impl Mempools {
         // The tx is simulated before submitting the solution to the competition, but a
         // delay between that and the actual execution can cause the simulation to be
         // invalid which doesn't make sense to submit to the mempool anymore.
-        if let Err(err) = self.ethereum.estimate_gas(tx).await {
-            if err.is_revert() {
-                tracing::info!(
-                    ?err,
-                    "settlement tx simulation reverted before submitting to the mempool"
-                );
-                return Err(Error::SimulationRevert {
-                    submitted_at_block: current_block,
-                    reverted_at_block: current_block,
-                });
-            } else {
-                tracing::warn!(
-                    ?err,
-                    "couldn't simulate tx before submitting to the mempool"
-                );
+        if mempool.reverts_can_get_mined() {
+            if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
+                if err.is_revert() {
+                    tracing::info!(
+                        ?err,
+                        "settlement tx simulation reverted before submitting to the mempool"
+                    );
+                    return Err(Error::SimulationRevert {
+                        submitted_at_block: current_block,
+                        reverted_at_block: current_block,
+                    });
+                } else {
+                    tracing::warn!(
+                        ?err,
+                        "couldn't simulate tx before submitting to the mempool"
+                    );
+                }
             }
+        } else {
+            tracing::trace!("skipping tx simulation because mempool does not mine reverting txs");
         }
 
         // Fetch the nonce to avoid race conditions between concurrent
@@ -138,13 +137,11 @@ impl Mempools {
         // deadline
         let current_gas_price = self
             .ethereum
-            .gas_price(None)
+            .gas_price()
             .await
             .context("failed to compute current gas price")?;
         let submission_block = self.ethereum.current_block().borrow().number;
         let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
-        let estimated_gas_price =
-            current_gas_price * GAS_PRICE_BUMP.powi(blocks_until_deadline as i32);
 
         // if there is still a tx pending we also have to make sure we outbid that one
         // enough to make the node replace it in the mempool
@@ -152,12 +149,12 @@ impl Mempools {
             .minimum_replacement_gas_price(mempool, solver, nonce)
             .await;
         let final_gas_price = match &replacement_gas_price {
-            Ok(Some(replacement_gas_price))
-                if replacement_gas_price.max() > estimated_gas_price.max() =>
+            Some(replacement_gas_price)
+                if replacement_gas_price.max_fee_per_gas > current_gas_price.max_fee_per_gas =>
             {
                 *replacement_gas_price
             }
-            _ => estimated_gas_price,
+            _ => current_gas_price,
         };
 
         tracing::debug!(
@@ -222,7 +219,7 @@ impl Mempools {
                             });
                         }
                         // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(tx).await {
+                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
                             if err.is_revert() {
                                 tracing::info!(
                                     settle_tx_hash = ?hash,
@@ -275,11 +272,11 @@ impl Mempools {
     async fn cancel(
         &self,
         mempool: &infra::mempool::Mempool,
-        original_tx_gas_price: eth::GasPrice,
+        original_tx_gas_price: Eip1559Estimation,
         solver: &Solver,
-        nonce: eth::U256,
+        nonce: u64,
     ) -> Result<TxId, Error> {
-        let fallback_gas_price = original_tx_gas_price * GAS_PRICE_BUMP;
+        let fallback_gas_price = original_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT);
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, solver, nonce)
             .await;
@@ -288,7 +285,7 @@ impl Mempools {
         // replacement gas price, but if that fails for whatever reason
         // we use our best estimate based on the originally submitted tx
         let final_gas_price = match &replacement_gas_price {
-            Ok(Some(replacement)) => *replacement,
+            Some(replacement) => *replacement,
             _ => fallback_gas_price,
         };
 
@@ -318,35 +315,43 @@ impl Mempools {
             .await
     }
 
-    /// Tries to determine the minimum price to replace an existing
-    /// transaction in the mempool.
+    /// Computes minimum price to replace the last tx that was submitted
+    /// with the given nonce. Returns `None` if no tx was submitted with
+    /// that nonce yet.
+    #[tracing::instrument(skip_all)]
     async fn minimum_replacement_gas_price(
         &self,
         mempool: &infra::Mempool,
         solver: &Solver,
-        nonce: eth::U256,
-    ) -> anyhow::Result<Option<eth::GasPrice>> {
-        let pending_tx = match mempool
-            .find_pending_tx_in_mempool(solver.address(), nonce)
-            .await?
-        {
-            Some(tx) => tx,
-            None => return Ok(None),
-        };
+        next_nonce: u64,
+    ) -> Option<Eip1559Estimation> {
+        if let Some(last_submission) = mempool.last_submission(solver.address()) {
+            if last_submission.nonce == next_nonce {
+                Some(last_submission.gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
+            } else {
+                None
+            }
+        } else {
+            // If we don't have the last submission in-memory (i.e. first submission
+            // attempt after a restart) we try to inspect the nodes transaction mempool.
+            // This is only done as a backup since it can incur significant latency and
+            // is generally not very widely supported.
+            let pending_tx = mempool
+                .find_pending_tx_in_mempool(solver.address(), next_nonce)
+                .await
+                .inspect_err(|err| tracing::debug!(?err, "could not inspect tx mempool"))
+                .ok()??;
 
-        let pending_tx_gas_price = eth::GasPrice::new(
-            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-            eth::U256::from(pending_tx.max_priority_fee_per_gas().with_context(|| {
-                format!(
-                    "pending tx is not EIP 1559 ({})",
-                    pending_tx.inner.tx_hash()
-                )
-            })?)
-            .into(),
-            eth::U256::from(pending_tx.max_fee_per_gas()).into(),
-        );
-        // in order to replace a tx we need to increase the price
-        Ok(Some(pending_tx_gas_price * GAS_PRICE_BUMP))
+            let pending_tx_gas_price = Eip1559Estimation {
+                max_fee_per_gas: pending_tx.max_fee_per_gas(),
+                max_priority_fee_per_gas: pending_tx.max_priority_fee_per_gas().or_else(|| {
+                    tracing::error!(tx = ?pending_tx.inner.tx_hash(), "pending tx is not EIP 1559");
+                    None
+                })?,
+            };
+
+            Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
+        }
     }
 }
 

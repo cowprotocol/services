@@ -1,4 +1,7 @@
-use {alloy::primitives::Address, model::TokenPair, web3::signing::keccak256};
+use {
+    alloy::primitives::{Address, keccak256},
+    model::TokenPair,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct PairProvider {
@@ -15,7 +18,7 @@ impl PairProvider {
             let mut buffer = [0u8; 40];
             buffer[0..20].copy_from_slice(token0.as_slice());
             buffer[20..40].copy_from_slice(token1.as_slice());
-            keccak256(&buffer)
+            keccak256(buffer)
         };
         create2_target_address(self.factory, &salt, &self.init_code_digest)
     }
@@ -30,7 +33,7 @@ fn create2_target_address(
     preimage[1..21].copy_from_slice(creator.as_slice());
     preimage[21..53].copy_from_slice(salt);
     preimage[53..85].copy_from_slice(init_code_digest);
-    Address::from_slice(&keccak256(&preimage)[12..])
+    Address::from_slice(&keccak256(preimage)[12..])
 }
 
 #[cfg(test)]

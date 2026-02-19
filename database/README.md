@@ -8,6 +8,7 @@ Some tables only store data emitted via smart contract events. Because we only h
 [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) we actually deployed twice so events related to the staging environment should only show up in the staging DB and likewise for production.
 It's also important to note that we only index events from blocks that we are certain will not get reorged. That means specifically that events will be indexed with a block delay of at least 64.
 
+
 ### app\_data
 
 Associates the 32 bytes contract app data with the corresponding full app data.
@@ -64,6 +65,7 @@ Contains all auctions for which a valid solver competition exists.
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
+- competition_auction_deadline: btree(`deadline`)
 
 ### ethflow\_orders
 
@@ -175,6 +177,7 @@ Indexes:
 - PRIMARY KEY: btree(`uid`)
 - event\_index: btree(`block_number`, `index`)
 - order\_sender: hash(sender)
+- okay\_onchain\_orders: btree(`uid`) WHERE placement\_error IS NOT NULL
 
 ### order\_events
 
@@ -248,7 +251,7 @@ Column                    | Type                         | Nullable | Details
  buy\_token               | bytea                        | not null | address of the token that will be bought
  sell\_amount             | numeric                      | not null | amount in sell\_token that should be sold at most
  buy\_amount              | numeric                      | not null | amount of buy\_token that should be bought at least
- valid\_to                | timestamptz                  | not null | point in time when the order can no longer be settled
+ valid\_to                | timestamptz                  | not null | point in time when the order can no longer be settled as signed by the user.
  fee\_amount              | numeric                      | not null | amount in sell\_token the owner agreed upfront as a fee to be taken for the trade
  kind                     | [enum](#orderkind)           | not null | trade semantics of the order
  partially\_fillable      | bool                         | not null | determines if the order can be executed in multiple smaller trades or if everything has to be executed at once (fill-or-kill)
@@ -261,10 +264,20 @@ Column                    | Type                         | Nullable | Details
  sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
-
+ true_valid_to | timestamptz                  | not null | timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
+- order_cancellation_timestamp: btree(`cancellation_timestamp`)
+- order_creation_timestamp: btree(`creation_timestamp`)
+- order_owner: hash(`owner`)
+- order_quoting_parameters: btree(`sell_token`, `buy_token`, `sell_amount`)
+- order_sell_buy_tokens: btree(`sell_token`, `buy_token`)
+- user_order_creation_timestamp: btree(`owner`, `creation_timestamp` DESC)
+- version_idx: btree(`settlement_contract`)
+- orders\_true\_valid\_to: btree(`true_valid_to`)
+- orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
+- orders_owner_class_valid_composite: btree(`owner`, `class`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
 
 ### fee_policies
 
@@ -469,6 +482,7 @@ This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/b
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
+- trades_covering: btree(`order_uid`) INCLUDE (`buy_amount`, `sell_amount`, `fee_amount`)
 
 ### surplus\_capturing\_jit\_order\_owners
 
@@ -616,3 +630,13 @@ We support different expiration times for orders with different signing schemes.
  market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
  liquidity | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
  limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
+
+## Notes on Migrations
+
+Migrations that require a long running process *must* be done manually, this is due to the limitations the weekly release process imposes:
+* The deployment must complete under 5 minutes
+* The pod has a `processDeadlineSeconds` defaulting to 600 seconds
+
+To avoid extending the process, we resort to manually applying complicated migrations.
+
+The above also comes into play when dealing with indexes, as their construction with flyway may lock up rows, degrading SLI.
