@@ -29,7 +29,7 @@ use {
     },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 /// Component to sync with the maintenance logic that runs in a background task.
@@ -56,6 +56,7 @@ pub enum SyncTarget {
 }
 
 impl MaintenanceSync {
+    #[instrument(skip_all)]
     pub async fn wait_until_block_processed(&self, target: SyncTarget) {
         let _timer = observe::metrics::metrics()
             .on_auction_overhead_start("autopilot", "wait_for_maintenance");
@@ -67,8 +68,8 @@ impl MaintenanceSync {
 
     async fn wait_inner(&self, target: SyncTarget) {
         let (relevant_updates, target_block) = match target {
-            SyncTarget::FullyProcessed(block) => (&self.partially_processed_block, block),
-            SyncTarget::PartiallyProcessed(block) => (&self.fully_processed_block, block),
+            SyncTarget::FullyProcessed(block) => (&self.fully_processed_block, block),
+            SyncTarget::PartiallyProcessed(block) => (&self.partially_processed_block, block),
         };
 
         if *relevant_updates.borrow() >= target_block {

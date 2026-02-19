@@ -11,7 +11,7 @@ use {
     futures::{Stream, StreamExt, future},
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
-    tracing::Instrument,
+    tracing::{Instrument, instrument},
 };
 
 // We expect that there is never a reorg that changes more than the last n
@@ -261,6 +261,7 @@ where
     }
 
     /// Defines block range, for which events should be fetched
+    #[instrument(skip_all)]
     async fn event_block_range(&self) -> Result<EventRange> {
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             let last_handled_block = self.store.last_event_block().await?;
@@ -380,6 +381,7 @@ where
     }
 
     /// Get new events from the contract and insert them into the database.
+    #[instrument(skip_all)]
     pub async fn update_events(&mut self) -> Result<()> {
         let event_range = self.event_block_range().await?;
 
@@ -396,6 +398,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn update_events_from_old_blocks(&mut self, range: RangeInclusive<u64>) -> Result<()> {
         // first get the blocks needed to update `last_handled_blocks` because if it
         // fails, it's safer to fail at the beginning of the function before we
@@ -466,6 +469,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn update_events_from_latest_blocks(
         &mut self,
         latest_blocks: &[BlockNumberHash],

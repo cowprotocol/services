@@ -277,7 +277,7 @@ async fn quote_timeout(web3: Web3) {
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
 
-    let mock_solver = Mock::default();
+    let mock_solver = Mock::new().await;
 
     // Start system
     colocation::start_driver(

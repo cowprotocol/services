@@ -146,6 +146,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
+        "400":
+          description: Invalid order UID.
         "404":
           description: Order was not found.
     delete:
@@ -206,6 +208,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompetitionOrderStatus"
+        "400":
+          description: Invalid order UID.
   "/api/v1/transactions/{txHash}/orders":
     get:
       operationId: getOrdersByTxHash
@@ -225,6 +229,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Order"
+        "400":
+          description: Invalid transaction hash.
   /api/v1/trades:
     get:
       operationId: getTrades
@@ -473,6 +479,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: Invalid auction ID.
         "404":
           description: No competition information available for this auction id.
   "/api/v1/solver_competition/by_tx_hash/{tx_hash}":
@@ -496,6 +504,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: Invalid transaction hash.
         "404":
           description: No competition information available for this `tx_hash`.
   /api/v1/solver_competition/latest:
@@ -533,6 +543,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: Invalid auction ID.
         "404":
           description: No competition information available for this auction id.
   "/api/v2/solver_competition/by_tx_hash/{tx_hash}":
@@ -555,6 +567,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: Invalid transaction hash.
         "404":
           description: No competition information available for this `tx_hash`.
   /api/v2/solver_competition/latest:
@@ -601,6 +615,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AppDataObject"
+        "400":
+          description: Invalid app data hash.
         "404":
           description: No full `appData` stored for this hash.
     put:
@@ -697,6 +713,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TotalSurplus"
+        "400":
+          description: Invalid address.
 components:
   schemas:
     TransactionHash:

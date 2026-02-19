@@ -32,7 +32,7 @@ pub struct Error {
     description: &'static str,
 }
 
-impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
+impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: Kind) -> Self {
         let description = match value {
             Kind::QuotingFailed => "No valid quote found",
@@ -59,7 +59,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             Kind::MalformedRequest => "Could not parse the request",
         };
         (
-            hyper::StatusCode::BAD_REQUEST,
+            axum::http::StatusCode::BAD_REQUEST,
             axum::Json(Error {
                 kind: value,
                 description,
@@ -68,7 +68,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
     }
 }
 
-impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
+impl From<quote::Error> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: quote::Error) -> Self {
         let error = match value {
             quote::Error::QuotingFailed(_) => Kind::QuotingFailed,
@@ -82,7 +82,7 @@ impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
     }
 }
 
-impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
+impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: competition::Error) -> Self {
         let error = match value {
             competition::Error::SolutionNotAvailable => Kind::SolutionNotAvailable,
@@ -97,13 +97,13 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
     }
 }
 
-impl From<blockchain::Error> for (hyper::StatusCode, axum::Json<Error>) {
+impl From<blockchain::Error> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(_: blockchain::Error) -> Self {
         Kind::Unknown.into()
     }
 }
 
-impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) {
+impl From<api::routes::AuctionError> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: api::routes::AuctionError) -> Self {
         let error = match value {
             api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
@@ -116,7 +116,7 @@ impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) 
     }
 }
 
-impl From<api::routes::OrderError> for (hyper::StatusCode, axum::Json<Error>) {
+impl From<api::routes::OrderError> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: api::routes::OrderError) -> Self {
         let error = match value {
             api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,

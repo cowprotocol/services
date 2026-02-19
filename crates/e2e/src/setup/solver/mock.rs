@@ -51,8 +51,8 @@ impl Mock {
     }
 }
 
-impl Default for Mock {
-    fn default() -> Self {
+impl Mock {
+    pub async fn new() -> Self {
         let state = State {
             solution: Arc::new(Mutex::new(Arc::new(|| async { None }.boxed()))),
             auctions: Arc::new(Mutex::new(vec![])),
@@ -62,17 +62,20 @@ impl Default for Mock {
             .route("/solve", axum::routing::post(solve))
             .with_state(state.clone());
 
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+        let local_addr = listener.local_addr().unwrap();
 
-        let mock = Mock {
+        tokio::task::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+                .unwrap();
+        });
+
+        Mock {
             state,
-            url: format!("http://{}", server.local_addr()).parse().unwrap(),
-        };
-
-        tokio::task::spawn(server.with_graceful_shutdown(shutdown_signal()));
-
-        mock
+            url: format!("http://{}", local_addr).parse().unwrap(),
+        }
     }
 }
 

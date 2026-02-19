@@ -88,6 +88,11 @@ pub struct Arguments {
     #[clap(long, env)]
     pub native_price_estimators: NativePriceEstimators,
 
+    /// Fallback native price estimators to use when all primary estimators
+    /// are down.
+    #[clap(long, env)]
+    pub native_price_estimators_fallback: Option<NativePriceEstimators>,
+
     /// How many successful price estimates for each order will cause a fast
     /// or native price estimation to return its result early.
     /// The bigger the value the more the fast price estimation performs like
@@ -174,6 +179,7 @@ impl std::fmt::Display for Arguments {
             banned_users_max_cache_size,
             eip1271_skip_creation_validation,
             native_price_estimators,
+            native_price_estimators_fallback,
             fast_price_estimation_results_required,
             max_limit_orders_per_user,
             ipfs_gateway,
@@ -219,6 +225,10 @@ impl std::fmt::Display for Arguments {
             "eip1271_skip_creation_validation: {eip1271_skip_creation_validation}"
         )?;
         writeln!(f, "native_price_estimators: {native_price_estimators}")?;
+        writeln!(
+            f,
+            "native_price_estimators_fallback: {native_price_estimators_fallback:?}"
+        )?;
         writeln!(
             f,
             "fast_price_estimation_results_required: {fast_price_estimation_results_required}"

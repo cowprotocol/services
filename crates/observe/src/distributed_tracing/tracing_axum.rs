@@ -25,7 +25,9 @@ pub fn make_span<B>(request: &Request<B>) -> Span {
     let request_id = request_id(request.headers());
 
     let span = info_span!("http_request", ?request_id, trace_id = field::Empty);
-    span.set_parent(parent_context);
+    if let Err(err) = span.set_parent(parent_context) {
+        tracing::debug!(?err, "failed to set request parent span");
+    }
     {
         let _span = span.enter();
         info!(uri = %request.uri(), method = %request.method(), "HTTP request");
