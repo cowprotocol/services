@@ -1,9 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    autopilot::config::{
-        Configuration,
-        solver::{Account, Solver},
-    },
+    autopilot::config::Configuration,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -12,8 +9,6 @@ use {
     },
     number::units::EthUnit,
     shared::web3::Web3,
-    std::str::FromStr,
-    url::Url,
 };
 
 #[tokio::test]
@@ -66,15 +61,8 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         false,
     );
     let services = Services::new(&onchain).await;
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-        ..Default::default()
-    }
-    .to_cli_args();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(

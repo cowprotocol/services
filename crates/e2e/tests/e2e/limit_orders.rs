@@ -495,11 +495,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                 Url::from_str("http://localhost:11088/test_solver").unwrap(),
                 Account::Address(solver_a.address()),
             ),
-            Solver::new(
-                "solver2".to_string(),
-                Url::from_str("http://localhost:11088/solver2").unwrap(),
-                Account::Address(solver_b.address()),
-            ),
+            Solver::test("solver2", solver_b.address()),
         ],
         ..Default::default()
     }
@@ -676,15 +672,8 @@ async fn too_many_limit_orders_test(web3: Web3) {
         false,
     );
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver_address),
-        )],
-        ..Default::default()
-    }
-    .to_cli_args();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver_address).to_cli_args();
 
     services
         .start_autopilot(
@@ -780,15 +769,8 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         false,
     );
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver_address),
-        )],
-        ..Default::default()
-    }
-    .to_cli_args();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver_address).to_cli_args();
 
     services
         .start_autopilot(
@@ -1105,11 +1087,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Setup services
 
     let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
+        drivers: vec![Solver::test("test_solver", solver.address())],
         fee_policies_config: FeePoliciesConfig {
             fee_policies: vec![
                 FeePolicy {
@@ -1308,16 +1286,8 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     // Place Orders
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) = Configuration {
-        // replace the --drivers argument with a vec of Solver structs
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-        ..Default::default()
-    }
-    .to_cli_args();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(
@@ -1520,16 +1490,8 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     // Start protocol with 500 bps (5%) haircut
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) = Configuration {
-        // replace the --drivers argument with a vec of Solver structs
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-        ..Default::default()
-    }
-    .to_cli_args();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(

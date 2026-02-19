@@ -137,14 +137,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
 }
 
 async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
-    use {
-        autopilot::config::{
-            Configuration,
-            solver::{Account, Solver},
-        },
-        std::str::FromStr,
-        url::Url,
-    };
+    use autopilot::config::Configuration;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -165,15 +158,8 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-        ..Default::default()
-    }
-    .to_cli_args();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
@@ -266,14 +252,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 }
 
 async fn test_execute_same_sell_and_buy_token(web3: Web3) {
-    use {
-        autopilot::config::{
-            Configuration,
-            solver::{Account, Solver},
-        },
-        std::str::FromStr,
-        url::Url,
-    };
+    use autopilot::config::Configuration;
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -294,15 +273,8 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-        ..Default::default()
-    }
-    .to_cli_args();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {

@@ -60,6 +60,17 @@ where
     }
 }
 
+#[cfg(any(test, feature = "test-util"))]
+impl Solver {
+    pub fn test(name: &str, address: Address) -> Self {
+        Self {
+            name: name.to_string(),
+            url: format!("http://localhost:11088/{name}").parse().unwrap(),
+            submission_account: Account::Address(address),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use {super::*, alloy::primitives::address};

@@ -9,7 +9,7 @@ use {
             FeePolicyOrderClass as ConfigFeePolicyOrderClass,
             UpcomingFeePolicies,
         },
-        solver::{Account, Solver},
+        solver::Solver,
     },
     driver::domain::eth::NonZeroU256,
     e2e::{assert_approximately_eq, setup::*},
@@ -31,8 +31,6 @@ use {
     reqwest::StatusCode,
     serde_json::json,
     shared::web3::Web3,
-    std::str::FromStr,
-    url::Url,
 };
 
 #[tokio::test]
@@ -163,11 +161,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .unwrap();
 
     let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
+        drivers: vec![Solver::test("test_solver", solver.address())],
         fee_policies_config: FeePoliciesConfig {
             fee_policies: vec![limit_surplus_policy, market_price_improvement_policy],
             fee_policy_max_partner_fee: 0.02.try_into().unwrap(),
@@ -522,11 +516,7 @@ async fn surplus_partner_fee(web3: Web3) {
         .unwrap();
 
     let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
+        drivers: vec![Solver::test("test_solver", solver.address())],
         fee_policies_config: FeePoliciesConfig {
             fee_policy_max_partner_fee: MAX_PARTNER_VOLUME_FEE.try_into().unwrap(),
             ..Default::default()
@@ -768,11 +758,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
     let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
+        drivers: vec![Solver::test("test_solver", solver.address())],
         fee_policies_config: FeePoliciesConfig {
             fee_policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
             upcoming_fee_policies: UpcomingFeePolicies {
@@ -936,11 +922,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
     let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
+        drivers: vec![Solver::test("test_solver", solver.address())],
         fee_policies_config: FeePoliciesConfig {
             fee_policies: vec![fee_policy.clone(), fee_policy],
             upcoming_fee_policies: UpcomingFeePolicies {
@@ -1110,11 +1092,7 @@ async fn volume_fee_overrides(web3: Web3) {
     );
 
     let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
+        drivers: vec![Solver::test("test_solver", solver.address())],
         fee_policies_config: FeePoliciesConfig {
             fee_policies: vec![default_volume_fee],
             ..Default::default()

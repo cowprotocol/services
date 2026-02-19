@@ -467,25 +467,8 @@ async fn single_replace_order_test(web3: Web3) {
     onchain.set_solver_allowed(solver.address(), false).await;
 
     let services = Services::new(&onchain).await;
-    let (_config_file, config_arg) = {
-        use {
-            autopilot::config::{
-                Configuration,
-                solver::{Account, Solver},
-            },
-            std::str::FromStr,
-            url::Url,
-        };
-        Configuration {
-            drivers: vec![Solver::new(
-                "test_solver".to_string(),
-                Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(solver.address()),
-            )],
-            ..Default::default()
-        }
-        .to_cli_args()
-    };
+    let (_config_file, config_arg) =
+        autopilot::config::Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {

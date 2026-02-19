@@ -53,6 +53,13 @@ impl Configuration {
 
 #[cfg(any(test, feature = "test-util"))]
 impl Configuration {
+    pub fn test(name: &str, solver_address: alloy::primitives::Address) -> Self {
+        Self {
+            drivers: vec![Solver::test(name, solver_address)],
+            ..Default::default()
+        }
+    }
+
     pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
         use std::io::Write;
         let mut file = tempfile::NamedTempFile::new().expect("temp file creation should not fail");

@@ -15,13 +15,7 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-    autopilot::{
-        config::{
-            Configuration,
-            solver::{Account, Solver},
-        },
-        infra::persistence::dto,
-    },
+    autopilot::{config::Configuration, infra::persistence::dto},
     clap::Parser,
     model::{
         AuctionId,
@@ -280,15 +274,8 @@ impl<'a> Services<'a> {
     pub async fn start_protocol(&self, solver: TestAccount) {
         // HACK: config is required so in the cases where it isn't passed (like the API
         // version test), so we create a dummy one
-        let (_config_file, cli_arg) = Configuration {
-            drivers: vec![Solver::new(
-                "test_solver".to_string(),
-                Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(solver.address()),
-            )],
-            ..Default::default()
-        }
-        .to_cli_args();
+        let (_config_file, cli_arg) =
+            Configuration::test("test_solver", solver.address()).to_cli_args();
         self.start_protocol_with_args(
             ExtraServiceArgs {
                 api: Default::default(),
@@ -376,15 +363,8 @@ impl<'a> Services<'a> {
         }];
 
         // Create TOML config file for the driver
-        let (_config_file, config_arg) = Configuration {
-            drivers: vec![Solver::new(
-                "test_solver".to_string(),
-                Url::parse("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(solver.address()),
-            )],
-            ..Default::default()
-        }
-        .to_cli_args();
+        let (_config_file, config_arg) =
+            Configuration::test("test_solver", solver.address()).to_cli_args();
 
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
