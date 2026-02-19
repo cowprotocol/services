@@ -43,7 +43,7 @@ pub trait PoolFetching: Send + Sync {
         &self,
         token_pairs: &HashSet<TokenPair>,
         at_block: Block,
-    ) -> Result<Vec<PoolInfo>>;
+    ) -> Result<Vec<Arc<PoolInfo>>>;
 }
 
 /// Pool data in a format prepared for solvers.
@@ -119,7 +119,7 @@ impl TryFrom<PoolData> for PoolInfo {
 #[derive(Default)]
 struct PoolsCheckpoint {
     /// Pools state.
-    pools: HashMap<Address, PoolInfo>,
+    pools: HashMap<Address, Arc<PoolInfo>>,
     /// Block number for which `pools` field was populated.
     block_number: u64,
     /// Pools that don't exist in `pools` field, therefore need to be
@@ -179,7 +179,7 @@ impl PoolsCheckpointHandler {
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
             .await?
             .into_iter()
-            .filter_map(|pool| Some((pool.id, pool.try_into().ok()?)))
+            .filter_map(|pool| Some((pool.id, Arc::new(pool.try_into().ok()?))))
             .collect::<HashMap<_, _>>();
         let pools_checkpoint = Mutex::new(PoolsCheckpoint {
             pools,
@@ -197,7 +197,7 @@ impl PoolsCheckpointHandler {
     /// For a given list of token pairs, fetches the pools for the ones that
     /// exist in the checkpoint. For the ones that don't exist, flag as
     /// missing and expect to exist after the next maintenance run.
-    fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<Address, PoolInfo>, u64) {
+    fn get(&self, token_pairs: &HashSet<TokenPair>) -> (HashMap<Address, Arc<PoolInfo>>, u64) {
         let mut pool_ids = token_pairs
             .iter()
             .filter_map(|pair| self.pools_by_token_pair.get(pair))
@@ -209,11 +209,10 @@ impl PoolsCheckpointHandler {
         match pool_ids.peek() {
             Some(_) => {
                 let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
-                let mut existing_pools = HashMap::<Address, PoolInfo>::default();
+                let mut existing_pools = HashMap::<Address, Arc<PoolInfo>>::default();
                 let missing_pools = pool_ids
                     .filter(|pool_id| match pools_checkpoint.pools.get(*pool_id) {
                         Some(entry) => {
-                            // avoid entry.clone() or ARC it?
                             existing_pools.insert(**pool_id, entry.clone());
                             false
                         }
@@ -261,7 +260,7 @@ impl PoolsCheckpointHandler {
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
         for pool in pools? {
             checkpoint.missing_pools.remove(&pool.id);
-            checkpoint.pools.insert(pool.id, pool.try_into()?);
+            checkpoint.pools.insert(pool.id, Arc::new(pool.try_into()?));
         }
 
         tracing::debug!("number of cached pools is {}", checkpoint.pools.len());
@@ -362,7 +361,7 @@ impl PoolFetching for UniswapV3PoolFetcher {
         &self,
         token_pairs: &HashSet<TokenPair>,
         at_block: Block,
-    ) -> Result<Vec<PoolInfo>> {
+    ) -> Result<Vec<Arc<PoolInfo>>> {
         let block_number = match at_block {
             Block::Recent | Block::Finalized => self
                 .events
@@ -418,11 +417,13 @@ impl PoolFetching for UniswapV3PoolFetcher {
 
 /// For a given checkpoint, append events to get a new checkpoint
 fn append_events(
-    pools: &mut HashMap<Address, PoolInfo>,
+    pools: &mut HashMap<Address, Arc<PoolInfo>>,
     events: Vec<WithAddress<UniswapV3PoolEvents>>,
 ) {
+    // deep clone map
     for event in events {
-        if let Some(pool) = pools.get_mut(&event.address()).map(|pool| &mut pool.state) {
+        if let Some(pool) = pools.get_mut(&event.address()).map(Arc::make_mut) {
+            let pool = &mut pool.state;
             match event.inner() {
                 UniswapV3PoolEvents::Burn(burn) => {
                     let tick_lower = BigInt::from(burn.tickLower.as_i32());
@@ -612,10 +613,10 @@ mod tests {
     #[test]
     fn append_events_test_swap() {
         let address = Address::with_last_byte(1);
-        let pool = PoolInfo {
+        let pool = Arc::new(PoolInfo {
             address,
             ..Default::default()
-        };
+        });
         let mut pools = HashMap::from([(address, pool)]);
 
         let event = WithAddress::new(
@@ -640,10 +641,10 @@ mod tests {
     #[test]
     fn append_events_test_burn() {
         let address = Address::with_last_byte(1);
-        let pool = PoolInfo {
+        let pool = Arc::new(PoolInfo {
             address,
             ..Default::default()
-        };
+        });
         let mut pools = HashMap::from([(address, pool)]);
 
         // add first burn event
@@ -693,10 +694,10 @@ mod tests {
     #[test]
     fn append_events_test_mint() {
         let address = Address::with_last_byte(1);
-        let pool = PoolInfo {
+        let pool = Arc::new(PoolInfo {
             address,
             ..Default::default()
-        };
+        });
         let mut pools = HashMap::from([(address, pool)]);
 
         // add first mint event
