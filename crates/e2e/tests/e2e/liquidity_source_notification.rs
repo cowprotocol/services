@@ -204,7 +204,7 @@ http-timeout = "10s"
             liquorice_api.port
         )),
     );
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "liquorice_solver".to_string(),
             Url::from_str("http://localhost:11088/liquorice_solver").unwrap(),
@@ -212,7 +212,7 @@ http-timeout = "10s"
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
@@ -220,7 +220,7 @@ http-timeout = "10s"
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                format!("--config={}", config_file.path().display()),
+                config_arg,
             ],
         )
         .await;

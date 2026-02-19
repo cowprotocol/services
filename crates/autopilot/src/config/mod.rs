@@ -39,7 +39,20 @@ impl Configuration {
         Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
     }
 
-    #[cfg(any(test, feature = "test-util"))]
+    // Note for reviewers: if this and other validations are always applied,
+    // we should instead move them to the deserialization stage
+    // https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
+    pub fn validate(self) -> anyhow::Result<Self> {
+        ensure!(
+            !self.drivers.is_empty(),
+            "colocation is enabled but no drivers are configured"
+        );
+        Ok(self)
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl Configuration {
     pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
         use std::io::Write;
         let mut file = tempfile::NamedTempFile::new().expect("temp file creation should not fail");
@@ -52,14 +65,11 @@ impl Configuration {
         file
     }
 
-    // Note for reviewers: if this and other validations are always applied,
-    // we should instead move them to the deserialization stage
-    // https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
-    pub fn validate(self) -> anyhow::Result<Self> {
-        ensure!(
-            !self.drivers.is_empty(),
-            "colocation is enabled but no drivers are configured"
-        );
-        Ok(self)
+    pub fn to_cli_args(&self) -> (tempfile::NamedTempFile, String) {
+        // Must return the temp_file because it gets deleted on drop
+        // disabling the cleanup will lead to a bunch of artifacts laying around
+        let named_temp_file = self.to_temp_path();
+        let cli_arg = format!("--config={}", named_temp_file.path().display());
+        (named_temp_file, cli_arg)
     }
 }

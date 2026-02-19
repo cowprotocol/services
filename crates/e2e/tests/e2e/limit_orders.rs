@@ -488,7 +488,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // Start autopilot only once all the orders are created.
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![
             Solver::new(
                 "solver1".to_string(),
@@ -503,13 +503,13 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         ],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
                 "--max-winners-per-auction=2".to_string(),
             ],
@@ -676,7 +676,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
         false,
     );
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -684,13 +684,13 @@ async fn too_many_limit_orders_test(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -780,7 +780,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         false,
     );
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -788,13 +788,13 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -1104,7 +1104,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Setup services
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -1130,14 +1130,14 @@ async fn no_liquidity_limit_order(web3: Web3) {
             ..Default::default()
         },
     }
-    .to_temp_path();
+    .to_cli_args();
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 autopilot: [
-                    format!("--config={}", config_file.path().display()),
+                    config_arg,
                     format!("--unsupported-tokens={:#x}", unsupported.address()),
                 ]
                 .to_vec(),
@@ -1308,7 +1308,7 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     // Place Orders
     let services = Services::new(&onchain).await;
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         // replace the --drivers argument with a vec of Solver structs
         drivers: vec![Solver::new(
             "test_solver".to_string(),
@@ -1317,13 +1317,13 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(
             ExtraServiceArgs {
                 api: vec![],
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
             },
             solver,
             500,
@@ -1520,7 +1520,7 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     // Start protocol with 500 bps (5%) haircut
     let services = Services::new(&onchain).await;
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         // replace the --drivers argument with a vec of Solver structs
         drivers: vec![Solver::new(
             "test_solver".to_string(),
@@ -1529,13 +1529,13 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(
             ExtraServiceArgs {
                 api: vec![],
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
             },
             solver,
             500,

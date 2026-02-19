@@ -162,7 +162,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap();
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -174,13 +174,13 @@ async fn combined_protocol_fees(web3: Web3) {
             ..Default::default()
         },
     }
-    .to_temp_path();
+    .to_cli_args();
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
                 ..Default::default()
             },
             solver,
@@ -521,7 +521,7 @@ async fn surplus_partner_fee(web3: Web3) {
         .await
         .unwrap();
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -532,13 +532,13 @@ async fn surplus_partner_fee(web3: Web3) {
             ..Default::default()
         },
     }
-    .to_temp_path();
+    .to_cli_args();
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
                 ..Default::default()
             },
             solver,
@@ -767,7 +767,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Place Orders
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -784,13 +784,13 @@ async fn volume_fee_buy_order_test(web3: Web3) {
             ..Default::default()
         },
     }
-    .to_temp_path();
+    .to_cli_args();
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
                 ..Default::default()
             },
             solver,
@@ -935,7 +935,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     // Place Orders
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -952,13 +952,13 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
             ..Default::default()
         },
     }
-    .to_temp_path();
+    .to_cli_args();
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
                 ..Default::default()
             },
             solver,
@@ -1109,7 +1109,7 @@ async fn volume_fee_overrides(web3: Web3) {
         token_usdt.address()
     );
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -1120,7 +1120,7 @@ async fn volume_fee_overrides(web3: Web3) {
             ..Default::default()
         },
     }
-    .to_temp_path();
+    .to_cli_args();
 
     // Orderbook (API) also needs the same bucket overrides for accurate quote
     // generation
@@ -1133,10 +1133,7 @@ async fn volume_fee_overrides(web3: Web3) {
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![
-                    format!("--config={}", config_file.path().display()),
-                    volume_fee_bucket_config,
-                ],
+                autopilot: vec![config_arg, volume_fee_bucket_config],
                 api: api_config,
             },
             solver,

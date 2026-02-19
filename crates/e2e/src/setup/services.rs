@@ -280,7 +280,7 @@ impl<'a> Services<'a> {
     pub async fn start_protocol(&self, solver: TestAccount) {
         // HACK: config is required so in the cases where it isn't passed (like the API
         // version test), so we create a dummy one
-        let config_file = Configuration {
+        let (_config_file, cli_arg) = Configuration {
             drivers: vec![Solver::new(
                 "test_solver".to_string(),
                 Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -288,11 +288,11 @@ impl<'a> Services<'a> {
             )],
             ..Default::default()
         }
-        .to_temp_path();
+        .to_cli_args();
         self.start_protocol_with_args(
             ExtraServiceArgs {
                 api: Default::default(),
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![cli_arg],
             },
             solver,
         )
@@ -376,7 +376,7 @@ impl<'a> Services<'a> {
         }];
 
         // Create TOML config file for the driver
-        let config_file = Configuration {
+        let (_config_file, config_arg) = Configuration {
             drivers: vec![Solver::new(
                 "test_solver".to_string(),
                 Url::parse("http://localhost:11088/test_solver").unwrap(),
@@ -384,7 +384,7 @@ impl<'a> Services<'a> {
             )],
             ..Default::default()
         }
-        .to_temp_path();
+        .to_cli_args();
 
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
@@ -402,7 +402,7 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg.clone(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/baseline_solver,Driver|test_solver|http://localhost:11088/test_solver".to_string(),
             ];
@@ -412,7 +412,7 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"

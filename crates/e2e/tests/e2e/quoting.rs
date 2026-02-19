@@ -73,7 +73,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let config_file = autopilot::config::Configuration::default().to_temp_path();
+    let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     // Start API with 0.02% (2 bps) volume fee
     let args = ExtraServiceArgs {
         api: vec![
@@ -81,7 +81,7 @@ async fn test(web3: Web3) {
             // Set a far future effective timestamp to ensure the fee is not applied
             "--volume-fee-effective-timestamp=2099-01-01T10:00:00Z".to_string(),
         ],
-        autopilot: vec![format!("--config={}", config_file.path().display())],
+        autopilot: vec![config_arg],
     };
     services.start_protocol_with_args(args, solver).await;
 
@@ -447,7 +447,7 @@ async fn volume_fee(web3: Web3) {
 
     tracing::info!("Starting services with volume fee.");
     let services = Services::new(&onchain).await;
-    let config_file = autopilot::config::Configuration::default().to_temp_path();
+    let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     // Start API with 0.02% (2 bps) default volume fee
     // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must be
     // in bucket)
@@ -462,7 +462,7 @@ async fn volume_fee(web3: Web3) {
                 override_token.address()
             ),
         ],
-        autopilot: vec![format!("--config={}", config_file.path().display())],
+        autopilot: vec![config_arg],
     };
     services.start_protocol_with_args(args, solver).await;
 

@@ -86,7 +86,7 @@ async fn solver_competition(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![
             Solver::new(
                 "test_solver".to_string(),
@@ -101,12 +101,12 @@ async fn solver_competition(web3: Web3) {
         ],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services.start_autopilot(
         None,
         vec![
-            format!("--config={}", config_file.path().display()),
+            config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
     ).await;
@@ -245,7 +245,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
 
     // Solver 1 has a wrong submission address, meaning that the solutions should be
     // discarded from solver1
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![
             Solver::new(
                 "solver1".to_string(),
@@ -260,13 +260,13 @@ async fn wrong_solution_submission_address(web3: Web3) {
         ],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             ],
         )
@@ -410,7 +410,7 @@ async fn store_filtered_solutions(web3: Web3) {
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![
             Solver::new(
                 "good_solver".to_string(),
@@ -425,13 +425,13 @@ async fn store_filtered_solutions(web3: Web3) {
         ],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 "--max-winners-per-auction=10".to_string(),

@@ -66,12 +66,12 @@ async fn order_cancellation(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
         false,
     );
-    let config_file = Configuration::default().to_temp_path();
+    let (_config_file, config_arg) = Configuration::default().to_cli_args();
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],

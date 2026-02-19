@@ -165,7 +165,7 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -173,12 +173,12 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--same-tokens-policy=allow-sell".to_string()],
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
             },
             solver.clone(),
         )
@@ -294,7 +294,7 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -302,12 +302,12 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--same-tokens-policy=allow-sell".to_string()],
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
             },
             solver.clone(),
         )

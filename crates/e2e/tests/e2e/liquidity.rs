@@ -195,7 +195,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         },
         false,
     );
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -203,7 +203,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
@@ -211,7 +211,7 @@ async fn zero_ex_liquidity(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                format!("--config={}", config_file.path().display()),
+                config_arg,
             ],
         )
         .await;

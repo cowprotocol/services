@@ -373,7 +373,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let config_file = Configuration::default().to_temp_path();
+    let (_config_file, config_arg) = Configuration::default().to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
@@ -385,7 +385,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                     // auto-detection for balance overrides.
                     "--quote-autodetect-token-balance-overrides=true".to_string(),
                 ],
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
             },
             solver,
         )
@@ -524,12 +524,12 @@ async fn usdt_quote_verification(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
-    let config_file = autopilot::config::Configuration::default().to_temp_path();
+    let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--quote-autodetect-token-balance-overrides=true".to_string()],
-                autopilot: vec![format!("--config={}", config_file.path().display())],
+                autopilot: vec![config_arg],
             },
             solver,
         )

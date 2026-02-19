@@ -93,7 +93,7 @@ async fn single_limit_order_test(web3: Web3) {
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![Solver::new(
             "mock_solver".to_string(),
             Url::from_str("http://localhost:11088/mock_solver").unwrap(),
@@ -101,13 +101,13 @@ async fn single_limit_order_test(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],

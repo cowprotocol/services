@@ -94,7 +94,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     );
 
     // Configure autopilot-leader only with test_solver
-    let config_file_leader = Configuration {
+    let (_config_file_leader, config_arg_leader) = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             Url::from_str("http://localhost:11088/test_solver").unwrap(),
@@ -102,13 +102,13 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
             None,
             vec![
-                format!("--config={}", config_file_leader.path().display()),
+                config_arg_leader,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -121,7 +121,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await;
 
     // Configure autopilot-backup only with test_solver2
-    let config_file_follower = Configuration {
+    let (_config_file_follower, config_arg_follower) = Configuration {
         drivers: vec![Solver::new(
             "test_solver2".to_string(),
             Url::from_str("http://localhost:11088/test_solver2").unwrap(),
@@ -129,13 +129,13 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         )],
         ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     let _autopilot_follower = services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file_follower.path().display()),
+                config_arg_follower,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
