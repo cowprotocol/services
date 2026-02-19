@@ -326,7 +326,8 @@ pub fn mounting_solver(solver: &solver::Name, path: &str) {
 }
 
 /// Observe that a request is about to be sent to the solver.
-pub fn solver_request(endpoint: &Url, req: &str) {
+pub fn solver_request(endpoint: &Url, req: &bytes::Bytes) {
+    let req = String::from_utf8_lossy(req);
     tracing::trace!(%endpoint, %req, "sending request to solver");
 }
 

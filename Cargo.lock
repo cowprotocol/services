@@ -2769,6 +2769,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.8",
  "bigdecimal",
+ "bytes",
  "bytes-hex",
  "chain",
  "chrono",

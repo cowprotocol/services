@@ -20,6 +20,7 @@ app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
+bytes = { workspace = true }
 bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
 chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"], default-features = false }
