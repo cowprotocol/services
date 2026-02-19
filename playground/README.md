@@ -177,11 +177,16 @@ When you make a swap in CoW Swap, all explorer links automatically point to your
 3. **View event logs**: See all emitted events with decoded parameters
 4. **Check gas profiling**: Understand gas consumption per operation
 
-<!-- TODO: Add screenshots showing transaction overview and trace views -->
 ![Transaction overview](docs/images/otterscan-tx-overview.png)
-![Transaction trace](docs/images/otterscan-tx-trace.png)
+*Transaction overview showing gas usage, status, token transfers, and decoded input data.*
 
-For more on transaction analysis, see [Otterscan's transaction interpretation docs](https://docs.otterscan.io/).
+![Transaction logs](docs/images/otterscan-tx-logs.png)
+*Event logs tab with decoded parameters for a CoW Swap settlement.*
+
+![Transaction trace](docs/images/otterscan-tx-trace.png)
+*Full call trace of a `settle()` transaction showing internal calls, token transfers, and AMM interactions.*
+
+For more on transaction analysis, see the [Otterscan documentation](https://docs.otterscan.io/).
 
 ### Debugging Failed Transactions
 
@@ -195,10 +200,6 @@ Otterscan is especially useful for debugging failed transactions:
    - Token approvals and transfers
    - AMM interactions (Uniswap, etc.)
    - Post-interactions
-
-<!-- TODO: Add screenshots showing a failed transaction and its revert trace -->
-![Failed transaction](docs/images/otterscan-failed-tx.png)
-![Revert trace](docs/images/otterscan-revert-trace.png)
 
 See the [Otterscan documentation](https://docs.otterscan.io/) for more details on trace analysis.
 
