@@ -19,16 +19,12 @@ jobs:
             target: ''
           - name: migration
             target: migrations
-          - name: alerter
-            target: alerter
           - name: autopilot
             target: autopilot
           - name: driver
             target: driver
           - name: orderbook
             target: orderbook
-          - name: refunder
-            target: refunder
           - name: solvers
             target: solvers
 
