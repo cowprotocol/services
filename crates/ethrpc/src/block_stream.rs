@@ -238,7 +238,7 @@ pub async fn current_block_stream(
     let (provider, _) =
         crate::alloy::unbuffered_provider(url.as_str(), Some("base_currentBlockStream"));
 
-    let first_block = provider.current_block().await?;
+    let first_block = get_block_at_id(&provider, BlockId::latest()).await?;
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
 
     let (sender, receiver) = watch::channel(first_block);
@@ -246,7 +246,7 @@ pub async fn current_block_stream(
         let mut previous_block = first_block;
         loop {
             tokio::time::sleep(poll_interval).await;
-            let block = match provider.current_block().await {
+            let block = match get_block_at_id(&provider, BlockId::latest()).await {
                 Ok(block) => block,
                 Err(err) => {
                     tracing::warn!("failed to get current block: {:?}", err);
@@ -357,18 +357,21 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 
 #[async_trait::async_trait]
 impl BlockRetrieving for AlloyProvider {
+    #[instrument(skip_all)]
     async fn current_block(&self) -> Result<BlockInfo> {
-        get_block_at_id(self, BlockId::latest()).await?.try_into()
+        get_block_at_id(&self, BlockId::latest()).await
     }
 
+    #[instrument(skip_all)]
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
-        let block = get_block_at_id(self, BlockId::number(number)).await?;
-        Ok((block.header.number, block.header.hash))
+        let block = get_block_at_id(&self, BlockId::number(number)).await?;
+        Ok((block.number, block.hash))
     }
 
     /// Gets all blocks requested in the range. For successful results it's
     /// enforced that all the blocks are present, in the correct order and that
     /// there are no reorgs in the block range.
+    #[instrument(skip_all)]
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         let (start, end) = range.into_inner();
 
@@ -418,12 +421,39 @@ impl BlockRetrieving for AlloyProvider {
     }
 }
 
-async fn get_block_at_id(provider: &AlloyProvider, id: BlockId) -> Result<Block> {
+/// Version of [`BlockRetrieving`] that's optimized for the usage
+/// in the event indexing logic.
+#[derive(Debug, Clone)]
+pub struct BlockRetriever {
+    pub provider: AlloyProvider,
+    pub block_stream: watch::Receiver<BlockInfo>,
+}
+
+#[async_trait::async_trait]
+impl BlockRetrieving for BlockRetriever {
+    #[instrument(skip_all)]
+    async fn current_block(&self) -> Result<BlockInfo> {
+        Ok(*self.block_stream.borrow())
+    }
+
+    #[instrument(skip_all)]
+    async fn block(&self, number: u64) -> Result<BlockNumberHash> {
+        self.provider.block(number).await
+    }
+
+    #[instrument(skip_all)]
+    async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
+        self.provider.blocks(range).await
+    }
+}
+
+async fn get_block_at_id(provider: &AlloyProvider, id: BlockId) -> Result<BlockInfo> {
     let block = provider
         .get_block(id)
         .await
         .with_context(|| format!("failed to get block for {id:?}"))?
-        .with_context(|| format!("no block for {id:?}"))?;
+        .with_context(|| format!("no block for {id:?}"))?
+        .try_into()?;
 
     Ok(block)
 }

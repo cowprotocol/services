@@ -2,7 +2,10 @@ use {
     crate::{Amm, cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval},
     alloy::primitives::Address,
     contracts::alloy::cow_amm::CowAmmLegacyHelper,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        AlloyProvider,
+        block_stream::{BlockRetriever, CurrentBlockWatcher},
+    },
     shared::{
         event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
@@ -16,18 +19,22 @@ use {
 /// CoW AMM indexer which stores events in-memory.
 #[derive(Clone)]
 pub struct Registry {
-    web3: Web3,
+    block_retriever: Arc<BlockRetriever>,
     storage: Arc<RwLock<Vec<Storage>>>,
     maintenance_tasks: Vec<Arc<dyn Maintaining>>,
 }
 
 impl Registry {
-    pub fn new(web3: Web3) -> Self {
+    pub fn new(block_retriever: Arc<BlockRetriever>) -> Self {
         Self {
             storage: Default::default(),
-            web3,
+            block_retriever,
             maintenance_tasks: vec![],
         }
+    }
+
+    fn provider(&self) -> &AlloyProvider {
+        &self.block_retriever.provider
     }
 
     /// Registers a new listener to detect CoW AMMs deployed by `factory`.
@@ -44,7 +51,7 @@ impl Registry {
     ) {
         let storage = Storage::new(
             deployment_block,
-            CowAmmLegacyHelper::Instance::new(helper_contract, self.web3.provider.clone()),
+            CowAmmLegacyHelper::Instance::new(helper_contract, self.provider().clone()),
             factory,
             db,
         )
@@ -53,13 +60,12 @@ impl Registry {
         self.storage.write().await.push(storage.clone());
 
         let indexer = Factory {
-            web3: self.web3.clone(),
+            provider: self.provider().clone(),
             address: factory,
         };
-        let event_handler =
-            EventHandler::new(Arc::new(self.web3.provider.clone()), indexer, storage, None);
+        let event_handler = EventHandler::new(self.block_retriever.clone(), indexer, storage, None);
         let token_balance_maintainer =
-            EmptyPoolRemoval::new(self.storage.clone(), self.web3.clone());
+            EmptyPoolRemoval::new(self.storage.clone(), self.provider().clone());
 
         self.maintenance_tasks
             .push(Arc::new(Mutex::new(event_handler)));
@@ -91,7 +97,7 @@ impl Registry {
 impl std::fmt::Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("Registry")
-            .field("web3", &self.web3)
+            .field("block_retriever", &self.block_retriever)
             .field("storage", &self.storage)
             .finish()
     }
