@@ -6,7 +6,6 @@ use {
         TransactionHash,
         orders::{self, BuyTokenDestination, OrderKind, SellTokenSource, SigningScheme},
     },
-    futures::stream::BoxStream,
     sqlx::{
         PgConnection,
         QueryBuilder,
@@ -59,10 +58,10 @@ SELECT,
 pub async fn get_many_by_id<'a>(
     ex: &'a mut PgConnection,
     order_ids: &'a [OrderUid],
-) -> BoxStream<'a, Result<orders::FullOrder, sqlx::Error>> {
+) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
     const QUERY: &str =
         const_format::concatcp!("SELECT ", SELECT, " FROM ", FROM, " WHERE o.uid = ANY($1)");
-    sqlx::query_as(QUERY).bind(order_ids).fetch(ex)
+    sqlx::query_as(QUERY).bind(order_ids).fetch_all(ex).await
 }
 
 #[instrument(skip_all)]

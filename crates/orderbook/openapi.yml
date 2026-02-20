@@ -134,8 +134,8 @@ paths:
       operationId: getOrders
       summary: Get existing orders from the list of UIDs.
       description: |
-        Returns a streaming NDJSON response where each line is a JSON object
-        with either an "order" key containing the full order, or an "error" key
+        Returns an array where each element is an object with either
+        an "order" key containing the full order, or an "error" key
         containing the UID and a description of what went wrong.
       requestBody:
         description: The list of up to 128 order uids to fetch
@@ -149,11 +149,13 @@ paths:
       responses:
         "200":
           description: |
-            Streamed NDJSON (newline-delimited JSON). Each line is one of:
+            The resulting full order data based on the request. Each element of the array is
+            an object of the following format:
             - `{"order": <Order>}` for successfully fetched orders
             - `{"error": {"orderUid": "<UID>", "description": "<message>"}}` for orders that failed conversion
+            Orders that do not exist in the database will be missing from the response.
           content:
-            application/x-ndjson:
+            application/x-json:
               schema:
                 oneOf:
                   - type: object

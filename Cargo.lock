@@ -4782,7 +4782,6 @@ dependencies = [
  "alloy",
  "anyhow",
  "app-data",
- "async-stream",
  "async-trait",
  "axum 0.8.8",
  "bigdecimal",

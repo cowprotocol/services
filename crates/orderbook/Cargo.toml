@@ -19,7 +19,6 @@ path = "src/main.rs"
 alloy = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
-async-stream = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }

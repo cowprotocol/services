@@ -677,9 +677,9 @@ pub async fn single_full_order_with_quote(
 pub async fn many_full_orders_with_quotes<'a>(
     ex: &'a mut PgConnection,
     order_ids: &'a [OrderUid],
-) -> BoxStream<'a, Result<FullOrderWithQuote, sqlx::Error>> {
+) -> Result<Vec<FullOrderWithQuote>, sqlx::Error> {
     const QUERY: &str = const_format::concatcp!(FULL_ORDER_WITH_QUOTE, " WHERE o.uid = ANY($1)");
-    sqlx::query_as(QUERY).bind(order_ids).fetch(ex)
+    sqlx::query_as(QUERY).bind(order_ids).fetch_all(ex).await
 }
 
 // Partial query for getting the log indices of events of a single settlement.
