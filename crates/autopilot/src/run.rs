@@ -494,11 +494,11 @@ pub async fn run(
     );
 
     let market_makable_token_list_configuration = TokenListConfiguration {
-        url: args.trusted_tokens_url,
-        update_interval: args.trusted_tokens_update_interval,
+        url: config.trusted_tokens.url.clone(),
+        update_interval: config.trusted_tokens.update_interval,
         chain_id,
         client: http_factory.create(),
-        hardcoded: args.trusted_tokens.unwrap_or_default(),
+        hardcoded: config.trusted_tokens.tokens.clone(),
     };
     // updated in background task
     let trusted_tokens =
@@ -674,11 +674,11 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         }
 
         AutoUpdatingTokenList::from_configuration(TokenListConfiguration {
-            url: args.trusted_tokens_url,
-            update_interval: args.trusted_tokens_update_interval,
+            url: config.trusted_tokens.url,
+            update_interval: config.trusted_tokens.update_interval,
             chain_id,
             client: http_factory.create(),
-            hardcoded: args.trusted_tokens.unwrap_or_default(),
+            hardcoded: config.trusted_tokens.tokens,
         })
         .await
     };
