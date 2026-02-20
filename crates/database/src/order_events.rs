@@ -258,7 +258,9 @@ mod tests {
         let mut ex = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut ex).await.unwrap();
         let uid = ByteArray([1; 56]);
-        insert_order_events(&mut ex, &[uid, uid], Utc::now(), OrderEventLabel::Invalid).await.unwrap();
+        insert_order_events(&mut ex, &[uid, uid], Utc::now(), OrderEventLabel::Invalid)
+            .await
+            .unwrap();
         let events = all_order_events(&mut ex).await;
         // query didn't insert 2 identical events for the same uid
         assert_eq!(events.len(), 1);
