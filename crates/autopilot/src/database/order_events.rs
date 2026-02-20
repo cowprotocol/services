@@ -27,7 +27,7 @@ pub async fn store_order_events(
 
     let insert = async move {
         let mut ex = ex.begin().await?;
-        for chunk in order_uids.chunks(100) {
+        for chunk in order_uids.chunks(1000) {
             order_events::insert_order_events(&mut ex, chunk, timestamp, label).await?;
         }
         ex.commit().await
