@@ -26,7 +26,7 @@ use {
         primitives::Address,
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
-    anyhow::Result,
+    anyhow::{Context, Result},
     derive_more::{From, Into},
     num::BigRational,
     observe::tracing::tracing_headers,
@@ -329,11 +329,14 @@ impl Solver {
             // as the request gets serialized
             const BYTES_PER_ORDER: usize = 1_300;
             let mut buffer = Vec::with_capacity(auction_dto.orders.len() * BYTES_PER_ORDER);
-            serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
-            bytes::Bytes::from(buffer)
+            serde_json::to_writer(&mut buffer, &auction_dto)
+                .context("serialization failed")
+                .map_err(Error::Serialize)?;
+            Ok::<_, Error>(bytes::Bytes::from(buffer))
         })
         .await
-        .expect("errors bubble up");
+        .context("serialization task panicked")
+        .map_err(Error::Serialize)??;
 
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
@@ -483,6 +486,8 @@ pub enum Error {
     Deserialize(#[from] serde_json::Error),
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
+    #[error("serialization failed: {0}")]
+    Serialize(#[from] anyhow::Error),
 }
 
 impl Error {

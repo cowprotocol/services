@@ -310,6 +310,7 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                         quote::Error::Solver(solver::Error::Deserialize(_)) => {
                             "SolverDeserializeError"
                         }
+                        quote::Error::Solver(solver::Error::Serialize(_)) => "DriverSerializeError",
                         quote::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
                         quote::Error::Boundary(_) => "Unknown",
                         quote::Error::Encoding(_) => "Encoding",
@@ -447,6 +448,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
+        competition::Error::Solver(solver::Error::Serialize(_)) => "DriverSerializeError",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
         competition::Error::SubmissionError => "SubmissionError",
         competition::Error::TooManyPendingSettlements => "TooManyPendingSettlements",
