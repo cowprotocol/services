@@ -167,6 +167,7 @@ async fn combined_protocol_fees(web3: Web3) {
             max_partner_fee: 0.02.try_into().unwrap(),
             ..Default::default()
         },
+        ..Default::default()
     }
     .to_cli_args();
 
@@ -521,6 +522,7 @@ async fn surplus_partner_fee(web3: Web3) {
             max_partner_fee: MAX_PARTNER_VOLUME_FEE.try_into().unwrap(),
             ..Default::default()
         },
+        ..Default::default()
     }
     .to_cli_args();
 
@@ -769,6 +771,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
             },
             ..Default::default()
         },
+        ..Default::default()
     }
     .to_cli_args();
 
@@ -933,6 +936,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
             },
             ..Default::default()
         },
+        ..Default::default()
     }
     .to_cli_args();
 
@@ -1097,6 +1101,7 @@ async fn volume_fee_overrides(web3: Web3) {
             policies: vec![default_volume_fee],
             ..Default::default()
         },
+        ..Default::default()
     }
     .to_cli_args();
 
