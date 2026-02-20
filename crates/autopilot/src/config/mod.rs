@@ -1,5 +1,9 @@
 use {
-    crate::config::{fee_policy::FeePoliciesConfig, solver::Solver},
+    crate::config::{
+        fee_policy::FeePoliciesConfig,
+        solver::Solver,
+        trusted_tokens::TrustedTokensConfig,
+    },
     anyhow::{anyhow, ensure},
     serde::{Deserialize, Serialize},
     std::path::Path,
@@ -7,6 +11,7 @@ use {
 
 pub mod fee_policy;
 pub mod solver;
+pub mod trusted_tokens;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -15,6 +20,11 @@ pub struct Configuration {
 
     /// Describes how the protocol fees should be calculated.
     pub fee_policies: FeePoliciesConfig,
+
+    /// Configuration for trusted tokens that the settlement contract is willing
+    /// to internalize.
+    #[serde(default)]
+    pub trusted_tokens: TrustedTokensConfig,
 }
 
 impl Configuration {
@@ -88,6 +98,7 @@ mod tests {
             solver::Account,
         },
         alloy::primitives::address,
+        std::time::Duration,
     };
 
     #[test]
@@ -120,6 +131,11 @@ mod tests {
         [[fee-policies.upcoming-policies.policies]]
         kind.volume = { factor = 0.2 }
         order-class = "any"
+
+        [trusted-tokens]
+        url = "https://example.com/tokens.json"
+        tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
+        update-interval = "30m"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -159,6 +175,13 @@ mod tests {
                 .effective_from_timestamp
                 .is_some()
         );
+
+        assert!(config.trusted_tokens.url.is_some());
+        assert_eq!(config.trusted_tokens.tokens.len(), 1);
+        assert_eq!(
+            config.trusted_tokens.update_interval,
+            Duration::from_secs(1800)
+        );
     }
 
     #[test]
@@ -185,6 +208,13 @@ mod tests {
                 .effective_from_timestamp
                 .is_none()
         );
+
+        assert!(config.trusted_tokens.url.is_none());
+        assert!(config.trusted_tokens.tokens.is_empty());
+        assert_eq!(
+            config.trusted_tokens.update_interval,
+            Duration::from_secs(3600)
+        );
     }
 
     #[test]
@@ -205,6 +235,7 @@ mod tests {
                 max_partner_fee: 0.02.try_into().unwrap(),
                 upcoming_policies: UpcomingFeePolicies::default(),
             },
+            ..Default::default()
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

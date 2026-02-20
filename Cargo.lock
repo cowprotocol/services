@@ -1180,6 +1180,7 @@ dependencies = [
  "futures",
  "hex-literal",
  "humantime",
+ "humantime-serde",
  "indexmap 2.13.0",
  "itertools 0.14.0",
  "maplit",
