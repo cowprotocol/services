@@ -97,7 +97,7 @@ impl Registry {
 impl std::fmt::Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("Registry")
-            .field("web3", &self.block_retriever)
+            .field("block_retriever", &self.block_retriever)
             .field("storage", &self.storage)
             .finish()
     }
