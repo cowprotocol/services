@@ -3,7 +3,7 @@ use {
     crate::{config::solver::Account, domain::eth, util},
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
-    observe::tracing::tracing_headers,
+    observe::tracing::{Lazy, tracing_headers},
     reqwest::{Client, RequestBuilder, StatusCode},
     std::{borrow::Cow, time::Duration},
     thiserror::Error,
@@ -120,7 +120,7 @@ impl Driver {
 
         tracing::trace!(
             path = &url.path(),
-            body = %payload.body_to_string(),
+            body = ?Lazy(|| payload.body_to_string()),
             "solver request",
         );
 
