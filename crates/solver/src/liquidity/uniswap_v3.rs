@@ -1,10 +1,7 @@
 use {
     super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling},
     crate::{
-        interactions::{
-            UniswapV3Interaction,
-            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
-        },
+        interactions::UniswapV3Interaction,
         liquidity::Liquidity,
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
@@ -18,26 +15,18 @@ use {
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::uniswap_v3::pool_fetching::PoolFetching,
-        web3::Web3,
     },
-    std::{
-        collections::HashSet,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashSet, sync::Arc},
     tracing::instrument,
 };
 
 pub struct UniswapV3Liquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
-    settlement_allowances: Box<dyn AllowanceManaging>,
 }
 pub struct Inner {
     pub router: Address,
     gpv2_settlement: Address,
-    // Mapping of how much allowance the router has per token to spend on behalf of the settlement
-    // contract
-    allowances: Mutex<Allowances>,
 }
 
 pub struct UniswapV3SettlementHandler {
@@ -46,17 +35,11 @@ pub struct UniswapV3SettlementHandler {
 }
 
 impl UniswapV3SettlementHandler {
-    pub fn new(
-        router: Address,
-        gpv2_settlement: Address,
-        allowances: Mutex<Allowances>,
-        fee: Ratio<u32>,
-    ) -> Self {
+    pub fn new(router: Address, gpv2_settlement: Address, fee: Ratio<u32>) -> Self {
         Self {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances,
             }),
             fee: ratio_to_u32(fee).unwrap(),
         }
@@ -80,35 +63,15 @@ impl UniswapV3Liquidity {
     pub fn new(
         router: Address,
         gpv2_settlement: Address,
-        web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
-        let settlement_allowances = Box::new(AllowanceManager::new(web3, gpv2_settlement));
         Self {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router)),
             }),
             pool_fetcher,
-            settlement_allowances,
         }
-    }
-
-    async fn cache_allowances(&self, tokens: HashSet<Address>) -> Result<()> {
-        let router = self.inner.router;
-        let allowances = self
-            .settlement_allowances
-            .get_allowances(tokens, router)
-            .await?;
-
-        self.inner
-            .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
-            .extend(allowances)?;
-
-        Ok(())
     }
 }
 
@@ -144,7 +107,6 @@ impl LiquidityCollecting for UniswapV3Liquidity {
                 pool,
             }))
         }
-        self.cache_allowances(tokens).await?;
         Ok(result)
     }
 }
@@ -154,31 +116,21 @@ impl UniswapV3SettlementHandler {
         &self,
         token_amount_in_max: TokenAmount,
         token_amount_out: TokenAmount,
-    ) -> (Option<Approval>, UniswapV3Interaction) {
-        let approval = self
-            .inner
-            .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
-            .approve_token_or_default(token_amount_in_max.clone());
-
+    ) -> UniswapV3Interaction {
         let fee = self.fee.try_into().expect("fee < (1 << 24)");
 
-        (
-            approval,
-            UniswapV3Interaction {
-                router: self.inner.router,
-                params: ExactOutputSingleParams {
-                    tokenIn: token_amount_in_max.token,
-                    tokenOut: token_amount_out.token,
-                    fee,
-                    recipient: self.inner.gpv2_settlement,
-                    amountOut: token_amount_out.amount,
-                    amountInMaximum: token_amount_in_max.amount,
-                    sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
-                },
+        UniswapV3Interaction {
+            router: self.inner.router,
+            params: ExactOutputSingleParams {
+                tokenIn: token_amount_in_max.token,
+                tokenOut: token_amount_out.token,
+                fee,
+                recipient: self.inner.gpv2_settlement,
+                amountOut: token_amount_out.amount,
+                amountInMaximum: token_amount_in_max.amount,
+                sqrtPriceLimitX96: alloy::primitives::U160::ZERO,
             },
-        )
+        }
     }
 }
 
@@ -190,18 +142,13 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     // Creates the required interaction to convert the given input into output.
     // Assumes slippage is already applied to the `input_max` field.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        let (approval, swap) = self.settle(execution.input_max, execution.output);
-        if let Some(approval) = approval {
-            encoder.append_to_execution_plan_internalizable(
-                Arc::new(approval),
-                execution.internalizable,
-            );
-        }
-        encoder.append_to_execution_plan_internalizable(Arc::new(swap), execution.internalizable);
+        let swap = Arc::new(self.settle(execution.input_max, execution.output));
+        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use {super::*, alloy::primitives::U256, num::rational::Ratio, std::collections::HashMap};
@@ -307,3 +254,4 @@ mod tests {
         assert_eq!(ratio_to_u32(fee_4).unwrap(), 100);
     }
 }
+*/

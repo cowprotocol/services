@@ -98,6 +98,6 @@ pub async fn collector(
         blocks.clone(),
     )?);
     Ok(Box::new(
-        ZeroExLiquidity::new(web3, api, contract, settlement, blocks).await,
+        ZeroExLiquidity::new(api, contract, settlement, blocks).await,
     ))
 }

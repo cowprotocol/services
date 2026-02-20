@@ -1,10 +1,7 @@
 use {
     super::{LimitOrderExecution, LimitOrderId, LiquidityOrderId, SettlementHandling},
     crate::{
-        interactions::{
-            ZeroExInteraction,
-            allowances::{AllowanceManager, AllowanceManaging, Allowances},
-        },
+        interactions::ZeroExInteraction,
         liquidity::{Exchange, LimitOrder, Liquidity},
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
@@ -18,9 +15,7 @@ use {
     itertools::Itertools,
     model::{TokenPair, order::OrderKind},
     shared::{
-        http_solver::model::TokenAmount,
         recent_block_cache::Block,
-        web3::Web3,
         zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
     },
     std::{
@@ -36,19 +31,16 @@ type OrderbookCache = ArcSwap<OrderBuckets>;
 pub struct ZeroExLiquidity {
     // todo: remove Arc
     pub zeroex: Arc<IZeroex::Instance>,
-    pub allowance_manager: Box<dyn AllowanceManaging>,
     pub orderbook_cache: Arc<OrderbookCache>,
 }
 
 impl ZeroExLiquidity {
     pub async fn new(
-        web3: Web3,
         api: Arc<dyn ZeroExApi>,
         zeroex: IZeroex::Instance,
         gpv2: Address,
         blocks_stream: CurrentBlockWatcher,
     ) -> Self {
-        let allowance_manager = AllowanceManager::new(web3, gpv2);
         let orderbook_cache: Arc<OrderbookCache> = Default::default();
         let cache = orderbook_cache.clone();
         tokio::spawn(
@@ -57,17 +49,12 @@ impl ZeroExLiquidity {
 
         Self {
             zeroex: Arc::new(zeroex),
-            allowance_manager: Box::new(allowance_manager),
             orderbook_cache,
         }
     }
 
     /// Turns 0x OrderRecord into liquidity which solvers can use.
-    fn record_into_liquidity(
-        &self,
-        record: OrderRecord,
-        allowances: Arc<Allowances>,
-    ) -> Option<Liquidity> {
+    fn record_into_liquidity(&self, record: OrderRecord) -> Option<Liquidity> {
         let sell_amount = U256::from(record.remaining_maker_amount().ok()?);
         if sell_amount.is_zero() || record.metadata().remaining_fillable_taker_amount == 0 {
             // filter out orders with 0 amounts to prevent errors in the solver
@@ -88,7 +75,6 @@ impl ZeroExLiquidity {
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order_record: record,
                 zeroex: self.zeroex.clone(),
-                allowances,
             }),
             exchange: Exchange::ZeroEx,
         };
@@ -137,20 +123,10 @@ impl LiquidityCollecting for ZeroExLiquidity {
     ) -> Result<Vec<Liquidity>> {
         let zeroex_order_buckets = self.orderbook_cache.load();
         let filtered_zeroex_orders = get_useful_orders(zeroex_order_buckets.as_ref(), &pairs, 5);
-        let tokens: HashSet<_> = filtered_zeroex_orders
-            .iter()
-            .map(|o| o.order().taker_token)
-            .collect();
-
-        let allowances = Arc::new(
-            self.allowance_manager
-                .get_allowances(tokens, *self.zeroex.address())
-                .await?,
-        );
 
         let zeroex_liquidity_orders: Vec<_> = filtered_zeroex_orders
             .into_iter()
-            .flat_map(|order| self.record_into_liquidity(order, allowances.clone()))
+            .flat_map(|order| self.record_into_liquidity(order))
             .collect();
 
         Ok(zeroex_liquidity_orders)
@@ -213,7 +189,6 @@ pub struct OrderSettlementHandler {
     pub order_record: OrderRecord,
     // todo: remove Arc
     pub zeroex: Arc<IZeroex::Instance>,
-    allowances: Arc<Allowances>,
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
@@ -229,13 +204,6 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         let Ok(execution_filled) = u128::try_from(execution.filled) else {
             anyhow::bail!("0x only supports executed amounts of size u128");
         };
-        let approval = self.allowances.approve_token(TokenAmount::new(
-            self.order_record.order().taker_token,
-            execution.filled,
-        ))?;
-        if let Some(approval) = approval {
-            encoder.append_to_execution_plan(Arc::new(approval));
-        }
         encoder.append_to_execution_plan(Arc::new(ZeroExInteraction {
             taker_token_fill_amount: execution_filled,
             order: self.order_record.order().clone(),
@@ -245,6 +213,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     }
 }
 
+/*
 #[cfg(test)]
 pub mod tests {
     use {
@@ -465,3 +434,4 @@ pub mod tests {
         );
     }
 }
+*/

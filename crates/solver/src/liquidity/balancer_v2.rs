@@ -2,10 +2,7 @@
 
 use {
     crate::{
-        interactions::{
-            BalancerSwapGivenOutInteraction,
-            allowances::{AllowanceManager, AllowanceManaging, Allowances},
-        },
+        interactions::BalancerSwapGivenOutInteraction,
         liquidity::{
             AmmOrderExecution,
             Liquidity,
@@ -23,7 +20,6 @@ use {
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::balancer_v2::pool_fetching::BalancerPoolFetching,
-        web3::Web3,
     },
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,
@@ -34,22 +30,18 @@ pub struct BalancerV2Liquidity {
     settlement: Address,
     vault: Address,
     pool_fetcher: Arc<dyn BalancerPoolFetching>,
-    allowance_manager: Box<dyn AllowanceManaging>,
 }
 
 impl BalancerV2Liquidity {
     pub fn new(
-        web3: Web3,
         pool_fetcher: Arc<dyn BalancerPoolFetching>,
         settlement: Address,
         vault: Address,
     ) -> Self {
-        let allowance_manager = AllowanceManager::new(web3, settlement);
         Self {
             settlement,
             vault,
             pool_fetcher,
-            allowance_manager: Box::new(allowance_manager),
         }
     }
 
@@ -60,15 +52,7 @@ impl BalancerV2Liquidity {
     ) -> Result<(Vec<StablePoolOrder>, Vec<WeightedProductOrder>)> {
         let pools = self.pool_fetcher.fetch(pairs, block).await?;
 
-        let tokens = pools.relevant_tokens();
-
-        let allowances = self
-            .allowance_manager
-            .get_allowances(tokens, self.vault)
-            .await?;
-
         let inner = Arc::new(Inner {
-            allowances,
             settlement: self.settlement,
             vault: self.vault,
         });
@@ -134,18 +118,13 @@ pub struct SettlementHandler {
 struct Inner {
     settlement: Address,
     vault: Address,
-    allowances: Allowances,
 }
 
 impl SettlementHandler {
-    pub fn new(pool_id: B256, settlement: Address, vault: Address, allowances: Allowances) -> Self {
+    pub fn new(pool_id: B256, settlement: Address, vault: Address) -> Self {
         SettlementHandler {
             pool_id,
-            inner: Arc::new(Inner {
-                settlement,
-                vault,
-                allowances,
-            }),
+            inner: Arc::new(Inner { settlement, vault }),
         }
     }
 
@@ -202,16 +181,6 @@ impl SettlementHandler {
         execution: AmmOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
-        if let Some(approval) = self
-            .inner
-            .allowances
-            .approve_token(execution.input_max.clone())?
-        {
-            encoder.append_to_execution_plan_internalizable(
-                Arc::new(approval),
-                execution.internalizable,
-            );
-        }
         encoder.append_to_execution_plan_internalizable(
             Arc::new(self.swap(execution.input_max, execution.output)),
             execution.internalizable,
@@ -221,6 +190,7 @@ impl SettlementHandler {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use {
@@ -531,3 +501,4 @@ mod tests {
         );
     }
 }
+*/

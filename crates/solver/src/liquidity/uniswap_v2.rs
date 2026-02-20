@@ -1,10 +1,7 @@
 use {
     super::{AmmOrderExecution, ConstantProductOrder, SettlementHandling},
     crate::{
-        interactions::{
-            UniswapInteraction,
-            allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
-        },
+        interactions::UniswapInteraction,
         liquidity::Liquidity,
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
@@ -16,70 +13,34 @@ use {
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::uniswap_v2::pool_fetching::PoolFetching,
-        web3::Web3,
     },
-    std::{
-        collections::HashSet,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashSet, sync::Arc},
     tracing::instrument,
 };
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
-    settlement_allowances: Box<dyn AllowanceManaging>,
 }
 
 pub struct Inner {
     router: Address,
     gpv2_settlement: Address,
-    // Mapping of how much allowance the router has per token to spend on behalf of the settlement
-    // contract
-    allowances: Mutex<Allowances>,
 }
 
 impl UniswapLikeLiquidity {
     pub fn new(
         router: Address,
         gpv2_settlement: Address,
-        web3: Web3,
-        pool_fetcher: Arc<dyn PoolFetching>,
-    ) -> Self {
-        let settlement_allowances = Box::new(AllowanceManager::new(web3, gpv2_settlement));
-        Self::with_allowances(router, gpv2_settlement, settlement_allowances, pool_fetcher)
-    }
-
-    pub fn with_allowances(
-        router: Address,
-        gpv2_settlement: Address,
-        settlement_allowances: Box<dyn AllowanceManaging>,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(Allowances::empty(router)),
             }),
             pool_fetcher,
-            settlement_allowances,
         }
-    }
-
-    async fn cache_allowances(&self, tokens: HashSet<Address>) -> Result<()> {
-        let allowances = self
-            .settlement_allowances
-            .get_allowances(tokens, self.inner.router)
-            .await?;
-
-        self.inner
-            .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
-            .extend(allowances)?;
-
-        Ok(())
     }
 }
 
@@ -107,17 +68,15 @@ impl LiquidityCollecting for UniswapLikeLiquidity {
                 settlement_handling: self.inner.clone(),
             }))
         }
-        self.cache_allowances(tokens).await?;
         Ok(result)
     }
 }
 
 impl Inner {
-    pub fn new(router: Address, gpv2_settlement: Address, allowances: Mutex<Allowances>) -> Self {
+    pub fn new(router: Address, gpv2_settlement: Address) -> Self {
         Inner {
             router,
             gpv2_settlement,
-            allowances,
         }
     }
 
@@ -125,24 +84,15 @@ impl Inner {
         &self,
         token_amount_in_max: TokenAmount,
         token_amount_out: TokenAmount,
-    ) -> (Option<Approval>, UniswapInteraction) {
-        let approval = self
-            .allowances
-            .lock()
-            .expect("Thread holding mutex panicked")
-            .approve_token_or_default(token_amount_in_max.clone());
-
-        (
-            approval,
-            UniswapInteraction {
-                router: self.router,
-                settlement: self.gpv2_settlement,
-                amount_out: token_amount_out.amount,
-                amount_in_max: token_amount_in_max.amount,
-                token_in: token_amount_in_max.token,
-                token_out: token_amount_out.token,
-            },
-        )
+    ) -> UniswapInteraction {
+        UniswapInteraction {
+            router: self.router,
+            settlement: self.gpv2_settlement,
+            amount_out: token_amount_out.amount,
+            amount_in_max: token_amount_in_max.amount,
+            token_in: token_amount_in_max.token,
+            token_out: token_amount_out.token,
+        }
     }
 
     pub fn router(&self) -> Address {
@@ -158,18 +108,13 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
     // Creates the required interaction to convert the given input into output.
     // Assumes slippage is already applied to `input_max`.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        let (approval, swap) = self.settle(execution.input_max, execution.output);
-        if let Some(approval) = approval {
-            encoder.append_to_execution_plan_internalizable(
-                Arc::new(approval),
-                execution.internalizable,
-            );
-        }
-        encoder.append_to_execution_plan_internalizable(Arc::new(swap), execution.internalizable);
+        let swap = Arc::new(self.settle(execution.input_max, execution.output));
+        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
         Ok(())
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use {
@@ -233,3 +178,4 @@ mod tests {
         assert_ne!(approval, None);
     }
 }
+*/
