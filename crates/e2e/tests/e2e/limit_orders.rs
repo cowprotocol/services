@@ -6,6 +6,7 @@ use {
     },
     autopilot::config::{
         Configuration,
+        fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind},
         solver::{Account, Solver},
     },
     bigdecimal::BigDecimal,
@@ -14,7 +15,6 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
-    fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -488,27 +488,24 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // Start autopilot only once all the orders are created.
 
-    let config_file = Configuration {
+    let (_config_file, config_arg) = Configuration {
         drivers: vec![
             Solver::new(
                 "solver1".to_string(),
                 Url::from_str("http://localhost:11088/test_solver").unwrap(),
                 Account::Address(solver_a.address()),
             ),
-            Solver::new(
-                "solver2".to_string(),
-                Url::from_str("http://localhost:11088/solver2").unwrap(),
-                Account::Address(solver_b.address()),
-            ),
+            Solver::test("solver2", solver_b.address()),
         ],
+        ..Default::default()
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
                 "--max-winners-per-auction=2".to_string(),
             ],
@@ -675,20 +672,14 @@ async fn too_many_limit_orders_test(web3: Web3) {
         false,
     );
 
-    let config_file = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver_address),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver_address).to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -778,20 +769,14 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         false,
     );
 
-    let config_file = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver_address),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver_address).to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -1100,36 +1085,41 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .unwrap();
 
     // Setup services
-    let protocol_fee_args = ProtocolFeesConfig {
-        protocol_fees: vec![
-            ProtocolFee {
-                policy: fee::FeePolicyKind::Surplus {
-                    factor: 0.5,
-                    max_volume_factor: 0.01,
+
+    let (_config_file, config_arg) = Configuration {
+        drivers: vec![Solver::test("test_solver", solver.address())],
+        fee_policies: FeePoliciesConfig {
+            policies: vec![
+                FeePolicy {
+                    kind: FeePolicyKind::Surplus {
+                        factor: 0.5.try_into().unwrap(),
+                        max_volume_factor: 0.01.try_into().unwrap(),
+                    },
+                    order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Limit,
                 },
-                policy_order_class: FeePolicyOrderClass::Limit,
-            },
-            ProtocolFee {
-                policy: fee::FeePolicyKind::PriceImprovement {
-                    factor: 0.5,
-                    max_volume_factor: 0.01,
+                FeePolicy {
+                    kind: FeePolicyKind::PriceImprovement {
+                        factor: 0.5.try_into().unwrap(),
+                        max_volume_factor: 0.01.try_into().unwrap(),
+                    },
+                    order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Market,
                 },
-                policy_order_class: FeePolicyOrderClass::Market,
-            },
-        ],
+            ],
+            ..Default::default()
+        },
         ..Default::default()
     }
-    .into_args();
+    .to_cli_args();
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 autopilot: [
-                    protocol_fee_args,
-                    vec![format!("--unsupported-tokens={:#x}", unsupported.address())],
+                    config_arg,
+                    format!("--unsupported-tokens={:#x}", unsupported.address()),
                 ]
-                .concat(),
+                .to_vec(),
                 ..Default::default()
             },
             solver,
@@ -1296,9 +1286,19 @@ async fn sell_order_with_haircut_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
+
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     // Start protocol with 500 bps (5%) haircut
     services
-        .start_protocol_with_args_and_haircut(Default::default(), solver, 500)
+        .start_protocol_with_args_and_haircut(
+            ExtraServiceArgs {
+                api: vec![],
+                autopilot: vec![config_arg],
+            },
+            solver,
+            500,
+        )
         .await;
 
     // Create order with generous limit to ensure there's slack for haircut
@@ -1490,8 +1490,19 @@ async fn buy_order_with_haircut_test(web3: Web3) {
 
     // Start protocol with 500 bps (5%) haircut
     let services = Services::new(&onchain).await;
+
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
+    // Start protocol with 500 bps (5%) haircut
     services
-        .start_protocol_with_args_and_haircut(Default::default(), solver, 500)
+        .start_protocol_with_args_and_haircut(
+            ExtraServiceArgs {
+                api: vec![],
+                autopilot: vec![config_arg],
+            },
+            solver,
+            500,
+        )
         .await;
 
     // Create BUY order: want to buy 5 token_b, willing to sell up to 10 token_a.

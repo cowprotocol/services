@@ -2,7 +2,6 @@ use {database::leader_pg_lock::LeaderLock, observe::metrics};
 
 /// Tracks the autopilot leader lock status.
 /// Leader lock status is tracked based on calls to try_acquire()
-#[expect(clippy::large_enum_variant)]
 pub enum LeaderLockTracker {
     /// Leader lock mechanism is disabled.
     /// Only one autopilot instance should be running at all times.

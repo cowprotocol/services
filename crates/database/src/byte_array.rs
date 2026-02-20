@@ -62,8 +62,8 @@ impl<const N: usize> Decode<'_, Postgres> for ByteArray<N> {
 }
 
 impl<const N: usize> Encode<'_, Postgres> for ByteArray<N> {
-    fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> IsNull {
-        self.0.encode(buf)
+    fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
+        self.0.encode_by_ref(buf)
     }
 }
 
