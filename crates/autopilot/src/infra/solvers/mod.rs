@@ -120,7 +120,7 @@ impl Driver {
 
         tracing::trace!(
             path = &url.path(),
-            body = ?Lazy(|| payload.body_to_string()),
+            body = %Lazy(|| payload.body_to_string()),
             "solver request",
         );
 

@@ -254,3 +254,13 @@ where
         write!(f, "{:?}", (self.0)())
     }
 }
+
+impl<T, D> std::fmt::Display for Lazy<T>
+where
+    T: Fn() -> D,
+    D: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", (self.0)())
+    }
+}
