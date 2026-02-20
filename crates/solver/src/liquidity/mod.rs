@@ -379,7 +379,7 @@ impl Settleable for StablePoolOrder {
 #[derive(Clone)]
 pub struct ConcentratedLiquidity {
     pub tokens: TokenPair,
-    pub pool: PoolInfo,
+    pub pool: Arc<PoolInfo>,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
