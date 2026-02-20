@@ -264,3 +264,30 @@ where
         write!(f, "{}", (self.0)())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lazy_eval() {
+        let lazy = Lazy(|| "abc".to_string());
+
+        let display = format!("{}", lazy);
+        assert_eq!(display, "abc");
+
+        let debug = format!("{:?}", lazy);
+        assert_eq!(debug, "\"abc\"");
+    }
+
+    #[test]
+    fn lazy_in_macro() {
+        tracing::debug!(
+            miep = ?Lazy(|| {
+                panic!("this panic shoudl not happen because we evaluate lazily");
+                #[expect(unreachable_code)]
+                "abc"
+            })
+        )
+    }
+}
