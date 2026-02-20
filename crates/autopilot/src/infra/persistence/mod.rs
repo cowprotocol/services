@@ -171,9 +171,10 @@ impl Persistence {
         let Some(s3) = self.s3.clone() else {
             return;
         };
-        let auction_dto = dto::auction::from_domain(auction.clone());
+        let auction = auction.clone();
         tokio::task::spawn(async move {
-            match s3.upload(id.to_string(), &auction_dto).await {
+            let auction_dto = dto::auction::from_domain(auction);
+            match s3.upload(id.to_string(), auction_dto).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
             }
