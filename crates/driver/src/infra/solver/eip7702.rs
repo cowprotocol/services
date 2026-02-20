@@ -11,6 +11,7 @@ use {
     },
     contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
     futures::future::join_all,
+    std::time::Duration,
     tracing::instrument,
 };
 
@@ -134,7 +135,11 @@ async fn setup_delegation_and_approve(
     let provider = &eth.web3().provider;
     let chain_id = provider.get_chain_id().await?;
     let solver_address: Address = config.account.address();
-    let solver_nonce = provider.get_transaction_count(solver_address).await?;
+
+    // Wait for any pending solver txs to clear (e.g. in-flight settlements
+    // from a pre-7702 deployment). Submitting at the same nonce would replace
+    // the pending tx, silently dropping a valid settlement.
+    let solver_nonce = wait_for_pending_txs(provider, solver_address).await?;
 
     tracing::info!(
         ?forwarder,
@@ -238,4 +243,37 @@ async fn approve_submitters(
     );
 
     Ok(())
+}
+
+/// Wait until the solver has no pending transactions in the mempool.
+/// Returns the confirmed nonce (safe to use for the next tx).
+#[instrument(skip_all)]
+async fn wait_for_pending_txs(provider: &impl Provider, address: Address) -> anyhow::Result<u64> {
+    const POLL_INTERVAL: Duration = Duration::from_secs(3);
+    const MAX_WAIT: Duration = Duration::from_secs(90);
+
+    let deadline = tokio::time::Instant::now() + MAX_WAIT;
+    loop {
+        // only counts txs in mined blocks
+        let latest = provider.get_transaction_count(address).await?;
+        // also countstx in the mempool
+        let pending = provider.get_transaction_count(address).pending().await?;
+        if pending <= latest {
+            return Ok(latest);
+        }
+        if tokio::time::Instant::now() > deadline {
+            anyhow::bail!(
+                "timed out waiting for {} pending solver txs to clear (latest nonce: {latest}, \
+                 pending nonce: {pending})",
+                pending - latest,
+            );
+        }
+        tracing::info!(
+            latest_nonce = latest,
+            pending_nonce = pending,
+            pending_txs = pending - latest,
+            "waiting for pending solver txs to clear before delegation setup"
+        );
+        tokio::time::sleep(POLL_INTERVAL).await;
+    }
 }
