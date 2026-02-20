@@ -41,7 +41,6 @@ use {
     tracing::{Instrument, instrument},
 };
 
-pub mod cli;
 pub mod dto;
 
 #[derive(Clone)]

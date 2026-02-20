@@ -1,5 +1,5 @@
 use {
-    crate::{database::INSERT_BATCH_SIZE_DEFAULT, infra},
+    crate::database::INSERT_BATCH_SIZE_DEFAULT,
     alloy::primitives::Address,
     anyhow::Context,
     shared::{
@@ -97,14 +97,6 @@ pub struct CliArguments {
     )]
     pub min_order_validity_period: Duration,
 
-    /// List of account addresses to be denied from order creation
-    #[clap(long, env, use_value_delimiter = true)]
-    pub banned_users: Vec<Address>,
-
-    /// Maximum number of entries to keep in the banned users cache.
-    #[clap(long, env, default_value = "10000")]
-    pub banned_users_max_cache_size: NonZeroUsize,
-
     /// If the auction hasn't been updated in this amount of time the pod fails
     /// the liveness check. Expects a value in seconds.
     #[clap(
@@ -150,20 +142,6 @@ pub struct CliArguments {
         value_parser = humantime::parse_duration,
     )]
     pub solve_deadline: Duration,
-
-    /// Arguments for uploading information to S3.
-    #[clap(flatten)]
-    pub s3: infra::persistence::cli::S3,
-
-    /// Time interval in days between each cleanup operation of the
-    /// `order_events` database table.
-    #[clap(long, env, default_value = "1d", value_parser = humantime::parse_duration)]
-    pub order_events_cleanup_interval: Duration,
-
-    /// Age threshold in days for order events to be eligible for cleanup in the
-    /// `order_events` database table.
-    #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
-    pub order_events_cleanup_threshold: Duration,
 
     /// Configurations for indexing CoW AMMs. Supplied in the form of:
     /// "<factory1>|<helper1>|<block1>,<factory2>|<helper2>,<block2>"
@@ -257,19 +235,14 @@ impl std::fmt::Display for CliArguments {
             native_price_estimators,
             api_native_price_estimators,
             min_order_validity_period,
-            banned_users,
-            banned_users_max_cache_size,
             max_auction_age,
             submission_deadline,
             shadow,
             solve_deadline,
-            order_events_cleanup_interval,
-            order_events_cleanup_threshold,
             db_write_url,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
-            s3,
             cow_amm_configs,
             max_run_loop_delay,
             run_loop_native_price_timeout,
@@ -305,23 +278,10 @@ impl std::fmt::Display for CliArguments {
             f,
             "min_order_validity_period: {min_order_validity_period:?}"
         )?;
-        writeln!(f, "banned_users: {banned_users:?}")?;
-        writeln!(
-            f,
-            "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
-        )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
         writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;
-        writeln!(
-            f,
-            "order_events_cleanup_interval: {order_events_cleanup_interval:?}"
-        )?;
-        writeln!(
-            f,
-            "order_events_cleanup_threshold: {order_events_cleanup_threshold:?}"
-        )?;
         writeln!(f, "insert_batch_size: {insert_batch_size}")?;
         writeln!(
             f,
@@ -331,7 +291,6 @@ impl std::fmt::Display for CliArguments {
             f,
             "max_settlement_transaction_wait: {max_settlement_transaction_wait:?}"
         )?;
-        writeln!(f, "s3: {s3:?}")?;
         writeln!(f, "cow_amm_configs: {cow_amm_configs:?}")?;
         writeln!(f, "max_run_loop_delay: {max_run_loop_delay:?}")?;
         writeln!(
