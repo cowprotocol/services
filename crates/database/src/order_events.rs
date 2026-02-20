@@ -73,7 +73,7 @@ pub async fn insert_order_events(
         FROM unnest($1) AS t(order_uid)
     )
     INSERT INTO order_events (order_uid, timestamp, label)
-    SELECT i.order_uid, i.timestamp, i.label
+    SELECT DISTINCT i.order_uid, i.timestamp, i.label
     FROM incoming i
     LEFT JOIN latest_events le ON le.order_uid = i.order_uid
     WHERE le.label IS DISTINCT FROM i.label
@@ -249,5 +249,18 @@ mod tests {
                 label: OrderEventLabel::Invalid
             })
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_avoid_duplicate_uids() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut ex = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut ex).await.unwrap();
+        let uid = ByteArray([1; 56]);
+        insert_order_events(&mut ex, &[uid, uid], Utc::now(), OrderEventLabel::Invalid).await.unwrap();
+        let events = all_order_events(&mut ex).await;
+        // query didn't insert 2 identical events for the same uid
+        assert_eq!(events.len(), 1);
     }
 }
