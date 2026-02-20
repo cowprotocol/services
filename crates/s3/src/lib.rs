@@ -45,7 +45,7 @@ impl Uploader {
             Self::gzip(&bytes)
         })
         .await
-        .expect("all errors handled by bubbling up")?;
+        .context("compression task panicked")??;
 
         let key = std::path::Path::new(&self.filename_prefix)
             .join(format!("{id}.json"))
