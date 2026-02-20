@@ -1107,6 +1107,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
             ],
             ..Default::default()
         },
+        ..Default::default()
     }
     .to_cli_args();
 
