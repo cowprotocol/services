@@ -213,13 +213,10 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     }
 }
 
-/*
 #[cfg(test)]
 pub mod tests {
     use {
         super::*,
-        crate::interactions::allowances::Approval,
-        maplit::hashmap,
         shared::{
             baseline_solver::BaseTokens,
             http_solver::model::InternalizationStrategy,
@@ -348,14 +345,12 @@ pub mod tests {
     }
 
     #[tokio::test]
-    async fn interaction_encodes_approval_when_insufficient() {
+    async fn interaction_encoding() {
         let sell_token = Address::with_last_byte(1);
         let zeroex = Arc::new(IZeroex::Instance::new(
             Default::default(),
             ethrpc::mock::web3().provider,
         ));
-        let allowances =
-            Allowances::new(*zeroex.address(), hashmap! { sell_token => U256::from(99) });
         let order_record = OrderRecord::new(
             zeroex_api::Order {
                 taker_amount: 100,
@@ -367,55 +362,6 @@ pub mod tests {
         let handler = OrderSettlementHandler {
             order_record: order_record.clone(),
             zeroex: zeroex.clone(),
-            allowances: Arc::new(allowances),
-        };
-        let mut encoder = SettlementEncoder::default();
-        let execution = LimitOrderExecution::new(U256::from(100), U256::ZERO);
-        handler.encode(execution, &mut encoder).unwrap();
-        let [_, interactions, _] = encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction)
-            .interactions;
-        assert_eq!(
-            interactions,
-            [
-                Approval {
-                    token: sell_token,
-                    spender: *zeroex.address(),
-                }
-                .encode(),
-                ZeroExInteraction {
-                    order: order_record.order().clone(),
-                    taker_token_fill_amount: 100,
-                    zeroex: zeroex.clone(),
-                }
-                .encode(),
-            ],
-        );
-    }
-
-    #[tokio::test]
-    async fn interaction_encodes_no_approval_when_sufficient() {
-        let sell_token = Address::with_last_byte(1);
-        let zeroex = Arc::new(IZeroex::Instance::new(
-            Default::default(),
-            ethrpc::mock::web3().provider,
-        ));
-        let allowances = Allowances::new(
-            *zeroex.address(),
-            hashmap! { sell_token => U256::from(100) },
-        );
-        let order_record = OrderRecord::new(
-            zeroex_api::Order {
-                taker_amount: 100,
-                taker_token: sell_token,
-                ..Default::default()
-            },
-            OrderMetadata::default(),
-        );
-        let handler = OrderSettlementHandler {
-            order_record: order_record.clone(),
-            zeroex: zeroex.clone(),
-            allowances: Arc::new(allowances),
         };
         let mut encoder = SettlementEncoder::default();
         let execution = LimitOrderExecution::new(U256::from(100), U256::ZERO);
@@ -434,4 +380,3 @@ pub mod tests {
         );
     }
 }
-*/

@@ -148,98 +148,9 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::U256, num::rational::Ratio, std::collections::HashMap};
-
-    impl UniswapV3SettlementHandler {
-        fn new_dummy(allowances: HashMap<Address, U256>, fee: u32) -> Self {
-            Self {
-                inner: Arc::new(Inner {
-                    router: Default::default(),
-                    gpv2_settlement: Default::default(),
-                    allowances: Mutex::new(Allowances::new(Address::ZERO, allowances)),
-                }),
-                fee,
-            }
-        }
-    }
-
-    #[test]
-    fn test_should_set_allowance() {
-        let token_a = Address::with_last_byte(1);
-        let token_b = Address::with_last_byte(2);
-        let allowances = maplit::hashmap! {
-            token_a => U256::from(100),
-            token_b => U256::from(200),
-        };
-
-        let settlement_handler = UniswapV3SettlementHandler::new_dummy(allowances, 10);
-
-        // Token A below, equal, above
-        let (approval, _) = settlement_handler.settle(
-            TokenAmount {
-                token: token_a,
-                amount: U256::from(50),
-            },
-            TokenAmount {
-                token: token_b,
-                amount: U256::from(100),
-            },
-        );
-        assert_eq!(approval, None);
-
-        let (approval, _) = settlement_handler.settle(
-            TokenAmount {
-                token: token_a,
-                amount: U256::from(99),
-            },
-            TokenAmount {
-                token: token_b,
-                amount: U256::from(100),
-            },
-        );
-        assert_eq!(approval, None);
-
-        // Token B below, equal, above
-        let (approval, _) = settlement_handler.settle(
-            TokenAmount {
-                token: token_b,
-                amount: U256::from(150),
-            },
-            TokenAmount {
-                token: token_a,
-                amount: U256::from(100),
-            },
-        );
-        assert_eq!(approval, None);
-
-        let (approval, _) = settlement_handler.settle(
-            TokenAmount {
-                token: token_b,
-                amount: U256::from(199),
-            },
-            TokenAmount {
-                token: token_a,
-                amount: U256::from(100),
-            },
-        );
-        assert_eq!(approval, None);
-
-        // Untracked token
-        let (approval, _) = settlement_handler.settle(
-            TokenAmount {
-                token: Address::with_last_byte(3),
-                amount: U256::from(1),
-            },
-            TokenAmount {
-                token: token_a,
-                amount: U256::from(100),
-            },
-        );
-        assert_ne!(approval, None);
-    }
+    use {super::*, num::rational::Ratio};
 
     #[test]
     fn test_ratio_to_u32() {
@@ -254,4 +165,3 @@ mod tests {
         assert_eq!(ratio_to_u32(fee_4).unwrap(), 100);
     }
 }
-*/

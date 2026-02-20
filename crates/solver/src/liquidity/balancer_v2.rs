@@ -190,15 +190,13 @@ impl SettlementHandler {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::interactions::allowances::{Approval, MockAllowanceManaging},
         alloy::primitives::U256,
         contracts::alloy::BalancerV2Vault,
-        maplit::{btreemap, hashmap, hashset},
+        maplit::{btreemap, hashset},
         mockall::predicate::*,
         model::TokenPair,
         shared::{
@@ -240,7 +238,6 @@ mod tests {
     #[tokio::test]
     async fn fetches_liquidity() {
         let mut pool_fetcher = MockBalancerPoolFetching::new();
-        let mut allowance_manager = MockAllowanceManaging::new();
 
         let weighted_pools = vec![
             WeightedPool {
@@ -348,20 +345,6 @@ mod tests {
                 }
             });
 
-        // Fetches allowances for all tokens in pools.
-        allowance_manager
-            .expect_get_allowances()
-            .with(
-                eq(hashset![
-                    Address::repeat_byte(0x70),
-                    Address::repeat_byte(0x71),
-                    Address::repeat_byte(0x73),
-                    Address::repeat_byte(0xb0),
-                ]),
-                always(),
-            )
-            .returning(|_, _| Ok(Allowances::empty(Address::repeat_byte(0xc1))));
-
         let base_tokens = BaseTokens::new(Address::repeat_byte(0xb0), &[]);
         let traded_pairs = [
             TokenPair::new(
@@ -387,7 +370,6 @@ mod tests {
             settlement,
             vault: *vault.address(),
             pool_fetcher: Arc::new(pool_fetcher),
-            allowance_manager: Box::new(allowance_manager),
         };
         let (stable_orders, weighted_orders) = liquidity_provider
             .get_orders(pairs, Block::Recent)
@@ -433,13 +415,6 @@ mod tests {
         let inner = Arc::new(Inner {
             settlement,
             vault: *vault.address(),
-            allowances: Allowances::new(
-                *vault.address(),
-                hashmap! {
-                    Address::repeat_byte(0x70) => U256::from(0),
-                    Address::repeat_byte(0x71) =>  U256::from(100),
-                },
-            ),
         });
         let handler = SettlementHandler {
             pool_id: B256::repeat_byte(0x90),
@@ -474,11 +449,6 @@ mod tests {
         assert_eq!(
             interactions,
             [
-                Approval {
-                    token: Address::repeat_byte(0x70),
-                    spender: *vault.address(),
-                }
-                .encode(),
                 BalancerSwapGivenOutInteraction {
                     settlement,
                     vault: *vault.address(),
@@ -501,4 +471,3 @@ mod tests {
         );
     }
 }
-*/
