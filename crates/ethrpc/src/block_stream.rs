@@ -552,7 +552,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        observe::tracing::initialize(&observe::Config::default().with_env_filter("shared=debug"));
+        observe::tracing::init::initialize(
+            &observe::Config::default().with_env_filter("shared=debug"),
+        );
 
         let alloy_provider = Web3::new_from_env();
         let ws_node = std::env::var("NODE_WS_URL").unwrap().parse().unwrap();

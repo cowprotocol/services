@@ -36,7 +36,7 @@ pub mod metrics;
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
 pub fn init(obs_config: observe::Config) {
-    observe::tracing::initialize_reentrant(&obs_config);
+    observe::tracing::init::initialize_reentrant(&obs_config);
     metrics::init();
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();

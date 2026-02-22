@@ -10,6 +10,6 @@ pub mod panic_hook;
 pub mod tracing;
 
 pub use {
-    config::{Config, TracingConfig},
     crate::tracing::distributed::request_id,
+    config::{Config, TracingConfig},
 };

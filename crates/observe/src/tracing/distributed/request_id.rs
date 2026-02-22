@@ -126,17 +126,14 @@ mod test {
 
     fn init_tracing(env_filter: &str) {
         let obs_config = Config::new(env_filter, tracing::Level::ERROR.into(), false, None);
-        crate::tracing::initialize_reentrant(&obs_config);
+        crate::tracing::init::initialize_reentrant(&obs_config);
     }
 
     #[tokio::test]
     async fn request_id_from_current_span() {
         init_tracing("error");
         async {
-            assert_eq!(
-                Some("test".to_string()),
-                from_current_span()
-            );
+            assert_eq!(Some("test".to_string()), from_current_span());
         }
         .instrument(info_span("test".to_string()))
         .await
@@ -146,10 +143,7 @@ mod test {
     async fn request_id_not_set() {
         init_tracing("debug");
         async {
-            assert_eq!(
-                None,
-                from_current_span()
-            );
+            assert_eq!(None, from_current_span());
         }
         .await
     }
@@ -161,10 +155,7 @@ mod test {
             async {
                 async {
                     // we traverse the span hierarchy until we find a span with the request id
-                    assert_eq!(
-                        Some("test".to_string()),
-                        from_current_span()
-                    );
+                    assert_eq!(Some("test".to_string()), from_current_span());
                 }
                 .instrument(tracing::info_span!("wrap2", value = "value2"))
                 .await
@@ -183,10 +174,7 @@ mod test {
             async {
                 async {
                     // if multiple ancestors have a request id we take the closest one
-                    assert_eq!(
-                        Some("test_inner".to_string()),
-                        from_current_span()
-                    );
+                    assert_eq!(Some("test_inner".to_string()), from_current_span());
                 }
                 .instrument(tracing::info_span!("wrap", value = "value"))
                 .await
@@ -206,10 +194,7 @@ mod test {
                 async {
                     // we can spawn a new task and still find the request id if the spawned task
                     // was instrumented with a span that contains the request id
-                    assert_eq!(
-                        Some("test".to_string()),
-                        from_current_span()
-                    );
+                    assert_eq!(Some("test".to_string()), from_current_span());
                 }
                 .instrument(Span::current()),
             )
