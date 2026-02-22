@@ -15,7 +15,10 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-    autopilot::{config::Configuration, infra::persistence::dto},
+    autopilot::{
+        config::{Configuration, native_price::NativePriceConfig},
+        infra::persistence::dto,
+    },
     clap::Parser,
     model::{
         AuctionId,
@@ -26,7 +29,10 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
-    shared::web3::Web3,
+    shared::{
+        price_estimation::{NativePriceEstimator, NativePriceEstimators},
+        web3::Web3,
+    },
     sqlx::Connection,
     std::{
         collections::{HashMap, hash_map::Entry},
@@ -132,7 +138,6 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
-            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             format!("--node-ws-url={NODE_WS_HOST}"),
@@ -147,12 +152,8 @@ impl<'a> Services<'a> {
     }
 
     fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
-        self.api_autopilot_arguments().chain([
-            "--quote-timeout=10s".to_string(),
-            "--native-price-prefetch-time=500ms".to_string(),
-            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
-                .to_string(),
-        ])
+        self.api_autopilot_arguments()
+            .chain(["--quote-timeout=10s".to_string()])
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
@@ -219,9 +220,17 @@ impl<'a> Services<'a> {
         let args = autopilot::arguments::CliArguments::try_parse_from(args)
             .map_err(|err| err.to_string())
             .unwrap();
-        let config = autopilot::config::Configuration::from_path(&args.config)
-            .await
-            .unwrap();
+        let config = Configuration {
+            native_price_estimation: NativePriceConfig {
+                estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
+                    "test_quoter".to_string(),
+                    Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                )]]),
+                native_price_prefetch_time: Duration::from_millis(500),
+                ..Default::default()
+            },
+            ..Configuration::from_path(&args.config).await.unwrap()
+        };
         tracing::info!("Loaded config: {:?}", config);
         let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
         self.wait_until_autopilot_ready().await;
@@ -254,8 +263,8 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
-            "--db-read-url".to_string(),
-            LOCAL_READ_ONLY_DB_URL.clone(),
+            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
+            format!("--db-read-url={}", &*LOCAL_READ_ONLY_DB_URL),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -363,8 +372,37 @@ impl<'a> Services<'a> {
         }];
 
         // Create TOML config file for the driver
-        let (_config_file, config_arg) =
-            Configuration::test("test_solver", solver.address()).to_cli_args();
+        let (_config_file, config_arg) = Configuration {
+            native_price_estimation: {
+                if run_baseline {
+                    NativePriceConfig {
+                        estimators: NativePriceEstimators::new(vec![vec![
+                            NativePriceEstimator::driver(
+                                "test_quoter".to_string(),
+                                Url::from_str("http://localhost:11088/baseline_solver").unwrap(),
+                            ),
+                            NativePriceEstimator::driver(
+                                "test_solver".to_string(),
+                                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                            ),
+                        ]]),
+                        ..Default::default()
+                    }
+                } else {
+                    NativePriceConfig {
+                        estimators: NativePriceEstimators::new(vec![vec![
+                            NativePriceEstimator::driver(
+                                "test_quoter".to_string(),
+                                Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                            ),
+                        ]]),
+                        ..Default::default()
+                    }
+                }
+            },
+            ..Configuration::test("test_solver", solver.address())
+        }
+        .to_cli_args();
 
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
@@ -384,7 +422,6 @@ impl<'a> Services<'a> {
             let autopilot_args = vec![
                 config_arg.clone(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimators=Driver|test_quoter|http://localhost:11088/baseline_solver,Driver|test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
@@ -394,8 +431,6 @@ impl<'a> Services<'a> {
             let autopilot_args = vec![
                 config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
 

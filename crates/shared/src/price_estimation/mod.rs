@@ -39,10 +39,16 @@ pub mod sanitized;
 pub mod trade_finder;
 pub mod trade_verifier;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+impl NativePriceEstimators {
+    pub fn new(estimators: Vec<Vec<NativePriceEstimator>>) -> Self {
+        Self(estimators)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
@@ -72,12 +78,22 @@ impl FromStr for ExternalSolver {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
     Forwarder(Url),
     OneInchSpotPriceApi,
     CoinGecko,
+}
+
+impl NativePriceEstimator {
+    pub const fn driver(name: String, url: Url) -> Self {
+        Self::Driver(ExternalSolver { name, url })
+    }
+
+    pub const fn forwarder(url: Url) -> Self {
+        Self::Forwarder(url)
+    }
 }
 
 impl Display for NativePriceEstimator {
@@ -613,6 +629,80 @@ mod tests {
         ] {
             assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_empty() {
+        let toml = r#"estimators = []"#;
+
+        #[derive(Deserialize)]
+        struct Helper {
+            estimators: NativePriceEstimators,
+        }
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert!(parsed.estimators.as_slice().is_empty());
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_single_stage() {
+        let toml = r#"
+        estimators = [["CoinGecko", "OneInchSpotPriceApi"]]
+        "#;
+
+        #[derive(Deserialize)]
+        struct Helper {
+            estimators: NativePriceEstimators,
+        }
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(parsed.estimators.as_slice().len(), 1);
+        assert_eq!(parsed.estimators.as_slice()[0].len(), 2);
+        assert_eq!(
+            parsed.estimators.as_slice()[0],
+            vec![
+                NativePriceEstimator::CoinGecko,
+                NativePriceEstimator::OneInchSpotPriceApi,
+            ]
+        );
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_multiple_stages() {
+        let toml = r#"
+        estimators = [
+            ["CoinGecko", {Driver = {name = "solver1", url = "http://localhost:8080"}}],
+            [{Forwarder = "http://localhost:12088"}],
+        ]
+        "#;
+
+        #[derive(Deserialize)]
+        struct Helper {
+            estimators: NativePriceEstimators,
+        }
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(parsed.estimators.as_slice().len(), 2);
+        assert_eq!(parsed.estimators.as_slice()[0].len(), 2);
+        assert_eq!(
+            parsed.estimators.as_slice()[0][0],
+            NativePriceEstimator::CoinGecko
+        );
+        assert!(matches!(
+            parsed.estimators.as_slice()[0][1],
+            NativePriceEstimator::Driver(_)
+        ));
+        assert_eq!(parsed.estimators.as_slice()[1].len(), 1);
+        assert!(matches!(
+            parsed.estimators.as_slice()[1][0],
+            NativePriceEstimator::Forwarder(_)
+        ));
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_default() {
+        let estimators = NativePriceEstimators::default();
+        assert!(estimators.as_slice().is_empty());
     }
 
     #[test]
