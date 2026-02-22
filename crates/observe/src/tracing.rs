@@ -284,7 +284,7 @@ mod tests {
     fn lazy_in_macro() {
         tracing::debug!(
             miep = ?Lazy(|| {
-                panic!("this panic shoudl not happen because we evaluate lazily");
+                panic!("this panic should not happen because we evaluate lazily");
                 #[expect(unreachable_code)]
                 "abc"
             })
