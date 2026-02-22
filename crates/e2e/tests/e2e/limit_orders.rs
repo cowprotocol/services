@@ -445,8 +445,11 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     );
 
     let services = Services::new(&onchain).await;
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                 .to_string(),
@@ -685,9 +688,14 @@ async fn too_many_limit_orders_test(web3: Web3) {
             ],
         )
         .await;
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        max_limit_orders_per_user: 1,
+        ..Default::default()
+    }
+    .to_cli_args();
     services
         .start_api(vec![
-            "--max-limit-orders-per-user=1".into(),
+            ob_config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
@@ -782,9 +790,14 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
             ],
         )
         .await;
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        max_limit_orders_per_user: 1,
+        ..Default::default()
+    }
+    .to_cli_args();
     services
         .start_api(vec![
-            "--max-limit-orders-per-user=1".into(),
+            ob_config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;

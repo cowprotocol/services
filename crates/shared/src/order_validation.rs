@@ -212,8 +212,10 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: Address) -> Result<u64>;
 }
 
-#[derive(Clone, Debug, clap::ValueEnum)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum SameTokensPolicy {
+    #[default]
     Disallow,
     AllowSell,
     // Allow, TODO: Allow sell and buy orders with the same tokens (https://github.com/cowprotocol/services/issues/3963)
