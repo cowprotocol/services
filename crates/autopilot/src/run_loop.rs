@@ -995,7 +995,7 @@ impl Metrics {
     fn solve_ok(driver: &infra::Driver, elapsed: Duration) {
         Self::get()
             .solve
-            .with_label_values(&[&driver.name, "success"])
+            .with_label_values(&[driver.name.as_str(), "success"])
             .observe(elapsed.as_secs_f64())
     }
 
@@ -1008,14 +1008,14 @@ impl Metrics {
         };
         Self::get()
             .solve
-            .with_label_values(&[&driver.name, label])
+            .with_label_values(&[driver.name.as_str(), label])
             .observe(elapsed.as_secs_f64())
     }
 
     fn solution_ok(driver: &infra::Driver) {
         Self::get()
             .solutions
-            .with_label_values(&[&driver.name, "success"])
+            .with_label_values(&[driver.name.as_str(), "success"])
             .inc();
     }
 
@@ -1027,14 +1027,14 @@ impl Metrics {
         };
         Self::get()
             .solutions
-            .with_label_values(&[&driver.name, label])
+            .with_label_values(&[driver.name.as_str(), label])
             .inc();
     }
 
     fn settle_ok(driver: &infra::Driver, settled_order_count: usize, elapsed: Duration) {
         Self::get()
             .settle
-            .with_label_values(&[&driver.name, "success"])
+            .with_label_values(&[driver.name.as_str(), "success"])
             .observe(elapsed.as_secs_f64());
         Self::get()
             .settled
@@ -1049,7 +1049,7 @@ impl Metrics {
         };
         Self::get()
             .settle
-            .with_label_values(&[&driver.name, label])
+            .with_label_values(&[driver.name.as_str(), label])
             .observe(elapsed.as_secs_f64());
     }
 
