@@ -8,7 +8,7 @@ use {
         routing::get,
     },
     model::quote::NativeTokenPrice,
-    observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
+    observe::tracing::distributed::axum::{make_span, record_trace_id},
     serde::Deserialize,
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
