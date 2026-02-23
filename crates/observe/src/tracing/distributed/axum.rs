@@ -1,7 +1,8 @@
 use {
-    crate::{request_id::request_id, tracing::distributed::headers::HeaderExtractor},
+    crate::request_id::request_id,
     axum::http::Request,
     opentelemetry::{global, trace::TraceContextExt},
+    opentelemetry_http::HeaderExtractor,
     tracing::{Span, field, info, info_span},
     tracing_opentelemetry::OpenTelemetrySpanExt,
 };

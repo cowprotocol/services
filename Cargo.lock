@@ -4611,6 +4611,7 @@ dependencies = [
  "futures",
  "jemalloc_pprof",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "pin-project-lite",
