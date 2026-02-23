@@ -39,7 +39,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.logging.use_json_logs,
         None,
     );
-    observe::tracing::initialize(&obs_config);
+    observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();

@@ -14,7 +14,7 @@ use {
         response::{IntoResponse, Json, Response},
         routing::{delete, get, post, put},
     },
-    observe::distributed_tracing::tracing_axum::{self, record_trace_id},
+    observe::tracing::distributed::axum::{make_span, record_trace_id},
     serde::{Deserialize, Serialize},
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
@@ -312,7 +312,7 @@ pub fn handle_all_routes(
         .layer(middleware::from_fn(with_matched_path_metric))
         .layer(
             ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http().make_span_with(tracing_axum::make_span))
+                .layer(TraceLayer::new_for_http().make_span_with(make_span))
                 .map_request(record_trace_id),
         )
 }

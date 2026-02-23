@@ -883,7 +883,7 @@ impl Setup {
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
-        observe::tracing::initialize_reentrant(
+        observe::tracing::init::initialize_reentrant(
             &observe::Config::default()
                 .with_env_filter("driver=trace,driver::tests::setup::blockchain=debug,warn"),
         );

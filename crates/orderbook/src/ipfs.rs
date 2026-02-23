@@ -89,7 +89,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn not_found() {
-        observe::tracing::initialize(
+        observe::tracing::init::initialize(
             &observe::Config::default().with_env_filter("orderbook::ipfs=trace"),
         );
         let ipfs = Ipfs::new(Default::default(), "https://ipfs.io".parse().unwrap(), None);

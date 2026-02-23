@@ -220,7 +220,7 @@ mod tests {
     #[tokio::test]
     async fn block_stream_retries_failed_blocks() {
         let obs_config = observe::Config::default().with_env_filter("debug");
-        observe::tracing::initialize(&obs_config);
+        observe::tracing::init::initialize(&obs_config);
 
         let mut mock_maintenance = MockMaintaining::new();
         let mut sequence = Sequence::new();

@@ -1,6 +1,9 @@
 use {
     crate::config::{
+        banned_users::BannedUsersConfig,
         fee_policy::FeePoliciesConfig,
+        order_events_cleanup::OrderEventsCleanupConfig,
+        s3::S3Config,
         solver::Solver,
         trusted_tokens::TrustedTokensConfig,
     },
@@ -9,7 +12,10 @@ use {
     std::path::Path,
 };
 
+pub mod banned_users;
 pub mod fee_policy;
+pub mod order_events_cleanup;
+pub mod s3;
 pub mod solver;
 pub mod trusted_tokens;
 
@@ -27,6 +33,19 @@ pub struct Configuration {
     /// to internalize.
     #[serde(default)]
     pub trusted_tokens: TrustedTokensConfig,
+
+    /// Configuration for periodic cleanup of order events.
+    #[serde(default)]
+    pub order_events_cleanup: OrderEventsCleanupConfig,
+
+    /// Configuration for order validation rules.
+    #[serde(default)]
+    pub banned_users: BannedUsersConfig,
+
+    /// Configuration for uploading auction instances to S3.
+    /// If absent, S3 uploads are disabled.
+    #[serde(default)]
+    pub s3: Option<S3Config>,
 }
 
 impl Configuration {
@@ -138,6 +157,18 @@ mod tests {
         url = "https://example.com/tokens.json"
         tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         update-interval = "30m"
+
+        [order-events-cleanup]
+        cleanup-interval = "12h"
+        cleanup-threshold = "7d"
+
+        [banned-users]
+        addresses = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
+        max-cache-size = 5000
+
+        [s3]
+        bucket = "my-bucket"
+        filename-prefix = "staging/mainnet/"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -184,6 +215,22 @@ mod tests {
             config.trusted_tokens.update_interval,
             Duration::from_secs(1800)
         );
+
+        assert_eq!(
+            config.order_events_cleanup.cleanup_interval,
+            Duration::from_secs(43200)
+        );
+        assert_eq!(
+            config.order_events_cleanup.cleanup_threshold,
+            Duration::from_secs(604800)
+        );
+
+        assert_eq!(config.banned_users.addresses.len(), 1);
+        assert_eq!(config.banned_users.max_cache_size.get(), 5000);
+
+        let s3 = config.s3.unwrap();
+        assert_eq!(s3.bucket, "my-bucket");
+        assert_eq!(s3.filename_prefix, "staging/mainnet/");
     }
 
     #[test]
@@ -217,6 +264,20 @@ mod tests {
             config.trusted_tokens.update_interval,
             Duration::from_secs(3600)
         );
+
+        assert_eq!(
+            config.order_events_cleanup.cleanup_interval,
+            Duration::from_secs(86400)
+        );
+        assert_eq!(
+            config.order_events_cleanup.cleanup_threshold,
+            Duration::from_secs(2592000)
+        );
+
+        assert!(config.banned_users.addresses.is_empty());
+        assert_eq!(config.banned_users.max_cache_size.get(), 10000);
+
+        assert!(config.s3.is_none());
     }
 
     #[test]
