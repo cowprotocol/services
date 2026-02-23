@@ -13,7 +13,7 @@ use {
     futures::Stream,
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
-    observe::tracing::Lazy,
+    observe::tracing::lazy::Lazy,
     reqwest::RequestBuilder,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
