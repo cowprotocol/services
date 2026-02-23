@@ -485,8 +485,8 @@ impl NativePriceUpdater {
 
         let max_age = cache.max_age().saturating_sub(prefetch_time);
 
-        // Pre-filter to only tokens whose cache entries have expired. This
-        // ensures that all futures in the `.buffered()` stream are actual
+        // Filter out tokens that are not expired yet. This is important to
+        // ensure that all futures in the `.buffered()` stream are actual
         // fetches, allowing the `BufferedRequest` layer to batch them into
         // fewer CoinGecko API calls (up to 19 tokens per call).
         let now = Instant::now();
