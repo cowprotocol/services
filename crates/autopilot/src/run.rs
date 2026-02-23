@@ -141,7 +141,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.use_json_logs,
         tracing_config(&args.shared.tracing, "autopilot".into()),
     );
-    observe::tracing::initialize(&obs_config);
+    observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
@@ -373,7 +373,7 @@ pub async fn run(
     };
 
     let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
+        infra::persistence::Persistence::new(config.s3.map(Into::into), Arc::new(db_write.clone()))
             .instrument(info_span!("persistence_init"))
             .await;
     let settlement_contract_start_index = match GPv2Settlement::deployment_block(&chain_id) {
@@ -451,8 +451,8 @@ pub async fn run(
         persistence.clone(),
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
-            args.banned_users,
-            args.banned_users_max_cache_size.get().to_u64().unwrap(),
+            config.banned_users.addresses,
+            config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
         deny_listed_tokens.clone(),
@@ -488,8 +488,8 @@ pub async fn run(
     );
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
-        args.order_events_cleanup_interval,
-        args.order_events_cleanup_threshold,
+        config.order_events_cleanup.cleanup_interval,
+        config.order_events_cleanup.cleanup_threshold,
     );
     let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
         order_events_cleaner_config,

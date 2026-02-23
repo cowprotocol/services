@@ -1,20 +1,15 @@
 use {
     crate::{
         config::Config,
-        distributed_tracing::{
-            request_id::RequestIdLayer,
-            trace_id_format::{TraceIdFmt, TraceIdJsonFormat},
+        tracing::{
+            distributed::{
+                request_id::RequestIdLayer,
+                trace_id_format::{TraceIdFmt, TraceIdJsonFormat},
+            },
+            reload_handler::spawn_reload_handler,
         },
-        tracing_reload_handler::spawn_reload_handler,
     },
-    axum::http::{self, HeaderMap},
-    opentelemetry::{
-        Context,
-        KeyValue,
-        global,
-        propagation::{Extractor, Injector},
-        trace::TracerProvider,
-    },
+    opentelemetry::{KeyValue, global, trace::TracerProvider},
     opentelemetry_otlp::WithExportConfig,
     opentelemetry_sdk::{
         Resource,
@@ -23,8 +18,7 @@ use {
     },
     std::{panic::PanicHookInfo, sync::Once},
     time::macros::format_description,
-    tracing::{Span, level_filters::LevelFilter},
-    tracing_opentelemetry::OpenTelemetrySpanExt,
+    tracing::level_filters::LevelFilter,
     tracing_subscriber::{
         EnvFilter,
         Layer,
@@ -188,52 +182,4 @@ fn tracing_panic_hook(panic: &PanicHookInfo) {
     let name = thread.name().unwrap_or("<unnamed>");
     let backtrace = std::backtrace::Backtrace::force_capture();
     tracing::error!("thread '{name}' {panic}\nstack backtrace:\n{backtrace}");
-}
-
-pub struct HeaderExtractor<'a>(pub &'a HeaderMap);
-
-// Copied from https://github.com/open-telemetry/opentelemetry-rust/blob/main/opentelemetry-http/src/lib.rs
-// because that crate is using `http` crate v1 while warp is on v0.2
-impl Extractor for HeaderExtractor<'_> {
-    /// Get a value for a key from the HeaderMap.  If the value is not valid
-    /// ASCII, returns None.
-    fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).and_then(|value| value.to_str().ok())
-    }
-
-    /// Collect all the keys from the HeaderMap.
-    fn keys(&self) -> Vec<&str> {
-        self.0
-            .keys()
-            .map(|value| value.as_str())
-            .collect::<Vec<_>>()
-    }
-}
-
-pub struct HeaderInjector<'a>(pub &'a mut http::HeaderMap);
-
-impl Injector for HeaderInjector<'_> {
-    /// Set a key and value in the HeaderMap. Does nothing if the key or value
-    /// are not valid inputs.
-    fn set(&mut self, key: &str, value: String) {
-        if let (Ok(name), Ok(val)) = (
-            http::header::HeaderName::from_bytes(key.as_bytes()),
-            http::header::HeaderValue::from_str(&value),
-        ) {
-            self.0.insert(name, val);
-        }
-    }
-}
-
-pub fn tracing_headers() -> HeaderMap {
-    let mut headers = HeaderMap::new();
-
-    Context::current();
-    let span = Span::current();
-    let cx = span.context();
-    global::get_text_map_propagator(|propagator| {
-        propagator.inject_context(&cx, &mut HeaderInjector(&mut headers))
-    });
-
-    headers
 }

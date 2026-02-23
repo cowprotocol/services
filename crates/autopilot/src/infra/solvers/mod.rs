@@ -3,7 +3,7 @@ use {
     crate::{config::solver::Account, domain::eth, util},
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
-    observe::tracing::tracing_headers,
+    observe::tracing::{distributed::headers::tracing_headers, lazy::Lazy},
     reqwest::{Client, RequestBuilder, StatusCode},
     std::{borrow::Cow, time::Duration},
     thiserror::Error,
@@ -120,14 +120,14 @@ impl Driver {
 
         tracing::trace!(
             path = &url.path(),
-            body = %payload.body_to_string(),
+            body = %Lazy(|| payload.body_to_string()),
             "solver request",
         );
 
         let request = self.client.post(url.clone()).headers(tracing_headers());
         let mut request = payload.inject(request);
 
-        if let Some(request_id) = observe::distributed_tracing::request_id::from_current_span() {
+        if let Some(request_id) = observe::tracing::distributed::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", request_id);
         }
 

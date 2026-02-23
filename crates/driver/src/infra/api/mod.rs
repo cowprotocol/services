@@ -22,7 +22,7 @@ use {
     },
     error::Error,
     futures::Future,
-    observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
+    observe::tracing::distributed::axum::{make_span, record_trace_id},
     shared::account_balances,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,

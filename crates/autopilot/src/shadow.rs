@@ -205,14 +205,14 @@ impl RunLoop {
             Ok(response) => {
                 Metrics::get()
                     .results
-                    .with_label_values(&[&driver.name, "ok"])
+                    .with_label_values(&[driver.name.as_str(), "ok"])
                     .inc();
                 response.into_domain()
             }
             Err(err) => {
                 Metrics::get()
                     .results
-                    .with_label_values(&[&driver.name, "error"])
+                    .with_label_values(&[driver.name.as_str(), "error"])
                     .inc();
                 tracing::debug!(driver = driver.name, %err, "failed to fetch solutions");
                 return vec![];
