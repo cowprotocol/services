@@ -10,15 +10,18 @@ use {
     alloy::primitives::{Address, U256},
     bytes::Bytes,
     chrono::{DateTime, Utc},
+    futures::Stream,
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
+    observe::tracing::Lazy,
     reqwest::RequestBuilder,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::{
         borrow::Cow,
         collections::{HashMap, HashSet},
-        time::Duration,
+        task::Poll,
+        time::{Duration, Instant},
     },
 };
 
@@ -82,7 +85,7 @@ impl Request {
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
         request
-            .body(self.body.clone())
+            .body(reqwest::Body::wrap_stream(ByteStream::new(self.body.clone())))
             // announce which auction this request is for in the
             // headers to help the driver detect duplicated
             // `/solve` requests before streaming the body
@@ -98,6 +101,68 @@ impl InjectIntoHttpRequest for Request {
     fn body_to_string(&self) -> Cow<'_, str> {
         let string = str::from_utf8(self.body.as_ref()).unwrap();
         Cow::Borrowed(string)
+    }
+}
+
+/// Thin wrapper around a payload that already exists fully serialized
+/// in-memory. The purpose of converting that into a stream is to allow
+/// measuring the data transfer of the request body (for debugging and
+/// optimization purposes).
+///
+/// Note that this measurement is only an approximation of the truth.
+/// The reason is that this only measures how long it takes `hyper`
+/// to load the last byte from the body into the buffer of the network
+/// stack. However, given how big `/solve` requests are in practice
+/// `hyper` should have to flush the buffer a couple of times so the
+/// measured time should be reasonably accurate.
+struct ByteStream {
+    data: Bytes,
+    created_at: Instant,
+    first_polled_at: Option<Instant>,
+    span: tracing::Span,
+}
+
+impl ByteStream {
+    fn new(data: Bytes) -> Self {
+        Self {
+            data,
+            created_at: Instant::now(),
+            first_polled_at: None,
+            span: tracing::Span::current(),
+        }
+    }
+}
+
+impl Stream for ByteStream {
+    type Item = Result<Bytes, std::io::Error>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let this = self.as_mut().get_mut();
+        let _span = this.span.enter();
+
+        if this.first_polled_at.is_none() {
+            this.first_polled_at = Some(Instant::now());
+        }
+
+        const CHUNK_SIZE: usize = 10 * 1024; // 10 KB
+        if this.data.is_empty() {
+            let first_poll = this.first_polled_at.expect("initialized at first poll");
+            tracing::debug!(
+                until_first_poll = ?Lazy(|| first_poll.duration_since(this.created_at)),
+                transmission = ?Lazy(|| first_poll.elapsed()),
+                "finished streaming http request body"
+            );
+            Poll::Ready(None)
+        } else {
+            let end_index = std::cmp::min(CHUNK_SIZE, this.data.len());
+            // splits off bytes to transmit and only leaves the remaining bytes in
+            // `self.data`
+            let chunk = this.data.split_to(end_index);
+            Poll::Ready(Some(Ok(chunk)))
+        }
     }
 }
 
