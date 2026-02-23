@@ -455,7 +455,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
 }
 
 pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
-    tracing::debug!(?deadline, ?timeouts, "computed deadline");
+    tracing::trace!(?deadline, ?timeouts, "computed deadline");
 }
 
 pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_request: bool) {
