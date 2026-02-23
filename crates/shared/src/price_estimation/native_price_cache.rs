@@ -342,7 +342,7 @@ impl CachingNativePriceEstimator {
             (token, result)
         });
         futures::stream::iter(estimates)
-            .buffered(self.0.concurrent_requests)
+            .buffer_unordered(self.0.concurrent_requests)
             .boxed()
     }
 
@@ -484,25 +484,11 @@ impl NativePriceUpdater {
         }
 
         let max_age = cache.max_age().saturating_sub(prefetch_time);
-
-        // Filter out tokens that are not expired yet. This is important to
-        // ensure that all futures in the `.buffered()` stream are actual
-        // fetches, allowing the `BufferedRequest` layer to batch them into
-        // fewer CoinGecko API calls (up to 19 tokens per call).
-        let now = Instant::now();
-        let expired_tokens: Vec<_> = tokens_to_update
-            .iter()
-            .copied()
-            .filter(|token| Cache::get_cached_price(*token, now, &cache.0.data, &max_age).is_none())
-            .collect();
-
-        if expired_tokens.is_empty() {
-            return;
-        }
-
         let timeout = self.estimator.0.quote_timeout;
         self.estimator
-            .estimate_prices_and_update_cache(expired_tokens.into_iter(), max_age, timeout)
+            .estimate_prices_and_update_cache(tokens_to_update.iter().copied(), max_age, timeout)
+            // Drive the stream to completion. Results are written to the cache as
+            // a side effect, so we don't need to inspect them here.
             .for_each(|_| async {})
             .await;
         metrics
