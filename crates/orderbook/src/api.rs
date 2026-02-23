@@ -119,7 +119,7 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
     // Track completed requests
     metrics
         .requests_complete
-        .with_label_values(&[&method_with_path, status.as_str()])
+        .with_label_values(&[method_with_path.as_str(), status.as_str()])
         .inc();
 
     // Track rejected requests (4xx and 5xx status codes)
@@ -355,7 +355,7 @@ impl ApiMetrics {
         let method_with_path = format!("{method} {path}");
         for status in Self::INITIAL_STATUSES {
             self.requests_complete
-                .with_label_values(&[&method_with_path, status.as_str()])
+                .with_label_values(&[method_with_path.as_str(), status.as_str()])
                 .reset();
         }
     }

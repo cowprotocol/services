@@ -145,7 +145,7 @@ impl TenderlyApi for Instrumented {
         Metrics::get()
             .tenderly_simulations
             .with_label_values(&[
-                &self.name,
+                self.name.as_str(),
                 match &result {
                     Ok(_) => "ok",
                     Err(_) => "err",
