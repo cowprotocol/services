@@ -36,7 +36,7 @@ pub mod metrics;
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
 pub fn init(obs_config: observe::Config) {
-    observe::tracing::initialize_reentrant(&obs_config);
+    observe::tracing::init::initialize_reentrant(&obs_config);
     metrics::init();
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
@@ -392,7 +392,7 @@ pub fn mempool_executed(
     };
     metrics::get()
         .mempool_submission
-        .with_label_values(&[&mempool.to_string(), result])
+        .with_label_values(&[mempool.to_string().as_str(), result])
         .inc();
 
     // For some of the errors we are interested in observing the exact block numbers
@@ -425,7 +425,7 @@ pub fn mempool_executed(
         let blocks_passed = end.saturating_sub(*start);
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[&mempool.to_string(), label])
+            .with_label_values(&[mempool.to_string().as_str(), label])
             .inc_by(blocks_passed);
     }
 }
@@ -455,7 +455,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
 }
 
 pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
-    tracing::debug!(?deadline, ?timeouts, "computed deadline");
+    tracing::trace!(?deadline, ?timeouts, "computed deadline");
 }
 
 pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_request: bool) {

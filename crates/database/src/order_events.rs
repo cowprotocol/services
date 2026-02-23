@@ -52,29 +52,40 @@ pub async fn insert_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,
 ) -> Result<(), sqlx::Error> {
+    insert_order_events(ex, &[event.order_uid], event.timestamp, event.label).await
+}
+
+pub async fn insert_order_events(
+    ex: &mut PgConnection,
+    orders: &[OrderUid],
+    timestamp: DateTime<Utc>,
+    label: OrderEventLabel,
+) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        WITH cte AS (
-            SELECT label
-            FROM order_events
-            WHERE order_uid = $1
-            ORDER BY timestamp DESC
-            LIMIT 1
-        )
-        INSERT INTO order_events (order_uid, timestamp, label)
-        SELECT $1, $2, $3
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM cte
-            WHERE label = $3
-        )
+    WITH latest_events AS (
+        SELECT DISTINCT ON (order_uid) order_uid, label
+        FROM order_events
+        WHERE order_uid = ANY($1)
+        ORDER BY order_uid, timestamp DESC
+    ),
+    incoming AS (
+        SELECT t.order_uid, $2 AS timestamp, $3 AS label
+        FROM unnest($1) AS t(order_uid)
+    )
+    INSERT INTO order_events (order_uid, timestamp, label)
+    SELECT DISTINCT i.order_uid, i.timestamp, i.label
+    FROM incoming i
+    LEFT JOIN latest_events le ON le.order_uid = i.order_uid
+    WHERE le.label IS DISTINCT FROM i.label
     "#;
+
     sqlx::query(QUERY)
-        .bind(event.order_uid)
-        .bind(event.timestamp)
-        .bind(event.label)
+        .bind(orders)
+        .bind(timestamp)
+        .bind(label)
         .execute(ex)
-        .await
-        .map(|_| ())
+        .await?;
+    Ok(())
 }
 
 /// Deletes rows before the provided timestamp from the `order_events` table.
@@ -115,6 +126,7 @@ mod tests {
             byte_array::ByteArray,
             order_events::{OrderEvent, OrderEventLabel},
         },
+        chrono::TimeZone,
         sqlx::Connection,
     };
 
@@ -185,5 +197,72 @@ mod tests {
             .fetch_all(ex)
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_multi_insert() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut ex = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut ex).await.unwrap();
+
+        let early = Utc.with_ymd_and_hms(2026, 2, 19, 0, 0, 0).unwrap();
+        let uid_a = ByteArray([1; 56]);
+        let uid_b = ByteArray([2; 56]);
+        let event_a = OrderEvent {
+            order_uid: uid_a,
+            timestamp: early,
+            label: OrderEventLabel::Created,
+        };
+        insert_order_event(&mut ex, &event_a).await.unwrap();
+        let event_b = OrderEvent {
+            order_uid: uid_b,
+            timestamp: early,
+            label: OrderEventLabel::Invalid,
+        };
+        insert_order_event(&mut ex, &event_b).await.unwrap();
+
+        let later = Utc.with_ymd_and_hms(2027, 2, 19, 0, 0, 0).unwrap();
+        insert_order_events(&mut ex, &[uid_a, uid_b], later, OrderEventLabel::Invalid)
+            .await
+            .unwrap();
+
+        let a = get_latest(&mut ex, &uid_a).await.unwrap();
+        assert_eq!(
+            a,
+            Some(OrderEvent {
+                order_uid: uid_a,
+                // new latest event was added
+                timestamp: later,
+                label: OrderEventLabel::Invalid,
+            })
+        );
+
+        let b = get_latest(&mut ex, &uid_b).await.unwrap();
+        assert_eq!(
+            b,
+            Some(OrderEvent {
+                order_uid: uid_b,
+                // since the latest event was already `Invalid`
+                // no new entry was created
+                timestamp: early,
+                label: OrderEventLabel::Invalid
+            })
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_avoid_duplicate_uids() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut ex = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut ex).await.unwrap();
+        let uid = ByteArray([1; 56]);
+        insert_order_events(&mut ex, &[uid, uid], Utc::now(), OrderEventLabel::Invalid)
+            .await
+            .unwrap();
+        let events = all_order_events(&mut ex).await;
+        // query didn't insert 2 identical events for the same uid
+        assert_eq!(events.len(), 1);
     }
 }

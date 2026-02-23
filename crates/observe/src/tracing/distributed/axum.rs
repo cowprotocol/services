@@ -1,5 +1,5 @@
 use {
-    crate::{request_id::request_id, tracing::HeaderExtractor},
+    crate::{request_id::request_id, tracing::distributed::headers::HeaderExtractor},
     axum::http::Request,
     opentelemetry::{global, trace::TraceContextExt},
     tracing::{Span, field, info, info_span},
