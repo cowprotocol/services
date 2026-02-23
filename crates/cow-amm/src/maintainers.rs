@@ -1,7 +1,7 @@
 use {
     crate::{Amm, cache::Storage},
     contracts::alloy::ERC20,
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     futures::{
         future::{join_all, select_ok},
         stream::{FuturesUnordered, StreamExt},
@@ -13,12 +13,12 @@ use {
 
 pub struct EmptyPoolRemoval {
     storage: Arc<RwLock<Vec<Storage>>>,
-    web3: Web3,
+    provider: AlloyProvider,
 }
 
 impl EmptyPoolRemoval {
-    pub fn new(storage: Arc<RwLock<Vec<Storage>>>, web3: Web3) -> Self {
-        Self { storage, web3 }
+    pub fn new(storage: Arc<RwLock<Vec<Storage>>>, provider: AlloyProvider) -> Self {
+        Self { storage, provider }
     }
 
     /// Checks if the given AMM has a zero token balance.
@@ -28,7 +28,7 @@ impl EmptyPoolRemoval {
             .traded_tokens()
             .iter()
             .map(move |token| async move {
-                ERC20::Instance::new(*token, self.web3.provider.clone())
+                ERC20::Instance::new(*token, self.provider.clone())
                     .balanceOf(*amm_address)
                     .call()
                     .await

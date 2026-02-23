@@ -111,14 +111,14 @@ where
         if let Some(existing) = existing {
             Metrics::get()
                 .request_sharing_access
-                .with_label_values(&[&self.request_label, "hits"])
+                .with_label_values(&[self.request_label.as_str(), "hits"])
                 .inc();
             return existing;
         }
 
         Metrics::get()
             .request_sharing_access
-            .with_label_values(&[&self.request_label, "misses"])
+            .with_label_values(&[self.request_label.as_str(), "misses"])
             .inc();
 
         let shared = future(&request).shared();

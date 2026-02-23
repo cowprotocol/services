@@ -115,25 +115,6 @@ pub struct CliArguments {
     )]
     pub max_auction_age: Duration,
 
-    /// The URL of a list of tokens our settlement contract is willing to
-    /// internalize.
-    #[clap(long, env)]
-    pub trusted_tokens_url: Option<Url>,
-
-    /// Hardcoded list of trusted tokens to use in addition to
-    /// `trusted_tokens_url`.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub trusted_tokens: Option<Vec<Address>>,
-
-    /// Time interval after which the trusted tokens list needs to be updated.
-    #[clap(
-        long,
-        env,
-        default_value = "1h",
-        value_parser = humantime::parse_duration,
-    )]
-    pub trusted_tokens_update_interval: Duration,
-
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
     #[clap(long, env, default_value = "5")]
@@ -279,9 +260,6 @@ impl std::fmt::Display for CliArguments {
             banned_users,
             banned_users_max_cache_size,
             max_auction_age,
-            trusted_tokens_url,
-            trusted_tokens,
-            trusted_tokens_update_interval,
             submission_deadline,
             shadow,
             solve_deadline,
@@ -333,12 +311,6 @@ impl std::fmt::Display for CliArguments {
             "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
         )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
-        display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
-        writeln!(f, "trusted_tokens: {trusted_tokens:?}")?;
-        writeln!(
-            f,
-            "trusted_tokens_update_interval: {trusted_tokens_update_interval:?}"
-        )?;
         writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;

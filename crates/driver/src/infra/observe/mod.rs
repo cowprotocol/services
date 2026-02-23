@@ -392,7 +392,7 @@ pub fn mempool_executed(
     };
     metrics::get()
         .mempool_submission
-        .with_label_values(&[&mempool.to_string(), result])
+        .with_label_values(&[mempool.to_string().as_str(), result])
         .inc();
 
     // For some of the errors we are interested in observing the exact block numbers
@@ -425,7 +425,7 @@ pub fn mempool_executed(
         let blocks_passed = end.saturating_sub(*start);
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[&mempool.to_string(), label])
+            .with_label_values(&[mempool.to_string().as_str(), label])
             .inc_by(blocks_passed);
     }
 }

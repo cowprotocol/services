@@ -29,7 +29,10 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
-    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    ethrpc::{
+        Web3,
+        block_stream::{BlockRetriever, block_number_to_block_number_hash},
+    },
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
@@ -271,7 +274,10 @@ pub async fn run(
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let block_retriever = Arc::new(web3.provider.clone());
+    let block_retriever = Arc::new(BlockRetriever {
+        provider: web3.provider.clone(),
+        block_stream: eth.current_block().clone(),
+    });
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
@@ -401,7 +407,10 @@ pub async fn run(
         boundary::web3_client(url, &args.shared.ethrpc)
     });
 
-    let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
+    let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
+        provider: archive_node_web3.provider,
+        block_stream: eth.current_block().clone(),
+    }));
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(
@@ -494,11 +503,11 @@ pub async fn run(
     );
 
     let market_makable_token_list_configuration = TokenListConfiguration {
-        url: args.trusted_tokens_url,
-        update_interval: args.trusted_tokens_update_interval,
+        url: config.trusted_tokens.url.clone(),
+        update_interval: config.trusted_tokens.update_interval,
         chain_id,
         client: http_factory.create(),
-        hardcoded: args.trusted_tokens.unwrap_or_default(),
+        hardcoded: config.trusted_tokens.tokens.clone(),
     };
     // updated in background task
     let trusted_tokens =
@@ -674,11 +683,11 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         }
 
         AutoUpdatingTokenList::from_configuration(TokenListConfiguration {
-            url: args.trusted_tokens_url,
-            update_interval: args.trusted_tokens_update_interval,
+            url: config.trusted_tokens.url,
+            update_interval: config.trusted_tokens.update_interval,
             chain_id,
             client: http_factory.create(),
-            hardcoded: args.trusted_tokens.unwrap_or_default(),
+            hardcoded: config.trusted_tokens.tokens,
         })
         .await
     };
