@@ -81,7 +81,7 @@ impl Persistence {
         tokio::task::spawn(async move {
             while let Some(upload) = receiver.recv().await {
                 if let Err(err) = db
-                    .replace_current_auction(upload.auction_id, &upload.auction_data)
+                    .replace_current_auction(upload.auction_id, upload.auction_data)
                     .await
                 {
                     tracing::error!(?err, "failed to replace auction in DB");
