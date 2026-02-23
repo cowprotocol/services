@@ -82,6 +82,39 @@ impl SubmissionAccountPool {
     }
 }
 
+/// RAII guard that returns the submission account to the pool on drop,
+/// ensuring the account is not leaked even if the future is cancelled.
+struct AccountGuard {
+    account: Option<Account>,
+    release_sender: mpsc::Sender<Account>,
+}
+
+impl AccountGuard {
+    fn new(account: Account, release_sender: mpsc::Sender<Account>) -> Self {
+        Self {
+            account: Some(account),
+            release_sender,
+        }
+    }
+
+    fn account(&self) -> &Account {
+        self.account.as_ref().expect("guard always has an account")
+    }
+}
+
+impl Drop for AccountGuard {
+    fn drop(&mut self) {
+        if let Some(account) = self.account.take() {
+            let sender = self.release_sender.clone();
+            tokio::spawn(async move {
+                if sender.send(account).await.is_err() {
+                    tracing::error!("failed to return submission account to pool: channel closed");
+                }
+            });
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Competition {
     pub solver: Solver,
@@ -758,8 +791,9 @@ impl Competition {
         }
 
         // When EIP-7702 submission accounts are configured, acquire one from
-        // the pool for the duration of this settlement.
-        let delegated = if let Some(pool) = &self.submission_account_pool {
+        // the pool for the duration of this settlement. The guard ensures the
+        // account is returned even on cancellation or panic.
+        let guard = if let Some(pool) = &self.submission_account_pool {
             let account = pool
                 .acquire
                 .lock()
@@ -767,13 +801,13 @@ impl Competition {
                 .recv()
                 .await
                 .ok_or(Error::SubmissionError)?;
-            Some(account)
+            Some(AccountGuard::new(account, pool.release.clone()))
         } else {
             None
         };
 
-        let delegated_ctx = delegated.as_ref().map(|account| DelegatedSubmission {
-            signer: account.address(),
+        let delegated_ctx = guard.as_ref().map(|g| DelegatedSubmission {
+            signer: g.account().address(),
             solver_eoa: self.solver.address(),
         });
 
@@ -786,11 +820,6 @@ impl Competition {
                 delegated_ctx.as_ref(),
             )
             .await;
-
-        // Return the submission account to the pool.
-        if let (Some(pool), Some(account)) = (&self.submission_account_pool, delegated) {
-            let _ = pool.release.send(account).await;
-        }
 
         notify::executed(
             &self.solver,
