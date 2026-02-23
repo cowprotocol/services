@@ -13,7 +13,6 @@ use {
     futures::Stream,
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
-    observe::tracing::Lazy,
     reqwest::RequestBuilder,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -151,8 +150,8 @@ impl Stream for ByteStream {
         if this.data.is_empty() {
             let first_poll = this.first_polled_at.expect("initialized at first poll");
             tracing::debug!(
-                until_first_poll = ?Lazy(|| first_poll.duration_since(this.created_at)),
-                transmission = ?Lazy(|| first_poll.elapsed()),
+                until_first_poll = ?first_poll.duration_since(this.created_at),
+                transmission = ?first_poll.elapsed(),
                 "finished streaming http request body"
             );
             Poll::Ready(None)
