@@ -12,7 +12,7 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
-    futures::{FutureExt, StreamExt, stream::TryStreamExt},
+    futures::{FutureExt, StreamExt, join, stream::TryStreamExt},
     model::{
         order::{
             EthflowData,
@@ -320,30 +320,27 @@ impl OrderStoring for Postgres {
             .with_label_values(&["many_orders"])
             .start_timer();
         let uids = uids.iter().map(|uid| ByteArray(uid.0)).collect::<Vec<_>>();
-        let mut ex = self.pool.acquire().await?;
+        let mut ex_orders = self.pool.acquire().await?;
+        let mut ex_jit_orders = self.pool.acquire().await?;
 
-        Ok(
-            database::orders::many_full_orders_with_quotes(&mut ex, uids.as_slice())
-                .await?
-                .into_iter()
-                .map(|order| {
-                    let (order, quote) = order.into_order_and_quote();
-                    let uid = OrderUid(order.uid.0);
-                    let result = full_order_with_quote_into_model_order(order, quote.as_ref());
-                    (uid, result)
-                })
-                .chain(
-                    database::jit_orders::get_many_by_id(&mut ex, uids.as_slice())
-                        .await?
-                        .into_iter()
-                        .map(|order| {
-                            let uid = OrderUid(order.uid.0);
-                            let result = full_order_into_model_order(order);
-                            (uid, result)
-                        }),
-                )
-                .collect(),
-        )
+        let (orders, jit_orders) = join!(
+            database::orders::many_full_orders_with_quotes(&mut ex_orders, uids.as_slice()),
+            database::jit_orders::get_many_by_id(&mut ex_jit_orders, uids.as_slice())
+        );
+        Ok(orders?
+            .into_iter()
+            .map(|order| {
+                let (order, quote) = order.into_order_and_quote();
+                let uid = OrderUid(order.uid.0);
+                let result = full_order_with_quote_into_model_order(order, quote.as_ref());
+                (uid, result)
+            })
+            .chain(jit_orders?.into_iter().map(|order| {
+                let uid = OrderUid(order.uid.0);
+                let result = full_order_into_model_order(order);
+                (uid, result)
+            }))
+            .collect())
     }
 
     async fn orders_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
