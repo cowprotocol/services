@@ -159,7 +159,7 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         if result.is_ok() {
             metrics()
                 .queries_won
-                .with_label_values(&[name, kind.label()])
+                .with_label_values(&[name.as_str(), kind.label()])
                 .inc();
         }
         result

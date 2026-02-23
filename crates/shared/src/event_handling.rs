@@ -8,7 +8,7 @@ use {
     },
     anyhow::{Context, Result},
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-    futures::{Stream, StreamExt, future},
+    futures::{Stream, StreamExt},
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,
     tracing::{Instrument, instrument},
@@ -102,6 +102,7 @@ where
 {
     type Event = (T::Event, Log);
 
+    #[instrument(skip_all)]
     async fn get_events_by_block_hash(&self, block_hash: B256) -> Result<Vec<Self::Event>> {
         let filter = self.filter().at_block_hash(block_hash);
         let events = self
@@ -265,14 +266,15 @@ where
     async fn event_block_range(&self) -> Result<EventRange> {
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             let last_handled_block = self.store.last_event_block().await?;
-            self.block_retriever
+            &self
+                .block_retriever
                 .blocks(RangeInclusive::try_new(
                     last_handled_block,
                     last_handled_block,
                 )?)
                 .await?
         } else {
-            self.last_handled_blocks.clone()
+            &self.last_handled_blocks
         };
 
         let current_block = self.block_retriever.current_block().await?;
@@ -361,7 +363,7 @@ where
         let (latest_blocks, is_reorg) = match history_range {
             Some(_) => (latest_blocks, true),
             None => {
-                let (latest_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
+                let (latest_blocks, is_reorg) = detect_reorg_path(handled_blocks, &latest_blocks);
                 (latest_blocks.to_vec(), is_reorg)
             }
         };
@@ -506,41 +508,40 @@ where
         Ok(())
     }
 
+    #[instrument(skip_all)]
     async fn past_events_by_block_hashes(
         &self,
         blocks: &[BlockNumberHash],
     ) -> (Vec<BlockNumberHash>, Vec<E>) {
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
-        for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
-            for (i, result) in future::join_all(
-                chunk
-                    .iter()
-                    .map(|block| self.contract.get_events_by_block_hash(block.1)),
-            )
-            .await
-            .into_iter()
-            .enumerate()
-            {
-                match result {
-                    Ok(e) => {
-                        if !e.is_empty() {
-                            tracing::debug!(
-                                "events fetched for block: {:?}, events: {}",
-                                blocks[i],
-                                e.len(),
-                            );
-                        }
-                        blocks_filtered.push(blocks[i]);
-                        events.extend(e);
+        let mut stream = futures::stream::iter(blocks.iter().cloned().enumerate().map(
+            async move |(index, block)| {
+                (index, self.contract.get_events_by_block_hash(block.1).await)
+            },
+        ))
+        .buffered(MAX_PARALLEL_RPC_CALLS);
+
+        while let Some((index, result)) = stream.next().await {
+            match result {
+                Ok(e) => {
+                    if !e.is_empty() {
+                        tracing::debug!(
+                            "events fetched for block: {:?}, events: {}",
+                            blocks[index],
+                            e.len(),
+                        );
                     }
-                    Err(_) => return (blocks_filtered, events),
+                    blocks_filtered.push(blocks[index]);
+                    events.extend(e);
                 }
+                Err(_) => return (blocks_filtered, events),
             }
         }
 
         (blocks_filtered, events)
     }
 
+    #[instrument(skip_all)]
     async fn past_events_by_block_number_range(
         &self,
         block_range: &RangeInclusive<u64>,
@@ -548,6 +549,7 @@ where
         self.contract.get_events_by_block_range(block_range).await
     }
 
+    #[instrument(skip_all)]
     fn update_last_handled_blocks(&mut self, blocks: &[BlockNumberHash]) {
         tracing::debug!(
             "blocks to update into last_handled_blocks: {:?} - {:?}, last_handled_blocks: {:?} - \
@@ -570,7 +572,7 @@ where
             .last_handled_blocks
             .len()
             .saturating_sub(MAX_REORG_BLOCK_COUNT as usize);
-        self.last_handled_blocks = self.last_handled_blocks[start_index..].to_vec();
+        self.last_handled_blocks.drain(..start_index);
         tracing::debug!(
             "last_handled_blocks after update: {:?} - {:?}",
             self.last_handled_blocks.first(),
