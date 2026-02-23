@@ -105,6 +105,8 @@ impl CoinGecko {
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
         metrics::batch_size(tokens.len());
+        // Sort to make the token order deterministic for better caching on CoinGecko
+        // egress proxy which needs the URL to be the same for cache to be hit
         let mut sorted_tokens: Vec<_> = tokens.iter().map(|token| format!("{token:#x}")).collect();
         sorted_tokens.sort();
         url.query_pairs_mut()
