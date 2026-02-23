@@ -173,11 +173,12 @@ async fn erc1271_gas_limit(web3: Web3) {
         .unwrap();
 
     let services = Services::new(&onchain).await;
+    let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--max-gas-per-order=1000000".to_string()],
-                ..Default::default()
+                autopilot: vec![config_arg],
             },
             solver,
         )

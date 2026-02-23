@@ -29,7 +29,10 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
-    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    ethrpc::{
+        Web3,
+        block_stream::{BlockRetriever, block_number_to_block_number_hash},
+    },
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
@@ -138,7 +141,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.use_json_logs,
         tracing_config(&args.shared.tracing, "autopilot".into()),
     );
-    observe::tracing::initialize(&obs_config);
+    observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
@@ -271,7 +274,10 @@ pub async fn run(
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let block_retriever = Arc::new(web3.provider.clone());
+    let block_retriever = Arc::new(BlockRetriever {
+        provider: web3.provider.clone(),
+        block_stream: eth.current_block().clone(),
+    });
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
@@ -367,7 +373,7 @@ pub async fn run(
     };
 
     let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db_write.clone()))
+        infra::persistence::Persistence::new(config.s3.map(Into::into), Arc::new(db_write.clone()))
             .instrument(info_span!("persistence_init"))
             .await;
     let settlement_contract_start_index = match GPv2Settlement::deployment_block(&chain_id) {
@@ -401,7 +407,10 @@ pub async fn run(
         boundary::web3_client(url, &args.shared.ethrpc)
     });
 
-    let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
+    let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
+        provider: archive_node_web3.provider,
+        block_stream: eth.current_block().clone(),
+    }));
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(
@@ -442,15 +451,15 @@ pub async fn run(
         persistence.clone(),
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
-            args.banned_users,
-            args.banned_users_max_cache_size.get().to_u64().unwrap(),
+            config.banned_users.addresses,
+            config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ),
         balance_fetcher.clone(),
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
         domain::ProtocolFees::new(
-            &args.fee_policies_config,
+            &config.fee_policies,
             args.shared.volume_fee_bucket_overrides.clone(),
             args.shared.enable_sell_equals_buy_volume_fee,
         ),
@@ -479,8 +488,8 @@ pub async fn run(
     );
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
-        args.order_events_cleanup_interval,
-        args.order_events_cleanup_threshold,
+        config.order_events_cleanup.cleanup_interval,
+        config.order_events_cleanup.cleanup_threshold,
     );
     let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
         order_events_cleaner_config,
@@ -494,11 +503,11 @@ pub async fn run(
     );
 
     let market_makable_token_list_configuration = TokenListConfiguration {
-        url: args.trusted_tokens_url,
-        update_interval: args.trusted_tokens_update_interval,
+        url: config.trusted_tokens.url.clone(),
+        update_interval: config.trusted_tokens.update_interval,
         chain_id,
         client: http_factory.create(),
-        hardcoded: args.trusted_tokens.unwrap_or_default(),
+        hardcoded: config.trusted_tokens.tokens.clone(),
     };
     // updated in background task
     let trusted_tokens =
@@ -674,11 +683,11 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         }
 
         AutoUpdatingTokenList::from_configuration(TokenListConfiguration {
-            url: args.trusted_tokens_url,
-            update_interval: args.trusted_tokens_update_interval,
+            url: config.trusted_tokens.url,
+            update_interval: config.trusted_tokens.update_interval,
             chain_id,
             client: http_factory.create(),
-            hardcoded: args.trusted_tokens.unwrap_or_default(),
+            hardcoded: config.trusted_tokens.tokens,
         })
         .await
     };

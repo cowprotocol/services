@@ -60,6 +60,17 @@ where
     }
 }
 
+#[cfg(any(test, feature = "test-util"))]
+impl Solver {
+    pub fn test(name: &str, address: Address) -> Self {
+        Self {
+            name: name.to_string(),
+            url: format!("http://localhost:11088/{name}").parse().unwrap(),
+            submission_account: Account::Address(address),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use {super::*, alloy::primitives::address};
@@ -94,23 +105,6 @@ mod test {
             "name1".into(),
             Url::parse("http://localhost:8080").unwrap(),
             Account::Kms(Arn("arn:aws:kms:supersecretstuff".into())),
-        );
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
-    fn parse_driver_with_threshold() {
-        let toml = r#"
-        name = "name1"
-        url = "http://localhost:8080"
-        submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-        "#;
-        let driver = toml::from_str::<Solver>(toml).unwrap();
-
-        let expected = Solver::new(
-            "name1".into(),
-            Url::parse("http://localhost:8080").unwrap(),
-            Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
         );
         assert_eq!(driver, expected);
     }

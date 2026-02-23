@@ -1,9 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    autopilot::config::{
-        Configuration,
-        solver::{Account, Solver},
-    },
+    autopilot::config::Configuration,
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -13,8 +10,7 @@ use {
     number::units::EthUnit,
     shared::web3::Web3,
     solvers_dto::solution::{Asset, Solution},
-    std::{collections::HashMap, str::FromStr},
-    url::Url,
+    std::collections::HashMap,
 };
 
 #[tokio::test]
@@ -95,20 +91,14 @@ async fn single_limit_order_test(web3: Web3) {
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
 
-    let config_file = Configuration {
-        drivers: vec![Solver::new(
-            "mock_solver".to_string(),
-            Url::from_str("http://localhost:11088/mock_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
-    }
-    .to_temp_path();
+    let (_config_file, config_arg) =
+        Configuration::test("mock_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],

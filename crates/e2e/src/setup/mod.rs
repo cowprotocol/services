@@ -1,8 +1,6 @@
 pub mod colocation;
 mod deploy;
-#[macro_use]
 pub mod onchain_components;
-pub mod fee;
 pub mod proxy;
 mod services;
 mod solver;
@@ -191,7 +189,7 @@ async fn run<F, Fut, T>(
         false,
         None,
     );
-    observe::tracing::initialize_reentrant(&obs_config);
+    observe::tracing::init::initialize_reentrant(&obs_config);
     observe::panic_hook::install();
 
     services::ensure_e2e_readonly_user().await;

@@ -41,7 +41,6 @@ use {
     tracing::{Instrument, instrument},
 };
 
-pub mod cli;
 pub mod dto;
 
 #[derive(Clone)]
@@ -81,7 +80,7 @@ impl Persistence {
         tokio::task::spawn(async move {
             while let Some(upload) = receiver.recv().await {
                 if let Err(err) = db
-                    .replace_current_auction(upload.auction_id, &upload.auction_data)
+                    .replace_current_auction(upload.auction_id, upload.auction_data)
                     .await
                 {
                     tracing::error!(?err, "failed to replace auction in DB");
@@ -171,9 +170,10 @@ impl Persistence {
         let Some(s3) = self.s3.clone() else {
             return;
         };
-        let auction_dto = dto::auction::from_domain(auction.clone());
+        let auction = auction.clone();
         tokio::task::spawn(async move {
-            match s3.upload(id.to_string(), &auction_dto).await {
+            let auction_dto = dto::auction::from_domain(auction);
+            match s3.upload(id.to_string(), auction_dto).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
             }

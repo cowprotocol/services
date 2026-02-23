@@ -1,11 +1,9 @@
 use {
-    crate::{database::INSERT_BATCH_SIZE_DEFAULT, infra},
+    crate::database::INSERT_BATCH_SIZE_DEFAULT,
     alloy::primitives::Address,
     anyhow::Context,
-    chrono::{DateTime, Utc},
-    clap::ValueEnum,
     shared::{
-        arguments::{FeeFactor, display_option, display_secret_option},
+        arguments::{display_option, display_secret_option},
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
@@ -99,14 +97,6 @@ pub struct CliArguments {
     )]
     pub min_order_validity_period: Duration,
 
-    /// List of account addresses to be denied from order creation
-    #[clap(long, env, use_value_delimiter = true)]
-    pub banned_users: Vec<Address>,
-
-    /// Maximum number of entries to keep in the banned users cache.
-    #[clap(long, env, default_value = "10000")]
-    pub banned_users_max_cache_size: NonZeroUsize,
-
     /// If the auction hasn't been updated in this amount of time the pod fails
     /// the liveness check. Expects a value in seconds.
     #[clap(
@@ -116,25 +106,6 @@ pub struct CliArguments {
         value_parser = humantime::parse_duration,
     )]
     pub max_auction_age: Duration,
-
-    /// The URL of a list of tokens our settlement contract is willing to
-    /// internalize.
-    #[clap(long, env)]
-    pub trusted_tokens_url: Option<Url>,
-
-    /// Hardcoded list of trusted tokens to use in addition to
-    /// `trusted_tokens_url`.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub trusted_tokens: Option<Vec<Address>>,
-
-    /// Time interval after which the trusted tokens list needs to be updated.
-    #[clap(
-        long,
-        env,
-        default_value = "1h",
-        value_parser = humantime::parse_duration,
-    )]
-    pub trusted_tokens_update_interval: Duration,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
@@ -171,24 +142,6 @@ pub struct CliArguments {
         value_parser = humantime::parse_duration,
     )]
     pub solve_deadline: Duration,
-
-    /// Describes how the protocol fees should be calculated.
-    #[clap(flatten)]
-    pub fee_policies_config: FeePoliciesConfig,
-
-    /// Arguments for uploading information to S3.
-    #[clap(flatten)]
-    pub s3: infra::persistence::cli::S3,
-
-    /// Time interval in days between each cleanup operation of the
-    /// `order_events` database table.
-    #[clap(long, env, default_value = "1d", value_parser = humantime::parse_duration)]
-    pub order_events_cleanup_interval: Duration,
-
-    /// Age threshold in days for order events to be eligible for cleanup in the
-    /// `order_events` database table.
-    #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
-    pub order_events_cleanup_threshold: Duration,
 
     /// Configurations for indexing CoW AMMs. Supplied in the form of:
     /// "<factory1>|<helper1>|<block1>,<factory2>|<helper2>,<block2>"
@@ -282,23 +235,14 @@ impl std::fmt::Display for CliArguments {
             native_price_estimators,
             api_native_price_estimators,
             min_order_validity_period,
-            banned_users,
-            banned_users_max_cache_size,
             max_auction_age,
-            trusted_tokens_url,
-            trusted_tokens,
-            trusted_tokens_update_interval,
             submission_deadline,
             shadow,
             solve_deadline,
-            fee_policies_config,
-            order_events_cleanup_interval,
-            order_events_cleanup_threshold,
             db_write_url,
             insert_batch_size,
             native_price_estimation_results_required,
             max_settlement_transaction_wait,
-            s3,
             cow_amm_configs,
             max_run_loop_delay,
             run_loop_native_price_timeout,
@@ -334,30 +278,10 @@ impl std::fmt::Display for CliArguments {
             f,
             "min_order_validity_period: {min_order_validity_period:?}"
         )?;
-        writeln!(f, "banned_users: {banned_users:?}")?;
-        writeln!(
-            f,
-            "banned_users_max_cache_size: {banned_users_max_cache_size:?}"
-        )?;
         writeln!(f, "max_auction_age: {max_auction_age:?}")?;
-        display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
-        writeln!(f, "trusted_tokens: {trusted_tokens:?}")?;
-        writeln!(
-            f,
-            "trusted_tokens_update_interval: {trusted_tokens_update_interval:?}"
-        )?;
         writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;
-        writeln!(f, "fee_policies_config: {fee_policies_config:?}")?;
-        writeln!(
-            f,
-            "order_events_cleanup_interval: {order_events_cleanup_interval:?}"
-        )?;
-        writeln!(
-            f,
-            "order_events_cleanup_threshold: {order_events_cleanup_threshold:?}"
-        )?;
         writeln!(f, "insert_batch_size: {insert_batch_size}")?;
         writeln!(
             f,
@@ -367,7 +291,6 @@ impl std::fmt::Display for CliArguments {
             f,
             "max_settlement_transaction_wait: {max_settlement_transaction_wait:?}"
         )?;
-        writeln!(f, "s3: {s3:?}")?;
         writeln!(f, "cow_amm_configs: {cow_amm_configs:?}")?;
         writeln!(f, "max_run_loop_delay: {max_run_loop_delay:?}")?;
         writeln!(
@@ -392,153 +315,6 @@ impl std::fmt::Display for CliArguments {
             "native_price_prefetch_time: {native_price_prefetch_time:?}"
         )?;
         Ok(())
-    }
-}
-
-#[derive(clap::Parser, Debug, Clone)]
-pub struct FeePoliciesConfig {
-    /// Describes how the protocol fees should be calculated.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub fee_policies: Vec<FeePolicy>,
-
-    /// Maximum partner fee allowed. If the partner fee specified is greater
-    /// than this maximum, the partner fee will be capped
-    #[clap(long, env, default_value = "0.01")]
-    pub fee_policy_max_partner_fee: FeeFactor,
-
-    /// Volume fee policies that will become effective at a future timestamp.
-    #[clap(flatten)]
-    pub upcoming_fee_policies: UpcomingFeePolicies,
-}
-
-/// A fee policy to be used for orders base on it's class.
-/// Examples:
-/// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
-///
-/// - Surplus with cap for market orders: surplus:0.5:0.06:market
-///
-/// - Price improvement with a high enough cap for any order class:
-///   price_improvement:0.5:0.9:any
-///
-/// - Price improvement with cap for limit orders:
-///   price_improvement:0.5:0.06:limit
-///
-/// - Volume based fee for any order class: volume:0.1:any
-#[derive(Debug, Clone)]
-pub struct FeePolicy {
-    pub fee_policy_kind: FeePolicyKind,
-    pub fee_policy_order_class: FeePolicyOrderClass,
-}
-
-/// Fee policies that will become effective at a future timestamp.
-#[derive(clap::Parser, Debug, Clone)]
-pub struct UpcomingFeePolicies {
-    #[clap(
-        id = "upcoming_fee_policies",
-        long = "upcoming-fee-policies",
-        env = "UPCOMING_FEE_POLICIES",
-        use_value_delimiter = true
-    )]
-    pub fee_policies: Vec<FeePolicy>,
-
-    #[clap(
-        long = "upcoming-fee-policies-timestamp",
-        env = "UPCOMING_FEE_POLICIES_TIMESTAMP"
-    )]
-    pub effective_from_timestamp: Option<DateTime<Utc>>,
-}
-
-#[derive(clap::Parser, Debug, Clone)]
-pub enum FeePolicyKind {
-    /// How much of the order's surplus should be taken as a protocol fee.
-    Surplus {
-        factor: FeeFactor,
-        max_volume_factor: FeeFactor,
-    },
-    /// How much of the order's price improvement should be taken as a protocol
-    /// fee where price improvement is a difference between the executed price
-    /// and the best quote.
-    PriceImprovement {
-        factor: FeeFactor,
-        max_volume_factor: FeeFactor,
-    },
-    /// How much of the order's volume should be taken as a protocol fee.
-    Volume { factor: FeeFactor },
-}
-
-#[derive(clap::Parser, clap::ValueEnum, Clone, Debug)]
-pub enum FeePolicyOrderClass {
-    /// If a fee policy needs to be applied to in-market orders.
-    Market,
-    /// If a fee policy needs to be applied to limit orders.
-    Limit,
-    /// If a fee policy needs to be applied regardless of the order class.
-    Any,
-}
-
-impl FromStr for FeePolicy {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts = s.split(':');
-        let kind = parts.next().context("missing fee policy kind")?;
-        let fee_policy_kind = match kind {
-            "surplus" => {
-                let factor = parts
-                    .next()
-                    .context("missing surplus factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid surplus factor: {}", e))?;
-                let max_volume_factor = parts
-                    .next()
-                    .context("missing max volume factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid max volume factor: {}", e))?;
-                Ok(FeePolicyKind::Surplus {
-                    factor: factor.try_into()?,
-                    max_volume_factor: max_volume_factor.try_into()?,
-                })
-            }
-            "priceImprovement" => {
-                let factor = parts
-                    .next()
-                    .context("missing price improvement factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid price improvement factor: {}", e))?;
-                let max_volume_factor = parts
-                    .next()
-                    .context("missing price improvement max volume factor")?
-                    .parse::<f64>()
-                    .map_err(|e| {
-                        anyhow::anyhow!("invalid price improvement max volume factor: {}", e)
-                    })?;
-                Ok(FeePolicyKind::PriceImprovement {
-                    factor: factor.try_into()?,
-                    max_volume_factor: max_volume_factor.try_into()?,
-                })
-            }
-            "volume" => {
-                let factor = parts
-                    .next()
-                    .context("missing volume factor")?
-                    .parse::<f64>()
-                    .map_err(|e| anyhow::anyhow!("invalid volume factor: {}", e))?;
-                Ok(FeePolicyKind::Volume {
-                    factor: factor.try_into()?,
-                })
-            }
-            _ => Err(anyhow::anyhow!("invalid fee policy kind: {}", kind)),
-        }?;
-        let fee_policy_order_class = FeePolicyOrderClass::from_str(
-            parts.next().context("missing fee policy order class")?,
-            true,
-        )
-        .map_err(|e| anyhow::anyhow!("invalid fee policy order class: {}", e))?;
-
-        Ok(FeePolicy {
-            fee_policy_kind,
-            fee_policy_order_class,
-        })
     }
 }
 
@@ -582,36 +358,5 @@ impl FromStr for CowAmmConfig {
             helper,
             index_start,
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_fee_factor_limits() {
-        let policies = vec![
-            "volume:1.0:market",
-            "volume:-1.0:limit",
-            "surplus:1.0:0.5:any",
-            "surplus:0.5:1.0:limit",
-            "surplus:0.5:-1.0:market",
-            "surplus:-1.0:0.5:limit",
-            "priceImprovement:1.0:0.5:market",
-            "priceImprovement:-1.0:0.5:any",
-            "priceImprovement:0.5:1.0:market",
-            "priceImprovement:0.5:-1.0:limit",
-        ];
-
-        for policy in policies {
-            assert!(
-                FeePolicy::from_str(policy)
-                    .err()
-                    .unwrap()
-                    .to_string()
-                    .contains("Factor must be in the range [0, 1)"),
-            )
-        }
     }
 }

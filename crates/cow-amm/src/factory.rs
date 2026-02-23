@@ -5,16 +5,16 @@ use {
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
-    contracts::alloy::cow_amm::CowAmmLegacyHelper::{
-        CowAmmLegacyHelper,
-        CowAmmLegacyHelper::CowAmmLegacyHelperEvents as CowAmmEvent,
+    contracts::alloy::cow_amm::CowAmmLegacyHelper::CowAmmLegacyHelper::{
+        self,
+        CowAmmLegacyHelperEvents as CowAmmEvent,
     },
-    ethrpc::Web3,
+    ethrpc::AlloyProvider,
     shared::event_handling::AlloyEventRetrieving,
 };
 
 pub(crate) struct Factory {
-    pub(crate) web3: Web3,
+    pub(crate) provider: AlloyProvider,
     pub(crate) address: Address,
 }
 
@@ -30,6 +30,6 @@ impl AlloyEventRetrieving for Factory {
     }
 
     fn provider(&self) -> &DynProvider {
-        &self.web3.provider
+        &self.provider
     }
 }

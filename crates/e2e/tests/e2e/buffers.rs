@@ -1,9 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    autopilot::config::{
-        Configuration,
-        solver::{Account, Solver},
-    },
+    autopilot::config::{Configuration, trusted_tokens::TrustedTokensConfig},
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -12,8 +9,6 @@ use {
     },
     number::units::EthUnit,
     shared::web3::Web3,
-    std::str::FromStr,
-    url::Url,
 };
 
 #[tokio::test]
@@ -66,26 +61,24 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         false,
     );
     let services = Services::new(&onchain).await;
-    let config_file = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-            Account::Address(solver.address()),
-        )],
+    let (_config_file, config_arg) = Configuration {
+        trusted_tokens: TrustedTokensConfig {
+            tokens: vec![
+                *onchain.contracts().weth.address(),
+                *token_a.address(),
+                *token_b.address(),
+            ],
+            ..Default::default()
+        },
+        ..Configuration::test("test_solver", solver.address())
     }
-    .to_temp_path();
+    .to_cli_args();
 
     services
         .start_autopilot(
             None,
             vec![
-                format!(
-                    "--trusted-tokens={weth:#x},{token_a:#x},{token_b:#x}",
-                    weth = onchain.contracts().weth.address(),
-                    token_a = token_a.address(),
-                    token_b = token_b.address()
-                ),
-                format!("--config={}", config_file.path().display()),
+                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
