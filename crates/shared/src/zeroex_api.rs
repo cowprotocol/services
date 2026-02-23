@@ -10,7 +10,7 @@ use {
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
-    observe::tracing::tracing_headers,
+    observe::tracing::distributed::headers::tracing_headers,
     reqwest::{
         Client,
         ClientBuilder,
@@ -416,7 +416,7 @@ impl DefaultZeroExApi {
                     self.block_stream.borrow().hash.to_string(),
                 );
             };
-            if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
+            if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
                 request = request.header("X-REQUEST-ID", id);
             }
 

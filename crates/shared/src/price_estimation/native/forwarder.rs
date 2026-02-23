@@ -40,7 +40,7 @@ impl Forwarder {
             .get(url)
             .query(&[("timeout_ms", timeout.as_millis() as u64)])
             .timeout(timeout);
-        if let Some(id) = observe::distributed_tracing::request_id::from_current_span() {
+        if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", id);
         }
         let response = request.send().await.map_err(|err| {

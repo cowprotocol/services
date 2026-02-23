@@ -19,7 +19,7 @@ use {
     anyhow::{Context, anyhow},
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::FutureExt,
-    observe::tracing::tracing_headers,
+    observe::tracing::distributed::headers::tracing_headers,
     reqwest::{Client, header},
     tracing::instrument,
     url::Url,
@@ -63,7 +63,7 @@ impl ExternalTradeFinder {
                 deadline: chrono::Utc::now() + query.timeout,
             };
             let block_dependent = query.block_dependent;
-            let id = observe::distributed_tracing::request_id::from_current_span();
+            let id = observe::tracing::distributed::request_id::from_current_span();
             let client = self.client.clone();
             let quote_endpoint = self.quote_endpoint.clone();
             let block_hash = self.block_stream.borrow().hash;

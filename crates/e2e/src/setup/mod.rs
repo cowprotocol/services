@@ -189,7 +189,7 @@ async fn run<F, Fut, T>(
         false,
         None,
     );
-    observe::tracing::initialize_reentrant(&obs_config);
+    observe::tracing::init::initialize_reentrant(&obs_config);
     observe::panic_hook::install();
 
     services::ensure_e2e_readonly_user().await;

@@ -32,7 +32,7 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
         args.use_json_logs,
         tracing_config(&args.tracing, "solvers".into()),
     );
-    observe::tracing::initialize_reentrant(&obs_config);
+    observe::tracing::init::initialize_reentrant(&obs_config);
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 

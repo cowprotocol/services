@@ -55,7 +55,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.use_json_logs,
         tracing_config(&args.shared.tracing, "orderbook".into()),
     );
-    observe::tracing::initialize(&obs_config);
+    observe::tracing::init::initialize(&obs_config);
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
