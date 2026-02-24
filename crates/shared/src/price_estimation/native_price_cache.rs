@@ -342,7 +342,7 @@ impl CachingNativePriceEstimator {
             (token, result)
         });
         futures::stream::iter(estimates)
-            .buffered(self.0.concurrent_requests)
+            .buffer_unordered(self.0.concurrent_requests)
             .boxed()
     }
 
