@@ -294,3 +294,32 @@ pub struct Solution {
 pub struct Response {
     pub solutions: Vec<Solution>,
 }
+
+#[cfg(test)]
+mod tests {
+    use futures::FutureExt;
+    use tokio_stream::StreamExt;
+    use super::*;
+
+    #[test]
+    fn byte_stream_yields_bytes(){
+        const SIZE: usize = 10 * 1024 * 1024 + 100; // 10.1 MB
+        let original = Bytes::from_iter((0..SIZE).map(|byte| byte as u8));
+        let mut stream = ByteStream::new(original.clone());
+        let mut streamed_data = vec![];
+        let mut times_polled = 0;
+        loop {
+            let poll = stream.next().now_or_never().expect("stream is always ready");
+            times_polled += 1;
+            if let Some(Ok(chunk)) = poll {
+                streamed_data.extend_from_slice(&chunk);
+            } else {
+                break;
+            }
+        }
+
+        assert_eq!(original.as_ref(), &streamed_data);
+        // 10 1MB chunks, 1 100KB chunk, 1 poll to confirm the stream is done
+        assert_eq!(times_polled, 12);
+    }
+}
