@@ -1,13 +1,8 @@
 use {
     ::alloy::{
         consensus::Transaction as _,
-        eips::eip7702::Authorization,
-        network::TransactionBuilder7702,
         primitives::{Address, U256},
         providers::{Provider, ext::TxPoolApi},
-        rpc::types::TransactionRequest,
-        signers::Signer,
-        sol_types::SolCall,
     },
     contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
     e2e::setup::{colocation, *},
@@ -73,16 +68,9 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         .await
         .unwrap();
 
-    // Deploy the settlement forwarder, set up EIP-7702 delegation on the
-    // solver EOA, and approve both submission accounts as callers.
+    // Deploy the settlement forwarder. The driver handles EIP-7702
+    // delegation and caller approval automatically at startup.
     let forwarder_addr = deploy_forwarder(onchain.web3(), &submitter_a).await;
-    setup_eip7702_delegation(
-        onchain.web3(),
-        &solver,
-        forwarder_addr,
-        &[submitter_a.address(), submitter_b.address()],
-    )
-    .await;
 
     // Start driver + baseline solver. Each /solve call is a separate auction
     // so solutions are independent regardless of merge_solutions.
@@ -321,56 +309,4 @@ async fn deploy_forwarder(web3: &Web3, deployer: &TestAccount) -> Address {
         .deploy()
         .await
         .expect("failed to deploy CowSettlementForwarder")
-}
-
-/// Set up EIP-7702 delegation on the `solver` EOA pointing to `forwarder`,
-/// and approve `callers` as submission accounts, in a single transaction.
-async fn setup_eip7702_delegation(
-    web3: &Web3,
-    solver: &TestAccount,
-    forwarder: Address,
-    callers: &[Address],
-) {
-    let chain_id = web3
-        .provider
-        .get_chain_id()
-        .await
-        .expect("failed to get chain_id");
-    let solver_nonce = solver.nonce(web3).await;
-
-    // Auth nonce is solver_nonce + 1 because the solver is both sender and
-    // authority, and EIP-7702 increments the sender nonce before processing
-    // the authorization list.
-    let auth = Authorization {
-        chain_id: U256::from(chain_id),
-        address: forwarder,
-        nonce: solver_nonce + 1,
-    };
-
-    let sig = solver
-        .signer
-        .sign_hash(&auth.signature_hash())
-        .await
-        .expect("failed to sign EIP-7702 authorization");
-    let signed_auth = auth.into_signed(sig);
-
-    let calldata = CowSettlementForwarder::setApprovedCallersCall {
-        callers: callers.to_vec(),
-        approved: true,
-    }
-    .abi_encode();
-
-    let tx = TransactionRequest::default()
-        .from(solver.address())
-        .to(solver.address())
-        .input(calldata.into())
-        .with_authorization_list(vec![signed_auth]);
-
-    web3.provider
-        .send_transaction(tx)
-        .await
-        .expect("failed to send EIP-7702 delegation + approval tx")
-        .get_receipt()
-        .await
-        .expect("EIP-7702 delegation + approval tx failed");
 }
