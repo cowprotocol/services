@@ -11,10 +11,7 @@ mod bid;
 pub mod winner_selection;
 
 use ::winner_selection::solution_hash::{HashableSolution, HashableTradedOrder};
-pub use {
-    bid::{Bid, RankType, Ranked, Scored, Unscored},
-    participation_guard::SolverParticipationGuard,
-};
+pub use bid::{Bid, RankType, Ranked, Scored, Unscored};
 
 type SolutionId = u64;
 

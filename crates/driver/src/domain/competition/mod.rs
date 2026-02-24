@@ -40,7 +40,6 @@ use {
 };
 
 pub mod auction;
-pub mod bad_tokens;
 pub mod order;
 mod pre_processing;
 pub mod risk_detector;
