@@ -73,13 +73,13 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         .await
         .unwrap();
 
-    // Deploy the settlement forwarder and set up EIP-7702 delegation on the
-    // solver EOA. Then approve both submission accounts as callers.
+    // Deploy the settlement forwarder, set up EIP-7702 delegation on the
+    // solver EOA, and approve both submission accounts as callers.
     let forwarder_addr = deploy_forwarder(onchain.web3(), &submitter_a).await;
-    setup_eip7702_delegation(onchain.web3(), &solver, &submitter_a, forwarder_addr).await;
-    approve_submission_callers(
+    setup_eip7702_delegation(
         onchain.web3(),
         &solver,
+        forwarder_addr,
         &[submitter_a.address(), submitter_b.address()],
     )
     .await;
@@ -323,13 +323,13 @@ async fn deploy_forwarder(web3: &Web3, deployer: &TestAccount) -> Address {
         .expect("failed to deploy CowSettlementForwarder")
 }
 
-/// Set up EIP-7702 delegation on the `solver` EOA, pointing to `forwarder`.
-/// Sends a transaction from `submitter` with the signed authorization.
+/// Set up EIP-7702 delegation on the `solver` EOA pointing to `forwarder`,
+/// and approve `callers` as submission accounts, in a single transaction.
 async fn setup_eip7702_delegation(
     web3: &Web3,
     solver: &TestAccount,
-    submitter: &TestAccount,
     forwarder: Address,
+    callers: &[Address],
 ) {
     let chain_id = web3
         .provider
@@ -338,10 +338,13 @@ async fn setup_eip7702_delegation(
         .expect("failed to get chain_id");
     let solver_nonce = solver.nonce(web3).await;
 
+    // Auth nonce is solver_nonce + 1 because the solver is both sender and
+    // authority, and EIP-7702 increments the sender nonce before processing
+    // the authorization list.
     let auth = Authorization {
         chain_id: U256::from(chain_id),
         address: forwarder,
-        nonce: solver_nonce,
+        nonce: solver_nonce + 1,
     };
 
     let sig = solver
@@ -351,28 +354,7 @@ async fn setup_eip7702_delegation(
         .expect("failed to sign EIP-7702 authorization");
     let signed_auth = auth.into_signed(sig);
 
-    // Send a self-transfer from the submitter that carries the authorization
-    // list. Once mined, the solver EOA's code will delegate to the forwarder.
-    let tx = TransactionRequest::default()
-        .from(submitter.address())
-        .to(submitter.address())
-        .value(U256::ZERO)
-        .with_authorization_list(vec![signed_auth]);
-
-    web3.provider
-        .send_transaction(tx)
-        .await
-        .expect("failed to send EIP-7702 delegation tx")
-        .get_receipt()
-        .await
-        .expect("EIP-7702 delegation tx failed");
-}
-
-/// Approve submission EOAs as callers on the forwarder. The solver signs
-/// a self-call — after 7702 delegation, `msg.sender == address(this)` passes
-/// the auth check in `setApprovedCallers`.
-async fn approve_submission_callers(web3: &Web3, solver: &TestAccount, callers: &[Address]) {
-    let data = CowSettlementForwarder::setApprovedCallersCall {
+    let calldata = CowSettlementForwarder::setApprovedCallersCall {
         callers: callers.to_vec(),
         approved: true,
     }
@@ -381,13 +363,14 @@ async fn approve_submission_callers(web3: &Web3, solver: &TestAccount, callers: 
     let tx = TransactionRequest::default()
         .from(solver.address())
         .to(solver.address())
-        .input(data.into());
+        .input(calldata.into())
+        .with_authorization_list(vec![signed_auth]);
 
     web3.provider
         .send_transaction(tx)
         .await
-        .expect("failed to send setApprovedCallers tx")
+        .expect("failed to send EIP-7702 delegation + approval tx")
         .get_receipt()
         .await
-        .expect("setApprovedCallers tx failed");
+        .expect("EIP-7702 delegation + approval tx failed");
 }

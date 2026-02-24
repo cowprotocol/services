@@ -15,7 +15,9 @@ use {
     tracing::instrument,
 };
 
-/// EIP-7702 delegation prefix stored as account code.
+/// EIP-7702 delegation prefix stored as account code prefix. If you call
+/// eth_getCode on a delegated EOA, instead of getting empty bytes (normal EOA),
+/// you get 0xef0100<20-byte contract address>.
 const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
 
 /// Ensure EIP-7702 delegation and caller approval are set up for all solvers
@@ -28,7 +30,7 @@ pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
             continue;
         }
         if matches!(config.account, super::Account::Address(_)) {
-            tracing::debug!(solver = %config.name, "dry-run mode, skipping EIP-7702 setup");
+            tracing::debug!(solver = %config.name, "read-only mode, skipping EIP-7702 setup");
             continue;
         }
         let forwarder = config.forwarder_contract.ok_or_else(|| {
@@ -60,8 +62,6 @@ async fn setup_solver(config: &Config, forwarder: Address, eth: &Ethereum) -> an
     let code = provider.get_code_at(solver_address).await?;
     let needs_delegation = !is_delegated_to(&code, forwarder);
 
-    // Only check caller approvals if delegation is already active (otherwise
-    // the solver EOA has no code and eth_call would fail).
     let submission_addresses: Vec<Address> = config
         .submission_accounts
         .iter()
@@ -71,6 +71,7 @@ async fn setup_solver(config: &Config, forwarder: Address, eth: &Ethereum) -> an
     if needs_delegation {
         setup_delegation_and_approve(config, forwarder, &submission_addresses, eth).await?;
     } else {
+        // Skip delegation, but make sure submission accounts are approved callers.
         let unapproved =
             check_unapproved_callers(eth, solver_address, &submission_addresses).await?;
         if !unapproved.is_empty() {
@@ -180,8 +181,6 @@ async fn setup_delegation_and_approve(
         }
         .abi_encode();
         tx = tx.input(calldata.into());
-    } else {
-        tx = tx.value(U256::ZERO);
     }
 
     let pending = provider.send_transaction(tx).await?;

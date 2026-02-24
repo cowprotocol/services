@@ -311,8 +311,8 @@ impl Mempools {
         result
     }
 
-    /// Cancel a pending tx by sending a zero-value self-transfer at the same
-    /// nonce with a higher gas price.
+    /// Cancel a pending settlement by sending a transaction to self with a
+    /// slightly higher gas price than the existing one.
     async fn cancel(
         &self,
         mempool: &infra::mempool::Mempool,
