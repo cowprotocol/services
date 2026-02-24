@@ -19,17 +19,13 @@ use {
         sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
     },
     solver::{
-        interactions::allowances::Allowances,
         liquidity::{
             ConcentratedLiquidity,
             uniswap_v3::{self, UniswapV3Liquidity, UniswapV3SettlementHandler},
         },
         liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
-    std::{
-        collections::BTreeMap,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::BTreeMap, sync::Arc},
 };
 
 pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liquidity::Liquidity> {
@@ -77,14 +73,9 @@ pub fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let handler = UniswapV3SettlementHandler::new(
-        pool.router.into(),
-        *receiver,
-        Mutex::new(Allowances::empty(*receiver)),
-        pool.fee.0,
-    );
+    let handler = UniswapV3SettlementHandler::new(pool.router.into(), *receiver, pool.fee.0);
 
-    let (_, interaction) = handler.settle(
+    let interaction = handler.settle(
         TokenAmount::new(input.0.token.into(), input.0.amount),
         TokenAmount::new(output.0.token.into(), output.0.amount),
     );
@@ -147,7 +138,6 @@ async fn init_liquidity(
     Ok(UniswapV3Liquidity::new(
         config.router.into(),
         *eth.contracts().settlement().address(),
-        web3,
         pool_fetcher,
     ))
 }

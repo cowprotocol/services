@@ -1,4 +1,3 @@
-pub mod allowances;
 mod balancer_v2;
 mod erc20;
 mod uniswap_v2;
