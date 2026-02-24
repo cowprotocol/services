@@ -102,13 +102,13 @@ mod tests {
         let error = entries[0].get("error").expect("error key exists");
         let error_uid: OrderUid = error.get("uid").unwrap().as_str().unwrap().parse().unwrap();
         assert_eq!(error_uid, uid);
-        assert!(
+        assert_eq!(
             error
                 .get("description")
                 .expect("key description exists")
                 .as_str()
-                .expect("description is a string")
-                .contains("bad data")
+                .expect("description is a string"),
+            "Error converting into model order"
         );
     }
 
