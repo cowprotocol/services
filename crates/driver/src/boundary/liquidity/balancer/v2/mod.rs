@@ -26,7 +26,6 @@ use {
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     solver::{
-        interactions::allowances::Allowances,
         liquidity::balancer_v2::{self, BalancerV2Liquidity},
         liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
@@ -54,7 +53,6 @@ fn to_interaction(
         // change this assumption, we would need to change it there as well.
         *receiver,
         pool.vault.0,
-        Allowances::empty(*receiver),
     );
 
     let interaction = handler.swap(
@@ -188,7 +186,6 @@ async fn init_liquidity(
     );
 
     Ok(BalancerV2Liquidity::new(
-        web3,
         balancer_pool_fetcher,
         *eth.contracts().settlement().address(),
         *contracts.vault.address(),
