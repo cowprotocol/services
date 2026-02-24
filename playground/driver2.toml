@@ -1,6 +1,8 @@
+tx-gas-limit = "45000000"
+
 [[solver]]
-name = "baseline" # Arbitrary name given to this solver, must be unique
-endpoint = "http://baseline"
+name = "baseline2" # Arbitrary name given to this solver, must be unique
+endpoint = "http://baseline2"
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356" # Known test private key
