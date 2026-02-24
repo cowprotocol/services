@@ -33,6 +33,12 @@ impl ByteStream {
     }
 }
 
+// Since `hyper` uses `Bytes` under the hood which are reference counted
+// the chunks we yield can be as big as we want. To minimze overhead
+// that's only there for debugging purposes we always yield all the
+// data at once. The measurements will still be accurate because `hyper`
+// has to poll the stream once more to confirm that it's actually
+// exhausted.
 impl Stream for ByteStream {
     type Item = Result<Bytes, std::io::Error>;
 
@@ -46,10 +52,9 @@ impl Stream for ByteStream {
             this.first_polled_at = Some(Instant::now());
         }
 
-        const CHUNK_SIZE: usize = 1024 * 1024; // 1MB
         if this.data.is_empty() {
-            let first_poll = this.first_polled_at.expect("initialized at first poll");
             let _span = this.span.enter();
+            let first_poll = this.first_polled_at.expect("initialized at first poll");
             tracing::debug!(
                 to_transmission_start = ?first_poll.duration_since(this.created_at),
                 transmission = ?first_poll.elapsed(),
@@ -57,10 +62,8 @@ impl Stream for ByteStream {
             );
             Poll::Ready(None)
         } else {
-            let end_index = std::cmp::min(CHUNK_SIZE, this.data.len());
-            // splits off the bytes to transmit and only leaves the remaining bytes in
-            // `self.data`
-            let chunk = this.data.split_to(end_index);
+            // steals all the data and leaves 0 bytes in self
+            let chunk = std::mem::take(&mut this.data);
             Poll::Ready(Some(Ok(chunk)))
         }
     }
@@ -72,26 +75,20 @@ mod tests {
 
     #[test]
     fn byte_stream_yields_bytes() {
-        const SIZE: usize = 10 * 1024 * 1024 + 100; // 10.1 MB
-        let original = Bytes::from_iter((0..SIZE).map(|byte| byte as u8));
+        let original = Bytes::from_iter(0..100);
         let mut stream = ByteStream::new(original.clone());
-        let mut streamed_data = vec![];
-        let mut times_polled = 0;
-        loop {
-            let poll = stream
-                .next()
-                .now_or_never()
-                .expect("stream is always ready");
-            times_polled += 1;
-            if let Some(Ok(chunk)) = poll {
-                streamed_data.extend_from_slice(&chunk);
-            } else {
-                break;
-            }
-        }
 
-        assert_eq!(original.as_ref(), &streamed_data);
-        // 10 1MB chunks, 1 100KB chunk, 1 poll to confirm the stream is done
-        assert_eq!(times_polled, 12);
+        let chunk = stream
+            .next()
+            .now_or_never()
+            .expect("stream is always ready");
+        // stream always yields all the data on the first poll
+        assert_eq!(chunk.unwrap().unwrap(), original);
+
+        let chunk = stream
+            .next()
+            .now_or_never()
+            .expect("stream is always ready");
+        assert!(chunk.is_none());
     }
 }
