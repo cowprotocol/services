@@ -141,24 +141,24 @@ impl Stream for ByteStream {
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         let this = self.as_mut().get_mut();
-        let _span = this.span.enter();
 
         if this.first_polled_at.is_none() {
             this.first_polled_at = Some(Instant::now());
         }
 
-        const CHUNK_SIZE: usize = 10 * 1024; // 10 KB
+        const CHUNK_SIZE: usize = 100 * 1024; // 100 KB
         if this.data.is_empty() {
             let first_poll = this.first_polled_at.expect("initialized at first poll");
+            let _span = this.span.enter();
             tracing::debug!(
-                until_first_poll = ?Lazy(|| first_poll.duration_since(this.created_at)),
+                to_transmission_start = ?Lazy(|| first_poll.duration_since(this.created_at)),
                 transmission = ?Lazy(|| first_poll.elapsed()),
                 "finished streaming http request body"
             );
             Poll::Ready(None)
         } else {
             let end_index = std::cmp::min(CHUNK_SIZE, this.data.len());
-            // splits off bytes to transmit and only leaves the remaining bytes in
+            // splits off the bytes to transmit and only leaves the remaining bytes in
             // `self.data`
             let chunk = this.data.split_to(end_index);
             Poll::Ready(Some(Ok(chunk)))
