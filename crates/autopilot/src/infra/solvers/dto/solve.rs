@@ -146,7 +146,7 @@ impl Stream for ByteStream {
             this.first_polled_at = Some(Instant::now());
         }
 
-        const CHUNK_SIZE: usize = 100 * 1024; // 100 KB
+        const CHUNK_SIZE: usize = 1024 * 1024; // 1MB
         if this.data.is_empty() {
             let first_poll = this.first_polled_at.expect("initialized at first poll");
             let _span = this.span.enter();
