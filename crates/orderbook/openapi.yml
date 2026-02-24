@@ -180,6 +180,8 @@ paths:
                       - error
         "400":
           description: Request array size larger than 128 or unable to parse request body as valid JSON.
+        "422":
+          description: Could not decode array values as order UID.
   "/api/v1/orders/{UID}":
     get:
       operationId: getOrder
