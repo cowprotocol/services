@@ -174,7 +174,11 @@ mod tests {
         filename-prefix = "staging/mainnet/"
 
         [native-price-estimation]
-        estimators = [[{type = "CoinGecko"}]]
+        estimators = [
+            [{type = "CoinGecko"}, {type = "OneInchSpotPriceApi"}],
+            [{type = "Driver", name = "solver1", url = "http://localhost:8080"}],
+            [{type = "Forwarder", url = "http://localhost:12088"}],
+        ]
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -237,6 +241,24 @@ mod tests {
         let s3 = config.s3.unwrap();
         assert_eq!(s3.bucket, "my-bucket");
         assert_eq!(s3.filename_prefix, "staging/mainnet/");
+
+        use shared::price_estimation::{ExternalSolver, NativePriceEstimator};
+        assert_eq!(
+            config.native_price_estimation.estimators.as_slice(),
+            vec![
+                vec![
+                    NativePriceEstimator::CoinGecko,
+                    NativePriceEstimator::OneInchSpotPriceApi,
+                ],
+                vec![NativePriceEstimator::Driver(ExternalSolver {
+                    name: "solver1".to_string(),
+                    url: "http://localhost:8080".parse().unwrap(),
+                })],
+                vec![NativePriceEstimator::Forwarder {
+                    url: "http://localhost:12088".parse().unwrap(),
+                }],
+            ]
+        );
     }
 
     #[test]
