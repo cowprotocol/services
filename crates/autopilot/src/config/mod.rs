@@ -46,7 +46,6 @@ pub struct Configuration {
 
     /// Configuration for uploading auction instances to S3.
     /// If absent, S3 uploads are disabled.
-    #[serde(default)]
     pub s3: Option<S3Config>,
 
     pub native_price_estimation: NativePriceConfig,
@@ -175,7 +174,7 @@ mod tests {
         filename-prefix = "staging/mainnet/"
 
         [native-price-estimation]
-        estimators = [["CoinGecko"]]
+        estimators = [[{type = "CoinGecko"}]]
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();

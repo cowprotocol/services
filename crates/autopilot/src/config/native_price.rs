@@ -36,7 +36,8 @@ pub struct NativePriceConfig {
     #[serde(default = "default_native_price_estimation_results_required")]
     pub results_required: NonZeroUsize,
 
-    /// How often the native price estimator should refresh its cache.
+    /// How often the native price estimator should check for prices that need
+    /// to be udpated.
     #[serde(
         with = "humantime_serde",
         default = "default_native_price_cache_refresh"
@@ -85,8 +86,8 @@ mod tests {
     #[test]
     fn deserialize_full() {
         let toml = r#"
-        estimators = [["CoinGecko"]]
-        api-estimators = [["OneInchSpotPriceApi"]]
+        estimators = [[{type = "CoinGecko"}]]
+        api-estimators = [[{type = "OneInchSpotPriceApi"}]]
         results-required = 3
         cache-refresh-interval = "30s"
         native-price-prefetch-time = "2m"

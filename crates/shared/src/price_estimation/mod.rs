@@ -79,9 +79,10 @@ impl FromStr for ExternalSolver {
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
-    Forwarder(Url),
+    Forwarder { url: Url },
     OneInchSpotPriceApi,
     CoinGecko,
 }
@@ -92,7 +93,7 @@ impl NativePriceEstimator {
     }
 
     pub const fn forwarder(url: Url) -> Self {
-        Self::Forwarder(url)
+        Self::Forwarder { url }
     }
 }
 
@@ -100,7 +101,7 @@ impl Display for NativePriceEstimator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let formatter = match self {
             NativePriceEstimator::Driver(s) => format!("Driver|{}|{}", &s.name, s.url),
-            NativePriceEstimator::Forwarder(url) => format!("Forwarder|{}", url),
+            NativePriceEstimator::Forwarder { url } => format!("Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
             NativePriceEstimator::CoinGecko => "CoinGecko".into(),
         };
@@ -157,10 +158,11 @@ impl FromStr for NativePriceEstimator {
             "Driver" => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
                 args,
             )?)),
-            "Forwarder" => Ok(NativePriceEstimator::Forwarder(
-                args.parse()
+            "Forwarder" => Ok(NativePriceEstimator::Forwarder {
+                url: args
+                    .parse()
                     .context("Forwarder price estimator invalid URL")?,
-            )),
+            }),
             _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
         }
     }
@@ -620,7 +622,10 @@ mod tests {
             )
             .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
-            &NativePriceEstimator::Forwarder("http://localhost:9588".parse().unwrap()).to_string(),
+            &NativePriceEstimator::Forwarder {
+                url: "http://localhost:9588".parse().unwrap(),
+            }
+            .to_string(),
             "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;Driver|three|http://localhost:3333/,Driver|four|http://localhost:4444/",
             &format!(
                 "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;{},Driver|four|http://localhost:4444/",
@@ -633,7 +638,7 @@ mod tests {
 
     #[test]
     fn toml_deserialize_estimators_empty() {
-        let toml = r#"estimators = []"#;
+        let toml = "estimators = []";
 
         #[derive(Deserialize)]
         struct Helper {
@@ -647,7 +652,7 @@ mod tests {
     #[test]
     fn toml_deserialize_estimators_single_stage() {
         let toml = r#"
-        estimators = [["CoinGecko", "OneInchSpotPriceApi"]]
+        estimators = [[{type = "CoinGecko"}, {type = "OneInchSpotPriceApi"}]]
         "#;
 
         #[derive(Deserialize)]
@@ -656,14 +661,12 @@ mod tests {
         }
 
         let parsed: Helper = toml::from_str(toml).unwrap();
-        assert_eq!(parsed.estimators.as_slice().len(), 1);
-        assert_eq!(parsed.estimators.as_slice()[0].len(), 2);
         assert_eq!(
-            parsed.estimators.as_slice()[0],
-            vec![
+            parsed.estimators.as_slice(),
+            vec![vec![
                 NativePriceEstimator::CoinGecko,
                 NativePriceEstimator::OneInchSpotPriceApi,
-            ]
+            ]]
         );
     }
 
@@ -671,8 +674,8 @@ mod tests {
     fn toml_deserialize_estimators_multiple_stages() {
         let toml = r#"
         estimators = [
-            ["CoinGecko", {Driver = {name = "solver1", url = "http://localhost:8080"}}],
-            [{Forwarder = "http://localhost:12088"}],
+            [{type = "CoinGecko"}, {type = "Driver", name = "solver1", url = "http://localhost:8080"}],
+            [{type = "Forwarder", url = "http://localhost:12088"}],
         ]
         "#;
 
@@ -682,21 +685,21 @@ mod tests {
         }
 
         let parsed: Helper = toml::from_str(toml).unwrap();
-        assert_eq!(parsed.estimators.as_slice().len(), 2);
-        assert_eq!(parsed.estimators.as_slice()[0].len(), 2);
         assert_eq!(
-            parsed.estimators.as_slice()[0][0],
-            NativePriceEstimator::CoinGecko
+            parsed.estimators.as_slice(),
+            vec![
+                vec![
+                    NativePriceEstimator::CoinGecko,
+                    NativePriceEstimator::Driver(ExternalSolver {
+                        name: "solver1".to_string(),
+                        url: "http://localhost:8080".parse().unwrap(),
+                    }),
+                ],
+                vec![NativePriceEstimator::Forwarder {
+                    url: "http://localhost:12088".parse().unwrap(),
+                }],
+            ]
         );
-        assert!(matches!(
-            parsed.estimators.as_slice()[0][1],
-            NativePriceEstimator::Driver(_)
-        ));
-        assert_eq!(parsed.estimators.as_slice()[1].len(), 1);
-        assert!(matches!(
-            parsed.estimators.as_slice()[1][0],
-            NativePriceEstimator::Forwarder(_)
-        ));
     }
 
     #[test]
