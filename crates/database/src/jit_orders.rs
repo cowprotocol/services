@@ -55,9 +55,9 @@ SELECT,
 }
 
 #[instrument(skip_all)]
-pub async fn get_many_by_id<'a>(
+pub async fn get_many_by_uid<'a>(
     ex: &'a mut PgConnection,
-    order_ids: &'a [OrderUid],
+    order_uids: &'a [OrderUid],
 ) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
     const QUERY: &str =
         const_format::concatcp!("SELECT ", SELECT, " FROM ", FROM, " WHERE o.uid = ANY($1)");
