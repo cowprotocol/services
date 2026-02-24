@@ -85,7 +85,7 @@ impl Uploader {
 
     /// Compresses the input bytes using Gzip.
     fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
-        let mut encoder = GzEncoder::new(bytes, Compression::best());
+        let mut encoder = GzEncoder::new(bytes, Compression::new(3));
         let mut encoded: Vec<u8> = Vec::with_capacity(bytes.len());
         encoder.read_to_end(&mut encoded).context("gzip encoding")?;
         Ok(encoded)
