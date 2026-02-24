@@ -25,7 +25,7 @@ use {
     alloy::{
         consensus::SignableTransaction,
         network::{EthereumWallet, TxSigner},
-        primitives::{Address, address},
+        primitives::Address,
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
     anyhow::{Result, anyhow},
@@ -226,10 +226,11 @@ impl Solver {
 
         let pod_provider = Self::build_pod_provider(&config).await;
 
+        let weth_address: Address = eth.contracts().weth_address().0.into();
         let arbitrator = SolverArbitrator::new(
-            10,
-            WrappedNativeToken::from(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
-        ); // WETH
+            10, // TODO: make max_winners configurable
+            WrappedNativeToken::from(weth_address),
+        );
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)

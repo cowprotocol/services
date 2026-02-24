@@ -526,7 +526,16 @@ impl Competition {
             );
         })?);
 
-        let solve_response = dto::SolveResponse::new(score.clone(), solver);
+        let Some(score_value) = score.clone() else {
+            tracing::warn!(
+                auction_id = %pod_auction_id,
+                deadline = %deadline,
+                "[pod] no score available, skipping bid submission"
+            );
+            return Ok(());
+        };
+
+        let solve_response = dto::SolveResponse::new(Some(score_value.clone()), solver);
         let solution_data = match serde_json::to_string(&solve_response) {
             Ok(data) => data,
             Err(e) => {
@@ -540,7 +549,7 @@ impl Competition {
             }
         };
 
-        let pod_auction_value = score.unwrap().score.0;
+        let pod_auction_value = score_value.score.0;
 
         tracing::info!(
             pod_auction_id = ?pod_auction_id,
