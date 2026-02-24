@@ -80,7 +80,7 @@ services:
       - ENABLE_EIP1271_ORDERS=true
       - PRICE_ESTIMATORS=None
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
-      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline,baseline2|http://driver2/baseline2
+      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline,Driver|baseline2|http://driver2/baseline2
       - DRIVERS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
@@ -122,7 +122,7 @@ services:
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline,baseline2|http://driver2/baseline2
-      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline,baseline2|http://driver2/baseline2
+      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline,Driver|baseline2|http://driver2/baseline2
       - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720,baseline2|http://driver2/baseline2|0x14dC79964da2C08b23698B3D3cc7Ca32193d9955
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
