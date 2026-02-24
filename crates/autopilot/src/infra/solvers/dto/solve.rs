@@ -4,7 +4,7 @@ use {
         domain::{self, eth},
         infra::{
             persistence::dto::{self, order::Order},
-            solvers::{InjectIntoHttpRequest, byte_stream::ByteStream},
+            solvers::InjectIntoHttpRequest,
         },
     },
     alloy::primitives::{Address, U256},
@@ -82,7 +82,7 @@ impl Request {
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
         request
-            .body(reqwest::Body::wrap_stream(ByteStream::new(self.body.clone())))
+            .body(self.body.clone())
             // announce which auction this request is for in the
             // headers to help the driver detect duplicated
             // `/solve` requests before streaming the body

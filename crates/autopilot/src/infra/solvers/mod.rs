@@ -11,7 +11,6 @@ use {
     url::Url,
 };
 
-mod byte_stream;
 pub mod dto;
 
 const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
