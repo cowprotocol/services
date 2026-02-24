@@ -34,7 +34,7 @@ impl ByteStream {
 }
 
 // Since `hyper` uses `Bytes` under the hood which are reference counted
-// the chunks we yield can be as big as we want. To minimze overhead
+// the chunks we yield can be as big as we want. To minimize overhead
 // that's only there for debugging purposes we always yield all the
 // data at once. The measurements will still be accurate because `hyper`
 // has to poll the stream once more to confirm that it's actually
