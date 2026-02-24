@@ -650,14 +650,17 @@ impl RunLoop {
         let (can_participate, response) = {
             let driver = driver.clone();
             let eth = self.eth.clone();
-            let mut handle = tokio::task::spawn(async move {
-                let fetch_response = driver.solve(request);
-                let check_allowed = eth
-                    .contracts()
-                    .authenticator()
-                    .isSolver(driver.submission_address);
-                tokio::join!(check_allowed.call(), fetch_response)
-            });
+            let mut handle = tokio::task::spawn(
+                async move {
+                    let fetch_response = driver.solve(request);
+                    let check_allowed = eth
+                        .contracts()
+                        .authenticator()
+                        .isSolver(driver.submission_address);
+                    tokio::join!(check_allowed.call(), fetch_response)
+                }
+                .in_current_span(),
+            );
             tokio::time::timeout(self.config.solve_deadline, &mut handle)
                 .await
                 .map_err(|_| {
