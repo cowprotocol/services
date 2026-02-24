@@ -30,7 +30,6 @@ use {
     },
     anyhow::{Result, anyhow},
     autopilot::domain::eth::WrappedNativeToken,
-    derivative::Derivative,
     derive_more::{From, Into},
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
@@ -106,17 +105,25 @@ pub struct ManageNativeToken {
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
-#[derive(Derivative, Clone)]
-#[derivative(Debug)]
+#[derive(Clone)]
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
     persistence: Persistence,
-    #[derivative(Debug = "ignore")]
     pod_provider: Option<PodProvider>,
-    #[derivative(Debug = "ignore")]
     arbitrator: solver_winner_selection::SolverArbitrator,
+}
+
+impl std::fmt::Debug for Solver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Solver")
+            .field("client", &self.client)
+            .field("config", &self.config)
+            .field("eth", &self.eth)
+            .field("persistence", &self.persistence)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone)]
