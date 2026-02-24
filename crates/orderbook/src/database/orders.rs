@@ -12,7 +12,7 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
-    futures::{FutureExt, StreamExt, join, stream::TryStreamExt},
+    futures::{FutureExt, StreamExt, stream::TryStreamExt, try_join},
     model::{
         order::{
             EthflowData,
@@ -323,11 +323,11 @@ impl OrderStoring for Postgres {
         let mut ex_orders = self.pool.acquire().await?;
         let mut ex_jit_orders = self.pool.acquire().await?;
 
-        let (orders, jit_orders) = join!(
+        let (orders, jit_orders) = try_join!(
             database::orders::many_full_orders_with_quotes(&mut ex_orders, uids.as_slice()),
-            database::jit_orders::get_many_by_id(&mut ex_jit_orders, uids.as_slice())
-        );
-        Ok(orders?
+            database::jit_orders::get_many_by_uid(&mut ex_jit_orders, uids.as_slice())
+        )?;
+        Ok(orders
             .into_iter()
             .map(|order| {
                 let (order, quote) = order.into_order_and_quote();
@@ -335,7 +335,7 @@ impl OrderStoring for Postgres {
                 let result = full_order_with_quote_into_model_order(order, quote.as_ref());
                 (uid, result)
             })
-            .chain(jit_orders?.into_iter().map(|order| {
+            .chain(jit_orders.into_iter().map(|order| {
                 let uid = OrderUid(order.uid.0);
                 let result = full_order_into_model_order(order);
                 (uid, result)

@@ -305,9 +305,20 @@ async fn http_validation(web3: Web3) {
         "Error response should have non-empty 'description' field"
     );
 
+    // /api/v1/orders/by_uids requires Json body
+    let response = client
+        .post(format!("{API_HOST}/api/v1/orders/by_uids"))
+        .header("Content-Type", "application/json")
+        .body("Not json")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
     // Querying for more than ORDER_UID_LIMIT orders should fail
     let response = client
-        .post(format!("{API_HOST}/api/v1/orders/lookup"))
+        .post(format!("{API_HOST}/api/v1/orders/by_uids"))
         .header("Content-Type", "application/json")
         .json(&json!(
             (0..ORDER_UID_LIMIT + 1)

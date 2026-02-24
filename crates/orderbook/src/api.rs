@@ -193,7 +193,7 @@ pub fn handle_all_routes(
         ),
         (
             "POST",
-            "/api/v1/orders/lookup",
+            "/api/v1/orders/by_uids",
             post(get_orders_by_uid::get_orders_by_uid_handler),
         ),
         (

@@ -31,7 +31,11 @@ pub async fn get_orders_by_uid_handler(
     axum::Json(orders): axum::Json<Vec<OrderUid>>,
 ) -> Response {
     if orders.len() > ORDER_UID_LIMIT {
-        return StatusCode::BAD_REQUEST.into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("Request exceeds maximum number of order UIDs of {ORDER_UID_LIMIT}"),
+        )
+            .into_response();
     }
 
     get_orders_by_uid_response(state.orderbook.get_orders(&orders).await)
@@ -44,10 +48,13 @@ fn get_orders_by_uid_response(result: Result<Vec<(OrderUid, Result<Order>)>>) ->
                 .into_iter()
                 .map(|(uid, order)| match order {
                     Ok(order) => OrderResultEntry::Order(order),
-                    Err(err) => OrderResultEntry::Error(OrderError {
-                        uid,
-                        description: err.to_string(),
-                    }),
+                    Err(err) => {
+                        tracing::warn!(?err, "Error converting into model order");
+                        OrderResultEntry::Error(OrderError {
+                            uid,
+                            description: "Error converting into model order".to_string(),
+                        })
+                    }
                 })
                 .collect::<Vec<OrderResultEntry>>(),
         )
