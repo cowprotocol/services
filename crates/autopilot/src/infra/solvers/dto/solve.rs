@@ -4,7 +4,7 @@ use {
         domain::{self, eth},
         infra::{
             persistence::dto::{self, order::Order},
-            solvers::InjectIntoHttpRequest,
+            solvers::{InjectIntoHttpRequest, byte_stream::ByteStream},
         },
     },
     alloy::primitives::{Address, U256},
