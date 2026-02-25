@@ -5,6 +5,7 @@ use {
             self,
             blockchain,
             config::file,
+            keychain::Keychain,
             liquidity,
             mempool,
             notify,
@@ -53,6 +54,16 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
             let account: Account = match solver_config.account {
+                file::Account::Keychain(file::KeychainStr(keys)) => {
+                    let signers = keys
+                        .iter()
+                        .map(|key| {
+                            PrivateKeySigner::from_bytes(key)
+                                .expect("private key in keychain should be valid")
+                        })
+                        .collect();
+                    Account::Keychain(Keychain::new(signers))
+                }
                 file::Account::PrivateKey(private_key) => {
                     PrivateKeySigner::from_bytes(&private_key)
                         .expect(
@@ -391,5 +402,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
+        disable_flashbots: config.disable_flashbots,
     }
 }

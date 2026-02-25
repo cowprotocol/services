@@ -157,6 +157,131 @@ impl Mempools {
             _ => current_gas_price,
         };
 
+        // If the primary signer has a pending tx and the solver has a keychain,
+        // try to find the first alternate signer without a pending tx and use
+        // execTransaction from it. This allows concurrent settlements without
+        // nonce conflicts on the primary address.
+        let primary_has_pending = replacement_gas_price.as_ref().map_or(false, |rp| {
+            rp.max_fee_per_gas > current_gas_price.max_fee_per_gas
+        });
+
+        // if primary_has_pending {
+            if let Some(keychain) = solver.keychain() {
+                for alt_signer in keychain.additional() {
+                    let alt_nonce = match mempool.get_nonce(alt_signer.address()).await {
+                        Ok(n) => n,
+                        Err(err) => {
+                            tracing::warn!(
+                                ?err,
+                                signer = ?alt_signer.address(),
+                                "failed to get alt signer nonce"
+                            );
+                            continue;
+                        }
+                    };
+                    let alt_free = mempool
+                        .last_submission(alt_signer.address())
+                        .map_or(true, |s| s.nonce < alt_nonce);
+                    if !alt_free {
+                        continue;
+                    }
+                    tracing::debug!(
+                        signer = ?alt_signer.address(),
+                        submission_block,
+                        blocks_until_deadline,
+                        ?final_gas_price,
+                        "primary busy — submitting via execTransaction from alt signer"
+                    );
+                    let hash = mempool
+                        .submit_exec_tx(
+                            &tx,
+                            final_gas_price,
+                            settlement.gas.limit,
+                            solver.address(),
+                            alt_signer,
+                            alt_nonce,
+                        )
+                        .await?;
+
+                    // Wait for the alt-signer tx to mine. No cancellation is needed
+                    // since this is a fresh nonce on the alternate address.
+                    let result = async {
+                        while let Some(block) = block_stream.next().await {
+                            tracing::debug!(
+                                ?hash,
+                                current_block = ?block.number,
+                                "checking if alt-signer tx is confirmed"
+                            );
+                            match self
+                                .ethereum
+                                .transaction_status(&hash)
+                                .await
+                                .unwrap_or_else(|err| {
+                                    tracing::warn!(
+                                        ?hash,
+                                        ?err,
+                                        "failed to get alt-signer transaction status"
+                                    );
+                                    TxStatus::Pending
+                                }) {
+                                TxStatus::Executed { block_number } => {
+                                    return Ok(SubmissionSuccess {
+                                        tx_hash: hash.clone(),
+                                        submitted_at_block: submission_block.into(),
+                                        included_in_block: block_number,
+                                    });
+                                }
+                                TxStatus::Reverted { block_number } => {
+                                    return Err(Error::Revert {
+                                        tx_id: hash.clone(),
+                                        submitted_at_block: submission_block,
+                                        reverted_at_block: block_number.into(),
+                                    });
+                                }
+                                TxStatus::Pending => {
+                                    if block.number >= submission_deadline {
+                                        tracing::debug!(
+                                            submission_deadline,
+                                            current_block = block.number,
+                                            settle_tx_hash = ?hash,
+                                            "alt-signer tx exceeded deadline"
+                                        );
+                                        return Err(Error::Expired {
+                                            tx_id: hash.clone(),
+                                            submitted_at_block: submission_block,
+                                            submission_deadline,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        Err(Error::Other(anyhow::anyhow!(
+                            "Block stream finished unexpectedly"
+                        )))
+                    }
+                    .await;
+
+                    if result.is_err() {
+                        if let Ok(TxStatus::Executed { block_number }) =
+                            self.ethereum.transaction_status(&hash).await
+                        {
+                            tracing::info!(
+                                ?hash,
+                                ?block_number,
+                                "Found confirmed alt-signer transaction, ignoring error"
+                            );
+                            return Ok(SubmissionSuccess {
+                                tx_hash: hash,
+                                included_in_block: block_number,
+                                submitted_at_block: submission_block.into(),
+                            });
+                        }
+                    }
+                    return result;
+                }
+            }
+        // }
+
         tracing::debug!(
             submission_block,
             blocks_until_deadline,

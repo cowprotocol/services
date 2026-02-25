@@ -10,17 +10,20 @@ use {
             blockchain::{self, Ethereum},
             cli,
             config,
+            keychain,
             liquidity,
             notify,
             simulator::{self, Simulator},
-            solver::Solver,
+            solver::{Account, Solver},
         },
     },
+    chain::Chain,
     clap::Parser,
     futures::future::join_all,
     shared::arguments::tracing_config,
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
+    url::Url,
 };
 
 /// The driver entry-point. This function exists in order to be able to run the
@@ -63,6 +66,18 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc, &args.current_block).await;
+
+    // Use Flashbots RPC for the EIP-7702 delegation setup on mainnet to avoid
+    // broadcasting the setup tx to the public mempool. Fall back to the regular
+    // RPC on other networks or when Flashbots is explicitly disabled.
+    if eth.chain() == Chain::Mainnet && !config.disable_flashbots {
+        let flashbots_rpc = flashbots_rpc(&args).await;
+        let flashbots = ethereum(&config, flashbots_rpc, &args.current_block).await;
+        ensure_safe_delegations(&config, &flashbots).await;
+    } else {
+        ensure_safe_delegations(&config, &eth).await;
+    }
+
     let app_data_retriever = match &config.app_data_fetching {
         config::file::AppDataFetching::Enabled {
             orderbook_url,
@@ -124,6 +139,22 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     };
 }
 
+async fn ensure_safe_delegations(config: &config::Config, eth: &Ethereum) {
+    let gas_price = eth
+        .gas_price()
+        .await
+        .expect("fetch gas price for EIP-7702 setup");
+    for solver_config in &config.solvers {
+        if let Account::Keychain(k) = &solver_config.account {
+            keychain::ensure_delegation(eth.web3(), k, eth.chain().id(), gas_price)
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::error!(?err, "failed to ensure EIP-7702 Safe delegation");
+                });
+        }
+    }
+}
+
 fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
     let mut simulator = match &config.simulator {
         Some(infra::simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
@@ -164,6 +195,17 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
     blockchain::Rpc::try_new(args)
         .await
         .expect("connect ethereum RPC")
+}
+
+async fn flashbots_rpc(args: &cli::Args) -> blockchain::Rpc {
+    let args = blockchain::RpcArgs {
+        url: Url::parse("https://rpc.flashbots.net/fast").unwrap(),
+        max_batch_size: args.ethrpc_max_batch_size,
+        max_concurrent_requests: args.ethrpc_max_concurrent_requests,
+    };
+    blockchain::Rpc::try_new(args)
+        .await
+        .expect("connect flashbots RPC")
 }
 
 async fn ethereum(
