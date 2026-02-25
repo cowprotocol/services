@@ -92,7 +92,7 @@ impl Request {
                 return (Bytes::from(serialized), None);
             }
 
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::new(3));
             match encoder
                 .write_all(&serialized)
                 .and_then(|_| encoder.finish())
