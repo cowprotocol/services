@@ -9,6 +9,7 @@ use {
         rpc::types::TransactionRequest,
         sol_types::SolCall,
     },
+    anyhow::Context,
     contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
     futures::future::try_join_all,
     std::time::Duration,
@@ -155,7 +156,7 @@ async fn setup_delegation_and_approve(
         .account
         .sign_hash(&auth.signature_hash())
         .await
-        .map_err(|e| anyhow::anyhow!("failed to sign EIP-7702 authorization: {e}"))?;
+        .context("failed to sign EIP-7702 authorization")?;
     let signed_auth = auth.into_signed(sig);
 
     // Explicitly set the tx nonce to `solver_nonce` so the provider's nonce
