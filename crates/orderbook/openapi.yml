@@ -169,12 +169,12 @@ paths:
                       error:
                         type: object
                         properties:
-                          orderUid:
+                          uid:
                             $ref: "#/components/schemas/UID"
                           description:
                             type: string
                         required:
-                          - orderUid
+                          - uid
                           - description
                     required:
                       - error
