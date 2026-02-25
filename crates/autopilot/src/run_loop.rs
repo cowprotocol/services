@@ -65,6 +65,7 @@ pub struct Config {
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
+    pub compress_solve_request: bool,
 }
 
 pub struct Probes {
@@ -564,6 +565,11 @@ impl RunLoop {
         )
         .await;
         Metrics::solve_request_body_size(request.body_size());
+        let request = if self.config.compress_solve_request {
+            request.compressed().await
+        } else {
+            request
+        };
 
         let mut bids = futures::future::join_all(
             self.drivers

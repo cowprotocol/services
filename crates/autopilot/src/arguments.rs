@@ -211,6 +211,10 @@ pub struct CliArguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub enable_leader_lock: bool,
 
+    /// Enables gzip compression of `/solve` request bodies sent to drivers.
+    #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
+    pub compress_solve_request: bool,
+
     /// Limits the amount of time the autopilot may spend running the
     /// maintenance logic between 2 auctions. When this times out we prefer
     /// running a not fully updated auction over stalling the protocol any
@@ -278,6 +282,7 @@ impl std::fmt::Display for CliArguments {
             max_solutions_per_solver,
             disable_order_balance_filter,
             enable_leader_lock,
+            compress_solve_request,
             max_maintenance_timeout,
             native_price_cache_refresh,
             native_price_prefetch_time,
@@ -346,6 +351,7 @@ impl std::fmt::Display for CliArguments {
             "disable_order_balance_filter: {disable_order_balance_filter}"
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
+        writeln!(f, "compress_solve_request: {compress_solve_request}")?;
         writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
         writeln!(
             f,
