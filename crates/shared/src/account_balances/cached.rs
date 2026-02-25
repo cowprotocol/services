@@ -7,7 +7,7 @@ use {
     itertools::Itertools,
     std::{
         collections::HashMap,
-        sync::{Arc, Mutex},
+        sync::{Arc, Mutex}, time::Duration,
     },
     tracing::{Instrument, instrument},
 };
@@ -118,6 +118,7 @@ impl Balances {
 
         let task = async move {
             while let Some(block) = stream.next().await {
+                tokio::time::sleep(Duration::from_millis(2_000)).await;
                 let balances_to_update = {
                     let mut cache = cache.lock().unwrap();
                     cache.last_seen_block = block.number;
