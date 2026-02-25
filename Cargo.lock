@@ -1177,6 +1177,7 @@ dependencies = [
  "database",
  "derive_more 1.0.0",
  "ethrpc",
+ "flate2",
  "futures",
  "hex-literal",
  "humantime",

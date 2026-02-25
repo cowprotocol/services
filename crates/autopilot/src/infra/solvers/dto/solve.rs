@@ -10,6 +10,7 @@ use {
     alloy::primitives::{Address, U256},
     bytes::Bytes,
     chrono::{DateTime, Utc},
+    flate2::{Compression, write::GzEncoder},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
     reqwest::RequestBuilder,
@@ -18,6 +19,7 @@ use {
     std::{
         borrow::Cow,
         collections::{HashMap, HashSet},
+        io::Write,
         time::Duration,
     },
 };
@@ -26,10 +28,24 @@ use {
 /// request. The purpose of this is to make it ergonomic
 /// to serialize a request once and reuse the resulting
 /// string in multiple HTTP requests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ContentEncoding {
+    Gzip,
+}
+
+impl ContentEncoding {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Gzip => "gzip",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Request {
     auction_id: i64,
     body: bytes::Bytes,
+    content_encoding: Option<ContentEncoding>,
 }
 
 impl Request {
@@ -75,7 +91,45 @@ impl Request {
         .await
         .expect("inner task should not panic as serialization should work for the given type");
 
-        Self { body, auction_id }
+        Self {
+            body,
+            auction_id,
+            content_encoding: None,
+        }
+    }
+
+    pub async fn compressed(self) -> Self {
+        let _timer = observe::metrics::metrics()
+            .on_auction_overhead_start("autopilot", "compress_solve_request");
+        let body = self.body.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&body)?;
+            encoder.finish()
+        })
+        .await;
+
+        match result {
+            Ok(Ok(compressed)) => Self {
+                auction_id: self.auction_id,
+                body: Bytes::from(compressed),
+                content_encoding: Some(ContentEncoding::Gzip),
+            },
+            Ok(Err(err)) => {
+                tracing::error!(
+                    ?err,
+                    "gzip compression failed, falling back to uncompressed"
+                );
+                self
+            }
+            Err(err) => {
+                tracing::error!(
+                    ?err,
+                    "compression task panicked, falling back to uncompressed"
+                );
+                self
+            }
+        }
     }
 }
 
@@ -87,21 +141,26 @@ impl Request {
 
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
-        request
-            .body(reqwest::Body::wrap_stream(ByteStream::new(self.body.clone())))
-            // announce which auction this request is for in the
-            // headers to help the driver detect duplicated
-            // `/solve` requests before streaming the body
+        let request = request
+            .body(reqwest::Body::wrap_stream(ByteStream::new(
+                self.body.clone(),
+            )))
             .header("X-Auction-Id", self.auction_id)
-            // manually set the content type header for JSON since
-            // we can't use `request.json(self)`
             .header(
                 reqwest::header::CONTENT_TYPE,
-                reqwest::header::HeaderValue::from_static("application/json")
-            )
+                reqwest::header::HeaderValue::from_static("application/json"),
+            );
+        if let Some(encoding) = self.content_encoding {
+            request.header(reqwest::header::CONTENT_ENCODING, encoding.as_str())
+        } else {
+            request
+        }
     }
 
     fn body_to_string(&self) -> Cow<'_, str> {
+        if self.content_encoding.is_some() {
+            return Cow::Borrowed("<gzip compressed>");
+        }
         let string = str::from_utf8(self.body.as_ref()).unwrap();
         Cow::Borrowed(string)
     }
@@ -234,4 +293,54 @@ pub struct Solution {
 #[serde(rename_all = "camelCase")]
 pub struct Response {
     pub solutions: Vec<Solution>,
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, flate2::read::GzDecoder, std::io::Read};
+
+    #[tokio::test]
+    async fn compressed_request_round_trips() {
+        // Use a payload large enough that gzip actually reduces size
+        let json_value = serde_json::json!({
+            "id": "1",
+            "tokens": (0..100).map(|i| {
+                serde_json::json!({
+                    "address": format!("0x{:040x}", i),
+                    "price": format!("{}", i * 1000),
+                    "trusted": i % 2 == 0
+                })
+            }).collect::<Vec<_>>(),
+            "orders": [],
+            "deadline": "2025-01-01T00:00:00Z",
+            "surplusCapturingJitOrderOwners": []
+        });
+        let json = serde_json::to_vec(&json_value).unwrap();
+        let original_size = json.len();
+        let request = Request {
+            auction_id: 1,
+            body: Bytes::from(json.clone()),
+            content_encoding: None,
+        };
+
+        assert_eq!(request.body_size(), original_size);
+
+        let compressed = request.compressed().await;
+        assert_eq!(compressed.content_encoding, Some(ContentEncoding::Gzip));
+        assert!(
+            compressed.body_size() < original_size,
+            "compressed size {} should be smaller than original {}",
+            compressed.body_size(),
+            original_size,
+        );
+
+        let mut decoder = GzDecoder::new(compressed.body.as_ref());
+        let mut decompressed = Vec::new();
+        decoder.read_to_end(&mut decompressed).unwrap();
+        assert_eq!(decompressed, json);
+
+        let original: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        let round_tripped: serde_json::Value = serde_json::from_slice(&decompressed).unwrap();
+        assert_eq!(original, round_tripped);
+    }
 }

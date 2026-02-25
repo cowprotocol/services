@@ -587,6 +587,7 @@ pub async fn run(
         max_winners_per_auction: args.max_winners_per_auction,
         max_solutions_per_solver: args.max_solutions_per_solver,
         enable_leader_lock: args.enable_leader_lock,
+        compress_solve_request: args.compress_solve_request,
     };
 
     let drivers_futures = config
