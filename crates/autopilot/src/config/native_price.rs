@@ -51,7 +51,7 @@ pub struct NativePriceConfig {
         with = "humantime_serde",
         default = "default_native_price_prefetch_time"
     )]
-    pub native_price_prefetch_time: Duration,
+    pub prefetch_time: Duration,
 }
 
 impl Default for NativePriceConfig {
@@ -61,7 +61,7 @@ impl Default for NativePriceConfig {
             api_estimators: Default::default(),
             results_required: default_native_price_estimation_results_required(),
             cache_refresh_interval: default_native_price_cache_refresh(),
-            native_price_prefetch_time: default_native_price_prefetch_time(),
+            prefetch_time: default_native_price_prefetch_time(),
         }
     }
 }
@@ -80,7 +80,7 @@ mod tests {
         assert!(config.api_estimators.is_none());
         assert_eq!(config.results_required.get(), 2);
         assert_eq!(config.cache_refresh_interval, Duration::from_secs(1));
-        assert_eq!(config.native_price_prefetch_time, Duration::from_secs(80));
+        assert_eq!(config.prefetch_time, Duration::from_secs(80));
     }
 
     #[test]
@@ -97,7 +97,7 @@ mod tests {
         assert!(config.api_estimators.is_some());
         assert_eq!(config.results_required.get(), 3);
         assert_eq!(config.cache_refresh_interval, Duration::from_secs(30));
-        assert_eq!(config.native_price_prefetch_time, Duration::from_secs(120));
+        assert_eq!(config.prefetch_time, Duration::from_secs(120));
     }
 
     #[test]
@@ -113,6 +113,6 @@ mod tests {
         assert!(config.api_estimators.is_none());
         assert_eq!(config.results_required.get(), 2);
         assert_eq!(config.cache_refresh_interval, Duration::from_secs(1));
-        assert_eq!(config.native_price_prefetch_time, Duration::from_secs(80));
+        assert_eq!(config.prefetch_time, Duration::from_secs(80));
     }
 }

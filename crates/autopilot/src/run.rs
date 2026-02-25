@@ -9,8 +9,7 @@ use {
             onchain_order_events::{
                 OnchainOrderParser,
                 ethflow_events::{
-                    EthFlowOnchainOrderParser,
-                    determine_ethflow_indexing_start,
+                    EthFlowOnchainOrderParser, determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -346,7 +345,7 @@ pub async fn run(
         shared::price_estimation::native_price_cache::NativePriceUpdater::new(
             caching,
             config.native_price_estimation.cache_refresh_interval,
-            config.native_price_estimation.native_price_prefetch_time,
+            config.native_price_estimation.prefetch_time,
         )
     };
 

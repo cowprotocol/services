@@ -3,9 +3,7 @@ use {
     crate::{
         nodes::NODE_WS_HOST,
         setup::{
-            Contracts,
-            OnchainComponents,
-            TIMEOUT,
+            Contracts, OnchainComponents, TIMEOUT,
             colocation::{self, SolverEngine},
             wait_for_condition,
         },
@@ -24,8 +22,7 @@ use {
         AuctionId,
         order::{CancellationPayload, Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
-        solver_competition,
-        solver_competition_v2,
+        solver_competition, solver_competition_v2,
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
@@ -226,7 +223,7 @@ impl<'a> Services<'a> {
                     "test_quoter".to_string(),
                     Url::from_str("http://localhost:11088/test_solver").unwrap(),
                 )]]),
-                native_price_prefetch_time: Duration::from_millis(500),
+                prefetch_time: Duration::from_millis(500),
                 ..Default::default()
             },
             ..Configuration::from_path(&args.config).await.unwrap()
