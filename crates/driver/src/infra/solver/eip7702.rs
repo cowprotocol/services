@@ -10,7 +10,7 @@ use {
         sol_types::SolCall,
     },
     contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
-    futures::future::join_all,
+    futures::future::try_join_all,
     std::time::Duration,
     tracing::instrument,
 };
@@ -102,25 +102,18 @@ async fn check_unapproved_callers(
 ) -> anyhow::Result<Vec<Address>> {
     let provider = &eth.web3().provider;
 
-    let results: Vec<bool> = join_all(callers.iter().map(|caller| {
-        let caller = *caller;
-        async move {
-            let data = CowSettlementForwarder::isApprovedCallerCall(caller).abi_encode();
-            let tx = TransactionRequest::default().to(solver).input(data.into());
-            let output = provider.call(tx).await?;
-            Ok(CowSettlementForwarder::isApprovedCallerCall::abi_decode_returns(&output)?)
-        }
-    }))
-    .await
-    .into_iter()
-    .collect::<anyhow::Result<_>>()?;
+    let unapproved: Vec<Address> =
+        try_join_all(callers.iter().copied().map(move |caller| async move {
+            let forwarder = CowSettlementForwarder::new(solver, provider);
+            let approved = forwarder.isApprovedCaller(caller).call().await?;
+            Ok::<_, anyhow::Error>((!approved).then_some(caller))
+        }))
+        .await?
+        .into_iter()
+        .flatten()
+        .collect();
 
-    Ok(callers
-        .iter()
-        .zip(results)
-        .filter(|(_, approved)| !approved)
-        .map(|(addr, _)| *addr)
-        .collect())
+    Ok(unapproved)
 }
 
 /// Set up EIP-7702 delegation and approve callers in a single transaction.
