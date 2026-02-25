@@ -562,14 +562,10 @@ impl RunLoop {
             auction,
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
+            self.config.compress_solve_request,
         )
         .await;
         Metrics::solve_request_body_size(request.body_size());
-        let request = if self.config.compress_solve_request {
-            request.compressed().await
-        } else {
-            request
-        };
 
         let mut bids = futures::future::join_all(
             self.drivers

@@ -713,6 +713,7 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         drivers,
         trusted_tokens,
         args.solve_deadline,
+        args.compress_solve_request,
         liveness.clone(),
         current_block,
         args.max_winners_per_auction,
