@@ -108,7 +108,7 @@ impl Request {
             }
         })
         .await
-        .expect("serialization task should not panic");
+        .expect("inner task should not panic as serialization should work for the given type");
 
         Self {
             body,
@@ -128,12 +128,18 @@ impl InjectIntoHttpRequest for Request {
             .body(reqwest::Body::wrap_stream(ByteStream::new(
                 self.body.clone(),
             )))
+            // announce which auction this request is for in the
+            // headers to help the driver detect duplicated
+            // `/solve` requests before streaming the body
             .header("X-Auction-Id", self.auction_id)
+            // manually set the content type header for JSON since
+            // we can't use `request.json(self)`
             .header(
                 reqwest::header::CONTENT_TYPE,
                 reqwest::header::HeaderValue::from_static("application/json"),
             );
         if let Some(encoding) = self.content_encoding {
+            // set content encoding header if the body is compressed
             request.header(reqwest::header::CONTENT_ENCODING, encoding.as_str())
         } else {
             request
