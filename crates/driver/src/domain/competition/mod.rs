@@ -805,7 +805,7 @@ impl Competition {
         };
 
         let delegated_ctx = guard.as_ref().map(|g| DelegatedSubmission {
-            signer: g.address(),
+            submitter_eoa: g.address(),
             solver_eoa: self.solver.address(),
         });
 
