@@ -3,7 +3,9 @@ use {
     crate::{
         nodes::NODE_WS_HOST,
         setup::{
-            Contracts, OnchainComponents, TIMEOUT,
+            Contracts,
+            OnchainComponents,
+            TIMEOUT,
             colocation::{self, SolverEngine},
             wait_for_condition,
         },
@@ -22,7 +24,8 @@ use {
         AuctionId,
         order::{CancellationPayload, Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
-        solver_competition, solver_competition_v2,
+        solver_competition,
+        solver_competition_v2,
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
