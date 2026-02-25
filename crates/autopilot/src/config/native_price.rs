@@ -90,7 +90,7 @@ mod tests {
         api-estimators = [[{type = "OneInchSpotPriceApi"}]]
         results-required = 3
         cache-refresh-interval = "30s"
-        native-price-prefetch-time = "2m"
+        prefetch-time = "2m"
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.estimators.as_slice().len(), 1);
