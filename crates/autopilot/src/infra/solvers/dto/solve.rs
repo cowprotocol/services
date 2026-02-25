@@ -79,6 +79,12 @@ impl Request {
     }
 }
 
+impl Request {
+    pub fn body_size(&self) -> usize {
+        self.body.len()
+    }
+}
+
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
         request
