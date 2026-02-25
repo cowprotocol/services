@@ -110,7 +110,7 @@ mod tests {
                 .expect("key description exists")
                 .as_str()
                 .expect("description is a string"),
-            "Error converting into model order"
+            "Internal server error encountered when retrieving the order"
         );
     }
 
