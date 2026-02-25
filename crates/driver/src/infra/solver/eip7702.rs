@@ -86,7 +86,6 @@ async fn setup_solver(config: &Config, forwarder: Address, eth: &Ethereum) -> an
 
 /// Check whether the account's code is an EIP-7702 delegation to
 /// `expected_forwarder`.
-#[instrument(skip_all)]
 fn is_delegated_to(code: &[u8], expected_forwarder: Address) -> bool {
     // EIP-7702 delegation designator: 0xef0100 || 20-byte address
     code.len() == 23 && code.starts_with(&DELEGATION_PREFIX) && code[3..] == expected_forwarder.0.0
