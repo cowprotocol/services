@@ -32,7 +32,7 @@ const CANCELLATION_GAS_AMOUNT: u64 = 21000;
 #[derive(Debug, Clone)]
 pub struct DelegatedSubmission {
     /// The address that signs the transaction and whose nonce is used.
-    pub signer: eth::Address,
+    pub submitter_eoa: eth::Address,
     /// The solver EOA address. In EIP-7702 mode tx.to is set to this address
     /// (which delegates to a forwarder contract), instead of the settlement
     /// contract.
@@ -122,7 +122,7 @@ impl Mempools {
             Some(ctx) => {
                 let mut tx = tx.clone();
                 let original_target = tx.to;
-                tx.from = ctx.signer;
+                tx.from = ctx.submitter_eoa;
                 tx.to = ctx.solver_eoa;
                 tx.input = CowSettlementForwarder::forwardCall {
                     target: original_target,
@@ -137,7 +137,7 @@ impl Mempools {
 
         // The address that signs and pays for gas.
         let signer = delegated
-            .map(|ctx| ctx.signer)
+            .map(|ctx| ctx.submitter_eoa)
             .unwrap_or_else(|| solver.address());
 
         // Instantiate block stream and skip the current block before we submit the
