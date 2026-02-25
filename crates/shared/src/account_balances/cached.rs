@@ -133,7 +133,14 @@ impl Balances {
                         .collect_vec()
                 };
 
+                tracing::debug!(
+                    len = balances_to_update.len(),
+                    "start fetching balances in background"
+                );
+
                 let results = inner.get_balances(&balances_to_update).await;
+
+                tracing::debug!("finished fetching balances in background");
 
                 let mut cache = cache.lock().unwrap();
                 balances_to_update
@@ -148,6 +155,8 @@ impl Balances {
                     // Only keep balances where we know we have the most recent data.
                     value.updated_at >= block.number
                 });
+
+                tracing::debug!("finished updating balance cache in background");
             }
             tracing::error!("block stream terminated unexpectedly");
         };
@@ -170,7 +179,14 @@ impl BalanceFetching for Balances {
         }
 
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
+        tracing::debug!(
+            cached = cached.len(),
+            missing = missing.len(),
+            "fetch balances"
+        );
+        let start = std::time::Instant::now();
         let new_balances = self.inner.get_balances(&missing_queries).await;
+        tracing::debug!(time = ?start.elapsed(), "finished fetching balances");
 
         {
             let mut cache = self.balance_cache.lock().unwrap();
