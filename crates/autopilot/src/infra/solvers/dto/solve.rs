@@ -10,6 +10,7 @@ use {
     alloy::primitives::{Address, U256},
     bytes::Bytes,
     chrono::{DateTime, Utc},
+    flate2::{Compression, write::GzEncoder},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
     reqwest::RequestBuilder,
@@ -88,7 +89,6 @@ impl Request {
             let serialized = serde_json::to_vec(&helper).expect("type should be JSON serializable");
 
             if compress {
-                use flate2::{Compression, write::GzEncoder};
                 let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
                 let compressed = encoder
                     .write_all(&serialized)
