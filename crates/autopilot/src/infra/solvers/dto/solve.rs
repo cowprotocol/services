@@ -88,23 +88,23 @@ impl Request {
         let (body, content_encoding) = tokio::task::spawn_blocking(move || {
             let serialized = serde_json::to_vec(&helper).expect("type should be JSON serializable");
 
-            if compress {
-                let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-                let compressed = encoder
-                    .write_all(&serialized)
-                    .and_then(|_| encoder.finish());
-                match compressed {
-                    Ok(compressed) => (Bytes::from(compressed), Some(ContentEncoding::Gzip)),
-                    Err(err) => {
-                        tracing::error!(
-                            ?err,
-                            "gzip compression failed, falling back to uncompressed"
-                        );
-                        (Bytes::from(serialized), None)
-                    }
+            if !compress {
+                return (Bytes::from(serialized), None);
+            }
+
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            match encoder
+                .write_all(&serialized)
+                .and_then(|_| encoder.finish())
+            {
+                Ok(compressed) => (Bytes::from(compressed), Some(ContentEncoding::Gzip)),
+                Err(err) => {
+                    tracing::error!(
+                        ?err,
+                        "gzip compression failed, falling back to uncompressed"
+                    );
+                    (Bytes::from(serialized), None)
                 }
-            } else {
-                (Bytes::from(serialized), None)
             }
         })
         .await
