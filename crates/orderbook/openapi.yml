@@ -156,7 +156,7 @@ paths:
             The result ordering is not guaranteed and might differ from the order of requested UIDs.
             Orders that do not exist in the database will be missing from the response.
           content:
-            application/x-json:
+            application/json:
               schema:
                 oneOf:
                   - type: object
