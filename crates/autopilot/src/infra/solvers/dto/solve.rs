@@ -10,7 +10,6 @@ use {
     alloy::primitives::{Address, U256},
     bytes::Bytes,
     chrono::{DateTime, Utc},
-    flate2::{Compression, write::GzEncoder},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
     reqwest::RequestBuilder,
@@ -53,6 +52,7 @@ impl Request {
         auction: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
         time_limit: Duration,
+        compress: bool,
     ) -> Self {
         let _timer =
             observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
@@ -84,56 +84,39 @@ impl Request {
         };
         let auction_id = auction.id;
 
-        let body = tokio::task::spawn_blocking(move || {
+        let (body, content_encoding) = tokio::task::spawn_blocking(move || {
             let serialized = serde_json::to_vec(&helper).expect("type should be JSON serializable");
-            Bytes::from(serialized)
+
+            if compress {
+                use flate2::{Compression, write::GzEncoder};
+                let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                let compressed = encoder
+                    .write_all(&serialized)
+                    .and_then(|_| encoder.finish());
+                match compressed {
+                    Ok(compressed) => (Bytes::from(compressed), Some(ContentEncoding::Gzip)),
+                    Err(err) => {
+                        tracing::error!(
+                            ?err,
+                            "gzip compression failed, falling back to uncompressed"
+                        );
+                        (Bytes::from(serialized), None)
+                    }
+                }
+            } else {
+                (Bytes::from(serialized), None)
+            }
         })
         .await
-        .expect("inner task should not panic as serialization should work for the given type");
+        .expect("serialization task should not panic");
 
         Self {
             body,
             auction_id,
-            content_encoding: None,
+            content_encoding,
         }
     }
 
-    pub async fn compressed(self) -> Self {
-        let _timer = observe::metrics::metrics()
-            .on_auction_overhead_start("autopilot", "compress_solve_request");
-        let body = self.body.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(&body)?;
-            encoder.finish()
-        })
-        .await;
-
-        match result {
-            Ok(Ok(compressed)) => Self {
-                auction_id: self.auction_id,
-                body: Bytes::from(compressed),
-                content_encoding: Some(ContentEncoding::Gzip),
-            },
-            Ok(Err(err)) => {
-                tracing::error!(
-                    ?err,
-                    "gzip compression failed, falling back to uncompressed"
-                );
-                self
-            }
-            Err(err) => {
-                tracing::error!(
-                    ?err,
-                    "compression task panicked, falling back to uncompressed"
-                );
-                self
-            }
-        }
-    }
-}
-
-impl Request {
     pub fn body_size(&self) -> usize {
         self.body.len()
     }
@@ -297,11 +280,13 @@ pub struct Response {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, flate2::read::GzDecoder, std::io::Read};
+    use {
+        super::*,
+        flate2::{Compression, read::GzDecoder, write::GzEncoder},
+        std::io::Read,
+    };
 
-    #[tokio::test]
-    async fn compressed_request_round_trips() {
-        // Use a payload large enough that gzip actually reduces size
+    fn make_test_json() -> Vec<u8> {
         let json_value = serde_json::json!({
             "id": "1",
             "tokens": (0..100).map(|i| {
@@ -315,32 +300,53 @@ mod tests {
             "deadline": "2025-01-01T00:00:00Z",
             "surplusCapturingJitOrderOwners": []
         });
-        let json = serde_json::to_vec(&json_value).unwrap();
-        let original_size = json.len();
-        let request = Request {
+        serde_json::to_vec(&json_value).unwrap()
+    }
+
+    fn uncompressed_request(json: Vec<u8>) -> Request {
+        Request {
             auction_id: 1,
-            body: Bytes::from(json.clone()),
+            body: Bytes::from(json),
             content_encoding: None,
-        };
+        }
+    }
 
-        assert_eq!(request.body_size(), original_size);
+    fn compressed_request(json: &[u8]) -> Request {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(json).unwrap();
+        let compressed = encoder.finish().unwrap();
+        Request {
+            auction_id: 1,
+            body: Bytes::from(compressed),
+            content_encoding: Some(ContentEncoding::Gzip),
+        }
+    }
 
-        let compressed = request.compressed().await;
-        assert_eq!(compressed.content_encoding, Some(ContentEncoding::Gzip));
+    #[test]
+    fn compressed_request_round_trips() {
+        let json = make_test_json();
+
+        let request = compressed_request(&json);
+        assert_eq!(request.content_encoding, Some(ContentEncoding::Gzip));
         assert!(
-            compressed.body_size() < original_size,
-            "compressed size {} should be smaller than original {}",
-            compressed.body_size(),
-            original_size,
+            request.body.len() < json.len(),
+            "compressed body {} should be smaller than original {}",
+            request.body.len(),
+            json.len(),
         );
 
-        let mut decoder = GzDecoder::new(compressed.body.as_ref());
+        let mut decoder = GzDecoder::new(request.body.as_ref());
         let mut decompressed = Vec::new();
         decoder.read_to_end(&mut decompressed).unwrap();
         assert_eq!(decompressed, json);
+    }
 
-        let original: serde_json::Value = serde_json::from_slice(&json).unwrap();
-        let round_tripped: serde_json::Value = serde_json::from_slice(&decompressed).unwrap();
-        assert_eq!(original, round_tripped);
+    #[test]
+    fn uncompressed_request_preserves_json() {
+        let json = make_test_json();
+        let request = uncompressed_request(json.clone());
+
+        assert_eq!(request.content_encoding, None);
+        assert_eq!(request.body.as_ref(), json.as_slice());
     }
 }
