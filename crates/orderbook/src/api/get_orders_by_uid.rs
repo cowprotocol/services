@@ -52,7 +52,9 @@ fn get_orders_by_uid_response(result: Result<Vec<(OrderUid, Result<Order>)>>) ->
                         tracing::warn!(?err, "Error converting into model order");
                         OrderResultEntry::Error(OrderError {
                             uid,
-                            description: "Error converting into model order".to_string(),
+                            description: "Internal server error encountered when retrieving the \
+                                          order"
+                                .to_string(),
                         })
                     }
                 })

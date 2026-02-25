@@ -1,7 +1,7 @@
 use {
     super::Postgres,
     crate::dto::TokenMetadata,
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, map::HashSet},
     anyhow::{Context as _, Result},
     app_data::AppDataHash,
     async_trait::async_trait,
@@ -319,25 +319,40 @@ impl OrderStoring for Postgres {
             .database_queries
             .with_label_values(&["many_orders"])
             .start_timer();
-        let uids = uids.iter().map(|uid| ByteArray(uid.0)).collect::<Vec<_>>();
+        // Deduplicate order UIDs
+        let uids = uids
+            .iter()
+            .map(|uid| ByteArray(uid.0))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
         let mut ex_orders = self.pool.acquire().await?;
         let mut ex_jit_orders = self.pool.acquire().await?;
 
         let (orders, jit_orders) = try_join!(
-            database::orders::many_full_orders_with_quotes(&mut ex_orders, uids.as_slice()),
-            database::jit_orders::get_many_by_uid(&mut ex_jit_orders, uids.as_slice())
+            database::orders::many_full_orders_with_quotes(&mut ex_orders, &uids),
+            // JIT orders are fetched without quotes as they are created by solvers at settlement
+            // time
+            database::jit_orders::get_many_by_uid(&mut ex_jit_orders, &uids)
         )?;
         Ok(orders
             .into_iter()
             .map(|order| {
                 let (order, quote) = order.into_order_and_quote();
                 let uid = OrderUid(order.uid.0);
-                let result = full_order_with_quote_into_model_order(order, quote.as_ref());
+                let result =
+                    full_order_with_quote_into_model_order(order, quote.as_ref()).map_err(|err| {
+                        tracing::warn!(?err, "Error converting into model order");
+                        err.context("Error converting into model order")
+                    });
                 (uid, result)
             })
             .chain(jit_orders.into_iter().map(|order| {
                 let uid = OrderUid(order.uid.0);
-                let result = full_order_into_model_order(order);
+                let result = full_order_into_model_order(order).map_err(|err| {
+                    tracing::warn!(?err, "Error converting Jit order into model order");
+                    err.context("Error converting Jit order into model order")
+                });
                 (uid, result)
             }))
             .collect())

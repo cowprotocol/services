@@ -129,7 +129,7 @@ paths:
           description: One or more orders were not found and no orders were cancelled.
         "422":
           description: Unable to parse request body as valid JSON.
-  "/api/v1/orders/lookup":
+  "/api/v1/orders/by_uids":
     post:
       operationId: getOrders
       summary: Get existing orders from the list of UIDs.
@@ -152,7 +152,8 @@ paths:
             The resulting full order data based on the request. Each element of the array is
             an object of the following format:
             - `{"order": <Order>}` for successfully fetched orders
-            - `{"error": {"orderUid": "<UID>", "description": "<message>"}}` for orders that failed conversion
+            - `{"error": {"uid": "<UID>", "description": "<message>"}}` for orders that failed conversion
+            The result ordering is not guaranteed and might differ from the order of requested UIDs.
             Orders that do not exist in the database will be missing from the response.
           content:
             application/x-json:
