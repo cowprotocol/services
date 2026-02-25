@@ -80,38 +80,43 @@ impl SubmissionAccountPool {
             acquire: tokio::sync::Mutex::new(rx),
         }
     }
+
+    /// Acquire a submission account from the pool, returning an RAII guard
+    /// that returns the account on drop. Returns `None` if the pool is
+    /// closed.
+    async fn acquire(&self) -> Option<AccountGuard> {
+        let account = self.acquire.lock().await.recv().await?;
+        Some(AccountGuard {
+            account,
+            release_sender: self.release.clone(),
+        })
+    }
 }
 
 /// RAII guard that returns the submission account to the pool on drop,
 /// ensuring the account is not leaked even if the future is cancelled.
 struct AccountGuard {
-    account: Option<Account>,
+    account: Account,
     release_sender: mpsc::Sender<Account>,
 }
 
-impl AccountGuard {
-    fn new(account: Account, release_sender: mpsc::Sender<Account>) -> Self {
-        Self {
-            account: Some(account),
-            release_sender,
-        }
-    }
+impl std::ops::Deref for AccountGuard {
+    type Target = Account;
 
-    fn account(&self) -> &Account {
-        self.account.as_ref().expect("guard always has an account")
+    fn deref(&self) -> &Account {
+        &self.account
     }
 }
 
 impl Drop for AccountGuard {
     fn drop(&mut self) {
-        if let Some(account) = self.account.take() {
-            let sender = self.release_sender.clone();
-            tokio::spawn(async move {
-                if sender.send(account).await.is_err() {
-                    tracing::error!("failed to return submission account to pool: channel closed");
-                }
-            });
-        }
+        let account = std::mem::replace(&mut self.account, Account::Address(Default::default()));
+        let sender = self.release_sender.clone();
+        tokio::spawn(async move {
+            if sender.send(account).await.is_err() {
+                tracing::error!("failed to return submission account to pool: channel closed");
+            }
+        });
     }
 }
 
@@ -794,20 +799,13 @@ impl Competition {
         // the pool for the duration of this settlement. The guard ensures the
         // account is returned even on cancellation or panic.
         let guard = if let Some(pool) = &self.submission_account_pool {
-            let account = pool
-                .acquire
-                .lock()
-                .await
-                .recv()
-                .await
-                .ok_or(Error::SubmissionError)?;
-            Some(AccountGuard::new(account, pool.release.clone()))
+            Some(pool.acquire().await.ok_or(Error::SubmissionError)?)
         } else {
             None
         };
 
         let delegated_ctx = guard.as_ref().map(|g| DelegatedSubmission {
-            signer: g.account().address(),
+            signer: g.address(),
             solver_eoa: self.solver.address(),
         });
 
