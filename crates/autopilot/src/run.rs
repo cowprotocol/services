@@ -316,15 +316,16 @@ pub async fn run(
         args.price_estimation.native_price_cache_max_age,
         prices,
     );
-    let api_sources = args
-        .api_native_price_estimators
+    let api_sources = config
+        .native_price_estimation
+        .api_estimators
         .as_ref()
-        .unwrap_or(&args.native_price_estimators);
+        .unwrap_or(&config.native_price_estimation.estimators);
     let api_native_price_estimator: Arc<dyn NativePriceEstimating> = Arc::new(
         price_estimator_factory
             .caching_native_price_estimator(
                 api_sources.as_slice(),
-                args.native_price_estimation_results_required,
+                config.native_price_estimation.results_required,
                 &weth,
                 shared_cache.clone(),
             )
@@ -335,8 +336,8 @@ pub async fn run(
     let competition_native_price_updater = {
         let caching = price_estimator_factory
             .caching_native_price_estimator(
-                args.native_price_estimators.as_slice(),
-                args.native_price_estimation_results_required,
+                config.native_price_estimation.estimators.as_slice(),
+                config.native_price_estimation.results_required,
                 &weth,
                 shared_cache.clone(),
             )
@@ -344,8 +345,8 @@ pub async fn run(
             .await;
         shared::price_estimation::native_price_cache::NativePriceUpdater::new(
             caching,
-            args.native_price_cache_refresh,
-            args.native_price_prefetch_time,
+            config.native_price_estimation.cache_refresh_interval,
+            config.native_price_estimation.prefetch_time,
         )
     };
 

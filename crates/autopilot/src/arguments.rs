@@ -5,7 +5,7 @@ use {
     shared::{
         arguments::{display_option, display_secret_option},
         http_client,
-        price_estimation::{self, NativePriceEstimators},
+        price_estimation::{self},
     },
     std::{net::SocketAddr, num::NonZeroUsize, path::PathBuf, str::FromStr, time::Duration},
     url::Url,
@@ -68,25 +68,6 @@ pub struct CliArguments {
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<Address>,
-
-    /// Which estimators to use to estimate token prices in terms of the chain's
-    /// native token. Estimators with the same name need to also be specified as
-    /// built-in, legacy or external price estimators (lookup happens in this
-    /// order in case of name collisions)
-    #[clap(long, env)]
-    pub native_price_estimators: NativePriceEstimators,
-
-    /// Estimators for the API endpoint. Falls back to
-    /// `--native-price-estimators` if unset.
-    #[clap(long, env)]
-    pub api_native_price_estimators: Option<NativePriceEstimators>,
-
-    /// How many successful price estimates for each order will cause a native
-    /// price estimation to return its result early. It's possible to pass
-    /// values greater than the total number of enabled estimators but that
-    /// will not have any further effect.
-    #[clap(long, env, default_value = "2")]
-    pub native_price_estimation_results_required: NonZeroUsize,
 
     /// The minimum amount of time an order has to be valid for.
     #[clap(
@@ -195,26 +176,6 @@ pub struct CliArguments {
     /// further.
     #[clap(long, env, default_value = "5s", value_parser = humantime::parse_duration)]
     pub max_maintenance_timeout: Duration,
-
-    /// How often the native price estimator should refresh its cache.
-    #[clap(
-        long,
-        env,
-        default_value = "1s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub native_price_cache_refresh: Duration,
-
-    /// How long before expiry the native price cache should try to update the
-    /// price in the background. This value has to be smaller than
-    /// `--native-price-cache-max-age`.
-    #[clap(
-        long,
-        env,
-        default_value = "80s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub native_price_prefetch_time: Duration,
 }
 
 impl std::fmt::Display for CliArguments {
@@ -232,8 +193,6 @@ impl std::fmt::Display for CliArguments {
             api_address,
             skip_event_sync,
             unsupported_tokens,
-            native_price_estimators,
-            api_native_price_estimators,
             min_order_validity_period,
             max_auction_age,
             submission_deadline,
@@ -241,7 +200,6 @@ impl std::fmt::Display for CliArguments {
             solve_deadline,
             db_write_url,
             insert_batch_size,
-            native_price_estimation_results_required,
             max_settlement_transaction_wait,
             cow_amm_configs,
             max_run_loop_delay,
@@ -252,8 +210,6 @@ impl std::fmt::Display for CliArguments {
             disable_order_balance_filter,
             enable_leader_lock,
             max_maintenance_timeout,
-            native_price_cache_refresh,
-            native_price_prefetch_time,
         } = self;
         write!(f, "{}", config.display())?;
         write!(f, "{shared}")?;
@@ -268,12 +224,6 @@ impl std::fmt::Display for CliArguments {
         display_secret_option(f, "db_write_url", Some(&db_write_url))?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
-        writeln!(f, "native_price_estimators: {native_price_estimators}")?;
-        display_option(
-            f,
-            "api_native_price_estimators",
-            api_native_price_estimators,
-        )?;
         writeln!(
             f,
             "min_order_validity_period: {min_order_validity_period:?}"
@@ -283,10 +233,6 @@ impl std::fmt::Display for CliArguments {
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;
         writeln!(f, "insert_batch_size: {insert_batch_size}")?;
-        writeln!(
-            f,
-            "native_price_estimation_results_required: {native_price_estimation_results_required}"
-        )?;
         writeln!(
             f,
             "max_settlement_transaction_wait: {max_settlement_transaction_wait:?}"
@@ -306,14 +252,6 @@ impl std::fmt::Display for CliArguments {
         )?;
         writeln!(f, "enable_leader_lock: {enable_leader_lock}")?;
         writeln!(f, "max_maintenance_timeout: {max_maintenance_timeout:?}")?;
-        writeln!(
-            f,
-            "native_price_cache_refresh: {native_price_cache_refresh:?}"
-        )?;
-        writeln!(
-            f,
-            "native_price_prefetch_time: {native_price_prefetch_time:?}"
-        )?;
         Ok(())
     }
 }
