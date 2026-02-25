@@ -110,28 +110,7 @@ impl Mempools {
         }
 
         let tx = settlement.transaction(settlement::Internalization::Enable);
-
-        // In EIP-7702 mode, reroute the tx through the solver EOA's delegated
-        // forwarder contract. The original target (settlement contract, wrapper,
-        // or flashloan router) and calldata are wrapped in a `forward()` call.
-        // `from` is set to the submission EOA so that simulations see the
-        // correct `msg.sender` for the forwarder's caller whitelist.
-        let tx = match delegated {
-            Some(ctx) => {
-                let mut tx = tx.clone();
-                let original_target = tx.to;
-                tx.from = ctx.submitter_eoa;
-                tx.to = ctx.solver_eoa;
-                tx.input = CowSettlementForwarder::forwardCall {
-                    target: original_target,
-                    data: tx.input.clone(),
-                }
-                .abi_encode()
-                .into();
-                tx
-            }
-            None => tx.clone(),
-        };
+        let tx = wrap_for_delegated_submission(tx, delegated);
 
         // The address that signs and pays for gas: either the submission EOA in
         // EIP-7702 mode or the solver EOA.
@@ -393,6 +372,29 @@ impl Mempools {
 
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
+    }
+}
+
+/// In EIP-7702 mode, reroute the tx through the solver EOA's delegated
+/// forwarder contract. The original target and calldata are wrapped in a
+/// `forward()` call. `from` is set to the submission EOA so that simulations
+/// see the correct `msg.sender` for the forwarder's caller whitelist.
+fn wrap_for_delegated_submission(tx: &eth::Tx, delegated: Option<&DelegatedSubmission>) -> eth::Tx {
+    match delegated {
+        Some(ctx) => {
+            let mut tx = tx.clone();
+            let original_target = tx.to;
+            tx.from = ctx.submitter_eoa;
+            tx.to = ctx.solver_eoa;
+            tx.input = CowSettlementForwarder::forwardCall {
+                target: original_target,
+                data: tx.input.clone(),
+            }
+            .abi_encode()
+            .into();
+            tx
+        }
+        None => tx.clone(),
     }
 }
 
