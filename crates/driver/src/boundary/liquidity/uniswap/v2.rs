@@ -7,8 +7,6 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
-    alloy::primitives::Address,
-    async_trait::async_trait,
     contracts::alloy::IUniswapLikeRouter,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
@@ -20,17 +18,13 @@ use {
         },
     },
     solver::{
-        interactions::allowances::{AllowanceManaging, Allowances, Approval, ApprovalRequest},
         liquidity::{
             ConstantProductOrder,
             uniswap_v2::{self, UniswapLikeLiquidity},
         },
         liquidity_collector::LiquidityCollecting,
     },
-    std::{
-        collections::HashSet,
-        sync::{Arc, Mutex},
-    },
+    std::sync::Arc,
 };
 
 /// Median gas used per UniswapInteraction (v2).
@@ -94,13 +88,9 @@ pub fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let handler = uniswap_v2::Inner::new(
-        pool.router.0,
-        *receiver,
-        Mutex::new(Allowances::empty(*receiver)),
-    );
+    let handler = uniswap_v2::Inner::new(pool.router.0, *receiver);
 
-    let (_, interaction) = handler.settle(
+    let interaction = handler.settle(
         TokenAmount::new(input.0.token.into(), input.0.amount),
         TokenAmount::new(output.0.token.into(), output.0.amount),
     );
@@ -155,30 +145,9 @@ where
         )?)
     };
 
-    Ok(Box::new(UniswapLikeLiquidity::with_allowances(
+    Ok(Box::new(UniswapLikeLiquidity::new(
         *router.address(),
         *settlement.address(),
-        Box::new(NoAllowanceManaging),
         pool_fetcher,
     )))
-}
-
-/// An allowance manager that always reports no allowances.
-struct NoAllowanceManaging;
-
-#[async_trait]
-impl AllowanceManaging for NoAllowanceManaging {
-    async fn get_allowances(&self, _: HashSet<Address>, spender: Address) -> Result<Allowances> {
-        Ok(Allowances::empty(spender))
-    }
-
-    async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>> {
-        Ok(requests
-            .iter()
-            .map(|request| Approval {
-                spender: request.spender,
-                token: request.token,
-            })
-            .collect())
-    }
 }
