@@ -6,7 +6,7 @@ use {
             competition::solution::Settlement,
             eth::{TxId, TxStatus},
         },
-        infra::{self, Ethereum, observe, solver::Solver},
+        infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
     anyhow::Context,
@@ -60,7 +60,6 @@ impl Mempools {
     /// the solver directly.
     pub async fn execute(
         &self,
-        solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
         delegated: Option<&DelegatedSubmission>,
@@ -68,7 +67,7 @@ impl Mempools {
         let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
             async move {
                 let result = self
-                    .submit(mempool, solver, settlement, submission_deadline, delegated)
+                    .submit(mempool, settlement, submission_deadline, delegated)
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
                 observe::mempool_executed(mempool, settlement, &result);
@@ -97,7 +96,6 @@ impl Mempools {
     async fn submit(
         &self,
         mempool: &infra::mempool::Mempool,
-        solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
         delegated: Option<&DelegatedSubmission>,
@@ -135,10 +133,8 @@ impl Mempools {
             None => tx.clone(),
         };
 
-        // The address that signs and pays for gas.
-        let signer = delegated
-            .map(|ctx| ctx.submitter_eoa)
-            .unwrap_or_else(|| solver.address());
+        // The address that signs and pays for gas: either the submission EOA in EIP-7702 mode or the solver EOA.
+        let signer =  tx.from;
 
         // Instantiate block stream and skip the current block before we submit the
         // settlement. This way we only run iterations in blocks that can potentially
