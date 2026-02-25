@@ -248,7 +248,7 @@ async fn wait_for_pending_txs(provider: &impl Provider, address: Address) -> any
     loop {
         // only counts txs in mined blocks
         let latest = provider.get_transaction_count(address).await?;
-        // also countstx in the mempool
+        // also count txs in the mempool
         let pending = provider.get_transaction_count(address).pending().await?;
         if pending <= latest {
             return Ok(latest);
