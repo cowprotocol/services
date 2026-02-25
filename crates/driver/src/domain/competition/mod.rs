@@ -811,11 +811,7 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(
-                &settlement,
-                submission_deadline,
-                delegated_ctx.as_ref(),
-            )
+            .execute(&settlement, submission_deadline, delegated_ctx.as_ref())
             .await;
 
         notify::executed(

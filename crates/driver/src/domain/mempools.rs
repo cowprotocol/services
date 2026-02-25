@@ -133,8 +133,9 @@ impl Mempools {
             None => tx.clone(),
         };
 
-        // The address that signs and pays for gas: either the submission EOA in EIP-7702 mode or the solver EOA.
-        let signer =  tx.from;
+        // The address that signs and pays for gas: either the submission EOA in
+        // EIP-7702 mode or the solver EOA.
+        let signer = tx.from;
 
         // Instantiate block stream and skip the current block before we submit the
         // settlement. This way we only run iterations in blocks that can potentially
