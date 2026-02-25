@@ -75,11 +75,7 @@ async fn setup_solver(config: &Config, forwarder: Address, eth: &Ethereum) -> an
         // Skip delegation, but make sure submission accounts are approved callers.
         let unapproved =
             check_unapproved_callers(eth, solver_address, &submission_addresses).await?;
-        if !unapproved.is_empty() {
-            approve_submitters(config, &unapproved, eth).await?;
-        } else {
-            tracing::debug!("delegation and caller approvals already configured");
-        }
+        approve_submitters(config, &unapproved, eth).await?;
     }
 
     Ok(())
@@ -208,6 +204,10 @@ async fn approve_submitters(
     unapproved: &[Address],
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
+    if unapproved.is_empty() {
+        tracing::info!("no sumitters to approve, skipping");
+        return Ok(());
+    }
     tracing::info!(
         unapproved_callers = unapproved.len(),
         "approving new submission callers"
