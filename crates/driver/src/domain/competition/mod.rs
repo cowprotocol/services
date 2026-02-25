@@ -812,7 +812,6 @@ impl Competition {
         let executed = self
             .mempools
             .execute(
-                &self.solver,
                 &settlement,
                 submission_deadline,
                 delegated_ctx.as_ref(),
