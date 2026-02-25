@@ -107,6 +107,7 @@ alloy-sol-macro-input = "1.4.1"
 alloy-sol-macro-expander = "1.4.1"
 jsonrpc-core = "18.0.0"
 serde-ext = { path = "crates/serde-ext" }
+pod-sdk = "0.5.1"
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

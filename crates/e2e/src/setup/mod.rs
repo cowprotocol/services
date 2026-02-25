@@ -1,4 +1,5 @@
 pub mod colocation;
+mod config;
 mod deploy;
 pub mod onchain_components;
 pub mod proxy;
