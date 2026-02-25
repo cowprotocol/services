@@ -322,7 +322,6 @@ struct SolverConfig {
 
     /// Address of the deployed CowSettlementForwarder contract for EIP-7702
     /// delegation. Required when `submission_accounts` is non-empty.
-    #[serde(default)]
     forwarder_contract: Option<eth::Address>,
 }
 
