@@ -117,10 +117,7 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    fn get_balances(
-        &self,
-        queries: Vec<Query>,
-    ) -> BoxStream<'_, (Query, anyhow::Result<U256>)> {
+    fn get_balances(&self, queries: Vec<Query>) -> BoxStream<'_, (Query, anyhow::Result<U256>)> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         async_stream::stream! {
             for query in queries {
