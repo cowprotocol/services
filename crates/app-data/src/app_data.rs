@@ -138,45 +138,57 @@ impl<'de> Deserialize<'de> for FeePolicy {
     where
         D: Deserializer<'de>,
     {
+        // The untagged enum does not provide enough information when deserialization fails
+        // since it thinks that any unknown or mismatched fields are just an issue with the enum variant
+        // which the error will reflect — something among the lines of "did not match any variant of the untagged enum"
+        // This is an hacky way of ensuring we get proper behavior when failing to deserialize numbers,
+        // for example, when users send bps as floats
         #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Helper {
-            #[serde(rename_all = "camelCase")]
-            Surplus {
-                surplus_bps: u64,
-                max_volume_bps: u64,
-            },
-            #[serde(rename_all = "camelCase")]
-            PriceImprovement {
-                price_improvement_bps: u64,
-                max_volume_bps: u64,
-            },
-            #[serde(rename_all = "camelCase")]
-            Volume { volume_bps: u64 },
-            // Originally only volume fees were allowed and they used the field `bps`.
-            // To stay backwards compatible with old appdata we still support this old
-            // format.
-            #[serde(rename_all = "camelCase")]
-            VolumeOld { bps: u64 },
+        #[serde(rename_all = "camelCase")]
+        struct Helper {
+            surplus_bps: Option<u64>,
+            max_volume_bps: Option<u64>,
+            price_improvement_bps: Option<u64>,
+            volume_bps: Option<u64>,
+            bps: Option<u64>,
         }
 
         match Helper::deserialize(deserializer)? {
-            Helper::Surplus {
-                surplus_bps,
-                max_volume_bps,
+            Helper {
+                surplus_bps: Some(surplus_bps),
+                max_volume_bps: Some(max_volume_bps),
+                price_improvement_bps: None,
+                volume_bps: None,
+                bps: None,
             } => Ok(FeePolicy::Surplus {
                 bps: surplus_bps,
                 max_volume_bps,
             }),
-            Helper::PriceImprovement {
-                price_improvement_bps,
-                max_volume_bps,
+            Helper {
+                surplus_bps: None,
+                max_volume_bps: Some(max_volume_bps),
+                price_improvement_bps: Some(price_improvement_bps),
+                volume_bps: None,
+                bps: None,
             } => Ok(FeePolicy::PriceImprovement {
                 bps: price_improvement_bps,
                 max_volume_bps,
             }),
-            Helper::Volume { volume_bps } => Ok(FeePolicy::Volume { bps: volume_bps }),
-            Helper::VolumeOld { bps } => Ok(FeePolicy::Volume { bps }),
+            Helper {
+                surplus_bps: None,
+                max_volume_bps: None,
+                price_improvement_bps: None,
+                volume_bps: Some(volume_bps),
+                bps: None,
+            } => Ok(FeePolicy::Volume { bps: volume_bps }),
+            Helper {
+                surplus_bps: None,
+                max_volume_bps: None,
+                price_improvement_bps: None,
+                volume_bps: None,
+                bps: Some(bps),
+            } => Ok(FeePolicy::Volume { bps }),
+            _ => Err(serde::de::Error::custom("unknown fee policy format")),
         }
     }
 }
