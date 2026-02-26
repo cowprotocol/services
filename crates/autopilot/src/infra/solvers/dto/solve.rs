@@ -8,9 +8,9 @@ use {
         },
     },
     alloy::primitives::{Address, U256},
+    brotli::enc::writer::CompressorWriter,
     bytes::Bytes,
     chrono::{DateTime, Utc},
-    flate2::{Compression, write::GzEncoder},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
     reqwest::{RequestBuilder, header::HeaderValue},
@@ -79,19 +79,16 @@ impl Request {
                 return (Bytes::from(serialized), None);
             }
 
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::new(3));
-            match encoder
-                .write_all(&serialized)
-                .and_then(|_| encoder.finish())
-            {
-                Ok(compressed) => (
-                    Bytes::from(compressed),
-                    Some(HeaderValue::from_static("gzip")),
+            let mut encoder = CompressorWriter::new(Vec::new(), 4096, 1, 22);
+            match encoder.write_all(&serialized).and_then(|_| encoder.flush()) {
+                Ok(()) => (
+                    Bytes::from(encoder.into_inner()),
+                    Some(HeaderValue::from_static("br")),
                 ),
                 Err(err) => {
                     tracing::error!(
                         ?err,
-                        "gzip compression failed, falling back to uncompressed"
+                        "brotli compression failed, falling back to uncompressed"
                     );
                     (Bytes::from(serialized), None)
                 }
@@ -137,7 +134,7 @@ impl InjectIntoHttpRequest for Request {
 
     fn body_to_string(&self) -> Cow<'_, str> {
         if self.content_encoding.is_some() {
-            return Cow::Borrowed("<gzip compressed>");
+            return Cow::Borrowed("<compressed>");
         }
         let string = str::from_utf8(self.body.as_ref()).unwrap();
         Cow::Borrowed(string)
@@ -275,11 +272,7 @@ pub struct Response {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        flate2::{Compression, read::GzDecoder, write::GzEncoder},
-        std::io::Read,
-    };
+    use super::*;
 
     fn make_test_json() -> Vec<u8> {
         let json_value = serde_json::json!({
@@ -307,13 +300,16 @@ mod tests {
     }
 
     fn compressed_request(json: &[u8]) -> Request {
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        use brotli::enc::writer::CompressorWriter;
+
+        let mut encoder = CompressorWriter::new(Vec::new(), 4096, 1, 22);
         encoder.write_all(json).unwrap();
-        let compressed = encoder.finish().unwrap();
+        encoder.flush().unwrap();
+        let compressed = encoder.into_inner();
         Request {
             auction_id: 1,
             body: Bytes::from(compressed),
-            content_encoding: Some(HeaderValue::from_static("gzip")),
+            content_encoding: Some(HeaderValue::from_static("br")),
         }
     }
 
@@ -324,7 +320,7 @@ mod tests {
         let request = compressed_request(&json);
         assert_eq!(
             request.content_encoding.as_ref().map(|v| v.as_bytes()),
-            Some("gzip".as_bytes())
+            Some("br".as_bytes())
         );
         assert!(
             request.body.len() < json.len(),
@@ -333,9 +329,8 @@ mod tests {
             json.len(),
         );
 
-        let mut decoder = GzDecoder::new(request.body.as_ref());
         let mut decompressed = Vec::new();
-        decoder.read_to_end(&mut decompressed).unwrap();
+        brotli::BrotliDecompress(&mut request.body.as_ref(), &mut decompressed).unwrap();
         assert_eq!(decompressed, json);
     }
 

@@ -32,7 +32,7 @@ dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
-flate2 = { workspace = true }
+brotli = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
 const-hex = { workspace = true }
