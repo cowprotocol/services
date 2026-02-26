@@ -585,7 +585,8 @@ impl OrderQuoter {
             .get_balances(vec![query])
             .next()
             .await
-            .context("missing balance result")?;
+            .context("missing balance result")?
+            .await;
         result
     }
 }
@@ -811,7 +812,12 @@ mod tests {
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
         mock.expect_get_balances().returning(|queries| {
-            futures::stream::iter(queries.into_iter().map(|query| (query, Ok(U256::MAX)))).boxed()
+            futures::stream::iter(
+                queries
+                    .into_iter()
+                    .map(|query| async move { (query, Ok(U256::MAX)) }.boxed()),
+            )
+            .boxed()
         });
         Arc::new(mock)
     }

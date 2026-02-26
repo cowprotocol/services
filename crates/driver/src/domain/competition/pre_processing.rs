@@ -330,6 +330,7 @@ impl Utilities {
         let result: HashMap<_, _> = self
             .balance_fetcher
             .get_balances(queries)
+            .buffer_unordered(10)
             .filter_map(|(query, res)| async move {
                 let balance = res.ok()?;
                 let key = (

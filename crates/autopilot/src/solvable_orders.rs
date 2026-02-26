@@ -367,24 +367,25 @@ impl SolvableOrdersCache {
             return Default::default();
         }
 
-        let stream =
-            self.balance_fetcher
-                .get_balances(queries)
-                .filter_map(|(query, res)| async move {
-                    match res {
-                        Ok(balance) => Some((query, balance)),
-                        Err(err) => {
-                            tracing::warn!(
-                                owner = ?query.owner,
-                                token = ?query.token,
-                                source = ?query.source,
-                                error = ?err,
-                                "failed to get balance"
-                            );
-                            None
-                        }
+        let stream = self
+            .balance_fetcher
+            .get_balances(queries)
+            .buffer_unordered(10)
+            .filter_map(|(query, res)| async move {
+                match res {
+                    Ok(balance) => Some((query, balance)),
+                    Err(err) => {
+                        tracing::warn!(
+                            owner = ?query.owner,
+                            token = ?query.token,
+                            source = ?query.source,
+                            error = ?err,
+                            "failed to get balance"
+                        );
+                        None
                     }
-                });
+                }
+            });
 
         let fetched_balances = self
             .timed_future("balance_filtering", stream.collect::<HashMap<_, _>>())
