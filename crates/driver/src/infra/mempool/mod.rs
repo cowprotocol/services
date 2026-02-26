@@ -2,7 +2,7 @@ use {
     crate::{
         boundary::{Web3, unbuffered_web3},
         domain::{eth, mempools},
-        infra::{self, solver::Account},
+        infra::{self, keychain, solver::Account},
     },
     alloy::{
         consensus::Transaction,
@@ -10,6 +10,7 @@ use {
         primitives::Address,
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
+        signers::local::PrivateKeySigner,
     },
     anyhow::Context,
     dashmap::DashMap,
@@ -86,6 +87,13 @@ impl Mempool {
         let transport = unbuffered_web3(&config.url);
         // Register the solver accounts into the wallet to submit txs on their behalf
         for account in solver_accounts {
+            // For keychain accounts also register each additional signer individually
+            // so they can sign execTransaction calls from their own addresses.
+            if let Account::Keychain(keychain) = &account {
+                for signer in keychain.additional() {
+                    transport.wallet.register_signer(signer.clone());
+                }
+            }
             transport.wallet.register_signer(account);
         }
         Self {
@@ -172,6 +180,61 @@ impl Mempool {
                     ?gas_limit,
                     solver = ?solver.address(),
                     "failed to submit tx to mempool"
+                );
+                Err(mempools::Error::Other(err))
+            }
+        }
+    }
+
+    /// Submits a settlement via Safe's `execTransaction` from an alternate
+    /// signer.
+    ///
+    /// The `safe_address` is the primary solver address (which has EIP-7702
+    /// delegation to Safe 1.2.0). The `signer` is an additional keychain signer
+    /// that acts as the `msg.sender`, satisfying the Safe's pre-approved
+    /// signature check without any ECDSA verification.
+    pub async fn submit_exec_tx(
+        &self,
+        settlement_tx: &eth::Tx,
+        gas_price: Eip1559Estimation,
+        gas_limit: eth::Gas,
+        safe_address: eth::Address,
+        signer: &PrivateKeySigner,
+        nonce: u64,
+    ) -> Result<eth::TxId, mempools::Error> {
+        let exec_calldata = keychain::build_exec_transaction_calldata(settlement_tx, signer);
+        let gas_limit: u64 = (gas_limit.0
+            + alloy::primitives::U256::from(keychain::EXEC_TX_GAS_OVERHEAD))
+        .try_into()
+        .map_err(anyhow::Error::from)?;
+
+        let tx_request = TransactionRequest::default()
+            .from(signer.address())
+            .to(safe_address)
+            .nonce(nonce)
+            .max_fee_per_gas(gas_price.max_fee_per_gas)
+            .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas)
+            .gas_limit(gas_limit)
+            .input(exec_calldata.into());
+
+        let submission = self
+            .transport
+            .provider
+            .send_transaction(tx_request)
+            .await
+            .map_err(anyhow::Error::from);
+
+        match submission {
+            Ok(tx) => {
+                self.last_submissions
+                    .insert(signer.address(), Submission { nonce, gas_price });
+                Ok(eth::TxId(*tx.tx_hash()))
+            }
+            Err(err) => {
+                tracing::debug!(
+                    ?err,
+                    signer = ?signer.address(),
+                    "failed to submit execTransaction to mempool"
                 );
                 Err(mempools::Error::Other(err))
             }

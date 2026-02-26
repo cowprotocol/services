@@ -16,6 +16,7 @@ use {
             self,
             blockchain::Ethereum,
             config::file::FeeHandler,
+            keychain::Keychain,
             persistence::{Persistence, S3},
         },
         util,
@@ -111,6 +112,16 @@ pub enum Account {
     PrivateKey(PrivateKeySigner),
     Kms(AwsSigner),
     Address(Address),
+    Keychain(Keychain),
+}
+
+impl Account {
+    pub fn keychain(&self) -> Option<&Keychain> {
+        match self {
+            Account::Keychain(k) => Some(k),
+            _ => None,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -120,6 +131,7 @@ impl TxSigner<Signature> for Account {
             Account::PrivateKey(local_signer) => local_signer.address(),
             Account::Kms(aws_signer) => aws_signer.address(),
             Account::Address(address) => *address,
+            Account::Keychain(k) => k.address(),
         }
     }
 
@@ -134,6 +146,7 @@ impl TxSigner<Signature> for Account {
             Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
+            Account::Keychain(k) => k.primary().sign_transaction(tx).await,
         }
     }
 }
@@ -250,6 +263,10 @@ impl Solver {
     /// The account which should be used to sign settlements for this solver.
     pub fn account(&self) -> Account {
         self.config.account.clone()
+    }
+
+    pub fn keychain(&self) -> Option<&Keychain> {
+        self.config.account.keychain()
     }
 
     /// Timeout configuration for this solver.

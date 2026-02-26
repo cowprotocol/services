@@ -88,6 +88,14 @@ struct Config {
     #[serde(default)]
     flashloans_enabled: bool,
 
+    /// Disable the use of Flashbots RPC for the EIP-7702 Safe delegation setup
+    /// transaction. By default, Flashbots is used on Ethereum mainnet to avoid
+    /// broadcasting the setup tx to the public mempool. Set this to `true` on
+    /// non-mainnet environments (e.g. testnets, local forks) where Flashbots
+    /// is not available.
+    #[serde(default)]
+    disable_flashbots: bool,
+
     #[serde_as(as = "HexOrDecimalU256")]
     tx_gas_limit: eth::U256,
 }
@@ -338,6 +346,11 @@ pub struct S3 {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Account {
+    /// A comma-separated list of one or more hex-encoded private keys
+    /// (e.g. `"0xkey1,0xkey2"`). A trailing comma (e.g. `"0xkey1,"`) can
+    /// be used to specify a single-signer keychain. Multiple signers enable
+    /// concurrent settlement via EIP-7702 + Safe's `execTransaction`.
+    Keychain(KeychainStr),
     /// A private key is used to sign transactions. Expects a 32-byte hex
     /// encoded string.
     PrivateKey(eth::B256),
@@ -347,6 +360,40 @@ enum Account {
     /// *unable* to sign transactions as alloy does not support *implicit*
     /// node-side signing.
     Address(eth::Address),
+}
+
+/// Newtype that deserializes from a comma-separated list of hex private keys.
+/// Only succeeds when the input contains at least one comma so that single-key
+/// strings without a comma fall through to the `PrivateKey` variant. A
+/// trailing comma (e.g. `"0xkey,"`) can be used to force single-key keychain
+/// mode.
+#[derive(Debug)]
+struct KeychainStr(Vec<eth::B256>);
+
+impl<'de> serde::Deserialize<'de> for KeychainStr {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if !s.contains(',') {
+            return Err(serde::de::Error::custom("not a keychain (no comma)"));
+        }
+        let keys = s
+            .split(',')
+            .filter(|p| !p.trim().is_empty())
+            .enumerate()
+            .map(|(i, p)| {
+                p.trim()
+                    .parse::<eth::B256>()
+                    .map_err(|e| serde::de::Error::custom(format!("key {i}: {e}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if keys.is_empty() {
+            return Err(serde::de::Error::custom("keychain has no valid keys"));
+        }
+        Ok(KeychainStr(keys))
+    }
 }
 
 #[serde_as]

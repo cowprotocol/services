@@ -106,7 +106,12 @@ services:
       target: localdev
       dockerfile: ./playground/Dockerfile
     restart: always
-    command: ["cargo", "watch", "-x", "run --bin autopilot"]
+    command: [
+      "cargo", 
+      "watch", 
+      "-x", 
+      "run --bin autopilot -- --config configs/${ENV}/autopilot.toml"
+    ]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
