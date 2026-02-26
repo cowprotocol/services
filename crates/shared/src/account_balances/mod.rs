@@ -8,8 +8,10 @@ use {
         rpc::types::state::StateOverride,
         sol_types::{SolCall, SolType, sol_data},
     },
+    async_trait::async_trait,
     contracts::alloy::{GPv2Settlement, support::Balances},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    futures::stream::BoxStream,
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -58,12 +60,13 @@ impl From<anyhow::Error> for TransferSimulationError {
     }
 }
 
-#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
     // Returns the balance available to the allowance manager for the given owner
     // and token taking both balance as well as "allowance" into account.
-    async fn get_balances(&self, queries: &[Query]) -> Vec<anyhow::Result<U256>>;
+    // Results are streamed so call sites can throttle consumption to limit
+    // concurrent RPC requests.
+    fn get_balances<'a>(&'a self, queries: &'a [Query]) -> BoxStream<'a, anyhow::Result<U256>>;
 
     // Check that the settlement contract can make use of this user's token balance.
     // This check could fail if the user does not have enough balance, has not
@@ -76,6 +79,25 @@ pub trait BalanceFetching: Send + Sync {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError>;
+}
+
+#[cfg(any(test, feature = "test-util"))]
+mockall::mock! {
+    pub BalanceFetching {}
+
+    #[async_trait]
+    impl BalanceFetching for BalanceFetching {
+        fn get_balances<'a>(
+            &'a self,
+            queries: &'a [Query],
+        ) -> BoxStream<'static, anyhow::Result<U256>>;
+
+        async fn can_transfer(
+            &self,
+            query: &Query,
+            amount: U256,
+        ) -> Result<(), TransferSimulationError>;
+    }
 }
 
 /// Create the default [`BalanceFetching`] instance.

@@ -12,9 +12,8 @@ use {
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20::ERC20::ERC20Instance},
     ethrpc::{Web3, alloy::ProviderLabelingExt},
-    futures::{FutureExt, StreamExt},
+    futures::{StreamExt, stream::BoxStream},
     model::order::SellTokenSource,
-    std::pin::Pin,
     tracing::instrument,
 };
 
@@ -118,15 +117,7 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    fn get_balances<'life0, 'life1, 'async_trait>(
-        &'life0 self,
-        queries: &'life1 [Query],
-    ) -> Pin<Box<dyn Future<Output = Vec<Result<U256>>> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        'life1: 'async_trait,
-        Self: 'async_trait,
-    {
+    fn get_balances<'a>(&'a self, queries: &'a [Query]) -> BoxStream<'a, Result<U256>> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries.iter().map(|query| async {
             if query.interactions.is_empty() {
@@ -140,7 +131,6 @@ impl BalanceFetching for Balances {
             // limit the number of concurrent requests to NOT saturate the entire
             // RPC bandwidth and stall other components
             .buffered(100)
-            .collect()
             .boxed()
     }
 

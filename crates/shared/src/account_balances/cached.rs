@@ -3,7 +3,7 @@ use {
     alloy::primitives::U256,
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
-    futures::StreamExt,
+    futures::{FutureExt, StreamExt, stream::BoxStream},
     itertools::Itertools,
     std::{
         collections::HashMap,
@@ -133,7 +133,7 @@ impl Balances {
                         .collect_vec()
                 };
 
-                let results = inner.get_balances(&balances_to_update).await;
+                let results: Vec<_> = inner.get_balances(&balances_to_update).collect().await;
 
                 let mut cache = cache.lock().unwrap();
                 balances_to_update
@@ -158,7 +158,7 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
+    fn get_balances<'a>(&'a self, queries: &'a [Query]) -> BoxStream<'a, Result<U256>> {
         let CacheResponse {
             mut cached,
             missing,
@@ -166,24 +166,34 @@ impl BalanceFetching for Balances {
         } = self.get_cached_balances(queries);
 
         if missing.is_empty() {
-            return cached.into_iter().map(|(_, result)| result).collect();
+            let results: Vec<Result<U256>> = cached.into_iter().map(|(_, result)| result).collect();
+            return futures::stream::iter(results).boxed();
         }
 
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
-        let new_balances = self.inner.get_balances(&missing_queries).await;
 
-        {
-            let mut cache = self.balance_cache.lock().unwrap();
-            for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
-                if let Ok(balance) = result {
-                    cache.insert_balance(query, *balance, requested_at)
+        async move {
+            let new_balances: Vec<_> = self.inner.get_balances(&missing_queries).collect().await;
+
+            {
+                let mut cache = self.balance_cache.lock().unwrap();
+                for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
+                    if let Ok(balance) = result {
+                        cache.insert_balance(query, *balance, requested_at)
+                    }
                 }
             }
-        }
 
-        cached.extend(missing.into_iter().zip(new_balances));
-        cached.sort_by_key(|(i, _)| *i);
-        cached.into_iter().map(|(_, balance)| balance).collect()
+            cached.extend(missing.into_iter().zip(new_balances));
+            cached.sort_by_key(|(i, _)| *i);
+            cached
+                .into_iter()
+                .map(|(_, balance)| balance)
+                .collect::<Vec<_>>()
+        }
+        .into_stream()
+        .flat_map(futures::stream::iter)
+        .boxed()
     }
 
     async fn can_transfer(
