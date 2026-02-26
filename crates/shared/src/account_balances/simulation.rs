@@ -5,9 +5,12 @@
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::account_balances::BalanceSimulator,
-    alloy::primitives::{Address, U256},
+    alloy::{
+        primitives::{Address, U256},
+        providers::DynProvider,
+    },
     anyhow::Result,
-    contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
+    contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20::ERC20::ERC20Instance},
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     futures::{FutureExt, StreamExt},
     model::order::SellTokenSource,
@@ -67,7 +70,7 @@ impl Balances {
     async fn tradable_balance_simple(
         &self,
         query: &Query,
-        token: &ERC20::Instance,
+        token: &ERC20Instance<&DynProvider>,
     ) -> Result<U256> {
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
@@ -127,7 +130,7 @@ impl BalanceFetching for Balances {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries.iter().map(|query| async {
             if query.interactions.is_empty() {
-                let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
+                let token = ERC20Instance::new(query.token, &self.web3.provider);
                 self.tradable_balance_simple(query, &token).await
             } else {
                 self.tradable_balance_simulated(query).await
