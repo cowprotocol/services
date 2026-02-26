@@ -14,8 +14,7 @@ where
     let Some(raw_auth_token) = Option::<String>::deserialize(deserializer)? else {
         return Ok(None);
     };
-    if raw_auth_token.starts_with("%") {
-        let env_var_name = &raw_auth_token[1..];
+    if let Some(env_var_name) = raw_auth_token.strip_prefix("%") {
         let env_var_contents = std::env::var(env_var_name).map_err(|err| {
             tracing::error!(%err, %env_var_name, "failed to load env var");
             serde::de::Error::invalid_value(
