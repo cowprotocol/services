@@ -274,21 +274,22 @@ impl<'a> Services<'a> {
         let args = ignore_overwritten_cli_params(args);
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(orderbook::run(args));
+        let config = orderbook::config::Configuration::from_path(&args.config)
+            .await
+            .unwrap();
+        tokio::task::spawn(orderbook::run(args, config));
 
         Self::wait_for_api_to_come_up().await;
     }
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
-        // HACK: config is required so in the cases where it isn't passed (like the API
-        // version test), so we create a dummy one
-        let (_config_file, cli_arg) =
+        let (_autopilot_config_file, autopilot_cli_arg) =
             Configuration::test("test_solver", solver.address()).to_cli_args();
         self.start_protocol_with_args(
             ExtraServiceArgs {
-                api: Default::default(),
-                autopilot: vec![cli_arg],
+                autopilot: vec![autopilot_cli_arg],
+                ..Default::default()
             },
             solver,
         )
@@ -337,6 +338,17 @@ impl<'a> Services<'a> {
             .concat(),
         )
         .await;
+
+        let has_ob_config = args.api.iter().any(|a| a.starts_with("--config="));
+        let (_default_ob_config_file, api_args) = if has_ob_config {
+            (None, args.api)
+        } else {
+            let (file, arg) = orderbook::config::Configuration::default().to_cli_args();
+            let mut api = args.api;
+            api.push(arg);
+            (Some(file), api)
+        };
+
         self.start_api(
             [
                 vec![
@@ -344,7 +356,7 @@ impl<'a> Services<'a> {
                         .to_string(),
                     "--gas-estimators=http://localhost:11088/gasprice".to_string(),
                 ],
-                args.api,
+                api_args,
             ]
             .concat(),
         )
@@ -371,8 +383,8 @@ impl<'a> Services<'a> {
             haircut_bps: 0,
         }];
 
-        // Create TOML config file for the driver
-        let (_config_file, config_arg) = Configuration {
+        // Create TOML config files
+        let (_autopilot_config_file, autopilot_config_arg) = Configuration {
             native_price_estimation: {
                 if run_baseline {
                     NativePriceConfig {
@@ -403,6 +415,8 @@ impl<'a> Services<'a> {
             ..Configuration::test("test_solver", solver.address())
         }
         .to_cli_args();
+        let (_orderbook_config_file, orderbook_config_arg) =
+            orderbook::config::Configuration::default().to_cli_args();
 
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
@@ -420,21 +434,23 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                config_arg.clone(),
+                autopilot_config_arg.clone(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
+                orderbook_config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                config_arg,
+                autopilot_config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
 
             let api_args = vec![
+                orderbook_config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
