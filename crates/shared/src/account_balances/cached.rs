@@ -166,12 +166,12 @@ impl BalanceFetching for Balances {
         } = self.get_cached_balances(queries);
 
         if missing.is_empty() {
-            let results: Vec<Result<U256>> = cached.into_iter().map(|(_, result)| result).collect();
-            return futures::stream::iter(results).boxed();
+            return futures::stream::iter(cached.into_iter().map(|(_, result)| result)).boxed();
         }
 
         let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
 
+        // todo yield cached values immediately...
         async move {
             let new_balances: Vec<_> = self.inner.get_balances(&missing_queries).collect().await;
 
