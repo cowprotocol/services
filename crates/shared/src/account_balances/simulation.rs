@@ -9,8 +9,9 @@ use {
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
     ethrpc::{Web3, alloy::ProviderLabelingExt},
-    futures::future,
+    futures::{FutureExt, StreamExt},
     model::order::SellTokenSource,
+    std::pin::Pin,
     tracing::instrument,
 };
 
@@ -114,21 +115,30 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
+    fn get_balances<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        queries: &'life1 [Query],
+    ) -> Pin<Box<dyn Future<Output = Vec<Result<U256>>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
-        let futures = queries
-            .iter()
-            .map(|query| async {
-                if query.interactions.is_empty() {
-                    let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
-                    self.tradable_balance_simple(query, &token).await
-                } else {
-                    self.tradable_balance_simulated(query).await
-                }
-            })
-            .collect::<Vec<_>>();
-
-        future::join_all(futures).await
+        let futures = queries.iter().map(|query| async {
+            if query.interactions.is_empty() {
+                let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
+                self.tradable_balance_simple(query, &token).await
+            } else {
+                self.tradable_balance_simulated(query).await
+            }
+        });
+        futures::stream::iter(futures)
+            // limit the number of concurrent requests to NOT saturate the entire
+            // RPC bandwidth and stall other components
+            .buffered(100)
+            .collect()
+            .boxed()
     }
 
     async fn can_transfer(
