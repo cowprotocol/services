@@ -21,6 +21,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
+    orderbook::config::order_validation::OrderValidationConfig,
     shared::web3::Web3,
     std::{collections::HashMap, ops::DerefMut, str::FromStr},
     url::Url,
@@ -689,7 +690,10 @@ async fn too_many_limit_orders_test(web3: Web3) {
         )
         .await;
     let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
-        max_limit_orders_per_user: 1,
+        order_validation: OrderValidationConfig {
+            max_limit_orders_per_user: 1,
+            ..Default::default()
+        },
         ..Default::default()
     }
     .to_cli_args();
@@ -791,7 +795,10 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         )
         .await;
     let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
-        max_limit_orders_per_user: 1,
+        order_validation: OrderValidationConfig {
+            max_limit_orders_per_user: 1,
+            ..Default::default()
+        },
         ..Default::default()
     }
     .to_cli_args();

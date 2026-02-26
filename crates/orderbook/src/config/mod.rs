@@ -1,12 +1,14 @@
 use {
     crate::config::{
-        banned_users::BannedUsersConfig, ipfs::IpfsConfig, order_validation::OrderValidationConfig,
+        banned_users::BannedUsersConfig,
+        ipfs::IpfsConfig,
+        order_validation::OrderValidationConfig,
     },
     alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
-    shared::{fee_factor::FeeFactor, order_validation::SameTokensPolicy},
+    shared::fee_factor::FeeFactor,
     std::path::Path,
 };
 
@@ -18,16 +20,8 @@ const fn default_app_data_size_limit() -> usize {
     8192
 }
 
-const fn default_max_gas_per_order() -> u64 {
-    8_000_000
-}
-
 const fn default_active_order_competition_threshold() -> u32 {
     5
-}
-
-const fn default_max_limit_orders_per_user() -> u64 {
-    10
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -41,38 +35,35 @@ pub struct VolumeFeeConfig {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case" /* deny_unknown_fields */)]
 pub struct Configuration {
+    /// Configuration for the order validation system.
     #[serde(default)]
     pub order_validation: OrderValidationConfig,
 
+    /// Configuration for the banned users mechanism,
+    /// such as their addresses and the size of the banned user's cache.
     #[serde(default)]
+    pub banned_users: BannedUsersConfig,
+
+    /// Configuration for the IPFS gateway, supports token authentication.
     pub ipfs: Option<IpfsConfig>,
+
+    /// Configuration for the volume fee.
+    pub volume_fee: Option<VolumeFeeConfig>,
 
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
 
-    #[serde(default = "default_max_gas_per_order")]
-    pub max_gas_per_order: u64,
-
+    /// Missed auctions threshold after which an order is no longer "active".
     #[serde(default = "default_active_order_competition_threshold")]
     pub active_order_competition_threshold: u32,
 
-    #[serde(default)]
-    pub volume_fee: Option<VolumeFeeConfig>,
-
-    #[serde(default)]
-    pub same_tokens_policy: SameTokensPolicy,
-
+    /// Denylist of tokens (due to lack of support, or other reason).
     #[serde(default)]
     pub unsupported_tokens: Vec<Address>,
 
-    #[serde(default)]
-    pub banned_users: BannedUsersConfig,
-
+    /// Whether to skip EIP-1271 signature validation.
     #[serde(default)]
     pub eip1271_skip_creation_validation: bool,
-
-    #[serde(default = "default_max_limit_orders_per_user")]
-    pub max_limit_orders_per_user: u64,
 }
 
 impl Default for Configuration {
@@ -81,14 +72,11 @@ impl Default for Configuration {
             order_validation: Default::default(),
             ipfs: Default::default(),
             app_data_size_limit: default_app_data_size_limit(),
-            max_gas_per_order: default_max_gas_per_order(),
             active_order_competition_threshold: default_active_order_competition_threshold(),
             volume_fee: None,
-            same_tokens_policy: Default::default(),
             unsupported_tokens: Default::default(),
             banned_users: Default::default(),
             eip1271_skip_creation_validation: false,
-            max_limit_orders_per_user: default_max_limit_orders_per_user(),
         }
     }
 }
@@ -137,18 +125,15 @@ impl Configuration {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::time::Duration};
+    use {super::*, shared::order_validation::SameTokensPolicy, std::time::Duration};
 
     #[test]
     fn deserialize_full_configuration() {
         let toml = r#"
         app-data-size-limit = 4096
-        max-gas-per-order = 5000000
         active-order-competition-threshold = 10
-        same-tokens-policy = "allow-sell"
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
-        max-limit-orders-per-user = 5
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
@@ -157,6 +142,9 @@ mod tests {
         min-order-validity-period = "2m"
         max-order-validity-period = "6h"
         max-limit-order-validity-period = "30d"
+        max-limit-orders-per-user = 5
+        max-gas-per-order = 5000000
+        same-tokens-policy = "allow-sell"
 
         [ipfs]
         gateway = "https://gateway.pinata.cloud/ipfs/"
@@ -170,16 +158,16 @@ mod tests {
         let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 4096);
-        assert_eq!(config.max_gas_per_order, 5_000_000);
         assert_eq!(config.active_order_competition_threshold, 10);
-        assert!(matches!(
-            config.same_tokens_policy,
-            SameTokensPolicy::AllowSell
-        ));
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
-        assert_eq!(config.max_limit_orders_per_user, 5);
+
+        assert!(matches!(
+            config.order_validation.same_tokens_policy,
+            SameTokensPolicy::AllowSell
+        ));
+        assert_eq!(config.order_validation.max_limit_orders_per_user, 5);
 
         assert_eq!(
             config.order_validation.min_order_validity_period,
@@ -208,12 +196,7 @@ mod tests {
         let config: Configuration = toml::from_str("").unwrap();
 
         assert_eq!(config.app_data_size_limit, 8192);
-        assert_eq!(config.max_gas_per_order, 8_000_000);
         assert_eq!(config.active_order_competition_threshold, 5);
-        assert!(matches!(
-            config.same_tokens_policy,
-            SameTokensPolicy::Disallow
-        ));
 
         assert_eq!(
             config.order_validation.min_order_validity_period,
@@ -233,7 +216,6 @@ mod tests {
         assert!(config.unsupported_tokens.is_empty());
         assert!(config.banned_users.addresses.is_empty());
         assert!(!config.eip1271_skip_creation_validation);
-        assert_eq!(config.max_limit_orders_per_user, 10);
     }
 
     #[test]
@@ -243,19 +225,20 @@ mod tests {
                 min_order_validity_period: Duration::from_secs(120),
                 max_order_validity_period: Duration::from_secs(7200),
                 max_limit_order_validity_period: Duration::from_secs(86400),
+                max_limit_orders_per_user: 5,
+                max_gas_per_order: 6_000_000,
+                same_tokens_policy: SameTokensPolicy::AllowSell,
             },
             ipfs: Some(IpfsConfig {
                 gateway: "https://gateway.pinata.cloud/ipfs/".parse().unwrap(),
                 auth_token: Some("secret".to_string()),
             }),
             app_data_size_limit: 4096,
-            max_gas_per_order: 5_000_000,
             active_order_competition_threshold: 10,
             volume_fee: Some(VolumeFeeConfig {
                 factor: Some(0.0002.try_into().unwrap()),
                 effective_from_timestamp: None,
             }),
-            same_tokens_policy: SameTokensPolicy::AllowSell,
             unsupported_tokens: vec![
                 "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     .parse()
@@ -263,14 +246,12 @@ mod tests {
             ],
             banned_users: Default::default(),
             eip1271_skip_creation_validation: true,
-            max_limit_orders_per_user: 5,
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
         let deserialized: Configuration = toml::from_str(&serialized).unwrap();
 
         assert_eq!(config.app_data_size_limit, deserialized.app_data_size_limit);
-        assert_eq!(config.max_gas_per_order, deserialized.max_gas_per_order);
         assert_eq!(
             config.active_order_competition_threshold,
             deserialized.active_order_competition_threshold
@@ -294,10 +275,6 @@ mod tests {
         assert_eq!(
             config.eip1271_skip_creation_validation,
             deserialized.eip1271_skip_creation_validation
-        );
-        assert_eq!(
-            config.max_limit_orders_per_user,
-            deserialized.max_limit_orders_per_user
         );
     }
 }

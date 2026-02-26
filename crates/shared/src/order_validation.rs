@@ -212,7 +212,7 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: Address) -> Result<u64>;
 }
 
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SameTokensPolicy {
     #[default]
@@ -251,6 +251,7 @@ pub struct OrderValidator {
     native_token: WETH9::Instance,
     banned_users: Arc<order_validation::banned::Users>,
     validity_configuration: OrderValidPeriodConfiguration,
+    /// Whether to skip EIP-1271 signature validation.
     eip1271_skip_creation_validation: bool,
     deny_listed_tokens: DenyListedTokens,
     hooks: HooksTrampoline::Instance,

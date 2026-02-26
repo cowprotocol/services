@@ -7,6 +7,7 @@ use {
         signature::Signature,
     },
     number::units::EthUnit,
+    orderbook::config::order_validation::OrderValidationConfig,
     reqwest::StatusCode,
     shared::web3::Web3,
 };
@@ -175,7 +176,10 @@ async fn erc1271_gas_limit(web3: Web3) {
     let services = Services::new(&onchain).await;
     let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
-        max_gas_per_order: 1_000_000,
+        order_validation: OrderValidationConfig {
+            max_gas_per_order: 1_000_000,
+            ..Default::default()
+        },
         ..Default::default()
     }
     .to_cli_args();

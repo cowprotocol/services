@@ -356,11 +356,11 @@ pub async fn run(args: Arguments, config: Configuration) {
         balance_fetcher,
         signature_validator,
         Arc::new(postgres_write.clone()),
-        config.max_limit_orders_per_user,
+        config.order_validation.max_limit_orders_per_user,
         code_fetcher,
         app_data_validator.clone(),
-        config.max_gas_per_order,
-        config.same_tokens_policy,
+        config.order_validation.max_gas_per_order,
+        config.order_validation.same_tokens_policy,
     ));
     let ipfs = config
         .ipfs
