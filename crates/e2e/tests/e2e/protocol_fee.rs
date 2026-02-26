@@ -30,7 +30,7 @@ use {
     number::units::EthUnit,
     reqwest::StatusCode,
     serde_json::json,
-    shared::web3::Web3,
+    shared::{fee_factor::FeeFactor, web3::Web3},
 };
 
 #[tokio::test]
@@ -1107,10 +1107,15 @@ async fn volume_fee_overrides(web3: Web3) {
 
     // Orderbook (API) also needs the same bucket overrides for accurate quote
     // generation
-    let api_config = vec![
-        volume_fee_bucket_config.clone(),
-        "--volume-fee-factor=0.01".to_string(), // Default 1% volume fee
-    ];
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            factor: Some(FeeFactor::new(0.01)), // Default 1% volume fee
+            effective_from_timestamp: None,
+        }),
+        ..Default::default()
+    }
+    .to_cli_args();
+    let api_config = vec![ob_config_arg, volume_fee_bucket_config.clone()];
 
     let services = Services::new(&onchain).await;
     services

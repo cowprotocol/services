@@ -17,6 +17,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, testing::ApproxEq, units::EthUnit},
+    orderbook::config::order_validation::OrderValidationConfig,
     shared::web3::Web3,
     std::time::Duration,
 };
@@ -159,10 +160,18 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     let services = Services::new(&onchain).await;
     let (_config_file, config_arg) =
         Configuration::test("test_solver", solver.address()).to_cli_args();
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        order_validation: OrderValidationConfig {
+            same_tokens_policy: shared::order_validation::SameTokensPolicy::AllowSell,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+    .to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec!["--same-tokens-policy=allow-sell".to_string()],
+                api: vec![ob_config_arg],
                 autopilot: vec![config_arg],
             },
             solver.clone(),
@@ -272,10 +281,18 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     let services = Services::new(&onchain).await;
     let (_config_file, config_arg) =
         Configuration::test("test_solver", solver.address()).to_cli_args();
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        order_validation: OrderValidationConfig {
+            same_tokens_policy: shared::order_validation::SameTokensPolicy::AllowSell,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+    .to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                api: vec!["--same-tokens-policy=allow-sell".to_string()],
+                api: vec![ob_config_arg],
                 autopilot: vec![config_arg],
             },
             solver.clone(),
