@@ -162,10 +162,7 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    fn get_balances<'a>(
-        &'a self,
-        queries: Vec<Query>,
-    ) -> BoxStream<'a, (Query, anyhow::Result<U256>)> {
+    fn get_balances(&self, queries: Vec<Query>) -> BoxStream<'_, (Query, anyhow::Result<U256>)> {
         let CacheResponse {
             cached,
             missing,
