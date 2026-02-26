@@ -316,10 +316,12 @@ async fn two_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
+    let (_config_file, config_arg) =
+        Configuration::test("test_solver", solver.address()).to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec!["--compress-solve-request=true".to_string()],
+                autopilot: vec![config_arg, "--compress-solve-request=true".to_string()],
                 ..Default::default()
             },
             solver,
