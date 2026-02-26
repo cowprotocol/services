@@ -26,7 +26,7 @@ use {
         primitives::Address,
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
-    anyhow::Result,
+    anyhow::{Context, Result},
     derive_more::{From, Into},
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
@@ -313,15 +313,6 @@ impl Solver {
             auction.deadline(self.timeouts()).solvers(),
         );
 
-        let body = {
-            // pre-allocate a big enough buffer to avoid re-allocating memory
-            // as the request gets serialized
-            const BYTES_PER_ORDER: usize = 1_300;
-            let mut buffer = Vec::with_capacity(auction.orders().len() * BYTES_PER_ORDER);
-            serde_json::to_writer(&mut buffer, &auction_dto).unwrap();
-            String::from_utf8(buffer).expect("serde_json only writes valid utf8")
-        };
-
         if let Some(id) = auction.id() {
             // Only auctions with IDs are real auctions (/quote requests don't have an ID).
             // Only for those it makes sense to archive them and measure the execution time.
@@ -332,6 +323,20 @@ impl Solver {
                 "serialize_request",
             );
         }
+
+        let body = tokio::task::spawn_blocking(move || {
+            // pre-allocate a big enough buffer to avoid re-allocating memory
+            // as the request gets serialized
+            const BYTES_PER_ORDER: usize = 1_300;
+            let mut buffer = Vec::with_capacity(auction_dto.orders.len() * BYTES_PER_ORDER);
+            serde_json::to_writer(&mut buffer, &auction_dto)
+                .context("serialization failed")
+                .map_err(Error::Serialize)?;
+            Ok::<_, Error>(bytes::Bytes::from(buffer))
+        })
+        .await
+        .context("serialization task panicked")
+        .map_err(Error::Serialize)??;
 
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
@@ -438,8 +443,9 @@ impl Solver {
         solution_id: Option<solution::Id>,
         kind: notify::Kind,
     ) {
-        let body =
-            serde_json::to_string(&dto::notification::new(auction_id, solution_id, kind)).unwrap();
+        let body = serde_json::to_vec(&dto::notification::new(auction_id, solution_id, kind))
+            .unwrap()
+            .into();
         let url = shared::url::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
         let mut req = self.client.post(url).body(body).headers(tracing_headers());
@@ -480,6 +486,8 @@ pub enum Error {
     Deserialize(#[from] serde_json::Error),
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
+    #[error("serialization failed: {0}")]
+    Serialize(#[from] anyhow::Error),
 }
 
 impl Error {
