@@ -18,7 +18,7 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
-    futures::TryFutureExt,
+    futures::{StreamExt, TryFutureExt},
     model::{
         interaction::InteractionData,
         order::{OrderClass, OrderKind},
@@ -580,7 +580,7 @@ impl OrderQuoter {
             // quote verification already tries to auto-fake missing balances
             balance_override: None,
         };
-        let mut balances = self.balance_fetcher.get_balances(&[query]).await;
+        let mut balances: Vec<_> = self.balance_fetcher.get_balances(&[query]).collect().await;
         balances.pop().context("missing balance result")?
     }
 }

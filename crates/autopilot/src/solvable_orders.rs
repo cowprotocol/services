@@ -7,7 +7,7 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    futures::FutureExt,
+    futures::{FutureExt, StreamExt},
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -363,10 +363,10 @@ impl SolvableOrdersCache {
 
     #[instrument(skip_all)]
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
-        let fetched_balances = self
+        let fetched_balances: Vec<_> = self
             .timed_future(
                 "balance_filtering",
-                self.balance_fetcher.get_balances(&queries),
+                self.balance_fetcher.get_balances(&queries).collect(),
             )
             .await;
         if self.disable_order_balance_filter {
