@@ -316,7 +316,15 @@ async fn two_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: vec!["--compress-solve-request=true".to_string()],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
 
     let order_a = OrderCreation {
         sell_token: *token_a.address(),
