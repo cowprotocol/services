@@ -2,6 +2,7 @@ use {
     crate::config::{
         banned_users::BannedUsersConfig,
         fee_policy::FeePoliciesConfig,
+        native_price::NativePriceConfig,
         order_events_cleanup::OrderEventsCleanupConfig,
         s3::S3Config,
         solver::Solver,
@@ -14,6 +15,7 @@ use {
 
 pub mod banned_users;
 pub mod fee_policy;
+pub mod native_price;
 pub mod order_events_cleanup;
 pub mod s3;
 pub mod solver;
@@ -44,8 +46,9 @@ pub struct Configuration {
 
     /// Configuration for uploading auction instances to S3.
     /// If absent, S3 uploads are disabled.
-    #[serde(default)]
     pub s3: Option<S3Config>,
+
+    pub native_price_estimation: NativePriceConfig,
 }
 
 impl Configuration {
@@ -169,6 +172,13 @@ mod tests {
         [s3]
         bucket = "my-bucket"
         filename-prefix = "staging/mainnet/"
+
+        [native-price-estimation]
+        estimators = [
+            [{type = "CoinGecko"}, {type = "OneInchSpotPriceApi"}],
+            [{type = "Driver", name = "solver1", url = "http://localhost:8080"}],
+            [{type = "Forwarder", url = "http://localhost:12088"}],
+        ]
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -231,6 +241,24 @@ mod tests {
         let s3 = config.s3.unwrap();
         assert_eq!(s3.bucket, "my-bucket");
         assert_eq!(s3.filename_prefix, "staging/mainnet/");
+
+        use shared::price_estimation::{ExternalSolver, NativePriceEstimator};
+        assert_eq!(
+            config.native_price_estimation.estimators.as_slice(),
+            vec![
+                vec![
+                    NativePriceEstimator::CoinGecko,
+                    NativePriceEstimator::OneInchSpotPriceApi,
+                ],
+                vec![NativePriceEstimator::Driver(ExternalSolver {
+                    name: "solver1".to_string(),
+                    url: "http://localhost:8080".parse().unwrap(),
+                })],
+                vec![NativePriceEstimator::Forwarder {
+                    url: "http://localhost:12088".parse().unwrap(),
+                }],
+            ]
+        );
     }
 
     #[test]
@@ -242,6 +270,9 @@ mod tests {
         submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
         [fee-policies]
+
+        [native-price-estimation]
+        estimators = []
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();

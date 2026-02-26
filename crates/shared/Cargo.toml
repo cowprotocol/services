@@ -65,6 +65,7 @@ mockall = { workspace = true }
 regex = { workspace = true }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+toml = { workspace = true }
 
 [features]
 test-util = ["dep:mockall"]

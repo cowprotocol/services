@@ -178,7 +178,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
-            NativePriceEstimatorSource::Forwarder(url) => {
+            NativePriceEstimatorSource::Forwarder { url } => {
                 let name = format!("Forwarder|{}", url);
                 Ok((
                     name.clone(),

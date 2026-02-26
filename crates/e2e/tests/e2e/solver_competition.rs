@@ -102,7 +102,10 @@ async fn solver_competition(web3: Web3) {
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
     ).await;
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services.start_api(vec![
+        ob_config_arg,
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
     ]).await;
 
@@ -259,8 +262,11 @@ async fn wrong_solution_submission_address(web3: Web3) {
             ],
         )
         .await;
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
@@ -418,8 +424,11 @@ async fn store_filtered_solutions(web3: Web3) {
             ],
         )
         .await;
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;

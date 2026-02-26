@@ -1,5 +1,5 @@
 use {
-    crate::{app_data, arguments::VolumeFeeConfig},
+    crate::{app_data, config::VolumeFeeConfig},
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
