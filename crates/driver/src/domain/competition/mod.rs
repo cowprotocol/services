@@ -192,7 +192,7 @@ impl Competition {
             fetcher,
             order_sorting_strategies,
             submission_account_pool,
-            settlement_in_flight: settlement_in_flight,
+            settlement_in_flight,
         });
 
         let competition_clone = Arc::clone(&competition);
