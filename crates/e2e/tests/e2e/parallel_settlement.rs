@@ -194,7 +194,7 @@ async fn test_parallel_settlement_submission(web3: Web3) {
                 .count();
 
             tracing::debug!(direct, delegated, "checking for parallel pending txs");
-            direct >= 1 && delegated >= 1
+            direct == 1 && delegated == 1
         }
     })
     .await;
