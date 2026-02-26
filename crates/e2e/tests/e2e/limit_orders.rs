@@ -56,12 +56,6 @@ async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
     run_test(limit_does_not_apply_to_in_market_orders_test).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_limit_order_with_compressed_solve_request() {
-    run_test(limit_order_with_compressed_solve_request_test).await;
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[ignore]
 async fn local_node_no_liquidity_limit_order() {
@@ -237,113 +231,6 @@ async fn single_limit_order_test(web3: Web3) {
         let order = services.get_order(&order_id).await.unwrap();
         tracing::error!(?order);
         order.metadata.quote.unwrap().metadata != serde_json::Value::default()
-    })
-    .await
-    .unwrap();
-}
-
-async fn limit_order_with_compressed_solve_request_test(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-    let [trader_a] = onchain.make_accounts(1u64.eth()).await;
-    let [token_a, token_b] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
-        .await;
-
-    token_a.mint(trader_a.address(), 10u64.eth()).await;
-
-    token_a.mint(solver.address(), 1000u64.eth()).await;
-    token_b.mint(solver.address(), 1000u64.eth()).await;
-    onchain
-        .contracts()
-        .uniswap_v2_factory
-        .createPair(*token_a.address(), *token_b.address())
-        .from(solver.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    token_a
-        .approve(
-            *onchain.contracts().uniswap_v2_router.address(),
-            1000u64.eth(),
-        )
-        .from(solver.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    token_b
-        .approve(
-            *onchain.contracts().uniswap_v2_router.address(),
-            1000u64.eth(),
-        )
-        .from(solver.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-    onchain
-        .contracts()
-        .uniswap_v2_router
-        .addLiquidity(
-            *token_a.address(),
-            *token_b.address(),
-            1000u64.eth(),
-            1000u64.eth(),
-            U256::ZERO,
-            U256::ZERO,
-            solver.address(),
-            U256::MAX,
-        )
-        .from(solver.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    token_a
-        .approve(onchain.contracts().allowance, 10u64.eth())
-        .from(trader_a.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    let services = Services::new(&onchain).await;
-    let (_config_file, config_arg) =
-        Configuration::test("test_solver", solver.address()).to_cli_args();
-    services
-        .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![config_arg, "--compress-solve-request=true".to_string()],
-                ..Default::default()
-            },
-            solver,
-        )
-        .await;
-
-    let order = OrderCreation {
-        sell_token: *token_a.address(),
-        sell_amount: 10u64.eth(),
-        buy_token: *token_b.address(),
-        buy_amount: 5u64.eth(),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        &trader_a.signer,
-    );
-    let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
-    services.create_order(&order).await.unwrap();
-
-    onchain.mint_block().await;
-
-    tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async {
-        let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
-        balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth()
     })
     .await
     .unwrap();
