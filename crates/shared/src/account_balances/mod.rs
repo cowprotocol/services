@@ -59,16 +59,17 @@ impl From<anyhow::Error> for TransferSimulationError {
     }
 }
 
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
     // Returns the balance available to the allowance manager for the given owner
     // and token taking both balance as well as "allowance" into account.
     // Results are streamed so call sites can throttle consumption to limit
     // concurrent RPC requests.
-    fn get_balances<'async_trait, 'life1>(
-        &'async_trait self,
-        queries: &'async_trait [&'life1 Query],
-    ) -> BoxStream<'async_trait, (&'life1 Query, anyhow::Result<U256>)>;
+    fn get_balances<'a>(
+        &'a self,
+        queries: Vec<Query>,
+    ) -> BoxStream<'a, (Query, anyhow::Result<U256>)>;
 
     // Check that the settlement contract can make use of this user's token balance.
     // This check could fail if the user does not have enough balance, has not
@@ -82,27 +83,6 @@ pub trait BalanceFetching: Send + Sync {
         amount: U256,
     ) -> Result<(), TransferSimulationError>;
 }
-
-// #[cfg(any(test, feature = "test-util"))]
-// mockall::mock! {
-//     pub BalanceFetching {}
-
-//     #[async_trait]
-//     impl BalanceFetching for BalanceFetching {
-//         fn get_balances<'life1>(
-//             &'static self,
-//             queries: &'static [&'life1 Query],
-//         ) -> BoxStream<'static, (&'life1 Query, anyhow::Result<U256>)>
-//         where
-//             Self: 'static;
-
-//         async fn can_transfer(
-//             &self,
-//             query: &Query,
-//             amount: U256,
-//         ) -> Result<(), TransferSimulationError>;
-//     }
-// }
 
 /// Create the default [`BalanceFetching`] instance.
 pub fn fetcher(web3: &Web3, balance_simulator: BalanceSimulator) -> Arc<dyn BalanceFetching> {
