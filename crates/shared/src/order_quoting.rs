@@ -582,7 +582,7 @@ impl OrderQuoter {
         };
         let (_query, result) = self
             .balance_fetcher
-            .get_balances(&[&query])
+            .get_balances(vec![query])
             .next()
             .await
             .context("missing balance result")?;
@@ -810,8 +810,8 @@ mod tests {
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
-        mock.expect_get_balances().returning(|addresses| {
-            futures::stream::iter(addresses.iter().map(|addr| (addr, Ok(U256::MAX)))).boxed()
+        mock.expect_get_balances().returning(|queries| {
+            futures::stream::iter(queries.into_iter().map(|query| (query, Ok(U256::MAX)))).boxed()
         });
         Arc::new(mock)
     }

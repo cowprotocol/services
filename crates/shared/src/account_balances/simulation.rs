@@ -117,20 +117,20 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    fn get_balances<'async_trait, 'life1>(
-        &'async_trait self,
-        queries: &'async_trait [&'life1 Query],
-    ) -> BoxStream<'async_trait, (&'life1 Query, anyhow::Result<U256>)> {
+    fn get_balances<'a>(
+        &'a self,
+        queries: Vec<Query>,
+    ) -> BoxStream<'a, (Query, anyhow::Result<U256>)> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         async_stream::stream! {
             for query in queries {
                 let res = if query.interactions.is_empty() {
                     let token = ERC20Instance::new(query.token, &self.web3.provider);
-                    self.tradable_balance_simple(query, &token).await
+                    self.tradable_balance_simple(&query, &token).await
                 } else {
-                    self.tradable_balance_simulated(query).await
+                    self.tradable_balance_simulated(&query).await
                 };
-                yield (*query, res);
+                yield (query, res);
             }
         }
         .boxed()

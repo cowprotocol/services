@@ -75,21 +75,22 @@ impl Balances {
     }
 }
 
-struct CacheResponse<'a> {
-    cached: Vec<(&'a Query, Result<U256>)>,
-    missing: Vec<&'a Query>,
+struct CacheResponse {
+    cached: Vec<(Query, Result<U256>)>,
+    missing: Vec<Query>,
     requested_at: BlockNumber,
 }
 
 impl Balances {
-    fn get_cached_balances<'a>(&self, queries: &[&'a Query]) -> CacheResponse<'a> {
+    fn get_cached_balances(&self, queries: Vec<Query>) -> CacheResponse {
         let mut cache = self.balance_cache.lock().unwrap();
         let (cached, missing) =
+            // TODO make sure to reuse original allocation
             queries
-                .iter()
-                .partition_map(|query| match cache.get_cached_balance(query) {
-                    Some(balance) => itertools::Either::Left((*query, Ok(balance))),
-                    None => itertools::Either::Right(*query),
+                .into_iter()
+                .partition_map(|query| match cache.get_cached_balance(&query) {
+                    Some(balance) => itertools::Either::Left((query, Ok(balance))),
+                    None => itertools::Either::Right(query),
                 });
         CacheResponse {
             cached,
@@ -121,13 +122,12 @@ impl Balances {
                         .collect_vec()
                 };
 
-                let queries_ref: Vec<_> = balances_to_update.iter().collect();
-                let results: Vec<_> = inner.get_balances(&queries_ref).collect().await;
+                let results: Vec<_> = inner.get_balances(balances_to_update).collect().await;
 
                 let mut cache = cache.lock().unwrap();
                 for (query, result) in results {
                     if let Ok(balance) = result {
-                        cache.update_balance(query, balance, block.number);
+                        cache.update_balance(&query, balance, block.number);
                     }
                 }
                 cache.data.retain(|_, value| {
@@ -162,10 +162,10 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    fn get_balances<'async_trait, 'life1>(
-        &'async_trait self,
-        queries: &'async_trait [&'life1 Query],
-    ) -> BoxStream<'async_trait, (&'life1 Query, anyhow::Result<U256>)> {
+    fn get_balances<'a>(
+        &'a self,
+        queries: Vec<Query>,
+    ) -> BoxStream<'a, (Query, anyhow::Result<U256>)> {
         let CacheResponse {
             cached,
             missing,
@@ -180,7 +180,7 @@ impl BalanceFetching for Balances {
         let missing_stream = async_stream::stream! {
             let mut updates = Vec::with_capacity(std::cmp::min(missing.len(), 100));
 
-            let mut missing_stream = self.inner.get_balances(&missing);
+            let mut missing_stream = self.inner.get_balances(missing);
             while let Some((query, result)) = missing_stream.next().await {
                 if let Ok(balance) = result {
                     updates.push((query.clone(), balance));
@@ -241,16 +241,22 @@ mod tests {
         inner
             .expect_get_balances()
             .times(1)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| stream::iter([Ok(U256::ONE)]).boxed());
+            .withf(|arg| *arg == [query(1)])
+            .returning(|queries| with_balance(queries, || Ok(U256::ONE)));
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
-        let result = fetcher.get_balances(&[query(1)]).collect::<Vec<_>>().await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        let result = fetcher
+            .get_balances(vec![query(1)])
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
         // Fetches balance from cache and skips calling `inner`.
-        let result = fetcher.get_balances(&[query(1)]).collect::<Vec<_>>().await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        let result = fetcher
+            .get_balances(vec![query(1)])
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
     }
 
     #[tokio::test]
@@ -259,26 +265,28 @@ mod tests {
         inner
             .expect_get_balances()
             .times(2)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| stream::iter([Err(anyhow::anyhow!("some error"))]).boxed());
+            .withf(|arg| *arg == [query(1)])
+            .returning(|queries| with_balance(queries, || Err(anyhow::anyhow!("some error"))));
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
         assert!(
             fetcher
-                .get_balances(&[query(1)])
+                .get_balances(vec![query(1)])
                 .next()
                 .await
                 .unwrap()
+                .1
                 .is_err()
         );
         // 2nd call to `inner`.
         assert!(
             fetcher
-                .get_balances(&[query(1)])
+                .get_balances(vec![query(1)])
                 .next()
                 .await
                 .unwrap()
+                .1
                 .is_err()
         );
     }
@@ -292,15 +300,18 @@ mod tests {
         inner
             .expect_get_balances()
             .times(2)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| stream::iter([Ok(U256::ONE)]).boxed());
+            .withf(|arg| *arg == [query(1)])
+            .returning(|queries| with_balance(queries, || Ok(U256::ONE)));
 
         let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
 
         // 1st call to `inner`. Balance gets cached.
-        let result = fetcher.get_balances(&[query(1)]).collect::<Vec<_>>().await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        let result = fetcher
+            .get_balances(vec![query(1)])
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
 
         // New block gets detected.
         sender
@@ -314,8 +325,11 @@ mod tests {
 
         // Balance was already updated so this will hit the cache and skip calling
         // `inner`.
-        let result = fetcher.get_balances(&[query(1)]).collect::<Vec<_>>().await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        let result = fetcher
+            .get_balances(vec![query(1)])
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
     }
 
     #[tokio::test]
@@ -324,30 +338,36 @@ mod tests {
         inner
             .expect_get_balances()
             .times(1)
-            .withf(|arg| arg == [query(1)])
-            .returning(|_| stream::iter([Ok(U256::ONE)]).boxed());
+            .withf(|arg| *arg == [query(1)])
+            .returning(|queries| with_balance(queries, || Ok(U256::ONE)));
         inner
             .expect_get_balances()
             .times(1)
-            .withf(|arg| arg == [query(2)])
-            .returning(|_| stream::iter([Ok(U256::from(2))]).boxed());
+            .withf(|arg| *arg == [query(2)])
+            .returning(|queries| with_balance(queries, || Ok(U256::from(2))));
 
         let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner` putting balance 1 into the cache.
-        let result = fetcher.get_balances(&[query(1)]).collect::<Vec<_>>().await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        let result = fetcher
+            .get_balances(vec![query(1)])
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
 
         // Fetches balance 1 from cache and balance 2 fresh. (2nd call to `inner`)
         let result = fetcher
-            .get_balances(&[query(1), query(2)])
+            .get_balances(vec![query(1), query(2)])
             .collect::<Vec<_>>()
             .await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
-        assert_eq!(result[1].as_ref().unwrap(), &U256::from(2));
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
+        assert_eq!(result[1].1.as_ref().unwrap(), &U256::from(2));
 
         // Now balance 2 is also in the cache. Skipping call to `inner`.
-        let result = fetcher.get_balances(&[query(2)]).collect::<Vec<_>>().await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::from(2));
+        let result = fetcher
+            .get_balances(vec![query(2)])
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::from(2));
     }
 
     #[tokio::test]
@@ -359,7 +379,7 @@ mod tests {
         inner
             .expect_get_balances()
             .times(7)
-            .returning(|_| stream::iter([Ok(U256::ONE)]).boxed());
+            .returning(|queries| with_balance(queries, || Ok(U256::ONE)));
 
         let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
@@ -371,8 +391,11 @@ mod tests {
 
         assert!(cached_entry().is_none());
         // 1st call to `inner`. Balance gets cached.
-        let result = fetcher.get_balances(&[query(1)]).collect::<Vec<_>>().await;
-        assert_eq!(result[0].as_ref().unwrap(), &U256::ONE);
+        let result = fetcher
+            .get_balances(vec![query(1)])
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
 
         for block in 1..=EVICTION_TIME + 1 {
             assert!(cached_entry().is_some());
@@ -386,5 +409,13 @@ mod tests {
             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         }
         assert!(cached_entry().is_none());
+    }
+
+    fn with_balance(
+        queries: Vec<Query>,
+        value: impl Fn() -> Result<U256>,
+    ) -> BoxStream<'static, (Query, Result<U256>)> {
+        let results: Vec<_> = queries.into_iter().map(|q| (q, value())).collect();
+        stream::iter(results).boxed()
     }
 }
