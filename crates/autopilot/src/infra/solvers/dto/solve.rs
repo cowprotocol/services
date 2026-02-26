@@ -24,10 +24,6 @@ use {
     },
 };
 
-/// Cheaply clonable handle to an already JSON serialized
-/// request. The purpose of this is to make it ergonomic
-/// to serialize a request once and reuse the resulting
-/// string in multiple HTTP requests.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContentEncoding {
     Gzip,
@@ -41,6 +37,10 @@ impl ContentEncoding {
     }
 }
 
+/// Cheaply clonable handle to an already JSON serialized
+/// request. The purpose of this is to make it ergonomic
+/// to serialize a request once and reuse the resulting
+/// string in multiple HTTP requests.
 #[derive(Clone, Debug)]
 pub struct Request {
     auction_id: i64,
