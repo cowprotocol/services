@@ -70,8 +70,17 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         } => Some(AppDataRetriever::new(orderbook_url.clone(), *cache_size)),
         config::file::AppDataFetching::Disabled => None,
     };
+    let solvers = solvers(&config, &eth).await;
+
+    // Set up EIP-7702 delegation and caller approval for solvers with
+    // parallel submission accounts. Must happen before the HTTP server
+    // starts accepting /settle requests.
+    infra::solver::eip7702::setup(&solvers, &eth)
+        .await
+        .expect("EIP-7702 setup failed");
+
     let serve = Api {
-        solvers: solvers(&config, &eth).await,
+        solvers,
         liquidity: liquidity(&config, &eth).await,
         liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
         simulator: simulator(&config, &eth),
@@ -85,7 +94,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                         config
                             .solvers
                             .iter()
-                            .map(|config| config.account.clone())
+                            .flat_map(|config| {
+                                std::iter::once(config.account.clone())
+                                    .chain(config.submission_accounts.iter().cloned())
+                            })
                             .collect(),
                     )
                 })

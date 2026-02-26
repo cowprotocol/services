@@ -16,6 +16,11 @@ pub struct SolverEngine {
     pub merge_solutions: bool,
     /// Haircut in basis points (0-10000) for conservative bidding.
     pub haircut_bps: u32,
+    /// Additional EOAs that can submit settlement txs on behalf of the solver
+    /// via EIP-7702 delegation. When non-empty, enables parallel submission.
+    pub submission_keys: Vec<TestAccount>,
+    /// Address of the deployed CowSettlementForwarder contract for EIP-7702.
+    pub forwarder_contract: Option<Address>,
 }
 
 pub async fn start_baseline_solver(
@@ -67,6 +72,8 @@ uni-v3-node-url = "http://localhost:8545"
         base_tokens,
         merge_solutions,
         haircut_bps,
+        submission_keys: vec![],
+        forwarder_contract: None,
     }
 }
 
@@ -157,18 +164,32 @@ pub fn start_driver_with_config_override(
         .collect();
     let solvers = solvers
         .iter()
-        .map(
-            |SolverEngine {
-                 name,
-                 account,
-                 endpoint,
-                 base_tokens: _,
-                 merge_solutions,
-                 haircut_bps,
-             }| {
-                let account = account.signer.to_bytes();
-                format!(
-                    r#"
+        .map(|solver| {
+            let SolverEngine {
+                name,
+                account,
+                endpoint,
+                merge_solutions,
+                haircut_bps,
+                ..
+            } = solver;
+            let account = account.signer.to_bytes();
+            let submission_accounts_line = if solver.submission_keys.is_empty() {
+                String::new()
+            } else {
+                let keys: Vec<String> = solver
+                    .submission_keys
+                    .iter()
+                    .map(|k| format!("\"{}\"", k.signer.to_bytes()))
+                    .collect();
+                let mut line = format!("submission-accounts = [{}]\n", keys.join(", "));
+                if let Some(addr) = solver.forwarder_contract {
+                    line.push_str(&format!("forwarder-contract = \"{addr:?}\"\n"));
+                }
+                line
+            };
+            format!(
+                r#"
 [[solver]]
 name = "{name}"
 endpoint = "{endpoint}"
@@ -181,10 +202,9 @@ enable-metrics-bad-order-detection = true
 http-time-buffer = "100ms"
 solving-share-of-deadline = 1.0
 haircut-bps = {haircut_bps}
-"#
-                )
-            },
-        )
+{submission_accounts_line}"#
+            )
+        })
         .collect::<Vec<String>>()
         .join("\n");
     let liquidity = liquidity.to_string(contracts);

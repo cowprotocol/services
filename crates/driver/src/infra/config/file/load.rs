@@ -52,25 +52,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     );
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
-            let account: Account = match solver_config.account {
-                file::Account::PrivateKey(private_key) => {
-                    PrivateKeySigner::from_bytes(&private_key)
-                        .expect(
-                            "private key should
-                                            be valid",
-                        )
-                        .into()
-                }
-                file::Account::Kms(arn) => {
-                    let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
-                    let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
-                    AwsSigner::new(client, arn.0, config.chain_id)
-                        .await
-                        .expect("unable to load kms account {arn:?}")
-                        .into()
-                }
-                file::Account::Address(address) => Account::Address(address),
-            };
+            let account = load_account(solver_config.account, config.chain_id).await;
             solver::Config {
                 endpoint: solver_config.endpoint,
                 name: solver_config.name.into(),
@@ -154,6 +136,14 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
                 haircut_bps: solver_config.haircut_bps,
+                submission_accounts: join_all(
+                    solver_config
+                        .submission_accounts
+                        .into_iter()
+                        .map(|acc| load_account(acc, config.chain_id)),
+                )
+                .await,
+                forwarder_contract: solver_config.forwarder_contract,
             }
         }))
         .await,
@@ -391,5 +381,22 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
+    }
+}
+
+async fn load_account(account: file::Account, chain_id: Option<u64>) -> Account {
+    match account {
+        file::Account::PrivateKey(pk) => PrivateKeySigner::from_bytes(&pk)
+            .expect("invalid private key")
+            .into(),
+        file::Account::Kms(arn) => {
+            let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
+            let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
+            AwsSigner::new(client, arn.0, chain_id)
+                .await
+                .expect("unable to load kms account")
+                .into()
+        }
+        file::Account::Address(address) => Account::Address(address),
     }
 }

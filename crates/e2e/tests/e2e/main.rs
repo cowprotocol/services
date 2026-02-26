@@ -24,6 +24,7 @@ mod liquidity;
 mod liquidity_source_notification;
 mod malformed_requests;
 mod order_cancellation;
+mod parallel_settlement;
 mod partial_fill;
 mod partially_fillable_balance;
 mod partially_fillable_pool;
