@@ -644,6 +644,21 @@ COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid =
 "#;
 
 pub const FROM: &str = "orders o";
+const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
+    "SELECT ",
+    SELECT,
+    ", o_quotes.sell_amount as quote_sell_amount",
+    ", o_quotes.buy_amount as quote_buy_amount",
+    ", o_quotes.gas_amount as quote_gas_amount",
+    ", o_quotes.gas_price as quote_gas_price",
+    ", o_quotes.sell_token_price as quote_sell_token_price",
+    ", o_quotes.verified as quote_verified",
+    ", o_quotes.metadata as quote_metadata",
+    ", o_quotes.solver as solver",
+    " FROM ",
+    FROM,
+    " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
+);
 
 #[instrument(skip_all)]
 pub async fn single_full_order_with_quote(
@@ -652,20 +667,19 @@ pub async fn single_full_order_with_quote(
 ) -> Result<Option<FullOrderWithQuote>, sqlx::Error> {
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-        "SELECT ", SELECT,
-        ", o_quotes.sell_amount as quote_sell_amount",
-        ", o_quotes.buy_amount as quote_buy_amount",
-        ", o_quotes.gas_amount as quote_gas_amount",
-        ", o_quotes.gas_price as quote_gas_price",
-        ", o_quotes.sell_token_price as quote_sell_token_price",
-        ", o_quotes.verified as quote_verified",
-        ", o_quotes.metadata as quote_metadata",
-        ", o_quotes.solver as solver",
-        " FROM ", FROM,
-        " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
-        " WHERE o.uid = $1",
-        );
+        FULL_ORDER_WITH_QUOTE,
+        " WHERE o.uid = $1"
+    );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+}
+
+#[instrument(skip_all)]
+pub async fn many_full_orders_with_quotes<'a>(
+    ex: &'a mut PgConnection,
+    order_ids: &'a [OrderUid],
+) -> Result<Vec<FullOrderWithQuote>, sqlx::Error> {
+    const QUERY: &str = const_format::concatcp!(FULL_ORDER_WITH_QUOTE, " WHERE o.uid = ANY($1)");
+    sqlx::query_as(QUERY).bind(order_ids).fetch_all(ex).await
 }
 
 // Partial query for getting the log indices of events of a single settlement.

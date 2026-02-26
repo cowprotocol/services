@@ -129,6 +129,60 @@ paths:
           description: One or more orders were not found and no orders were cancelled.
         "422":
           description: Unable to parse request body as valid JSON.
+  "/api/v1/orders/by_uids":
+    post:
+      operationId: getOrders
+      summary: Get existing orders from the list of UIDs.
+      description: |
+        Returns an array where each element is an object with either
+        an "order" key containing the full order, or an "error" key
+        containing the UID and a description of what went wrong.
+      requestBody:
+        description: The list of up to 128 order uids to fetch
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/UID"
+      responses:
+        "200":
+          description: |
+            The resulting full order data based on the request. Each element of the array is
+            an object of the following format:
+            - `{"order": <Order>}` for successfully fetched orders
+            - `{"error": {"uid": "<UID>", "description": "<message>"}}` for orders that failed conversion
+            The result ordering is not guaranteed and might differ from the order of requested UIDs.
+            Orders that do not exist in the database will be missing from the response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      order:
+                        $ref: "#/components/schemas/Order"
+                    required:
+                      - order
+                  - type: object
+                    properties:
+                      error:
+                        type: object
+                        properties:
+                          uid:
+                            $ref: "#/components/schemas/UID"
+                          description:
+                            type: string
+                        required:
+                          - uid
+                          - description
+                    required:
+                      - error
+        "400":
+          description: Request array size larger than 128 or unable to parse request body as valid JSON.
+        "422":
+          description: Could not decode array values as order UID.
   "/api/v1/orders/{UID}":
     get:
       operationId: getOrder
@@ -1510,7 +1564,7 @@ components:
       properties:
         orderUids:
           type: array
-          description: UIDs of orders to cancel.
+          description: Up to 128 UIDs of orders to cancel.
           items:
             $ref: "#/components/schemas/UID"
         signature:
