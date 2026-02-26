@@ -4,7 +4,9 @@ use {
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::{
+        FutureExt,
         StreamExt,
+        future::BoxFuture,
         stream::{self, BoxStream},
     },
     itertools::Itertools,
@@ -16,10 +18,6 @@ use {
 };
 
 type BlockNumber = u64;
-
-/// Balances get removed from the cache after this many blocks without being
-/// requested.
-const EVICTION_TIME: BlockNumber = 5;
 
 #[derive(Default)]
 struct BalanceCache {
@@ -115,14 +113,17 @@ impl Balances {
                         .iter()
                         .filter_map(|(query, entry)| {
                             // Only update balances that have been requested recently.
-                            let oldest_allowed_request =
-                                cache.last_seen_block.saturating_sub(EVICTION_TIME);
+                            let oldest_allowed_request = cache.last_seen_block.saturating_sub(5);
                             (entry.requested_at >= oldest_allowed_request).then_some(query.clone())
                         })
                         .collect_vec()
                 };
 
-                let results: Vec<_> = inner.get_balances(balances_to_update).collect().await;
+                let results: Vec<_> = inner
+                    .get_balances(balances_to_update)
+                    .buffered(100)
+                    .collect()
+                    .await;
 
                 let mut cache = cache.lock().unwrap();
                 for (query, result) in results {
@@ -139,63 +140,46 @@ impl Balances {
         };
         tokio::spawn(task.instrument(tracing::info_span!("balance_cache")));
     }
-
-    /// Only inserts new balances. This should always be used when we needed to
-    /// fetch a balance because it was requested by a backend component.
-    fn drain_updates_into_cache(&self, items: &mut Vec<(Query, U256)>, requested_at: BlockNumber) {
-        let mut lock = self.balance_cache.lock().unwrap();
-        // use `.drain(..)` instead of `into_iter()` to be able to reuse the
-        // vector's allocation
-        for (query, balance) in items.drain(..) {
-            lock.data.insert(
-                query,
-                BalanceEntry {
-                    requested_at,
-                    updated_at: requested_at,
-                    balance,
-                },
-            );
-        }
-    }
 }
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    fn get_balances(&self, queries: Vec<Query>) -> BoxStream<'_, (Query, anyhow::Result<U256>)> {
+    fn get_balances(
+        &self,
+        queries: Vec<Query>,
+    ) -> BoxStream<'_, BoxFuture<'static, (Query, anyhow::Result<U256>)>> {
         let CacheResponse {
             cached,
             missing,
             requested_at,
         } = self.get_cached_balances(queries);
 
-        let cached_stream = stream::iter(cached);
+        let cached_stream = stream::iter(cached.into_iter().map(|res| async move { res }.boxed()));
         if missing.is_empty() {
             return cached_stream.boxed();
         }
 
-        let missing_stream = async_stream::stream! {
-            let mut updates = Vec::with_capacity(std::cmp::min(missing.len(), 100));
-
-            let mut missing_stream = self.inner.get_balances(missing);
-            while let Some((query, result)) = missing_stream.next().await {
-                if let Ok(balance) = result {
-                    updates.push((query.clone(), balance));
-
-                    // only update cache in chunks to avoid unnecessary lock
-                    // contention while being able to yield items as they resolve
-                    if updates.len() == updates.capacity() {
-                        self.drain_updates_into_cache(&mut updates, requested_at)
-                    }
+        let cache = self.balance_cache.clone();
+        let missing_stream = self.inner.get_balances(missing).map(move |fut| {
+            let cache = cache.clone();
+            async move {
+                let (query, result) = fut.await;
+                if let Ok(balance) = &result {
+                    // this needs to be replaced with dashmap
+                    cache.lock().unwrap().data.insert(
+                        query.clone(),
+                        BalanceEntry {
+                            requested_at,
+                            updated_at: requested_at,
+                            balance: *balance,
+                        },
+                    );
                 }
-                yield (query, result);
+                (query, result)
             }
-
-            // write remaining items to cache
-            if updates.is_empty() {
-                self.drain_updates_into_cache(&mut updates, requested_at)
-            }
-        };
+            .boxed()
+        });
 
         cached_stream.chain(missing_stream).boxed()
     }
@@ -245,12 +229,14 @@ mod tests {
         // 1st call to `inner`.
         let result = fetcher
             .get_balances(vec![query(1)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
         // Fetches balance from cache and skips calling `inner`.
         let result = fetcher
             .get_balances(vec![query(1)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
@@ -273,6 +259,7 @@ mod tests {
                 .next()
                 .await
                 .unwrap()
+                .await
                 .1
                 .is_err()
         );
@@ -283,6 +270,7 @@ mod tests {
                 .next()
                 .await
                 .unwrap()
+                .await
                 .1
                 .is_err()
         );
@@ -306,6 +294,7 @@ mod tests {
         // 1st call to `inner`. Balance gets cached.
         let result = fetcher
             .get_balances(vec![query(1)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
@@ -324,6 +313,7 @@ mod tests {
         // `inner`.
         let result = fetcher
             .get_balances(vec![query(1)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
@@ -347,6 +337,7 @@ mod tests {
         // 1st call to `inner` putting balance 1 into the cache.
         let result = fetcher
             .get_balances(vec![query(1)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
@@ -354,6 +345,7 @@ mod tests {
         // Fetches balance 1 from cache and balance 2 fresh. (2nd call to `inner`)
         let result = fetcher
             .get_balances(vec![query(1), query(2)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
@@ -362,6 +354,7 @@ mod tests {
         // Now balance 2 is also in the cache. Skipping call to `inner`.
         let result = fetcher
             .get_balances(vec![query(2)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::from(2));
@@ -390,6 +383,7 @@ mod tests {
         // 1st call to `inner`. Balance gets cached.
         let result = fetcher
             .get_balances(vec![query(1)])
+            .buffered(10)
             .collect::<Vec<_>>()
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
@@ -410,9 +404,16 @@ mod tests {
 
     fn with_balance(
         queries: Vec<Query>,
-        value: impl Fn() -> Result<U256>,
-    ) -> BoxStream<'static, (Query, Result<U256>)> {
-        let results: Vec<_> = queries.into_iter().map(|q| (q, value())).collect();
+        value: impl Fn() -> Result<U256> + Send + Sync + 'static,
+    ) -> BoxStream<'static, BoxFuture<'static, (Query, Result<U256>)>> {
+        let value = Arc::new(value);
+        let results: Vec<_> = queries
+            .into_iter()
+            .map(|q| {
+                let value = value.clone();
+                async move { (q, value()) }.boxed()
+            })
+            .collect();
         stream::iter(results).boxed()
     }
 }
