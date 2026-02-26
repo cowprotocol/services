@@ -138,7 +138,7 @@ pub struct Competition {
     /// When configured, enables concurrent settlement submission via EIP-7702.
     submission_account_pool: Option<SubmissionAccountPool>,
     /// 1-permit semaphore: when acquired, the solver EOA submits directly
-    /// (no 7702 forwarding overhead). Only present when
+    /// (no 7702 forwarding overhead/gas). Only present when
     /// `submission_account_pool` is configured.
     settlement_in_flight: Option<tokio::sync::Semaphore>,
 }
@@ -167,7 +167,7 @@ impl Competition {
             Some(SubmissionAccountPool::new(submission_accounts))
         };
 
-        let direct_submission_slot = submission_account_pool
+        let settlement_in_flight = submission_account_pool
             .as_ref()
             .map(|_| tokio::sync::Semaphore::new(1));
 
@@ -192,7 +192,7 @@ impl Competition {
             fetcher,
             order_sorting_strategies,
             submission_account_pool,
-            settlement_in_flight: direct_submission_slot,
+            settlement_in_flight: settlement_in_flight,
         });
 
         let competition_clone = Arc::clone(&competition);
