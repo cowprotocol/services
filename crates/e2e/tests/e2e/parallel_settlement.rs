@@ -163,10 +163,13 @@ async fn test_parallel_settlement_submission(web3: Web3) {
     let settle_a = spawn_settle("1", solution_id_a);
     let settle_b = spawn_settle("2", solution_id_b);
 
-    // Assert that TWO settlement txs are pending simultaneously.
-    // In EIP-7702 mode, txs target the solver EOA (which delegates to the
-    // forwarder) rather than the settlement contract directly.
+    // Assert that TWO settlement txs are pending simultaneously: one direct
+    // (solver EOA → settlement contract) and one delegated (submission EOA →
+    // solver EOA via EIP-7702 forwarding). The driver uses the direct slot
+    // when no settlement is in flight (cheaper), and falls back to 7702 for
+    // concurrent submissions.
     let solver_address = solver.address();
+    let settlement_address = *onchain.contracts().gp_settlement.address();
     let parallel_txs_observed = wait_for_condition(Duration::from_secs(15), || {
         let web3 = web3.clone();
         async move {
@@ -175,23 +178,31 @@ async fn test_parallel_settlement_submission(web3: Web3) {
                 .txpool_content()
                 .await
                 .expect("must be able to inspect mempool");
-            let pending_settlements: usize = txpool
+            let pending: Vec<_> = txpool
                 .pending
                 .values()
                 .flat_map(|nonce_map| nonce_map.values())
+                .collect();
+
+            let direct = pending
+                .iter()
+                .filter(|tx| tx.inner.to() == Some(settlement_address))
+                .count();
+            let delegated = pending
+                .iter()
                 .filter(|tx| tx.inner.to() == Some(solver_address))
                 .count();
 
-            tracing::debug!(pending_settlements, "checking for parallel pending txs");
-            pending_settlements >= 2
+            tracing::debug!(direct, delegated, "checking for parallel pending txs");
+            direct >= 1 && delegated >= 1
         }
     })
     .await;
 
     assert!(
         parallel_txs_observed.is_ok(),
-        "Expected two pending settlement txs simultaneously targeting the solver EOA via EIP-7702 \
-         delegation."
+        "Expected one direct settlement tx (to settlement contract) and one delegated tx (to \
+         solver EOA via EIP-7702) pending simultaneously."
     );
 
     // Re-enable automine and verify both orders get settled.
