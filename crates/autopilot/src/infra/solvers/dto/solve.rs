@@ -13,7 +13,7 @@ use {
     flate2::{Compression, write::GzEncoder},
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
-    reqwest::RequestBuilder,
+    reqwest::{RequestBuilder, header::HeaderValue},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     std::{
@@ -24,19 +24,6 @@ use {
     },
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ContentEncoding {
-    Gzip,
-}
-
-impl ContentEncoding {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Gzip => "gzip",
-        }
-    }
-}
-
 /// Cheaply clonable handle to an already JSON serialized
 /// request. The purpose of this is to make it ergonomic
 /// to serialize a request once and reuse the resulting
@@ -45,7 +32,7 @@ impl ContentEncoding {
 pub struct Request {
     auction_id: i64,
     body: bytes::Bytes,
-    content_encoding: Option<ContentEncoding>,
+    content_encoding: Option<HeaderValue>,
 }
 
 impl Request {
@@ -97,7 +84,10 @@ impl Request {
                 .write_all(&serialized)
                 .and_then(|_| encoder.finish())
             {
-                Ok(compressed) => (Bytes::from(compressed), Some(ContentEncoding::Gzip)),
+                Ok(compressed) => (
+                    Bytes::from(compressed),
+                    Some(HeaderValue::from_static("gzip")),
+                ),
                 Err(err) => {
                     tracing::error!(
                         ?err,
@@ -138,9 +128,8 @@ impl InjectIntoHttpRequest for Request {
                 reqwest::header::CONTENT_TYPE,
                 reqwest::header::HeaderValue::from_static("application/json"),
             );
-        if let Some(encoding) = self.content_encoding {
-            // set content encoding header if the body is compressed
-            request.header(reqwest::header::CONTENT_ENCODING, encoding.as_str())
+        if let Some(encoding) = &self.content_encoding {
+            request.header(reqwest::header::CONTENT_ENCODING, encoding)
         } else {
             request
         }
@@ -324,7 +313,7 @@ mod tests {
         Request {
             auction_id: 1,
             body: Bytes::from(compressed),
-            content_encoding: Some(ContentEncoding::Gzip),
+            content_encoding: Some(HeaderValue::from_static("gzip")),
         }
     }
 
@@ -333,7 +322,10 @@ mod tests {
         let json = make_test_json();
 
         let request = compressed_request(&json);
-        assert_eq!(request.content_encoding, Some(ContentEncoding::Gzip));
+        assert_eq!(
+            request.content_encoding.as_ref().map(|v| v.as_bytes()),
+            Some("gzip".as_bytes())
+        );
         assert!(
             request.body.len() < json.len(),
             "compressed body {} should be smaller than original {}",
