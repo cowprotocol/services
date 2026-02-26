@@ -3,11 +3,10 @@ use {
     alloy::primitives::U256,
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
-    futures::{FutureExt, StreamExt, stream::BoxStream},
+    futures::{FutureExt, StreamExt, stream::{self, BoxStream}},
     itertools::Itertools,
     std::{
-        collections::HashMap,
-        sync::{Arc, Mutex},
+        collections::HashMap, pin, sync::{Arc, Mutex}
     },
     tracing::{Instrument, instrument},
 };
@@ -85,23 +84,20 @@ impl Balances {
     }
 }
 
-struct CacheResponse {
-    // The indices and results of queries that were in the cache.
-    cached: Vec<(usize, Result<U256>)>,
-    // Indices of queries that were not in the cache.
-    missing: Vec<usize>,
+struct CacheResponse<'a> {
+    cached: Vec<(&'a Query, Result<U256>)>,
+    missing: Vec<&'a Query>,
     requested_at: BlockNumber,
 }
 
 impl Balances {
-    fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
+    fn get_cached_balances<'a>(&'a self, queries: &'a [&'a Query]) -> CacheResponse<'a> {
         let mut cache = self.balance_cache.lock().unwrap();
         let (cached, missing) = queries
             .iter()
-            .enumerate()
-            .partition_map(|(i, query)| match cache.get_cached_balance(query) {
-                Some(balance) => itertools::Either::Left((i, Ok(balance))),
-                None => itertools::Either::Right(i),
+            .partition_map(|query| match cache.get_cached_balance(query) {
+                Some(balance) => itertools::Either::Left((*query, Ok(balance))),
+                None => itertools::Either::Right(*query),
             });
         CacheResponse {
             cached,
@@ -157,43 +153,24 @@ impl Balances {
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
-    #[instrument(skip_all)]
-    fn get_balances<'a>(&'a self, queries: &'a [Query]) -> BoxStream<'a, Result<U256>> {
+    // #[instrument(skip_all)]
+    fn get_balances<'a, 'b>(&'a self, queries: &'a [&'a Query]) -> BoxStream<'a, (&'a Query, Result<U256>)> {
         let CacheResponse {
-            mut cached,
+            cached,
             missing,
             requested_at,
         } = self.get_cached_balances(queries);
 
+        let cached_stream = stream::iter(cached);
         if missing.is_empty() {
-            return futures::stream::iter(cached.into_iter().map(|(_, result)| result)).boxed();
+            return cached_stream.boxed();
         }
 
-        let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
+        // complains about `missing` being borrowed from a local context
+        let missing_stream = self.inner.get_balances(&missing);
+        // todo: inspect `missing_stream` and update cache in chunks
 
-        // todo yield cached values immediately...
-        async move {
-            let new_balances: Vec<_> = self.inner.get_balances(&missing_queries).collect().await;
-
-            {
-                let mut cache = self.balance_cache.lock().unwrap();
-                for (query, result) in missing_queries.into_iter().zip(new_balances.iter()) {
-                    if let Ok(balance) = result {
-                        cache.insert_balance(query, *balance, requested_at)
-                    }
-                }
-            }
-
-            cached.extend(missing.into_iter().zip(new_balances));
-            cached.sort_by_key(|(i, _)| *i);
-            cached
-                .into_iter()
-                .map(|(_, balance)| balance)
-                .collect::<Vec<_>>()
-        }
-        .into_stream()
-        .flat_map(futures::stream::iter)
-        .boxed()
+        cached_stream.chain(missing_stream).boxed()
     }
 
     async fn can_transfer(
