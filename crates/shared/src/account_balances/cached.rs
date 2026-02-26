@@ -3,10 +3,14 @@ use {
     alloy::primitives::U256,
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
-    futures::{FutureExt, StreamExt, stream::{self, BoxStream}},
+    futures::{
+        StreamExt,
+        stream::{self, BoxStream},
+    },
     itertools::Itertools,
     std::{
-        collections::HashMap, pin, sync::{Arc, Mutex}
+        collections::HashMap,
+        sync::{Arc, Mutex},
     },
     tracing::{Instrument, instrument},
 };
@@ -48,19 +52,6 @@ impl BalanceCache {
             entry.balance = balance;
         }
     }
-
-    /// Only inserts new balances. This should always be used when we needed to
-    /// fetch a balance because it was requested by a backend component.
-    fn insert_balance(&mut self, query: Query, balance: U256, requested_at: BlockNumber) {
-        self.data.insert(
-            query,
-            BalanceEntry {
-                requested_at,
-                updated_at: requested_at,
-                balance,
-            },
-        );
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -91,14 +82,15 @@ struct CacheResponse<'a> {
 }
 
 impl Balances {
-    fn get_cached_balances<'a>(&'a self, queries: &'a [&'a Query]) -> CacheResponse<'a> {
+    fn get_cached_balances<'a>(&self, queries: &[&'a Query]) -> CacheResponse<'a> {
         let mut cache = self.balance_cache.lock().unwrap();
-        let (cached, missing) = queries
-            .iter()
-            .partition_map(|query| match cache.get_cached_balance(query) {
-                Some(balance) => itertools::Either::Left((*query, Ok(balance))),
-                None => itertools::Either::Right(*query),
-            });
+        let (cached, missing) =
+            queries
+                .iter()
+                .partition_map(|query| match cache.get_cached_balance(query) {
+                    Some(balance) => itertools::Either::Left((*query, Ok(balance))),
+                    None => itertools::Either::Right(*query),
+                });
         CacheResponse {
             cached,
             missing,
@@ -129,17 +121,15 @@ impl Balances {
                         .collect_vec()
                 };
 
-                let results: Vec<_> = inner.get_balances(&balances_to_update).collect().await;
+                let queries_ref: Vec<_> = balances_to_update.iter().collect();
+                let results: Vec<_> = inner.get_balances(&queries_ref).collect().await;
 
                 let mut cache = cache.lock().unwrap();
-                balances_to_update
-                    .into_iter()
-                    .zip(results)
-                    .for_each(|(query, result)| {
-                        if let Ok(balance) = result {
-                            cache.update_balance(&query, balance, block.number);
-                        }
-                    });
+                for (query, result) in results {
+                    if let Ok(balance) = result {
+                        cache.update_balance(query, balance, block.number);
+                    }
+                }
                 cache.data.retain(|_, value| {
                     // Only keep balances where we know we have the most recent data.
                     value.updated_at >= block.number
@@ -149,12 +139,33 @@ impl Balances {
         };
         tokio::spawn(task.instrument(tracing::info_span!("balance_cache")));
     }
+
+    /// Only inserts new balances. This should always be used when we needed to
+    /// fetch a balance because it was requested by a backend component.
+    fn drain_updates_into_cache(&self, items: &mut Vec<(Query, U256)>, requested_at: BlockNumber) {
+        let mut lock = self.balance_cache.lock().unwrap();
+        // use `.drain(..)` instead of `into_iter()` to be able to reuse the
+        // vector's allocation
+        for (query, balance) in items.drain(..) {
+            lock.data.insert(
+                query,
+                BalanceEntry {
+                    requested_at,
+                    updated_at: requested_at,
+                    balance,
+                },
+            );
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
-    // #[instrument(skip_all)]
-    fn get_balances<'a, 'b>(&'a self, queries: &'a [&'a Query]) -> BoxStream<'a, (&'a Query, Result<U256>)> {
+    #[instrument(skip_all)]
+    fn get_balances<'async_trait, 'life1>(
+        &'async_trait self,
+        queries: &'async_trait [&'life1 Query],
+    ) -> BoxStream<'async_trait, (&'life1 Query, anyhow::Result<U256>)> {
         let CacheResponse {
             cached,
             missing,
@@ -166,9 +177,28 @@ impl BalanceFetching for Balances {
             return cached_stream.boxed();
         }
 
-        // complains about `missing` being borrowed from a local context
-        let missing_stream = self.inner.get_balances(&missing);
-        // todo: inspect `missing_stream` and update cache in chunks
+        let missing_stream = async_stream::stream! {
+            let mut updates = Vec::with_capacity(std::cmp::min(missing.len(), 100));
+
+            let mut missing_stream = self.inner.get_balances(&missing);
+            while let Some((query, result)) = missing_stream.next().await {
+                if let Ok(balance) = result {
+                    updates.push((query.clone(), balance));
+
+                    // only update cache in chunks to avoid unnecessary lock
+                    // contention while being able to yield items as they resolve
+                    if updates.len() == updates.capacity() {
+                        self.drain_updates_into_cache(&mut updates, requested_at)
+                    }
+                }
+                yield (query, result);
+            }
+
+            // write remaining items to cache
+            if updates.is_empty() {
+                self.drain_updates_into_cache(&mut updates, requested_at)
+            }
+        };
 
         cached_stream.chain(missing_stream).boxed()
     }
