@@ -329,18 +329,17 @@ async fn two_limit_orders_test(web3: Web3) {
     let services = Services::new(&onchain).await;
 
     // Start a reverse proxy between autopilot and the driver to inspect
-    // requests and assert that /solve requests are gzip-compressed.
+    // requests and assert that /solve requests are brotli-compressed.
     let saw_compressed_solve = Arc::new(AtomicBool::new(false));
     let flag = saw_compressed_solve.clone();
     let on_request: OnRequest = Arc::new(move |parts, _body| {
-        println!("newlog received a request");
         let path = parts.uri.path();
-        let has_gzip = parts
+        let has_br = parts
             .headers
             .get("content-encoding")
             .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
-            .is_some_and(|v| v == "gzip");
-        if path.contains("/solve") && has_gzip {
+            .is_some_and(|v| v == "br");
+        if path.contains("/solve") && has_br {
             flag.store(true, Ordering::Relaxed);
         }
     });
@@ -424,7 +423,7 @@ async fn two_limit_orders_test(web3: Web3) {
 
     assert!(
         saw_compressed_solve.load(Ordering::Relaxed),
-        "expected /solve requests to be gzip-compressed"
+        "expected /solve requests to be brotli-compressed"
     );
 }
 

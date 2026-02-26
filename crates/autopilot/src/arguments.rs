@@ -211,7 +211,7 @@ pub struct CliArguments {
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub enable_leader_lock: bool,
 
-    /// Enables gzip compression of `/solve` request bodies sent to drivers.
+    /// Enables brotli compression of `/solve` request bodies sent to drivers.
     #[clap(long, env, default_value = "false", action = clap::ArgAction::Set)]
     pub compress_solve_request: bool,
 

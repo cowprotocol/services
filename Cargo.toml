@@ -19,6 +19,7 @@ derive_more = { version = "1.0.0", features = ["full"] }
 mimalloc = "0.1.43"
 tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms", "profiling"] }
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
+brotli = "8"
 flate2 = "1.0.30"
 futures = "0.3.30"
 const-hex = "1.17.0"
