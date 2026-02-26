@@ -1,7 +1,7 @@
 use {
     crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
     alloy::primitives::{Address, U256},
-    anyhow::{Context, Result, anyhow},
+    anyhow::{Result, anyhow},
     bytes_hex::BytesHex,
     moka::sync::Cache,
     number::serialization::HexOrDecimalU256,
@@ -275,8 +275,8 @@ impl Validator {
     }
 }
 
-pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData> {
-    let root = serde_json::from_slice::<Root>(full_app_data).context("invalid app data json")?;
+pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error> {
+    let root = serde_json::from_slice::<Root>(full_app_data)?;
     let parsed = root
         .metadata
         .or_else(|| root.backend.map(ProtocolAppData::from))
