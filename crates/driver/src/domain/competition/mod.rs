@@ -137,6 +137,10 @@ pub struct Competition {
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     /// When configured, enables concurrent settlement submission via EIP-7702.
     submission_account_pool: Option<SubmissionAccountPool>,
+    /// 1-permit semaphore: when acquired, the solver EOA submits directly
+    /// (no 7702 forwarding overhead). Only present when
+    /// `submission_account_pool` is configured.
+    settlement_in_flight: Option<tokio::sync::Semaphore>,
 }
 
 impl Competition {
@@ -163,10 +167,14 @@ impl Competition {
             Some(SubmissionAccountPool::new(submission_accounts))
         };
 
+        let direct_submission_slot = submission_account_pool
+            .as_ref()
+            .map(|_| tokio::sync::Semaphore::new(1));
+
         // When using parallel submission, the queue size should accommodate all
-        // submission accounts so they can all be in-flight simultaneously.
+        // submission accounts plus the direct solver slot.
         let queue_size = match &submission_account_pool {
-            Some(pool) => pool.release.max_capacity(),
+            Some(pool) => pool.release.max_capacity() + 1,
             None => solver.settle_queue_size(),
         };
         let (settle_sender, settle_receiver) = mpsc::channel(queue_size);
@@ -184,6 +192,7 @@ impl Competition {
             fetcher,
             order_sorting_strategies,
             submission_account_pool,
+            settlement_in_flight: direct_submission_slot,
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -795,13 +804,28 @@ impl Competition {
             });
         }
 
-        // When EIP-7702 submission accounts are configured, acquire one from
-        // the pool for the duration of this settlement. The guard ensures the
-        // account is returned even on cancellation or panic.
-        let guard = if let Some(pool) = &self.submission_account_pool {
-            Some(pool.acquire().await.ok_or(Error::SubmissionError)?)
+        // When EIP-7702 submission accounts are configured, decide whether to
+        // submit directly from the solver EOA (cheaper, no forwarding) or via a
+        // delegated submission account.
+        //
+        // The direct slot is a 1-permit semaphore: if no settlement is
+        // in-flight the solver EOA submits directly; otherwise we fall back to
+        // an EIP-7702 submission account. Semaphore is freed on drop.
+        let (guard, _direct_permit) = if let Some(pool) = &self.submission_account_pool {
+            let direct_slot = self
+                .settlement_in_flight
+                .as_ref()
+                .expect("always set with pool");
+            if let Ok(permit) = direct_slot.try_acquire() {
+                tracing::debug!("no settlement in flight, submitting directly from solver EOA");
+                (None, Some(permit))
+            } else {
+                tracing::debug!("settlement in flight, using EIP-7702 submission account");
+                let account = pool.acquire().await.ok_or(Error::SubmissionError)?;
+                (Some(account), None)
+            }
         } else {
-            None
+            (None, None)
         };
 
         let delegated_ctx = guard.as_ref().map(|g| DelegatedSubmission {
