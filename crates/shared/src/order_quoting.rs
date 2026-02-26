@@ -805,8 +805,9 @@ mod tests {
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
-        mock.expect_get_balances()
-            .returning(|addresses| addresses.iter().map(|_| Ok(U256::MAX)).collect());
+        mock.expect_get_balances().returning(|addresses| {
+            futures::stream::iter((0..addresses.len()).map(|_| Ok(U256::MAX))).boxed()
+        });
         Arc::new(mock)
     }
 
