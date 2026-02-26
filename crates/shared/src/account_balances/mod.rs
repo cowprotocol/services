@@ -1,4 +1,4 @@
-use {
+ fnuse {
     crate::price_estimation::trade_verifier::balance_overrides::{
         BalanceOverrideRequest,
         BalanceOverriding,
@@ -66,10 +66,7 @@ pub trait BalanceFetching: Send + Sync {
     // and token taking both balance as well as "allowance" into account.
     // Results are streamed so call sites can throttle consumption to limit
     // concurrent RPC requests.
-    fn get_balances<'a>(
-        &'a self,
-        queries: Vec<Query>,
-    ) -> BoxStream<'a, (Query, anyhow::Result<U256>)>;
+    fn get_balances(&self, queries: Vec<Query>) -> BoxStream<'_, (Query, anyhow::Result<U256>)>;
 
     // Check that the settlement contract can make use of this user's token balance.
     // This check could fail if the user does not have enough balance, has not
