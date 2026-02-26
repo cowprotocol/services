@@ -1564,7 +1564,7 @@ components:
       properties:
         orderUids:
           type: array
-          description: UIDs of orders to cancel.
+          description: Up to 128 UIDs of orders to cancel.
           items:
             $ref: "#/components/schemas/UID"
         signature:
