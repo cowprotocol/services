@@ -142,7 +142,6 @@ impl<'a> Services<'a> {
             "--block-stream-poll-interval=1s".to_string(),
             format!("--node-ws-url={NODE_WS_HOST}"),
             "--simulation-node-url=http://localhost:8545".to_string(),
-            "--native-price-cache-max-age=2s".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
@@ -227,6 +226,13 @@ impl<'a> Services<'a> {
                     Url::from_str("http://localhost:11088/test_solver").unwrap(),
                 )]]),
                 prefetch_time: Duration::from_millis(500),
+                shared: shared::price_estimation::config::native_price::NativePriceConfig {
+                    cache: shared::price_estimation::config::native_price::CacheConfig {
+                        max_age: Duration::from_secs(2),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Configuration::from_path(&args.config).await.unwrap()
@@ -263,7 +269,6 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
-            "--native-price-estimators=Forwarder|http://localhost:12088".to_string(),
             format!("--db-read-url={}", &*LOCAL_READ_ONLY_DB_URL),
         ]
         .into_iter()
@@ -274,9 +279,20 @@ impl<'a> Services<'a> {
         let args = ignore_overwritten_cli_params(args);
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
-        let config = orderbook::config::Configuration::from_path(&args.config)
+        let mut config = orderbook::config::Configuration::from_path(&args.config)
             .await
             .unwrap();
+        if config
+            .native_price_estimation
+            .estimators
+            .as_slice()
+            .is_empty()
+        {
+            config.native_price_estimation.estimators =
+                NativePriceEstimators::new(vec![vec![NativePriceEstimator::forwarder(
+                    Url::from_str("http://localhost:12088").unwrap(),
+                )]]);
+        }
         tokio::task::spawn(orderbook::run(args, config));
 
         Self::wait_for_api_to_come_up().await;
@@ -383,6 +399,15 @@ impl<'a> Services<'a> {
             haircut_bps: 0,
         }];
 
+        let shared_native_price_config =
+            shared::price_estimation::config::native_price::NativePriceConfig {
+                cache: shared::price_estimation::config::native_price::CacheConfig {
+                    max_age: Duration::from_secs(2),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
         // Create TOML config files
         let (_autopilot_config_file, autopilot_config_arg) = Configuration {
             native_price_estimation: {
@@ -398,6 +423,7 @@ impl<'a> Services<'a> {
                                 Url::from_str("http://localhost:11088/test_solver").unwrap(),
                             ),
                         ]]),
+                        shared: shared_native_price_config.clone(),
                         ..Default::default()
                     }
                 } else {
@@ -408,6 +434,7 @@ impl<'a> Services<'a> {
                                 Url::from_str("http://localhost:11088/test_solver").unwrap(),
                             ),
                         ]]),
+                        shared: shared_native_price_config,
                         ..Default::default()
                     }
                 }

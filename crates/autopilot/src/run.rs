@@ -284,6 +284,7 @@ pub async fn run(
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
+        &config.native_price_estimation.shared,
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
@@ -313,7 +314,7 @@ pub async fn run(
     let weth = eth.contracts().weth().clone();
     let prices = db_write.fetch_latest_prices().await.unwrap();
     let shared_cache = shared::price_estimation::native_price_cache::Cache::new(
-        args.price_estimation.native_price_cache_max_age,
+        config.native_price_estimation.shared.cache.max_age,
         prices,
     );
     let api_sources = config

@@ -214,6 +214,7 @@ pub async fn run(args: Arguments, config: Configuration) {
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
+        &config.native_price_estimation.shared,
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
@@ -239,24 +240,24 @@ pub async fn run(args: Arguments, config: Configuration) {
 
     let prices = postgres_write.fetch_latest_prices().await.unwrap();
     let cache = shared::price_estimation::native_price_cache::Cache::new(
-        args.price_estimation.native_price_cache_max_age,
+        config.native_price_estimation.shared.cache.max_age,
         prices,
     );
     let primary = price_estimator_factory
         .native_price_estimator(
-            args.native_price_estimators.as_slice(),
-            args.fast_price_estimation_results_required,
+            config.native_price_estimation.estimators.as_slice(),
+            config.native_price_estimation.results_required,
             &native_token,
         )
         .await
         .expect("failed to build primary native price estimator");
 
     let inner: Box<dyn NativePriceEstimating> =
-        if let Some(ref fallback_config) = args.native_price_estimators_fallback {
+        if let Some(ref fallback_config) = config.native_price_estimation.fallback_estimators {
             let fallback = price_estimator_factory
                 .native_price_estimator(
                     fallback_config.as_slice(),
-                    args.fast_price_estimation_results_required,
+                    config.native_price_estimation.results_required,
                     &native_token,
                 )
                 .await
@@ -292,7 +293,7 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .iter()
                 .map(|price_estimator| price_estimator.clone().into())
                 .collect::<Vec<_>>(),
-            args.fast_price_estimation_results_required,
+            config.native_price_estimation.results_required,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )

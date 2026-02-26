@@ -52,6 +52,9 @@ pub struct NativePriceConfig {
         default = "default_native_price_prefetch_time"
     )]
     pub prefetch_time: Duration,
+
+    #[serde(flatten)]
+    pub shared: shared::price_estimation::config::native_price::NativePriceConfig,
 }
 
 impl Default for NativePriceConfig {
@@ -62,6 +65,7 @@ impl Default for NativePriceConfig {
             results_required: default_native_price_estimation_results_required(),
             cache_refresh_interval: default_native_price_cache_refresh(),
             prefetch_time: default_native_price_prefetch_time(),
+            shared: Default::default(),
         }
     }
 }
