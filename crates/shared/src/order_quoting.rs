@@ -580,8 +580,13 @@ impl OrderQuoter {
             // quote verification already tries to auto-fake missing balances
             balance_override: None,
         };
-        let mut balances: Vec<_> = self.balance_fetcher.get_balances(&[query]).collect().await;
-        balances.pop().context("missing balance result")?
+        let (_query, result) = self
+            .balance_fetcher
+            .get_balances(&[&query])
+            .next()
+            .await
+            .context("missing balance result")?;
+        result
     }
 }
 
@@ -806,7 +811,7 @@ mod tests {
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
         mock.expect_get_balances().returning(|addresses| {
-            futures::stream::iter((0..addresses.len()).map(|_| Ok(U256::MAX))).boxed()
+            futures::stream::iter(addresses.iter().map(|addr| (addr, Ok(U256::MAX)))).boxed()
         });
         Arc::new(mock)
     }
