@@ -190,11 +190,11 @@ impl RunLoop {
         )
         .await;
 
-        futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.participate(Arc::clone(driver), request.clone(), auction.id)),
-        )
+        futures::future::join_all(self.drivers.iter().map(|driver| {
+            let compress =
+                self.compress_solve_request && driver.url.as_str().contains(".svc.cluster.local");
+            self.participate(Arc::clone(driver), request.for_driver(compress), auction.id)
+        }))
         .await
         .into_iter()
         .flatten()

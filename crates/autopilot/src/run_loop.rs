@@ -567,11 +567,11 @@ impl RunLoop {
         .await;
         Metrics::solve_request_body_size(request.body_size());
 
-        let mut bids = futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.solve(driver.clone(), request.clone())),
-        )
+        let mut bids = futures::future::join_all(self.drivers.iter().map(|driver| {
+            let compress = self.config.compress_solve_request
+                && driver.url.as_str().contains(".svc.cluster.local");
+            self.solve(driver.clone(), request.for_driver(compress))
+        }))
         .await
         .into_iter()
         .flatten()

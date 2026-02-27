@@ -31,8 +31,9 @@ use {
 #[derive(Clone, Debug)]
 pub struct Request {
     auction_id: i64,
-    body: bytes::Bytes,
-    content_encoding: Option<HeaderValue>,
+    raw_body: Bytes,
+    compressed_body: Option<Bytes>,
+    use_compressed: bool,
 }
 
 impl Request {
@@ -72,7 +73,7 @@ impl Request {
         };
         let auction_id = auction.id;
 
-        let (body, content_encoding) = tokio::task::spawn_blocking(move || {
+        let (raw_body, compressed_body) = tokio::task::spawn_blocking(move || {
             let serialized = serde_json::to_vec(&helper).expect("type should be JSON serializable");
 
             if !compress {
@@ -93,8 +94,8 @@ impl Request {
             let mut encoder = CompressorWriter::new(Vec::new(), 4096, 1, 22);
             match encoder.write_all(&serialized).and_then(|_| encoder.flush()) {
                 Ok(()) => (
-                    Bytes::from(encoder.into_inner()),
-                    Some(HeaderValue::from_static("br")),
+                    Bytes::from(serialized),
+                    Some(Bytes::from(encoder.into_inner())),
                 ),
                 Err(err) => {
                     tracing::error!(
@@ -109,34 +110,44 @@ impl Request {
         .expect("inner task should not panic as serialization should work for the given type");
 
         Self {
-            body,
             auction_id,
-            content_encoding,
+            raw_body,
+            compressed_body,
+            use_compressed: false,
+        }
+    }
+
+    pub fn for_driver(&self, compress: bool) -> Self {
+        Self {
+            use_compressed: compress && self.compressed_body.is_some(),
+            ..self.clone()
         }
     }
 
     pub fn body_size(&self) -> usize {
-        self.body.len()
+        self.raw_body.len()
     }
 }
 
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
+        let (body, encoding) = if self.use_compressed {
+            (
+                self.compressed_body.clone().expect("checked in for_driver"),
+                Some(HeaderValue::from_static("br")),
+            )
+        } else {
+            (self.raw_body.clone(), None)
+        };
+
         let request = request
-            .body(reqwest::Body::wrap_stream(ByteStream::new(
-                self.body.clone(),
-            )))
-            // announce which auction this request is for in the
-            // headers to help the driver detect duplicated
-            // `/solve` requests before streaming the body
+            .body(reqwest::Body::wrap_stream(ByteStream::new(body)))
             .header("X-Auction-Id", self.auction_id)
-            // manually set the content type header for JSON since
-            // we can't use `request.json(self)`
             .header(
                 reqwest::header::CONTENT_TYPE,
                 reqwest::header::HeaderValue::from_static("application/json"),
             );
-        if let Some(encoding) = &self.content_encoding {
+        if let Some(encoding) = encoding {
             request.header(reqwest::header::CONTENT_ENCODING, encoding)
         } else {
             request
@@ -144,10 +155,10 @@ impl InjectIntoHttpRequest for Request {
     }
 
     fn body_to_string(&self) -> Cow<'_, str> {
-        if self.content_encoding.is_some() {
+        if self.use_compressed {
             return Cow::Borrowed("<compressed>");
         }
-        let string = str::from_utf8(self.body.as_ref()).unwrap();
+        let string = str::from_utf8(self.raw_body.as_ref()).unwrap();
         Cow::Borrowed(string)
     }
 }
@@ -305,8 +316,9 @@ mod tests {
     fn uncompressed_request(json: Vec<u8>) -> Request {
         Request {
             auction_id: 1,
-            body: Bytes::from(json),
-            content_encoding: None,
+            raw_body: Bytes::from(json),
+            compressed_body: None,
+            use_compressed: false,
         }
     }
 
@@ -319,8 +331,9 @@ mod tests {
         let compressed = encoder.into_inner();
         Request {
             auction_id: 1,
-            body: Bytes::from(compressed),
-            content_encoding: Some(HeaderValue::from_static("br")),
+            raw_body: Bytes::from(json.to_vec()),
+            compressed_body: Some(Bytes::from(compressed)),
+            use_compressed: true,
         }
     }
 
@@ -329,19 +342,17 @@ mod tests {
         let json = make_test_json();
 
         let request = compressed_request(&json);
-        assert_eq!(
-            request.content_encoding.as_ref().map(|v| v.as_bytes()),
-            Some("br".as_bytes())
-        );
+        assert!(request.use_compressed);
+        let compressed = request.compressed_body.as_ref().unwrap();
         assert!(
-            request.body.len() < json.len(),
+            compressed.len() < json.len(),
             "compressed body {} should be smaller than original {}",
-            request.body.len(),
+            compressed.len(),
             json.len(),
         );
 
         let mut decompressed = Vec::new();
-        brotli::BrotliDecompress(&mut request.body.as_ref(), &mut decompressed).unwrap();
+        brotli::BrotliDecompress(&mut compressed.as_ref(), &mut decompressed).unwrap();
         assert_eq!(decompressed, json);
     }
 
@@ -350,7 +361,7 @@ mod tests {
         let json = make_test_json();
         let request = uncompressed_request(json.clone());
 
-        assert_eq!(request.content_encoding, None);
-        assert_eq!(request.body.as_ref(), json.as_slice());
+        assert!(!request.use_compressed);
+        assert_eq!(request.raw_body.as_ref(), json.as_slice());
     }
 }
