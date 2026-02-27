@@ -1,9 +1,8 @@
 use {
-    crate::database::INSERT_BATCH_SIZE_DEFAULT,
     alloy::primitives::Address,
     anyhow::Context,
     shared::{
-        arguments::{display_option, display_secret_option},
+        arguments::display_option,
         http_client,
         price_estimation::{self},
     },
@@ -28,9 +27,6 @@ pub struct CliArguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    #[clap(flatten)]
-    pub database_pool: shared::arguments::DatabasePoolConfig,
-
     /// Address of the ethflow contracts. If not specified, eth-flow orders are
     /// disabled.
     /// In general, one contract is sufficient for the service to function.
@@ -51,15 +47,6 @@ pub struct CliArguments {
     /// Address to bind the HTTP API server
     #[clap(long, env, default_value = "0.0.0.0:12088")]
     pub api_address: SocketAddr,
-
-    /// Url of the Postgres database. By default connects to locally running
-    /// postgres.
-    #[clap(long, env, default_value = "postgresql://")]
-    pub db_write_url: Url,
-
-    /// The number of order events to insert in a single batch.
-    #[clap(long, env, default_value_t = INSERT_BATCH_SIZE_DEFAULT)]
-    pub insert_batch_size: NonZeroUsize,
 
     /// Skip syncing past events (useful for local deployments)
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -186,7 +173,6 @@ impl std::fmt::Display for CliArguments {
             order_quoting,
             http_client,
             price_estimation,
-            database_pool,
             ethflow_contracts,
             ethflow_indexing_start,
             metrics_address,
@@ -198,8 +184,6 @@ impl std::fmt::Display for CliArguments {
             submission_deadline,
             shadow,
             solve_deadline,
-            db_write_url,
-            insert_batch_size,
             max_settlement_transaction_wait,
             cow_amm_configs,
             max_run_loop_delay,
@@ -216,12 +200,10 @@ impl std::fmt::Display for CliArguments {
         write!(f, "{order_quoting}")?;
         write!(f, "{http_client}")?;
         write!(f, "{price_estimation}")?;
-        write!(f, "{database_pool}")?;
         writeln!(f, "ethflow_contracts: {ethflow_contracts:?}")?;
         writeln!(f, "ethflow_indexing_start: {ethflow_indexing_start:?}")?;
         writeln!(f, "metrics_address: {metrics_address}")?;
         writeln!(f, "api_address: {api_address}")?;
-        display_secret_option(f, "db_write_url", Some(&db_write_url))?;
         writeln!(f, "skip_event_sync: {skip_event_sync}")?;
         writeln!(f, "unsupported_tokens: {unsupported_tokens:?}")?;
         writeln!(
@@ -232,7 +214,6 @@ impl std::fmt::Display for CliArguments {
         writeln!(f, "submission_deadline: {submission_deadline}")?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {solve_deadline:?}")?;
-        writeln!(f, "insert_batch_size: {insert_batch_size}")?;
         writeln!(
             f,
             "max_settlement_transaction_wait: {max_settlement_transaction_wait:?}"

@@ -31,6 +31,7 @@ database = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
+configs = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
@@ -61,6 +62,7 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+configs = { workspace = true, features = ["test-util"] }
 mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
@@ -76,5 +78,5 @@ workspace = true
 [features]
 e2e = []
 mimalloc-allocator = ["dep:mimalloc"]
-test-util = ["dep:tempfile"]
+test-util = ["dep:tempfile", "configs/test-util"]
 tokio-console = ["observe/tokio-console"]

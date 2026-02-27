@@ -269,7 +269,6 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
-            format!("--db-read-url={}", &*LOCAL_READ_ONLY_DB_URL),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -282,6 +281,7 @@ impl<'a> Services<'a> {
         let mut config = orderbook::config::Configuration::from_path(&args.config)
             .await
             .unwrap();
+        config.database.read_url = Some(LOCAL_READ_ONLY_DB_URL.parse().unwrap());
         if config
             .native_price_estimation
             .estimators

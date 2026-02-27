@@ -9,7 +9,7 @@ use {
         trusted_tokens::TrustedTokensConfig,
     },
     anyhow::{anyhow, ensure},
-    serde::{Deserialize, Serialize},
+    serde::Deserialize,
     std::path::Path,
 };
 
@@ -21,10 +21,11 @@ pub mod s3;
 pub mod solver;
 pub mod trusted_tokens;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize)]
 // NOTE: cannot add deny_unknown_fields during the config migration
 // as new ones get added in the config will fail parsing if extra fields are present
 #[serde(rename_all = "kebab-case", /* deny_unknown_fields */)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 pub struct Configuration {
     pub drivers: Vec<Solver>,
 
@@ -49,6 +50,9 @@ pub struct Configuration {
     pub s3: Option<S3Config>,
 
     pub native_price_estimation: NativePriceConfig,
+
+    #[serde(default)]
+    pub database: configs::database::DatabasePoolConfig,
 }
 
 impl Configuration {
@@ -67,10 +71,6 @@ impl Configuration {
         }
     }
 
-    pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
-        Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
-    }
-
     // Note for reviewers: if this and other validations are always applied,
     // we should instead move them to the deserialization stage
     // https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
@@ -85,6 +85,10 @@ impl Configuration {
 
 #[cfg(any(test, feature = "test-util"))]
 impl Configuration {
+    pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+        Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
+    }
+
     pub fn test(name: &str, solver_address: alloy::primitives::Address) -> Self {
         Self {
             drivers: vec![Solver::test(name, solver_address)],
@@ -124,6 +128,53 @@ mod tests {
         alloy::primitives::address,
         std::time::Duration,
     };
+
+    #[test]
+    fn t() {
+        let toml = r#"[[drivers]]
+        name = "test_solver"
+        url = "http://localhost:11088/test_solver"
+
+        [drivers.submission-account]
+        address = "0xf985d2cf3f3c5cfc798d8e9e4ebdd6777653c3cb"
+
+        [fee-policies]
+        policies = []
+        max-partner-fee = 0.01
+
+        [fee-policies.upcoming-policies]
+        policies = []
+
+        [trusted-tokens]
+        tokens = []
+        update-interval = "1h"
+
+        [order-events-cleanup]
+        cleanup-interval = "1day"
+        cleanup-threshold = "30days"
+
+        [banned-users]
+        addresses = []
+        max-cache-size = 10000
+
+        [native-price-estimation]
+        estimators = []
+        results-required = 2
+        cache-refresh-interval = "1s"
+        prefetch-time = "1m 20s"
+        approximation-tokens = []
+
+        [native-price-estimation.cache]
+        max-age = "10m"
+        concurrent-requests = 1
+
+        [database]
+        write-url = "postgresql://"
+        max-connections = 10
+        insert-batch-size = 500
+"#;
+        toml::from_str::<Configuration>(toml).unwrap();
+    }
 
     #[test]
     fn deserialize_full_configuration() {
