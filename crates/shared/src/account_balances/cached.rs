@@ -11,18 +11,17 @@ use {
         stream::{self, BoxStream},
     },
     itertools::Itertools,
-    std::sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
+    std::{
+        num::{NonZeroU64, NonZeroUsize},
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
     },
     tracing::{Instrument, instrument},
 };
 
 type BlockNumber = u64;
-
-/// Balances get removed from the cache after this many blocks without being
-/// requested.
-const EVICTION_TIME: BlockNumber = 5;
 
 #[derive(Debug, Clone)]
 struct BalanceEntry {
@@ -76,7 +75,12 @@ impl Balances {
     }
 
     /// Spawns task that refreshes the cached balances on every new block.
-    pub fn spawn_background_task(&self, block_stream: CurrentBlockWatcher) {
+    pub fn spawn_background_task(
+        &self,
+        max_age: NonZeroU64,
+        max_concurrency: NonZeroUsize,
+        block_stream: CurrentBlockWatcher,
+    ) {
         let inner = self.0.clone();
         let mut stream = into_stream(block_stream);
 
@@ -84,19 +88,23 @@ impl Balances {
             while let Some(block) = stream.next().await {
                 inner.last_seen_block.store(block.number, Ordering::Relaxed);
 
-                let oldest_allowed_request = block.number.saturating_sub(EVICTION_TIME);
-                let balances_to_update: Vec<_> = inner
-                    .cache
-                    .iter()
-                    .filter_map(|entry| {
-                        (entry.requested_at >= oldest_allowed_request).then(|| entry.key().clone())
-                    })
-                    .collect();
+                let oldest_allowed_request = block.number.saturating_sub(max_age.get());
+
+                // evict unused entries and find used entries for updating in one go
+                let mut balances_to_update = Vec::with_capacity(inner.cache.len());
+                inner.cache.retain(|query, value| {
+                    if value.requested_at >= oldest_allowed_request {
+                        balances_to_update.push(query.clone());
+                        true
+                    } else {
+                        false
+                    }
+                });
 
                 inner
                     .fetcher
                     .get_balances(balances_to_update)
-                    .for_each_concurrent(100, |fut| {
+                    .for_each_concurrent(max_concurrency.get(), |fut| {
                         let inner = inner.clone();
                         async move {
                             let (query, result) = fut.await;
@@ -110,11 +118,6 @@ impl Balances {
                         }
                     })
                     .await;
-
-                // this could already be done when we fetch the items to clone...
-                inner
-                    .cache
-                    .retain(|_, entry| entry.updated_at >= block.number);
             }
             tracing::error!("block stream terminated unexpectedly");
         };
@@ -268,7 +271,11 @@ mod tests {
             .returning(|queries| with_balance(queries, || Ok(U256::ONE)));
 
         let fetcher = Balances::new(Arc::new(inner));
-        fetcher.spawn_background_task(receiver);
+        fetcher.spawn_background_task(
+            NonZeroU64::new(5).unwrap(),
+            NonZeroUsize::new(100).unwrap(),
+            receiver,
+        );
 
         // 1st call to `inner`. Balance gets cached.
         let result = fetcher
@@ -351,7 +358,8 @@ mod tests {
             .returning(|queries| with_balance(queries, || Ok(U256::ONE)));
 
         let fetcher = Balances::new(Arc::new(inner));
-        fetcher.spawn_background_task(receiver);
+        const EVICTION_TIME: NonZeroU64 = NonZeroU64::new(5).unwrap();
+        fetcher.spawn_background_task(EVICTION_TIME, NonZeroUsize::new(10).unwrap(), receiver);
 
         let cached_entry = || fetcher.0.cache.get(&query(1)).map(|e| e.clone());
 
@@ -364,7 +372,7 @@ mod tests {
             .await;
         assert_eq!(result[0].1.as_ref().unwrap(), &U256::ONE);
 
-        for block in 1..=EVICTION_TIME + 1 {
+        for block in 1..=EVICTION_TIME.get() + 1 {
             assert!(cached_entry().is_some());
             // New block gets detected.
             sender

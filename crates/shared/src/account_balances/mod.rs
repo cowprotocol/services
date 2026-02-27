@@ -15,7 +15,10 @@ use {
         interaction::InteractionData,
         order::{Order, SellTokenSource},
     },
-    std::sync::Arc,
+    std::{
+        num::{NonZeroU64, NonZeroUsize},
+        sync::Arc,
+    },
     thiserror::Error,
 };
 
@@ -94,9 +97,11 @@ pub fn cached(
     web3: &Web3,
     balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
+    max_age: NonZeroU64,
+    max_concurrency: NonZeroUsize,
 ) -> Arc<dyn BalanceFetching> {
     let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
-    cached.spawn_background_task(blocks);
+    cached.spawn_background_task(max_age, max_concurrency, blocks);
     cached
 }
 
