@@ -341,7 +341,7 @@ async fn two_limit_orders_test(web3: Web3) {
             .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
             .is_some_and(|v| v == "br");
         if path.contains("/solve") && has_br {
-            flag.store(true, Ordering::Relaxed);
+            flag.store(true, Ordering::Release);
         }
     });
     let proxy_addr: std::net::SocketAddr = "0.0.0.0:11089".parse().unwrap();
@@ -423,7 +423,7 @@ async fn two_limit_orders_test(web3: Web3) {
     .unwrap();
 
     assert!(
-        saw_compressed_solve.load(Ordering::Relaxed),
+        saw_compressed_solve.load(Ordering::Acquire),
         "expected /solve requests to be brotli-compressed"
     );
 }
