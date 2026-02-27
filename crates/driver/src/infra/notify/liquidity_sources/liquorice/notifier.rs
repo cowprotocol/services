@@ -20,7 +20,7 @@ use {
     alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chrono::Utc,
-    contracts::alloy::LiquoriceSettlement,
+    contracts::LiquoriceSettlement,
 };
 
 const NOTIFICATION_SOURCE: &str = "cow_protocol";
@@ -89,7 +89,7 @@ mod utils {
             eth,
         },
         alloy::{primitives::Address, sol_types::SolCall},
-        contracts::alloy::LiquoriceSettlement,
+        contracts::LiquoriceSettlement,
         std::collections::HashSet,
     };
 

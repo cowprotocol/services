@@ -6,22 +6,15 @@
 
 use {
     self::{
-        aggregate::Aggregate,
-        cache::Cache,
-        internal::InternalPoolFetching,
-        registry::Registry,
+        aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
     },
     super::{
         graph_api::{BalancerSubgraphClient, RegisteredPools},
         pool_init::PoolInitializing,
         pools::{
-            FactoryIndexing,
-            Pool,
-            PoolIndexing,
-            PoolKind,
+            FactoryIndexing, Pool, PoolIndexing, PoolKind,
             common::{self, PoolInfoFetcher},
-            stable,
-            weighted,
+            stable, weighted,
         },
         swap::fixed_point::Bfp,
     },
@@ -36,20 +29,13 @@ use {
         providers::{DynProvider, Provider},
     },
     anyhow::{Context, Result},
-    contracts::alloy::{
-        BalancerV2ComposableStablePoolFactory,
-        BalancerV2ComposableStablePoolFactoryV3,
-        BalancerV2ComposableStablePoolFactoryV4,
-        BalancerV2ComposableStablePoolFactoryV5,
-        BalancerV2ComposableStablePoolFactoryV6,
-        BalancerV2LiquidityBootstrappingPoolFactory,
-        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
-        BalancerV2StablePoolFactoryV2,
-        BalancerV2Vault,
-        BalancerV2WeightedPool2TokensFactory,
-        BalancerV2WeightedPoolFactory,
-        BalancerV2WeightedPoolFactoryV3,
-        BalancerV2WeightedPoolFactoryV4,
+    contracts::{
+        BalancerV2ComposableStablePoolFactory, BalancerV2ComposableStablePoolFactoryV3,
+        BalancerV2ComposableStablePoolFactoryV4, BalancerV2ComposableStablePoolFactoryV5,
+        BalancerV2ComposableStablePoolFactoryV6, BalancerV2LiquidityBootstrappingPoolFactory,
+        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactoryV2,
+        BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
+        BalancerV2WeightedPoolFactoryV3, BalancerV2WeightedPoolFactoryV4,
     },
     ethrpc::{
         alloy::ProviderLabelingExt,

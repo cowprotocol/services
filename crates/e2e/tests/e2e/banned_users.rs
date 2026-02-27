@@ -3,7 +3,7 @@ use {
         primitives::{Address, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     e2e::setup::{OnchainComponents, Services, run_forked_test_with_block_number},
     ethrpc::Web3,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},

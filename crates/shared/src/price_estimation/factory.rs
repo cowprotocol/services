@@ -1,8 +1,6 @@
 use {
     super::{
-        Arguments,
-        NativePriceEstimator as NativePriceEstimatorSource,
-        PriceEstimating,
+        Arguments, NativePriceEstimator as NativePriceEstimatorSource, PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -28,7 +26,7 @@ use {
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
-    contracts::alloy::WETH9,
+    contracts::WETH9,
     ethrpc::{alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,

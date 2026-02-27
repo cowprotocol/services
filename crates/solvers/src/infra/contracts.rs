@@ -1,4 +1,4 @@
-use {crate::domain::eth, chain::Chain, contracts::alloy::WETH9};
+use {crate::domain::eth, chain::Chain, contracts::WETH9};
 
 #[derive(Clone, Debug)]
 pub struct Contracts {

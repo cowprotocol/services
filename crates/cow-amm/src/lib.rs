@@ -5,9 +5,7 @@ mod maintainers;
 mod registry;
 
 pub use {
-    amm::Amm,
-    contracts::alloy::cow_amm::CowAmmLegacyHelper::Instance as Helper,
-    registry::Registry,
+    amm::Amm, contracts::cow_amm::CowAmmLegacyHelper::Instance as Helper, registry::Registry,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -36,7 +34,7 @@ pub mod gpv2_order {
             primitives::{B256, Keccak256},
             sol_types::{SolStruct, SolValue},
         },
-        contracts::alloy::cow_amm::CowAmm,
+        contracts::cow_amm::CowAmm,
         model::{DomainSeparator, interaction::InteractionData, signature::hashed_eip712_message},
     };
 

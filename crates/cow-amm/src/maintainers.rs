@@ -1,6 +1,6 @@
 use {
     crate::{Amm, cache::Storage},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     ethrpc::AlloyProvider,
     futures::{
         future::{join_all, select_ok},

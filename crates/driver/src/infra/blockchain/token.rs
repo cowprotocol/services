@@ -8,13 +8,13 @@ use {
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
 pub struct Erc20 {
-    token: contracts::alloy::ERC20::Instance,
+    token: contracts::ERC20::Instance,
 }
 
 impl Erc20 {
     pub(super) fn new(eth: &Ethereum, address: eth::TokenAddress) -> Self {
         Self {
-            token: contracts::alloy::ERC20::Instance::new(address.0.0, eth.web3.provider.clone()),
+            token: contracts::ERC20::Instance::new(address.0.0, eth.web3.provider.clone()),
         }
     }
 

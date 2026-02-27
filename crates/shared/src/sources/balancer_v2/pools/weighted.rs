@@ -8,10 +8,8 @@ use {
     },
     alloy::{eips::BlockId, primitives::Address},
     anyhow::{Result, anyhow},
-    contracts::alloy::{
-        BalancerV2WeightedPool,
-        BalancerV2WeightedPoolFactory,
-        BalancerV2WeightedPoolFactoryV3,
+    contracts::{
+        BalancerV2WeightedPool, BalancerV2WeightedPoolFactory, BalancerV2WeightedPoolFactoryV3,
     },
     futures::{FutureExt as _, future::BoxFuture},
     std::collections::BTreeMap,

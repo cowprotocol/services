@@ -20,7 +20,7 @@ use {
         sol_types::SolEvent,
     },
     anyhow::Result,
-    contracts::alloy::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
+    contracts::BalancerV2BasePoolFactory::{self, BalancerV2BasePoolFactory::PoolCreated},
     ethrpc::{
         alloy::errors::ContractErrorExt,
         block_stream::{BlockNumberHash, BlockRetrieving},

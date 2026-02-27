@@ -9,9 +9,7 @@ use {
         interaction::EncodedInteraction,
         tenderly_api::TenderlyCodeSimulator,
         trade_finding::{
-            Interaction,
-            QuoteExecution,
-            TradeKind,
+            Interaction, QuoteExecution, TradeKind,
             external::dto::{self, JitOrder},
             map_interactions_data,
         },
@@ -23,9 +21,8 @@ use {
     },
     anyhow::{Context, Result, anyhow},
     bigdecimal::BigDecimal,
-    contracts::alloy::{
-        GPv2Settlement,
-        WETH9,
+    contracts::{
+        GPv2Settlement, WETH9,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
@@ -37,10 +34,7 @@ use {
     num::BigRational,
     number::{
         conversions::{
-            big_decimal_to_big_rational,
-            i512_to_big_rational,
-            i512_to_u256,
-            u256_to_big_rational,
+            big_decimal_to_big_rational, i512_to_big_rational, i512_to_u256, u256_to_big_rational,
         },
         nonzero::NonZeroU256,
         units::EthUnit,

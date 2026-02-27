@@ -284,14 +284,12 @@ mod tests {
     use {
         super::*,
         crate::traits::{
-            MockChainRead,
-            MockChainWrite,
-            MockDbRead,
+            MockChainRead, MockChainWrite, MockDbRead,
             test::{MockChainReadExt, MockDbReadExt},
         },
         alloy::primitives::Address,
         anyhow::anyhow,
-        contracts::alloy::CoWSwapEthFlow::EthFlowOrder,
+        contracts::CoWSwapEthFlow::EthFlowOrder,
         database::{byte_array::ByteArray, ethflow_orders::EthOrderPlacement},
         rand::random,
         rstest::rstest,

@@ -3,17 +3,10 @@ use {
         primitives::{Address, B256, U256},
         providers::Provider,
     },
-    contracts::alloy::{
-        BalancerV2Authorizer,
-        BalancerV2Vault,
-        CoWSwapEthFlow,
-        FlashLoanRouter,
-        GPv2AllowListAuthentication,
-        GPv2Settlement,
-        HooksTrampoline,
-        UniswapV2Factory,
-        UniswapV2Router02,
-        WETH9,
+    contracts::{
+        BalancerV2Authorizer, BalancerV2Vault, CoWSwapEthFlow, FlashLoanRouter,
+        GPv2AllowListAuthentication, GPv2Settlement, HooksTrampoline, UniswapV2Factory,
+        UniswapV2Router02, WETH9,
         support::{Balances, Signatures},
     },
     ethrpc::alloy::CallBuilderExt,
@@ -186,7 +179,7 @@ impl Contracts {
             .await
             .unwrap();
 
-        contracts::vault::grant_required_roles(
+        crate::setup::vault::grant_required_roles(
             &balancer_authorizer,
             *balancer_vault.address(),
             gp_settlement

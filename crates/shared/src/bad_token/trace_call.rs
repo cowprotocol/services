@@ -15,7 +15,7 @@ use {
         transports::{RpcError, TransportErrorKind},
     },
     anyhow::{Context, Result, bail, ensure},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     model::interaction::InteractionData,
 };
 
@@ -336,11 +336,7 @@ mod tests {
         alloy::{
             primitives::Bytes,
             rpc::types::trace::parity::{
-                Action,
-                CallAction,
-                CallOutput,
-                CallType,
-                TransactionTrace,
+                Action, CallAction, CallOutput, CallType, TransactionTrace,
             },
         },
     };

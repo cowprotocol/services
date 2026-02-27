@@ -10,8 +10,7 @@ use {
     },
     number::u256_ext::U256Ext,
     shared::{
-        encoded_settlement::EncodedSettlement,
-        http_solver::model::InternalizationStrategy,
+        encoded_settlement::EncodedSettlement, http_solver::model::InternalizationStrategy,
         interaction::Interaction,
     },
     std::{
@@ -585,7 +584,7 @@ pub mod tests {
     use {
         super::*,
         alloy::primitives::Address,
-        contracts::alloy::WETH9,
+        contracts::WETH9,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
         shared::interaction::{EncodedInteraction, Interaction},

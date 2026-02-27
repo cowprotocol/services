@@ -8,7 +8,7 @@ use {
     },
     alloy::eips::BlockId,
     anyhow::Result,
-    contracts::alloy::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
+    contracts::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
     futures::{FutureExt as _, future::BoxFuture},
 };
 

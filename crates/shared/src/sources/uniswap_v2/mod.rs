@@ -15,7 +15,7 @@ use {
     },
     alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
-    contracts::alloy::IUniswapLikeRouter,
+    contracts::IUniswapLikeRouter,
     ethrpc::alloy::ProviderLabelingExt,
     hex_literal::hex,
     std::{fmt::Display, str::FromStr, sync::Arc},
@@ -70,32 +70,32 @@ impl UniV2BaselineSourceParameters {
         match source {
             BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
             BS::UniswapV2 => Some(Self {
-                router: contracts::alloy::UniswapV2Router02::deployment_address(&chain_id)?,
+                router: contracts::UniswapV2Router02::deployment_address(&chain_id)?,
                 init_code_digest: UNISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Honeyswap => Some(Self {
-                router: contracts::alloy::HoneyswapRouter::deployment_address(&chain_id)?,
+                router: contracts::HoneyswapRouter::deployment_address(&chain_id)?,
                 init_code_digest: HONEYSWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::SushiSwap => Some(Self {
-                router: contracts::alloy::SushiSwapRouter::deployment_address(&chain_id)?,
+                router: contracts::SushiSwapRouter::deployment_address(&chain_id)?,
                 init_code_digest: SUSHISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Swapr => Some(Self {
-                router: contracts::alloy::SwaprRouter::deployment_address(&chain_id)?,
+                router: contracts::SwaprRouter::deployment_address(&chain_id)?,
                 init_code_digest: SWAPR_INIT.into(),
                 pool_reading: PoolReadingStyle::Swapr,
             }),
             BS::TestnetUniswapV2 => Some(Self {
-                router: contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain_id)?,
+                router: contracts::TestnetUniswapV2Router02::deployment_address(&chain_id)?,
                 init_code_digest: TESTNET_UNISWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
             BS::Baoswap => Some(Self {
-                router: contracts::alloy::BaoswapRouter::deployment_address(&chain_id)?,
+                router: contracts::BaoswapRouter::deployment_address(&chain_id)?,
                 init_code_digest: BAOSWAP_INIT.into(),
                 pool_reading: PoolReadingStyle::Default,
             }),
@@ -105,7 +105,7 @@ impl UniV2BaselineSourceParameters {
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
         let web3 = web3.labeled("uniswapV2");
         let router =
-            contracts::alloy::IUniswapLikeRouter::Instance::new(self.router, web3.provider.clone());
+            contracts::IUniswapLikeRouter::Instance::new(self.router, web3.provider.clone());
         let factory = router.factory().call().await.context("factory")?;
         let pair_provider = pair_provider::PairProvider {
             factory,

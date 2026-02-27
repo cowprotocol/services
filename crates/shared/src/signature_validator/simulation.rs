@@ -14,10 +14,8 @@ use {
         transports::RpcError,
     },
     anyhow::{Context, Result},
-    contracts::alloy::{
-        ERC1271SignatureValidator::ERC1271SignatureValidator,
-        GPv2Settlement,
-        support::Signatures,
+    contracts::{
+        ERC1271SignatureValidator::ERC1271SignatureValidator, GPv2Settlement, support::Signatures,
     },
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     std::sync::Arc,

@@ -4,7 +4,7 @@ use {
     crate::sources::uniswap_v2::pool_fetching::{DefaultPoolReader, Pool, PoolReading},
     alloy::eips::BlockId,
     anyhow::Result,
-    contracts::alloy::ISwaprPair,
+    contracts::ISwaprPair,
     ethrpc::alloy::errors::ignore_non_node_error,
     futures::{FutureExt as _, future::BoxFuture},
     model::TokenPair,

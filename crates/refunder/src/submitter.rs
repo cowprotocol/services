@@ -9,7 +9,7 @@ use {
     crate::traits::ChainWrite,
     alloy::{eips::eip1559::Eip1559Estimation, primitives::Address, providers::Provider},
     anyhow::{Context, Result},
-    contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
+    contracts::CoWSwapEthFlow::{self, EthFlowOrder},
     database::OrderUid,
     shared::{
         gas_price_estimation::{Eip1559EstimationExt, GasPriceEstimating},

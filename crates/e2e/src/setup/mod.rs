@@ -4,6 +4,7 @@ pub mod onchain_components;
 pub mod proxy;
 mod services;
 mod solver;
+mod vault;
 
 use {
     crate::nodes::{NODE_HOST, Node},
