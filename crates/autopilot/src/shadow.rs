@@ -39,6 +39,7 @@ pub struct RunLoop {
     auction: domain::auction::Id,
     block: u64,
     solve_deadline: Duration,
+    compress_solve_request: bool,
     liveness: Arc<Liveness>,
     current_block: CurrentBlockWatcher,
     winner_selection: winner_selection::Arbitrator,
@@ -51,6 +52,7 @@ impl RunLoop {
         drivers: Vec<Arc<infra::Driver>>,
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
+        compress_solve_request: bool,
         liveness: Arc<Liveness>,
         current_block: CurrentBlockWatcher,
         max_winners_per_auction: NonZeroUsize,
@@ -67,6 +69,7 @@ impl RunLoop {
             auction: 0,
             block: 0,
             solve_deadline,
+            compress_solve_request,
             liveness,
             current_block,
         }
@@ -179,8 +182,13 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
     async fn competition(&self, auction: &domain::Auction) -> Vec<Bid<Unscored>> {
-        let request =
-            solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline).await;
+        let request = solve::Request::new(
+            auction,
+            &self.trusted_tokens.all(),
+            self.solve_deadline,
+            self.compress_solve_request,
+        )
+        .await;
 
         futures::future::join_all(
             self.drivers

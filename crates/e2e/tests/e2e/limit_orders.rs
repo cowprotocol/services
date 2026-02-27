@@ -13,7 +13,10 @@ use {
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
-    e2e::setup::*,
+    e2e::setup::{
+        proxy::{OnRequest, ReverseProxy},
+        *,
+    },
     ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -23,7 +26,15 @@ use {
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
     orderbook::config::order_validation::OrderValidationConfig,
     shared::web3::Web3,
-    std::{collections::HashMap, ops::DerefMut, str::FromStr},
+    std::{
+        collections::HashMap,
+        ops::DerefMut,
+        str::FromStr,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    },
     url::Url,
 };
 
@@ -317,7 +328,44 @@ async fn two_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+
+    // Start a reverse proxy between autopilot and the driver to inspect
+    // requests and assert that /solve requests are brotli-compressed.
+    let saw_compressed_solve = Arc::new(AtomicBool::new(false));
+    let flag = saw_compressed_solve.clone();
+    let on_request: OnRequest = Arc::new(move |parts, _body| {
+        let path = parts.uri.path();
+        let has_br = parts
+            .headers
+            .get("content-encoding")
+            .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
+            .is_some_and(|v| v == "br");
+        if path.contains("/solve") && has_br {
+            flag.store(true, Ordering::Release);
+        }
+    });
+    let proxy_addr: std::net::SocketAddr = "0.0.0.0:11089".parse().unwrap();
+    let backend: Url = "http://0.0.0.0:11088".parse().unwrap();
+    let _proxy = ReverseProxy::start_with_callback(proxy_addr, &[backend], on_request);
+
+    let config = Configuration {
+        drivers: vec![Solver::new(
+            "test_solver".to_string(),
+            "http://localhost:11089/test_solver".parse().unwrap(),
+            Account::Address(solver.address()),
+        )],
+        ..Default::default()
+    };
+    let (_config_file, config_arg) = config.to_cli_args();
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: vec![config_arg, "--compress-solve-request=true".to_string()],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
 
     let order_a = OrderCreation {
         sell_token: *token_a.address(),
@@ -373,6 +421,11 @@ async fn two_limit_orders_test(web3: Web3) {
     })
     .await
     .unwrap();
+
+    assert!(
+        saw_compressed_solve.load(Ordering::Acquire),
+        "expected /solve requests to be brotli-compressed"
+    );
 }
 
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {
