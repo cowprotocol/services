@@ -1,5 +1,5 @@
 use {
-    contracts::alloy::IZeroex,
+    contracts::IZeroex,
     shared::{
         interaction::{EncodedInteraction, Interaction},
         zeroex_api::Order,

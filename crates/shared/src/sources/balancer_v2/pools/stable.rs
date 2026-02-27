@@ -11,7 +11,7 @@ use {
         primitives::{Address, U256},
     },
     anyhow::{Result, ensure},
-    contracts::alloy::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
+    contracts::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
     futures::{FutureExt as _, future::BoxFuture},
     num::BigRational,
     std::collections::BTreeMap,

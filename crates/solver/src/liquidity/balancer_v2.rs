@@ -4,11 +4,7 @@ use {
     crate::{
         interactions::BalancerSwapGivenOutInteraction,
         liquidity::{
-            AmmOrderExecution,
-            Liquidity,
-            SettlementHandling,
-            StablePoolOrder,
-            WeightedProductOrder,
+            AmmOrderExecution, Liquidity, SettlementHandling, StablePoolOrder, WeightedProductOrder,
         },
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
@@ -17,8 +13,7 @@ use {
     anyhow::Result,
     model::TokenPair,
     shared::{
-        http_solver::model::TokenAmount,
-        recent_block_cache::Block,
+        http_solver::model::TokenAmount, recent_block_cache::Block,
         sources::balancer_v2::pool_fetching::BalancerPoolFetching,
     },
     std::{collections::HashSet, sync::Arc},
@@ -195,7 +190,7 @@ mod tests {
     use {
         super::*,
         alloy::primitives::U256,
-        contracts::alloy::BalancerV2Vault,
+        contracts::BalancerV2Vault,
         maplit::{btreemap, hashset},
         mockall::predicate::*,
         model::TokenPair,
@@ -205,15 +200,9 @@ mod tests {
             interaction::Interaction,
             sources::balancer_v2::{
                 pool_fetching::{
-                    AmplificationParameter,
-                    CommonPoolState,
-                    FetchedBalancerPools,
-                    MockBalancerPoolFetching,
-                    StablePool,
-                    TokenState,
-                    WeightedPool,
-                    WeightedPoolVersion,
-                    WeightedTokenState,
+                    AmplificationParameter, CommonPoolState, FetchedBalancerPools,
+                    MockBalancerPoolFetching, StablePool, TokenState, WeightedPool,
+                    WeightedPoolVersion, WeightedTokenState,
                 },
                 swap::fixed_point::Bfp,
             },

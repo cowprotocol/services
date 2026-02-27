@@ -78,7 +78,7 @@ async fn wait_for_order_settlement(
 /// Creates a standard quote request for ethflow orders.
 fn default_quote_request(
     from: Address,
-    weth: &contracts::alloy::WETH9::Instance,
+    weth: &contracts::WETH9::Instance,
     buy_token: Address,
     sell_amount: NonZeroU256,
 ) -> OrderQuoteRequest {

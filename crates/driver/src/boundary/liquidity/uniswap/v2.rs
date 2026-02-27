@@ -7,7 +7,7 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
-    contracts::alloy::IUniswapLikeRouter,
+    contracts::IUniswapLikeRouter,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     shared::{
         http_solver::model::TokenAmount,

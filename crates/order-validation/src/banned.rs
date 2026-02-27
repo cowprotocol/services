@@ -6,7 +6,7 @@
 
 use {
     alloy::primitives::Address,
-    contracts::alloy::ChainalysisOracle,
+    contracts::ChainalysisOracle,
     futures::future::join_all,
     moka::sync::Cache,
     std::{

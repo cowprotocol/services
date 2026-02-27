@@ -8,12 +8,9 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::{Context, Result},
-    contracts::alloy::{
-        BalancerV2ComposableStablePoolFactory,
-        BalancerV2LiquidityBootstrappingPoolFactory,
-        BalancerV2StablePoolFactoryV2,
-        BalancerV2Vault,
-        BalancerV2WeightedPoolFactory,
+    contracts::{
+        BalancerV2ComposableStablePoolFactory, BalancerV2LiquidityBootstrappingPoolFactory,
+        BalancerV2StablePoolFactoryV2, BalancerV2Vault, BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
     ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},

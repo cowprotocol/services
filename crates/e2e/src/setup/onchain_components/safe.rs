@@ -5,11 +5,9 @@ use {
         providers::Provider,
         rpc::types::TransactionRequest,
     },
-    contracts::alloy::{
+    contracts::{
         GnosisSafe::{self, GnosisSafe::execTransactionCall},
-        GnosisSafeCompatibilityFallbackHandler,
-        GnosisSafeProxy,
-        GnosisSafeProxyFactory,
+        GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy, GnosisSafeProxyFactory,
     },
     ethrpc::{AlloyProvider, alloy::CallBuilderExt},
     hex_literal::hex,

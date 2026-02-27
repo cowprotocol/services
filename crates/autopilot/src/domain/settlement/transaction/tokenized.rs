@@ -5,7 +5,7 @@ use {
     },
     alloy::primitives::U256,
     app_data::AppDataHash,
-    contracts::alloy::GPv2Settlement,
+    contracts::GPv2Settlement,
 };
 
 /// Recover order uid from order data and signature

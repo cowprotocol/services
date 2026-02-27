@@ -4,7 +4,7 @@ use {
     crate::traits::DbRead,
     alloy::primitives::Address,
     anyhow::{Context, Result},
-    contracts::alloy::CoWSwapEthFlow::EthFlowOrder,
+    contracts::CoWSwapEthFlow::EthFlowOrder,
     database::{
         OrderUid,
         ethflow_orders::{EthOrderPlacement, read_order, refundable_orders},

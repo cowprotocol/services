@@ -2317,21 +2317,81 @@ dependencies = [
 [[package]]
 name = "contracts"
 version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
- "alloy-sol-macro-expander",
- "alloy-sol-macro-input",
- "anyhow",
- "paste",
- "prettyplease",
- "proc-macro2",
- "quote",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "syn 2.0.114",
- "tracing",
- "tracing-subscriber",
+ "cow-contract-anyoneauthenticator",
+ "cow-contract-balancerqueries",
+ "cow-contract-balancerv2authorizer",
+ "cow-contract-balancerv2basepool",
+ "cow-contract-balancerv2basepoolfactory",
+ "cow-contract-balancerv2composablestablepool",
+ "cow-contract-balancerv2composablestablepoolfactory",
+ "cow-contract-balancerv2composablestablepoolfactoryv3",
+ "cow-contract-balancerv2composablestablepoolfactoryv4",
+ "cow-contract-balancerv2composablestablepoolfactoryv5",
+ "cow-contract-balancerv2composablestablepoolfactoryv6",
+ "cow-contract-balancerv2liquiditybootstrappingpool",
+ "cow-contract-balancerv2liquiditybootstrappingpoolfactory",
+ "cow-contract-balancerv2noprotocolfeeliquiditybootstrappingpoolfactory",
+ "cow-contract-balancerv2stablepool",
+ "cow-contract-balancerv2stablepoolfactoryv2",
+ "cow-contract-balancerv2vault",
+ "cow-contract-balancerv2weightedpool",
+ "cow-contract-balancerv2weightedpool2tokensfactory",
+ "cow-contract-balancerv2weightedpoolfactory",
+ "cow-contract-balancerv2weightedpoolfactoryv3",
+ "cow-contract-balancerv2weightedpoolfactoryv4",
+ "cow-contract-balancerv3batchrouter",
+ "cow-contract-balances",
+ "cow-contract-baoswaprouter",
+ "cow-contract-chainalysisoracle",
+ "cow-contract-counter",
+ "cow-contract-cowamm",
+ "cow-contract-cowammconstantproductfactory",
+ "cow-contract-cowammfactorygetter",
+ "cow-contract-cowammlegacyhelper",
+ "cow-contract-cowammuniswapv2priceoracle",
+ "cow-contract-cowprotocoltoken",
+ "cow-contract-cowswapethflow",
+ "cow-contract-cowswaponchainorders",
+ "cow-contract-erc1271signaturevalidator",
+ "cow-contract-erc20",
+ "cow-contract-erc20mintable",
+ "cow-contract-flashloanrouter",
+ "cow-contract-gashog",
+ "cow-contract-gnosissafe",
+ "cow-contract-gnosissafecompatibilityfallbackhandler",
+ "cow-contract-gnosissafeproxy",
+ "cow-contract-gnosissafeproxyfactory",
+ "cow-contract-gpv2allowlistauthentication",
+ "cow-contract-gpv2settlement",
+ "cow-contract-honeyswaprouter",
+ "cow-contract-hookstrampoline",
+ "cow-contract-icowwrapper",
+ "cow-contract-iswaprpair",
+ "cow-contract-iuniswaplikepair",
+ "cow-contract-iuniswaplikerouter",
+ "cow-contract-iuniswapv3factory",
+ "cow-contract-izeroex",
+ "cow-contract-liquoricesettlement",
+ "cow-contract-nonstandarderc20balances",
+ "cow-contract-pancakerouter",
+ "cow-contract-permit2",
+ "cow-contract-remoteerc20balances",
+ "cow-contract-signatures",
+ "cow-contract-solver",
+ "cow-contract-spardose",
+ "cow-contract-sushiswaprouter",
+ "cow-contract-swapper",
+ "cow-contract-swaprrouter",
+ "cow-contract-testnetuniswapv2router02",
+ "cow-contract-trader",
+ "cow-contract-uniswapv2factory",
+ "cow-contract-uniswapv2router02",
+ "cow-contract-uniswapv3pool",
+ "cow-contract-uniswapv3quoterv2",
+ "cow-contract-uniswapv3swaprouterv2",
+ "cow-contract-weth9",
 ]
 
 [[package]]
@@ -2428,6 +2488,736 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "cow-contract-anyoneauthenticator"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerqueries"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2authorizer"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2basepool"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2basepoolfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2composablestablepool"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2composablestablepoolfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2composablestablepoolfactoryv3"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2composablestablepoolfactoryv4"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2composablestablepoolfactoryv5"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2composablestablepoolfactoryv6"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2liquiditybootstrappingpool"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2liquiditybootstrappingpoolfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2noprotocolfeeliquiditybootstrappingpoolfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2stablepool"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2stablepoolfactoryv2"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2vault"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2weightedpool"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2weightedpool2tokensfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2weightedpoolfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2weightedpoolfactoryv3"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv2weightedpoolfactoryv4"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balancerv3batchrouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-balances"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-baoswaprouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-chainalysisoracle"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-counter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowamm"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowammconstantproductfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowammfactorygetter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowammlegacyhelper"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowammuniswapv2priceoracle"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowprotocoltoken"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowswapethflow"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-cowswaponchainorders"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-erc1271signaturevalidator"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-erc20"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-erc20mintable"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-flashloanrouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-gashog"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-gnosissafe"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-gnosissafecompatibilityfallbackhandler"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-gnosissafeproxy"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-gnosissafeproxyfactory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-gpv2allowlistauthentication"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-gpv2settlement"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-honeyswaprouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-hookstrampoline"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-icowwrapper"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-iswaprpair"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-iuniswaplikepair"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-iuniswaplikerouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-iuniswapv3factory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-izeroex"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-liquoricesettlement"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-nonstandarderc20balances"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-pancakerouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-permit2"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-remoteerc20balances"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-signatures"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-solver"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-spardose"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-sushiswaprouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-swapper"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-swaprrouter"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-testnetuniswapv2router02"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-trader"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-uniswapv2factory"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-uniswapv2router02"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-uniswapv3pool"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-uniswapv3quoterv2"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-uniswapv3swaprouterv2"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
+]
+
+[[package]]
+name = "cow-contract-weth9"
+version = "0.1.0"
+source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "serde",
 ]
 
 [[package]]
@@ -5069,16 +5859,6 @@ checksum = "72dd2d6d381dfb73a193c7fca536518d7caee39fc8503f74e7dc0be0531b425c"
 dependencies = [
  "predicates-core",
  "termtree",
-]
-
-[[package]]
-name = "prettyplease"
-version = "0.2.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
-dependencies = [
- "proc-macro2",
- "syn 2.0.114",
 ]
 
 [[package]]

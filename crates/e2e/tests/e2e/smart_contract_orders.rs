@@ -156,7 +156,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
-    let trader = contracts::alloy::test::GasHog::Instance::deploy(web3.provider.clone())
+    let trader = contracts::test::GasHog::Instance::deploy(web3.provider.clone())
         .await
         .unwrap();
 

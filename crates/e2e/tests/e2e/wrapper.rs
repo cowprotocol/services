@@ -8,7 +8,7 @@ use {
         rpc::types::trace::geth::{CallConfig, GethDebugTracingOptions},
     },
     app_data::{AppDataHash, hash_full_app_data},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{

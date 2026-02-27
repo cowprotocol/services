@@ -2,10 +2,7 @@ use {
     alloy::primitives::{Address, TxHash, U256},
     anyhow::{Context, Result},
     app_data::AppDataHash,
-    contracts::alloy::cow_amm::{
-        CowAmmLegacyHelper,
-        CowAmmLegacyHelper::CowAmmLegacyHelper::orderReturn,
-    },
+    contracts::cow_amm::{CowAmmLegacyHelper, CowAmmLegacyHelper::CowAmmLegacyHelper::orderReturn},
     database::byte_array::ByteArray,
     model::{
         DomainSeparator,

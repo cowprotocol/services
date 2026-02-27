@@ -15,7 +15,7 @@ use {
     },
     alloy::{primitives::Address, signers::local::PrivateKeySigner},
     const_hex::ToHexExt,
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     itertools::Itertools,
     number::testing::ApproxEq,
     serde_json::{Value, json},

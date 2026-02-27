@@ -2,8 +2,8 @@
 //! contract.
 
 use {
-    crate::alloy::BalancerV2Authorizer,
     alloy::{primitives::Address, sol_types::SolCall},
+    contracts::BalancerV2Authorizer,
 };
 
 fn role_id<Call: SolCall>(vault: Address) -> alloy::primitives::B256 {
@@ -18,8 +18,8 @@ pub async fn grant_required_roles(
     vault: Address,
     vault_relayer: Address,
 ) -> Result<(), alloy::contract::Error> {
-    use crate::alloy::BalancerV2Vault::BalancerV2Vault::batchSwapCall;
-    use crate::alloy::BalancerV2Vault::BalancerV2Vault::manageUserBalanceCall;
+    use contracts::BalancerV2Vault::BalancerV2Vault::batchSwapCall;
+    use contracts::BalancerV2Vault::BalancerV2Vault::manageUserBalanceCall;
 
     authorizer
         .grantRoles(
@@ -41,9 +41,9 @@ mod tests {
     use alloy::primitives::b256;
 
     use super::*;
-    use crate::alloy::BalancerV2Vault;
-    use crate::alloy::BalancerV2Vault::BalancerV2Vault::batchSwapCall;
-    use crate::alloy::BalancerV2Vault::BalancerV2Vault::manageUserBalanceCall;
+    use contracts::BalancerV2Vault;
+    use contracts::BalancerV2Vault::BalancerV2Vault::batchSwapCall;
+    use contracts::BalancerV2Vault::BalancerV2Vault::manageUserBalanceCall;
 
     #[test]
     fn role_ids() {

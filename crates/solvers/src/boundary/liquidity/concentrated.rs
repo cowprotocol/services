@@ -1,8 +1,7 @@
 use {
     alloy::primitives::{Address, U256, aliases::U24},
-    contracts::alloy::UniswapV3QuoterV2::IQuoterV2::{
-        QuoteExactInputSingleParams,
-        QuoteExactOutputSingleParams,
+    contracts::UniswapV3QuoterV2::IQuoterV2::{
+        QuoteExactInputSingleParams, QuoteExactOutputSingleParams,
     },
     model::TokenPair,
     shared::baseline_solver::BaselineSolvable,
@@ -11,7 +10,7 @@ use {
 
 #[derive(Debug)]
 pub struct Pool {
-    pub uni_v3_quoter_contract: Arc<contracts::alloy::UniswapV3QuoterV2::Instance>,
+    pub uni_v3_quoter_contract: Arc<contracts::UniswapV3QuoterV2::Instance>,
     pub address: Address,
     pub tokens: TokenPair,
     pub fee: U24,

@@ -1,27 +1,43 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+exclude = ["crates/contracts/"]
 
 [workspace.dependencies]
 alloy = { version = "1.7.3", default-features = false }
 # alloy-signer was added because eip712 on the regular alloy crate brings way too much stuff with it
 # as such, this is a workaround to force feature unification over alloy to the feature set we want
-alloy-signer = { version = "1.7.3", default-features = false}
+alloy-signer = { version = "1.7.3", default-features = false }
+alloy-sol-macro-expander = "1.4.1"
+alloy-sol-macro-input = "1.4.1"
 anyhow = "1.0.100"
+app-data = { path = "crates/app-data" }
+arc-swap = "1.7.1"
+async-stream = "0.3.5"
 async-trait = "0.1.80"
+autopilot = { path = "crates/autopilot" }
+aws-config = "1.5.1"
+aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
 bigdecimal = "0.4"
+bytes = "1.11.1"
+bytes-hex = { path = "crates/bytes-hex" }
 cached = { version = "0.49.3", default-features = false }
+chain = { path = "crates/chain" }
 chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.6", features = ["derive", "env"] }
+console-subscriber = "0.3.0"
+const_format = "0.2.32"
+const-hex = "1.17.0"
+contracts = { git = "https://github.com/jmg-duarte/cow-contracts.git" }
+cow-amm = { path = "crates/cow-amm" }
 dashmap = "6.1.0"
+database = { path = "crates/database" }
 derive_more = { version = "1.0.0", features = ["full"] }
-mimalloc = "0.1.43"
-tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms", "profiling"] }
-jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
+driver = { path = "crates/driver" }
+ethrpc = { path = "crates/ethrpc" }
 flate2 = "1.0.30"
 futures = "0.3.30"
-const-hex = "1.17.0"
 hex-literal = "0.4.1"
 http-body = "1"
 http-body-util = "0.1"
@@ -29,84 +45,80 @@ humantime = "2.1.0"
 humantime-serde = "1.1.1"
 indexmap = "2.2.6"
 itertools = "0.14"
+jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
+jsonrpc-core = "18.0.0"
 maplit = "1.0.2"
+mimalloc = "0.1.43"
 mockall = "0.12.1"
+model = { path = "crates/model" }
+moka = "0.12.10"
+multibase = "0.9"
 num = "0.4.3"
+number = { path = "crates/number" }
+observe = { path = "crates/observe" }
+opentelemetry = { version = "0.31", features = ["tracing"] }
+opentelemetry-http = { version = "0.31", default-features = false }  # disable internal-logging
+opentelemetry-otlp = "0.31"
+opentelemetry_sdk = "0.31"
+order-validation = { path = "crates/order-validation" }
+orderbook = { path = "crates/orderbook" }
+paste = "1.0"
+pin-project-lite = "0.2.14"
+prettyplease = "0.2.37"
+proc-macro2 = "1.0.103"
 prometheus = "0.14"
 prometheus-metric-storage = "0.6"
+quote = "1.0.41"
 rand = "0.8.5"
+rate-limit = { path = "crates/rate-limit" }
+refunder = { path = "crates/refunder" }
 regex = "1.10.4"
 reqwest = "0.13"
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.117"
-serde_with = "3.8.1"
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-native-tls", "bigdecimal", "chrono", "postgres", "macros", "derive"] }
-strum = { version = "0.27.2", features = ["derive"] }
-tempfile = "3.10.1"
-thiserror = "1.0.61"
-toml = "0.8.14"
-tokio = { version = "1.38.0", features = ["tracing"] }
-tokio-stream = { version = "0.1.15", features = ["sync"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["json"] }
-url = "2.5.0"
-app-data = { path = "crates/app-data" }
-arc-swap = "1.7.1"
-async-stream = "0.3.5"
-autopilot = { path = "crates/autopilot" }
-aws-config = "1.5.1"
-aws-sdk-s3 = { version = "1.34.0", default-features = false }
-bytes-hex = { path = "crates/bytes-hex" }
-bytes = "1.11.1"
-chain = { path = "crates/chain" }
-console-subscriber = "0.3.0"
-const_format = "0.2.32"
-contracts = { path = "crates/contracts" }
-cow-amm = { path = "crates/cow-amm" }
-database = { path = "crates/database" }
-driver = { path = "crates/driver" }
-ethrpc = { path = "crates/ethrpc" }
-model = { path = "crates/model" }
-moka = "0.12.10"
-multibase = "0.9"
-number = { path = "crates/number" }
-observe = { path = "crates/observe" }
-order-validation = { path = "crates/order-validation" }
-opentelemetry = { version = "0.31", features = ["tracing"] }
-opentelemetry-otlp = "0.31"
-opentelemetry_sdk = "0.31"
-opentelemetry-http = { version = "0.31", default-features = false } # disable internal-logging
-orderbook = { path = "crates/orderbook" }
-paste = "1.0"
-pin-project-lite = "0.2.14"
-rate-limit = { path = "crates/rate-limit" }
-refunder = { path = "crates/refunder" }
 rust_decimal = { version = "1.35.0", default-features = false }
 s3 = { path = "crates/s3" }
 scopeguard = "1.2.0"
+serde = { version = "1.0.203", features = ["derive"] }
+serde-ext = { path = "crates/serde-ext" }
+serde_json = "1.0.117"
+serde_with = "3.8.1"
 shared = { path = "crates/shared" }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
+sqlx = { version = "0.8", default-features = false, features = [
+  "bigdecimal",
+  "chrono",
+  "derive",
+  "macros",
+  "postgres",
+  "runtime-tokio",
+  "tls-native-tls"
+] }
+strum = { version = "0.27.2", features = ["derive"] }
+syn = "2.0.108"
+tempfile = "3.10.1"
 testlib = { path = "crates/testlib" }
-winner-selection = { path = "crates/winner-selection" }
+thiserror = "1.0.61"
+tikv-jemallocator = { version = "0.6", features = [
+  "profiling",
+  "unprefixed_malloc_on_supported_platforms"
+] }
 time = "0.3.47"
 tiny-keccak = "2.0.2"
+tokio = { version = "1.38.0", features = ["tracing"] }
+tokio-stream = { version = "0.1.15", features = ["sync"] }
+toml = "0.8.14"
 tower = "0.5"
 tower-http = "0.6"
+tracing = "0.1.41"
 tracing-opentelemetry = "0.32.1"
 tracing-serde = "0.2"
+tracing-subscriber = { version = "0.3.19", features = ["json"] }
+url = "2.5.0"
 vergen = "8"
-quote = "1.0.41"
-syn = "2.0.108"
-prettyplease = "0.2.37"
-proc-macro2 = "1.0.103"
-alloy-sol-macro-input = "1.4.1"
-alloy-sol-macro-expander = "1.4.1"
-jsonrpc-core = "18.0.0"
-serde-ext = { path = "crates/serde-ext" }
+winner-selection = { path = "crates/winner-selection" }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
