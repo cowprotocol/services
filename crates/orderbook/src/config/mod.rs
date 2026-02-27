@@ -2,6 +2,7 @@ use {
     crate::config::{
         banned_users::BannedUsersConfig,
         ipfs::IpfsConfig,
+        native_price::NativePriceConfig,
         order_validation::OrderValidationConfig,
     },
     alloy::primitives::Address,
@@ -14,6 +15,7 @@ use {
 
 pub mod banned_users;
 pub mod ipfs;
+pub mod native_price;
 pub mod order_validation;
 
 const fn default_app_data_size_limit() -> usize {
@@ -64,6 +66,10 @@ pub struct Configuration {
     /// Whether to skip EIP-1271 signature validation.
     #[serde(default)]
     pub eip1271_skip_creation_validation: bool,
+
+    /// Configuration for the native price estimation mechanism.
+    #[serde(default)]
+    pub native_price_estimation: NativePriceConfig,
 }
 
 impl Default for Configuration {
@@ -77,6 +83,7 @@ impl Default for Configuration {
             unsupported_tokens: Default::default(),
             banned_users: Default::default(),
             eip1271_skip_creation_validation: false,
+            native_price_estimation: Default::default(),
         }
     }
 }
@@ -125,7 +132,14 @@ impl Configuration {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, shared::order_validation::SameTokensPolicy, std::time::Duration};
+    use {
+        super::*,
+        shared::{
+            order_validation::SameTokensPolicy,
+            price_estimation::{NativePriceEstimator, NativePriceEstimators},
+        },
+        std::{num::NonZeroUsize, time::Duration},
+    };
 
     #[test]
     fn deserialize_full_configuration() {
@@ -246,6 +260,12 @@ mod tests {
             ],
             banned_users: Default::default(),
             eip1271_skip_creation_validation: true,
+            native_price_estimation: NativePriceConfig {
+                estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),
+                fallback_estimators: None,
+                results_required: NonZeroUsize::new(5).unwrap(),
+                ..Default::default()
+            },
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

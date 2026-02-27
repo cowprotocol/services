@@ -233,16 +233,31 @@ async fn fallback_native_price_estimator(web3: Web3) {
         )
         .await;
 
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            fallback_estimators: Some(shared::price_estimation::NativePriceEstimators::new(vec![
+                vec![shared::price_estimation::NativePriceEstimator::driver(
+                    "test_quoter".to_string(),
+                    "http://localhost:11088/test_solver".parse().unwrap(),
+                )],
+            ])),
+            shared: shared::price_estimation::config::native_price::NativePriceConfig {
+                cache: shared::price_estimation::config::native_price::CacheConfig {
+                    max_age: std::time::Duration::from_secs(2),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+    .to_cli_args();
     services
         .start_api(vec![
             ob_config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            "--native-price-estimators-fallback=Driver|test_quoter|http://localhost:11088/test_solver"
-                .to_string(),
-            "--native-price-cache-max-age=2s".to_string(),
         ])
         .await;
 

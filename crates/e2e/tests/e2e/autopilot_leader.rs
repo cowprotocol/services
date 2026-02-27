@@ -124,13 +124,22 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         )
         .await;
 
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            estimators: shared::price_estimation::NativePriceEstimators::new(vec![vec![
+                shared::price_estimation::NativePriceEstimator::forwarder(
+                    "http://0.0.0.0:9588".parse().unwrap(),
+                ),
+            ]]),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+    .to_cli_args();
     services
         .start_api(vec![
             ob_config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver1,test_solver2|http://localhost:11088/test_solver2".to_string(),
-            "--native-price-estimators=Forwarder|http://0.0.0.0:9588".to_string(),
         ])
         .await;
 

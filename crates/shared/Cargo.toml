@@ -30,6 +30,7 @@ observe = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
+humantime-serde = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 model = { workspace = true }
