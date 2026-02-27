@@ -2,6 +2,7 @@ use {
     crate::account_balances::{BalanceFetching, Query, TransferSimulationError},
     alloy::primitives::U256,
     anyhow::Result,
+    dashmap::DashMap,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::{
         FutureExt,
@@ -10,47 +11,18 @@ use {
         stream::{self, BoxStream},
     },
     itertools::Itertools,
-    std::{
-        collections::HashMap,
-        sync::{Arc, Mutex},
+    std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
     },
     tracing::{Instrument, instrument},
 };
 
 type BlockNumber = u64;
 
-#[derive(Default)]
-struct BalanceCache {
-    last_seen_block: BlockNumber,
-    data: HashMap<Query, BalanceEntry>,
-}
-
-impl BalanceCache {
-    /// Retrieves cached balance and updates the `requested_at` field.
-    fn get_cached_balance(&mut self, query: &Query) -> Option<U256> {
-        match self.data.get_mut(query) {
-            Some(entry) => {
-                entry.requested_at = self.last_seen_block;
-                Some(entry.balance)
-            }
-            None => None,
-        }
-    }
-
-    /// Only updates existing balances. This should always be used in the
-    /// background task.
-    fn update_balance(&mut self, query: &Query, balance: U256, update_block: BlockNumber) {
-        if update_block < self.last_seen_block {
-            // This should never realistically happen.
-            return;
-        }
-
-        if let Some(entry) = self.data.get_mut(query) {
-            entry.updated_at = update_block;
-            entry.balance = balance;
-        }
-    }
-}
+/// Balances get removed from the cache after this many blocks without being
+/// requested.
+const EVICTION_TIME: BlockNumber = 5;
 
 #[derive(Debug, Clone)]
 struct BalanceEntry {
@@ -59,17 +31,21 @@ struct BalanceEntry {
     balance: U256,
 }
 
-pub struct Balances {
-    inner: Arc<dyn BalanceFetching>,
-    balance_cache: Arc<Mutex<BalanceCache>>,
+pub struct Inner {
+    fetcher: Arc<dyn BalanceFetching>,
+    cache: DashMap<Query, BalanceEntry>,
+    last_seen_block: AtomicU64,
 }
+
+pub struct Balances(Arc<Inner>);
 
 impl Balances {
     pub fn new(inner: Arc<dyn BalanceFetching>) -> Self {
-        Self {
-            inner,
-            balance_cache: Default::default(),
-        }
+        Self(Arc::new(Inner {
+            fetcher: inner,
+            cache: Default::default(),
+            last_seen_block: AtomicU64::new(0),
+        }))
     }
 }
 
@@ -81,60 +57,64 @@ struct CacheResponse {
 
 impl Balances {
     fn get_cached_balances(&self, queries: Vec<Query>) -> CacheResponse {
-        let mut cache = self.balance_cache.lock().unwrap();
+        let requested_at = self.0.last_seen_block.load(Ordering::Relaxed);
         let (cached, missing) =
-            // TODO make sure to reuse original allocation
             queries
                 .into_iter()
-                .partition_map(|query| match cache.get_cached_balance(&query) {
-                    Some(balance) => itertools::Either::Left((query, Ok(balance))),
+                .partition_map(|query| match self.0.cache.get_mut(&query) {
+                    Some(mut entry) => {
+                        entry.requested_at = requested_at;
+                        itertools::Either::Left((query, Ok(entry.balance)))
+                    }
                     None => itertools::Either::Right(query),
                 });
         CacheResponse {
             cached,
             missing,
-            requested_at: cache.last_seen_block,
+            requested_at,
         }
     }
 
     /// Spawns task that refreshes the cached balances on every new block.
     pub fn spawn_background_task(&self, block_stream: CurrentBlockWatcher) {
-        let inner = self.inner.clone();
-        let cache = self.balance_cache.clone();
+        let inner = self.0.clone();
         let mut stream = into_stream(block_stream);
 
         let task = async move {
             while let Some(block) = stream.next().await {
-                let balances_to_update = {
-                    let mut cache = cache.lock().unwrap();
-                    cache.last_seen_block = block.number;
-                    cache
-                        .data
-                        .iter()
-                        .filter_map(|(query, entry)| {
-                            // Only update balances that have been requested recently.
-                            let oldest_allowed_request = cache.last_seen_block.saturating_sub(5);
-                            (entry.requested_at >= oldest_allowed_request).then_some(query.clone())
-                        })
-                        .collect_vec()
-                };
+                inner.last_seen_block.store(block.number, Ordering::Relaxed);
 
-                let results: Vec<_> = inner
+                let oldest_allowed_request = block.number.saturating_sub(EVICTION_TIME);
+                let balances_to_update: Vec<_> = inner
+                    .cache
+                    .iter()
+                    .filter_map(|entry| {
+                        (entry.requested_at >= oldest_allowed_request).then(|| entry.key().clone())
+                    })
+                    .collect();
+
+                inner
+                    .fetcher
                     .get_balances(balances_to_update)
-                    .buffered(100)
-                    .collect()
+                    .for_each_concurrent(100, |fut| {
+                        let inner = inner.clone();
+                        async move {
+                            let (query, result) = fut.await;
+                            if let Ok(balance) = result
+                                && let Some(mut entry) = inner.cache.get_mut(&query)
+                                && block.number >= entry.updated_at
+                            {
+                                entry.updated_at = block.number;
+                                entry.balance = balance;
+                            }
+                        }
+                    })
                     .await;
 
-                let mut cache = cache.lock().unwrap();
-                for (query, result) in results {
-                    if let Ok(balance) = result {
-                        cache.update_balance(&query, balance, block.number);
-                    }
-                }
-                cache.data.retain(|_, value| {
-                    // Only keep balances where we know we have the most recent data.
-                    value.updated_at >= block.number
-                });
+                // this could already be done when we fetch the items to clone...
+                inner
+                    .cache
+                    .retain(|_, entry| entry.updated_at >= block.number);
             }
             tracing::error!("block stream terminated unexpectedly");
         };
@@ -160,14 +140,13 @@ impl BalanceFetching for Balances {
             return cached_stream.boxed();
         }
 
-        let cache = self.balance_cache.clone();
-        let missing_stream = self.inner.get_balances(missing).map(move |fut| {
-            let cache = cache.clone();
+        let inner = self.0.clone();
+        let missing_stream = self.0.fetcher.get_balances(missing).map(move |fut| {
+            let inner = inner.clone();
             async move {
                 let (query, result) = fut.await;
                 if let Ok(balance) = &result {
-                    // this needs to be replaced with dashmap
-                    cache.lock().unwrap().data.insert(
+                    inner.cache.insert(
                         query.clone(),
                         BalanceEntry {
                             requested_at,
@@ -191,7 +170,7 @@ impl BalanceFetching for Balances {
     ) -> Result<(), TransferSimulationError> {
         // This only gets called when creating or replacing an order which doesn't
         // profit from caching.
-        self.inner.can_transfer(query, amount).await
+        self.0.fetcher.can_transfer(query, amount).await
     }
 }
 
@@ -374,10 +353,7 @@ mod tests {
         let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
 
-        let cached_entry = || {
-            let cache = fetcher.balance_cache.lock().unwrap();
-            cache.data.get(&query(1)).cloned()
-        };
+        let cached_entry = || fetcher.0.cache.get(&query(1)).map(|e| e.clone());
 
         assert!(cached_entry().is_none());
         // 1st call to `inner`. Balance gets cached.
