@@ -559,7 +559,7 @@ fn main() {
         ]))
         // <https://github.com/cowprotocol/hooks-trampoline/blob/993427166ade6c65875b932f853776299290ac4b/networks.json>
         .add_contract(Contract::new("HooksTrampoline").with_networks(networks![
-            MAINNET => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            MAINNET => "0xd496F9fCfba14d7bd1E45E4840d38aD85ded14dD",
             // Gnosis is using the old instance of the hook trampoline since it's hardcoded in gnosis pay rebalance integration.
             GNOSIS => "0x01DcB88678aedD0C4cC9552B20F4718550250574",
             SEPOLIA => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
