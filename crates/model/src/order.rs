@@ -731,7 +731,9 @@ pub struct OrderMetadata {
     pub quote: Option<OrderQuote>,
 }
 
-pub const ORDER_UID_LIMIT: usize = 1024;
+/// OrderUid is 56 bytes. When hex encoded as 0x prefixes Json string it is 116.
+/// Chosen to be under the MAX_JSON_BODY_PAYLOAD size of 1024 * 16
+pub const ORDER_UID_LIMIT: usize = 128;
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
 #[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
