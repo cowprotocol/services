@@ -2,12 +2,8 @@ use {
     crate::domain,
     alloy::primitives::Address,
     chain::Chain,
-    contracts::alloy::{
-        ChainalysisOracle,
-        GPv2AllowListAuthentication,
-        GPv2Settlement,
-        HooksTrampoline,
-        WETH9,
+    contracts::{
+        ChainalysisOracle, GPv2AllowListAuthentication, GPv2Settlement, HooksTrampoline, WETH9,
         support::Balances,
     },
     ethrpc::Web3,
@@ -16,7 +12,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: GPv2Settlement::Instance,
-    signatures: contracts::alloy::support::Signatures::Instance,
+    signatures: contracts::support::Signatures::Instance,
     weth: WETH9::Instance,
     balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
@@ -48,10 +44,10 @@ impl Contracts {
             web3.provider.clone(),
         );
 
-        let signatures = contracts::alloy::support::Signatures::Instance::new(
+        let signatures = contracts::support::Signatures::Instance::new(
             addresses
                 .signatures
-                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .or_else(|| contracts::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
             web3.provider.clone(),
         );
@@ -122,7 +118,7 @@ impl Contracts {
         &self.balances
     }
 
-    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
+    pub fn signatures(&self) -> &contracts::support::Signatures::Instance {
         &self.signatures
     }
 

@@ -25,9 +25,8 @@ use {
         rpc::types::Log,
     },
     anyhow::{Context, Result},
-    contracts::alloy::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
-        BalancerV2BasePoolFactoryEvents,
-        PoolCreated,
+    contracts::BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::{
+        BalancerV2BasePoolFactoryEvents, PoolCreated,
     },
     ethrpc::block_stream::RangeInclusive,
     model::TokenPair,

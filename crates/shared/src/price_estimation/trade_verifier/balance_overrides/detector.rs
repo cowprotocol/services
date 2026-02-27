@@ -6,14 +6,13 @@ use {
         primitives::{Address, B256, TxKind, U256},
         providers::ext::DebugApi,
         rpc::types::{
-            TransactionInput,
-            TransactionRequest,
+            TransactionInput, TransactionRequest,
             trace::geth::{GethDebugTracingCallOptions, GethTrace},
         },
         sol_types::SolCall,
         transports::{RpcError, TransportErrorKind},
     },
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     std::{
         collections::HashMap,
         fmt::{self, Debug, Formatter},

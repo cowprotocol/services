@@ -3,7 +3,7 @@ use {
         primitives::{Address, U256},
         sol_types::SolCall,
     },
-    contracts::alloy::IUniswapLikeRouter,
+    contracts::IUniswapLikeRouter,
     shared::interaction::{EncodedInteraction, Interaction},
 };
 

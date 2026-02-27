@@ -1,11 +1,9 @@
 use {
     alloy::rpc::types::Log,
     anyhow::{Context, Result},
-    contracts::alloy::GPv2Settlement::GPv2Settlement::{self, GPv2SettlementEvents},
+    contracts::GPv2Settlement::GPv2Settlement::{self, GPv2SettlementEvents},
     database::{
-        OrderUid,
-        PgTransaction,
-        TransactionHash,
+        OrderUid, PgTransaction, TransactionHash,
         byte_array::ByteArray,
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
     },

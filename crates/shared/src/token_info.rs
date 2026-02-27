@@ -2,7 +2,7 @@ use {
     alloy::primitives::Address,
     anyhow::Result,
     async_trait::async_trait,
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     ethrpc::{Web3, alloy::errors::ignore_non_node_error},
     futures::{
         FutureExt,

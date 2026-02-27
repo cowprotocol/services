@@ -9,7 +9,7 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::Result,
     arc_swap::ArcSwap,
-    contracts::alloy::IZeroex,
+    contracts::IZeroex,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,

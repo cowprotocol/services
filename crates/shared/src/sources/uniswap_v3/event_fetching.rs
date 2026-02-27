@@ -8,7 +8,7 @@ use {
         sol_types::SolEvent,
     },
     anyhow::{Context, Result},
-    contracts::alloy::{
+    contracts::{
         UniswapV3Pool,
         UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap, UniswapV3PoolEvents},
     },

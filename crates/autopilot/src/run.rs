@@ -9,8 +9,7 @@ use {
             onchain_order_events::{
                 OnchainOrderParser,
                 ethflow_events::{
-                    EthFlowOnchainOrderParser,
-                    determine_ethflow_indexing_start,
+                    EthFlowOnchainOrderParser, determine_ethflow_indexing_start,
                     determine_ethflow_refund_indexing_start,
                 },
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -28,7 +27,7 @@ use {
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
+    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{
         Web3,
         block_stream::{BlockRetriever, block_number_to_block_number_hash},

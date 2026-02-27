@@ -5,9 +5,8 @@ use {
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
-    contracts::alloy::cow_amm::CowAmmLegacyHelper::CowAmmLegacyHelper::{
-        self,
-        CowAmmLegacyHelperEvents as CowAmmEvent,
+    contracts::cow_amm::CowAmmLegacyHelper::CowAmmLegacyHelper::{
+        self, CowAmmLegacyHelperEvents as CowAmmEvent,
     },
     ethrpc::AlloyProvider,
     shared::event_handling::AlloyEventRetrieving,

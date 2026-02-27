@@ -10,9 +10,7 @@ use {
     crate::{
         boundary,
         domain::{
-            auction,
-            eth,
-            liquidity,
+            auction, eth, liquidity,
             order::{self, Order, Side},
             solution,
         },
@@ -71,7 +69,7 @@ struct Inner {
     native_token_price_estimation_amount: eth::U256,
 
     /// If provided, the solver can rely on Uniswap V3 LPs
-    uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
+    uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2::Instance>>,
 }
 
 impl Solver {
@@ -80,7 +78,7 @@ impl Solver {
         let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
                 let web3 = ethrpc::web3(Default::default(), &url, Some("baseline"));
-                contracts::alloy::UniswapV3QuoterV2::Instance::deployed(&web3.provider)
+                contracts::UniswapV3QuoterV2::Instance::deployed(&web3.provider)
                     .await
                     .map(Arc::new)
                     .inspect_err(|err| {

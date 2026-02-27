@@ -1,13 +1,7 @@
 use {
     crate::domain::eth,
     chain::Chain,
-    contracts::alloy::{
-        BalancerV2Vault,
-        FlashLoanRouter,
-        GPv2Settlement,
-        WETH9,
-        support::Balances,
-    },
+    contracts::{BalancerV2Vault, FlashLoanRouter, GPv2Settlement, WETH9, support::Balances},
     ethrpc::Web3,
     std::collections::HashMap,
 };
@@ -17,7 +11,7 @@ pub struct Contracts {
     settlement: GPv2Settlement::Instance,
     vault_relayer: eth::ContractAddress,
     vault: BalancerV2Vault::Instance,
-    signatures: contracts::alloy::support::Signatures::Instance,
+    signatures: contracts::support::Signatures::Instance,
     weth: WETH9::Instance,
 
     /// The domain separator for settlement contract used for signing orders.
@@ -70,11 +64,11 @@ impl Contracts {
                 .unwrap(),
             web3.provider.clone(),
         );
-        let signatures = contracts::alloy::support::Signatures::Instance::new(
+        let signatures = contracts::support::Signatures::Instance::new(
             addresses
                 .signatures
                 .map(Into::into)
-                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .or_else(|| contracts::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
             web3.provider.clone(),
         );
@@ -121,7 +115,7 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
+    pub fn signatures(&self) -> &contracts::support::Signatures::Instance {
         &self.signatures
     }
 

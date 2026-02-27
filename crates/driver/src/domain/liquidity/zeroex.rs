@@ -2,7 +2,7 @@ use {
     crate::domain::{eth, liquidity},
     alloy::primitives::{Address, B256, U256},
     anyhow::anyhow,
-    contracts::alloy::IZeroex,
+    contracts::IZeroex,
     std::sync::Arc,
 };
 

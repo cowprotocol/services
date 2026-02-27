@@ -1,25 +1,15 @@
 use {
     crate::{
-        api,
-        arguments::Arguments,
-        config::Configuration,
-        database::Postgres,
-        ipfs::Ipfs,
-        ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook,
-        quoter::QuoteHandler,
+        api, arguments::Arguments, config::Configuration, database::Postgres, ipfs::Ipfs,
+        ipfs_app_data::IpfsAppData, orderbook::Orderbook, quoter::QuoteHandler,
     },
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    contracts::alloy::{
-        BalancerV2Vault,
-        ChainalysisOracle,
-        GPv2Settlement,
-        HooksTrampoline,
-        WETH9,
+    contracts::{
+        BalancerV2Vault, ChainalysisOracle, GPv2Settlement, HooksTrampoline, WETH9,
         support::Balances,
     },
     model::DomainSeparator,
@@ -36,8 +26,7 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
-            PriceEstimating,
-            QuoteVerificationMode,
+            PriceEstimating, QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
             native::{FallbackNativePriceEstimator, NativePriceEstimating},
         },
@@ -109,9 +98,9 @@ pub async fn run(args: Arguments, config: Configuration) {
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match args.shared.signatures_contract_address {
         Some(address) => {
-            contracts::alloy::support::Signatures::Instance::new(address, web3.provider.clone())
+            contracts::support::Signatures::Instance::new(address, web3.provider.clone())
         }
-        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.provider)
+        None => contracts::support::Signatures::Instance::deployed(&web3.provider)
             .await
             .expect("load signatures contract"),
     };

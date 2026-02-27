@@ -3,10 +3,9 @@ use {
     crate::database::events::log_to_event_index,
     alloy::{eips::BlockNumberOrTag, rpc::types::Log},
     anyhow::{Context, Result, anyhow},
-    contracts::alloy::{
+    contracts::{
         CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
-            CoWSwapOnchainOrdersEvents as ContractEvent,
-            OrderPlacement as ContractOrderPlacement,
+            CoWSwapOnchainOrdersEvents as ContractEvent, OrderPlacement as ContractOrderPlacement,
         },
         GPv2Settlement,
     },
@@ -19,8 +18,7 @@ use {
         orders::{ExecutionTime, Interaction, Order},
     },
     ethrpc::{
-        AlloyProvider,
-        Web3,
+        AlloyProvider, Web3,
         block_stream::{BlockNumberHash, block_number_to_block_number_hash},
     },
     hex_literal::hex,
@@ -293,7 +291,7 @@ mod test {
     use {
         super::*,
         alloy::primitives::{Address, U256},
-        contracts::alloy::CoWSwapOnchainOrders,
+        contracts::CoWSwapOnchainOrders,
         model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     };
 

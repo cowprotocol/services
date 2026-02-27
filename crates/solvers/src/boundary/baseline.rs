@@ -6,7 +6,7 @@ use {
         domain::{eth, liquidity, order, solver},
     },
     alloy::primitives::{Address, U256},
-    contracts::alloy::UniswapV3QuoterV2,
+    contracts::UniswapV3QuoterV2,
     model::TokenPair,
     shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
     std::{
@@ -160,7 +160,7 @@ impl<'a> Solver<'a> {
 
 fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
-    uni_v3_quoter_v2: Option<Arc<contracts::alloy::UniswapV3QuoterV2::Instance>>,
+    uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2::Instance>>,
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()

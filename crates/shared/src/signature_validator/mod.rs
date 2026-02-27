@@ -1,10 +1,9 @@
 use {
     crate::price_estimation::trade_verifier::balance_overrides::{
-        BalanceOverrideRequest,
-        BalanceOverriding,
+        BalanceOverrideRequest, BalanceOverriding,
     },
     alloy::primitives::{Address, FixedBytes},
-    contracts::alloy::GPv2Settlement,
+    contracts::GPv2Settlement,
     ethrpc::Web3,
     hex_literal::hex,
     model::interaction::InteractionData,
@@ -95,7 +94,7 @@ pub fn check_erc1271_result(result: FixedBytes<4>) -> Result<(), SignatureValida
 /// Contracts required for signature verification simulation.
 pub struct Contracts {
     pub settlement: GPv2Settlement::Instance,
-    pub signatures: contracts::alloy::support::Signatures::Instance,
+    pub signatures: contracts::support::Signatures::Instance,
     pub vault_relayer: Address,
 }
 

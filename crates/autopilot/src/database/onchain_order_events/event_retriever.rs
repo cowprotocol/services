@@ -4,7 +4,7 @@ use {
         rpc::types::{Filter, FilterSet},
         sol_types::SolEvent,
     },
-    contracts::alloy::CoWSwapOnchainOrders,
+    contracts::CoWSwapOnchainOrders,
     shared::{event_handling::AlloyEventRetrieving, web3::Web3},
 };
 

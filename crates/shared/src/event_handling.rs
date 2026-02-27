@@ -682,7 +682,7 @@ mod tests {
     use {
         super::*,
         alloy::{eips::BlockNumberOrTag, primitives::b256},
-        contracts::alloy::GPv2Settlement,
+        contracts::GPv2Settlement,
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     };
 

@@ -7,7 +7,7 @@ use {
     },
     anyhow::Result,
     cached::{Cached, TimedCache},
-    contracts::alloy::{
+    contracts::{
         ERC20,
         IUniswapLikePair::{self, IUniswapLikePair::getReservesReturn},
     },

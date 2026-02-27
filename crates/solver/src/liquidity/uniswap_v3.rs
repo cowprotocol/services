@@ -1,19 +1,16 @@
 use {
     super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling},
     crate::{
-        interactions::UniswapV3Interaction,
-        liquidity::Liquidity,
-        liquidity_collector::LiquidityCollecting,
-        settlement::SettlementEncoder,
+        interactions::UniswapV3Interaction, liquidity::Liquidity,
+        liquidity_collector::LiquidityCollecting, settlement::SettlementEncoder,
     },
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
-    contracts::alloy::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
+    contracts::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},
     shared::{
-        http_solver::model::TokenAmount,
-        recent_block_cache::Block,
+        http_solver::model::TokenAmount, recent_block_cache::Block,
         sources::uniswap_v3::pool_fetching::PoolFetching,
     },
     std::{collections::HashSet, sync::Arc},
