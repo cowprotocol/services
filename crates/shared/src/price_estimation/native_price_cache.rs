@@ -485,12 +485,27 @@ impl NativePriceUpdater {
 
         let max_age = cache.max_age().saturating_sub(prefetch_time);
         let timeout = self.estimator.0.quote_timeout;
-        self.estimator
-            .estimate_prices_and_update_cache(tokens_to_update.iter().copied(), max_age, timeout)
-            // Drive the stream to completion. Results are written to the cache as
-            // a side effect, so we don't need to inspect them here.
-            .for_each(|_| async {})
-            .await;
+
+        // Pre-filter to only tokens whose cache entries have expired.
+        let now = Instant::now();
+        let expired_tokens: Vec<_> = tokens_to_update
+            .iter()
+            .copied()
+            .filter(|token| Cache::get_cached_price(*token, now, &cache.0.data, &max_age).is_none())
+            .collect();
+
+        // Process expired tokens in chunks, waiting for each chunk to complete
+        // before starting the next. This ensures all tokens in a chunk reach
+        // the BufferedRequest channel simultaneously, producing full CoinGecko
+        // API batches instead of trickling tokens one-by-one.
+        let chunk_size = self.estimator.0.concurrent_requests;
+        for chunk in expired_tokens.chunks(chunk_size) {
+            self.estimator
+                .estimate_prices_and_update_cache(chunk.iter().copied(), max_age, timeout)
+                .for_each(|_| async {})
+                .await;
+        }
+
         metrics
             .native_price_cache_background_updates
             .inc_by(tokens_to_update.len() as u64);
