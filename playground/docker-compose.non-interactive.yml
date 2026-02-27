@@ -71,23 +71,19 @@ services:
       target: orderbook
       dockerfile: ./Dockerfile
     restart: always
+    command: ["--config", "/orderbook.toml"]
     environment:
       - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - ACCOUNT_BALANCES_SIMULATION=true
-      - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
-      - EIP1271_SKIP_CREATION_VALIDATION=true
       - ENABLE_EIP1271_ORDERS=true
-      - PRICE_ESTIMATORS=None
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
       - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
-      - BASELINE_SOURCES=None
-      - RUST_BACKTRACE=1
+      - RUST_BACKTRACE=0
       - TOML_TRACE_ERROR=1
       - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
       - TOKIO_CONSOLE=true
@@ -95,6 +91,7 @@ services:
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
       - ../:/src
+      - ./orderbook.toml:/orderbook.toml
     depends_on:
       - db-migrations
     ports:
@@ -108,25 +105,18 @@ services:
       target: autopilot
       dockerfile: ./Dockerfile
     restart: always
+    command: ["--config", "/autopilot.toml"]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - LOG_FILTER=warn,autopilot=info,shared=info,shared::price_estimation=info
       - NODE_URL=http://chain:8545
       - SIMULATION_NODE_URL=http://chain:8545
-      - SETTLE_INTERVAL=15s
       - GAS_ESTIMATORS=Web3,Alloy
-      - PRICE_ESTIMATORS=None
-      - NATIVE_PRICE_ESTIMATORS=baseline
       - BLOCK_STREAM_POLL_INTERVAL=1s
-      - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
-      - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline|0xa0Ee7A142d267C1f36714E4a8F75612F20a79720
       - SKIP_EVENT_SYNC=true
-      - BASELINE_SOURCES=None
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
       - ETHFLOW_CONTRACTS
@@ -135,7 +125,7 @@ services:
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
-      - ../:/src
+      - ./autopilot.toml:/autopilot.toml
     depends_on:
       orderbook:
         condition: service_started
