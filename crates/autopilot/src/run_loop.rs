@@ -565,7 +565,11 @@ impl RunLoop {
             self.config.compress_solve_request,
         )
         .await;
-        Metrics::solve_request_body_size(request.body_size());
+        Metrics::solve_request_body_size(
+            request
+                .for_driver(self.config.compress_solve_request)
+                .body_size(),
+        );
 
         let mut bids = futures::future::join_all(self.drivers.iter().map(|driver| {
             let compress = self.config.compress_solve_request

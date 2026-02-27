@@ -125,7 +125,14 @@ impl Request {
     }
 
     pub fn body_size(&self) -> usize {
-        self.raw_body.len()
+        if self.use_compressed {
+            self.compressed_body
+                .as_ref()
+                .expect("checked in for_driver")
+                .len()
+        } else {
+            self.raw_body.len()
+        }
     }
 }
 

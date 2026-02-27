@@ -190,6 +190,10 @@ impl RunLoop {
         )
         .await;
 
+        Metrics::get()
+            .solve_request_body_size
+            .observe(request.for_driver(self.compress_solve_request).body_size() as f64);
+
         futures::future::join_all(self.drivers.iter().map(|driver| {
             let compress =
                 self.compress_solve_request && driver.url.as_str().contains(".svc.cluster.local");
@@ -296,6 +300,12 @@ struct Metrics {
     /// Tracks the winner of every auction.
     #[metric(labels("driver"))]
     wins: prometheus::IntCounterVec,
+
+    /// Tracks the size of the `/solve` request body in bytes.
+    #[metric(buckets(
+        1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
+    ))]
+    solve_request_body_size: prometheus::Histogram,
 }
 
 impl Metrics {
