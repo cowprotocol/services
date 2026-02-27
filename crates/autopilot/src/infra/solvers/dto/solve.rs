@@ -79,6 +79,17 @@ impl Request {
                 return (Bytes::from(serialized), None);
             }
 
+            // quality 1: fastest brotli level. Already beats gzip-3 on both
+            // ratio and speed for our JSON payloads.
+            //
+            // lgwin 22: LZ77 window = 2^22 - 16 ≈ 4 MB. How far back the
+            // compressor looks for repeated patterns. The decompressor must
+            // allocate up to this much memory. Aligns with our current auction size
+            // (~3-4mb).
+            //
+            // 4096: internal I/O buffer for flushing to the output Vec.
+            // Doesn't affect compression ratio. Tested 512 B to 256 KB with
+            // no meaningful difference; 4 KB is a standard default.
             let mut encoder = CompressorWriter::new(Vec::new(), 4096, 1, 22);
             match encoder.write_all(&serialized).and_then(|_| encoder.flush()) {
                 Ok(()) => (
