@@ -26,6 +26,7 @@ bigdecimal = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+configs = { workspace = true }
 contracts = { workspace = true }
 cow-amm = { workspace = true }
 dashmap = { workspace = true }
@@ -70,6 +71,7 @@ toml = { workspace = true }
 tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
+configs = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
@@ -86,4 +88,4 @@ workspace = true
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
-test-util = ["dep:tempfile"]
+test-util = ["dep:tempfile", "configs/test-util"]

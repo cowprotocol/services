@@ -167,10 +167,10 @@ pub async fn run(
 ) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
-        args.db_write_url.as_str(),
+        config.database.write_url.as_str(),
         crate::database::Config {
-            insert_batch_size: args.insert_batch_size,
-            max_pool_size: args.database_pool.db_max_connections,
+            insert_batch_size: config.database.insert_batch_size,
+            max_pool_size: config.database.max_connections,
         },
     )
     .await

@@ -63,6 +63,7 @@ bytes = "1.11.1"
 chain = { path = "crates/chain" }
 console-subscriber = "0.3.0"
 const_format = "0.2.32"
+configs = { path = "crates/configs/" }
 contracts = { path = "crates/contracts" }
 cow-amm = { path = "crates/cow-amm" }
 database = { path = "crates/database" }

@@ -34,8 +34,9 @@ pub struct VolumeFeeConfig {
 }
 
 // NOTE: cannot add deny_unknown_fields during the config migration
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case" /* deny_unknown_fields */)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 pub struct Configuration {
     /// Configuration for the order validation system.
     #[serde(default)]
@@ -70,6 +71,9 @@ pub struct Configuration {
     /// Configuration for the native price estimation mechanism.
     #[serde(default)]
     pub native_price_estimation: NativePriceConfig,
+
+    #[serde(default)]
+    pub database: configs::database::DatabasePoolConfig,
 }
 
 impl Default for Configuration {
@@ -84,6 +88,7 @@ impl Default for Configuration {
             banned_users: Default::default(),
             eip1271_skip_creation_validation: false,
             native_price_estimation: Default::default(),
+            database: Default::default(),
         }
     }
 }
@@ -103,14 +108,14 @@ impl Configuration {
             )),
         }
     }
-
-    pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
-        Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
-    }
 }
 
 #[cfg(any(test, feature = "test-util"))]
 impl Configuration {
+    pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+        Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
+    }
+
     pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
         use std::io::Write;
         let mut file = tempfile::NamedTempFile::new().expect("temp file creation should not fail");
@@ -266,6 +271,7 @@ mod tests {
                 results_required: NonZeroUsize::new(5).unwrap(),
                 ..Default::default()
             },
+            database: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
