@@ -1,6 +1,6 @@
 //! Mainnet addresses of protocol contracts.
 
-use alloy::primitives::{Address, address};
+use alloy_primitives::{Address, address};
 
 /// Address for the settlement contract.
 pub const SETTLEMENT: Address = address!("9008D19f58AAbD9eD0D60971565AA8510560ab41");

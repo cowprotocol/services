@@ -4,7 +4,7 @@ use {
         signature::SigningScheme,
         time,
     },
-    alloy::primitives::{Address, U256},
+    alloy_primitives::{Address, U256},
     anyhow::bail,
     app_data::AppDataHash,
     bigdecimal::BigDecimal,

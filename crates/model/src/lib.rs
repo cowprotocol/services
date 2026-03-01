@@ -11,7 +11,7 @@ pub mod time;
 pub mod trade;
 
 use {
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     const_hex::{FromHex, FromHexError},
     std::fmt,
 };
@@ -112,10 +112,10 @@ impl std::fmt::Debug for DomainSeparator {
 
 impl DomainSeparator {
     pub fn new(chain_id: u64, contract_address: Address) -> Self {
-        let domain = alloy::sol_types::Eip712Domain {
+        let domain = alloy_sol_types::Eip712Domain {
             name: Some("Gnosis Protocol".into()),
             version: Some("v2".into()),
-            chain_id: Some(alloy::primitives::U256::from(chain_id)),
+            chain_id: Some(alloy_primitives::U256::from(chain_id)),
             verifying_contract: Some(contract_address),
             salt: None,
         };
@@ -128,7 +128,7 @@ impl DomainSeparator {
 mod tests {
     use {
         super::*,
-        alloy::primitives::address,
+        alloy_primitives::address,
         hex_literal::hex,
         std::{cmp::Ordering, str::FromStr},
     };

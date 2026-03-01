@@ -9,10 +9,8 @@ use {
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
     },
-    alloy::{
-        primitives::{Address, B256, U256, U512, b256, keccak256},
-        signers::local::PrivateKeySigner,
-    },
+    alloy_primitives::{Address, B256, U256, U512, b256, keccak256},
+    alloy_signer_local::PrivateKeySigner,
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, hash_full_app_data},
     bigdecimal::BigDecimal,
@@ -100,12 +98,12 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_sell_amount(mut self, sell_amount: alloy::primitives::U256) -> Self {
+    pub fn with_sell_amount(mut self, sell_amount: alloy_primitives::U256) -> Self {
         self.0.data.sell_amount = sell_amount;
         self
     }
 
-    pub fn with_buy_amount(mut self, buy_amount: alloy::primitives::U256) -> Self {
+    pub fn with_buy_amount(mut self, buy_amount: alloy_primitives::U256) -> Self {
         self.0.data.buy_amount = buy_amount;
         self
     }
@@ -125,7 +123,7 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_fee_amount(mut self, fee_amount: alloy::primitives::U256) -> Self {
+    pub fn with_fee_amount(mut self, fee_amount: alloy_primitives::U256) -> Self {
         self.0.data.fee_amount = fee_amount;
         self
     }
@@ -206,9 +204,9 @@ pub struct OrderData {
     #[serde(default)]
     pub receiver: Option<Address>,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: alloy::primitives::U256,
+    pub sell_amount: alloy_primitives::U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: alloy::primitives::U256,
+    pub buy_amount: alloy_primitives::U256,
     pub valid_to: u32,
     pub app_data: AppDataHash,
     /// Fees that will be taken in terms of `sell_token`.
@@ -217,7 +215,7 @@ pub struct OrderData {
     /// and should not be settled on their own.
     /// This is 0 for limit orders as their fee gets taken from the surplus.
     #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: alloy::primitives::U256,
+    pub fee_amount: alloy_primitives::U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
     #[serde(default)]
@@ -283,9 +281,9 @@ impl OrderData {
 /// sell token and buy `buy` amount of buy token. Additionally, `fee``
 /// denominated in the sell token needs to be payed.
 pub struct QuoteAmounts {
-    pub sell: alloy::primitives::U256,
-    pub buy: alloy::primitives::U256,
-    pub fee: alloy::primitives::U256,
+    pub sell: alloy_primitives::U256,
+    pub buy: alloy_primitives::U256,
+    pub fee: alloy_primitives::U256,
 }
 
 /// An order as provided to the POST order endpoint.
@@ -304,10 +302,10 @@ pub struct OrderCreation {
     pub receiver: Option<Address>,
     /// The *maximum* amount of `sell_token`s that may be sold.
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: alloy::primitives::U256,
+    pub sell_amount: alloy_primitives::U256,
     /// The *minimum* amount of `buy_token`s that should be bought.
     #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: alloy::primitives::U256,
+    pub buy_amount: alloy_primitives::U256,
     /// The block timestamp when the order can no longer be settled (UNIX
     /// timestamp in seconds).
     pub valid_to: u32,
@@ -317,7 +315,7 @@ pub struct OrderCreation {
     ///
     /// Deprecation note: orders with a non-zero `fee_amount` should be rejected
     /// by the API.
-    pub fee_amount: alloy::primitives::U256,
+    pub fee_amount: alloy_primitives::U256,
     /// The kind of order (i.e. sell or buy).
     pub kind: OrderKind,
     /// Whether the order can be carried out in multiple smaller trades, or it
@@ -1066,7 +1064,7 @@ mod tests {
     use {
         super::*,
         crate::signature::{EcdsaSigningScheme, SigningScheme},
-        alloy::primitives::{address, b256},
+        alloy_primitives::{address, b256},
         chrono::TimeZone,
         hex_literal::hex,
         maplit::hashset,
@@ -1140,13 +1138,13 @@ mod tests {
                 sell_token: Address::with_last_byte(10),
                 buy_token: Address::with_last_byte(9),
                 receiver: Some(Address::with_last_byte(11)),
-                sell_amount: alloy::primitives::U256::ONE,
-                buy_amount: alloy::primitives::U256::ZERO,
+                sell_amount: alloy_primitives::U256::ONE,
+                buy_amount: alloy_primitives::U256::ZERO,
                 valid_to: u32::MAX,
                 app_data: AppDataHash(hex!(
                     "6000000000000000000000000000000000000000000000000000000000000007"
                 )),
-                fee_amount: alloy::primitives::U256::MAX,
+                fee_amount: alloy_primitives::U256::MAX,
                 kind: OrderKind::Buy,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
@@ -1217,13 +1215,13 @@ mod tests {
             sell_token: Address::repeat_byte(0x11),
             buy_token: Address::repeat_byte(0x22),
             receiver: Some(Address::repeat_byte(0x33)),
-            sell_amount: alloy::primitives::U256::from(123),
-            buy_amount: alloy::primitives::U256::from(456),
+            sell_amount: alloy_primitives::U256::from(123),
+            buy_amount: alloy_primitives::U256::from(456),
             valid_to: 1337,
             app_data: OrderCreationAppData::Hash {
                 hash: AppDataHash([0x44; 32]),
             },
-            fee_amount: alloy::primitives::U256::from(789),
+            fee_amount: alloy_primitives::U256::from(789),
             kind: OrderKind::Sell,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1390,13 +1388,13 @@ mod tests {
                 sell_token: hex!("0101010101010101010101010101010101010101").into(),
                 buy_token: hex!("0202020202020202020202020202020202020202").into(),
                 receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
-                sell_amount: alloy::primitives::U256::from(0x0246ddf97976680000_u128),
-                buy_amount: alloy::primitives::U256::from(0xb98bc829a6f90000_u128),
+                sell_amount: alloy_primitives::U256::from(0x0246ddf97976680000_u128),
+                buy_amount: alloy_primitives::U256::from(0xb98bc829a6f90000_u128),
                 valid_to: 0xffffffff,
                 app_data: AppDataHash(hex!(
                     "0000000000000000000000000000000000000000000000000000000000000000"
                 )),
-                fee_amount: alloy::primitives::U256::from(0x0de0b6b3a7640000_u128),
+                fee_amount: alloy_primitives::U256::from(0x0de0b6b3a7640000_u128),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
@@ -1424,13 +1422,13 @@ mod tests {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
             receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
-            sell_amount: alloy::primitives::U256::from(0x0246ddf97976680000_u128),
-            buy_amount: alloy::primitives::U256::from(0xb98bc829a6f90000_u128),
+            sell_amount: alloy_primitives::U256::from(0x0246ddf97976680000_u128),
+            buy_amount: alloy_primitives::U256::from(0xb98bc829a6f90000_u128),
             valid_to: 0xffffffff,
             app_data: AppDataHash(hex!(
                 "0000000000000000000000000000000000000000000000000000000000000000"
             )),
-            fee_amount: alloy::primitives::U256::from(0x0de0b6b3a7640000_u128),
+            fee_amount: alloy_primitives::U256::from(0x0de0b6b3a7640000_u128),
             kind: OrderKind::Sell,
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
@@ -1512,12 +1510,12 @@ mod tests {
 
         let order = OrderBuilder::default()
             .with_sell_token(Address::ZERO)
-            .with_sell_amount(alloy::primitives::U256::from(100))
+            .with_sell_amount(alloy_primitives::U256::from(100))
             .with_buy_token(Address::ZERO)
-            .with_buy_amount(alloy::primitives::U256::from(80))
+            .with_buy_amount(alloy_primitives::U256::from(80))
             .with_valid_to(u32::MAX)
             .with_app_data([1u8; 32])
-            .with_fee_amount(alloy::primitives::U256::from(1337))
+            .with_fee_amount(alloy_primitives::U256::from(1337))
             .with_partially_fillable(true)
             .with_sell_token_balance(SellTokenSource::External)
             .with_buy_token_balance(BuyTokenDestination::Internal)

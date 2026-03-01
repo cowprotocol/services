@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{Address, U256},
+    alloy_primitives::{Address, U256},
     number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_with::serde_as,

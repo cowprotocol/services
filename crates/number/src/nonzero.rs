@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::U256,
+    alloy_primitives::U256,
     anyhow::Context,
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     std::fmt::{self, Display, Formatter},
