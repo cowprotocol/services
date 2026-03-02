@@ -97,6 +97,7 @@ struct Config {
 
     /// Configures cache for user balances and the background task
     /// that periodically updates it.
+    #[serde(default)]
     balances_cache: BalancesCacheConfig,
 }
 
@@ -1145,7 +1146,7 @@ mod tests {
         let toml = "";
         let config: BalancesCacheConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.max_request_age.get(), 5);
-        assert_eq!(config.max_concurrent_updates.get(), 10000);
+        assert_eq!(config.max_concurrent_updates.get(), 100);
     }
 
     #[test]
