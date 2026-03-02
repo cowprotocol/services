@@ -508,7 +508,7 @@ impl NativePriceUpdater {
 
         metrics
             .native_price_cache_background_updates
-            .inc_by(tokens_to_update.len() as u64);
+            .inc_by(expired_tokens.len() as u64);
     }
 }
 
