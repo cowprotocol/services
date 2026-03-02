@@ -1,4 +1,4 @@
-use alloy::primitives::{U256, utils::Unit};
+use alloy_primitives::{U256, utils::Unit};
 
 pub trait EthUnit: std::marker::Sized {
     /// Converts this value to wei.

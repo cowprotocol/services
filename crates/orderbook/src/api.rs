@@ -35,6 +35,7 @@ mod get_native_price;
 mod get_order_by_uid;
 mod get_order_status;
 mod get_orders_by_tx;
+mod get_orders_by_uid;
 mod get_solver_competition;
 mod get_solver_competition_v2;
 mod get_token_metadata;
@@ -189,6 +190,11 @@ pub fn handle_all_routes(
             "POST",
             "/api/v1/orders",
             post(post_order::post_order_handler),
+        ),
+        (
+            "POST",
+            "/api/v1/orders/by_uids",
+            post(get_orders_by_uid::get_orders_by_uid_handler),
         ),
         (
             "DELETE",

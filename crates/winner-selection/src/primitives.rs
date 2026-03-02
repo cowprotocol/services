@@ -1,6 +1,6 @@
 //! Primitive types for winner selection.
 
-pub use alloy::primitives::{Address, U256};
+pub use alloy_primitives::{Address, U256};
 
 /// Native token constant.
 pub const NATIVE_TOKEN: Address = Address::repeat_byte(0xee);

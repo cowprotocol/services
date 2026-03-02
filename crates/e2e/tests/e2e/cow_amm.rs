@@ -194,8 +194,11 @@ async fn cow_amm_jit(web3: Web3) {
             ],
         )
         .await;
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
@@ -574,8 +577,11 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             ],
         )
         .await;
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
@@ -837,8 +843,11 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             ],
         )
         .await;
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
         ])
         .await;

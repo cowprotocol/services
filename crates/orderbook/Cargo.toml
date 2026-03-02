@@ -33,6 +33,7 @@ futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
+humantime-serde = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true }
 model = { workspace = true }
@@ -51,7 +52,9 @@ shared = { workspace = true }
 strum = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
+tempfile = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "trace"] }
 tracing = { workspace = true }
@@ -59,6 +62,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 shared = { workspace = true, features = ["test-util"] }
 
@@ -72,4 +76,5 @@ workspace = true
 [features]
 e2e = []
 mimalloc-allocator = ["dep:mimalloc"]
+test-util = ["dep:tempfile"]
 tokio-console = ["observe/tokio-console"]

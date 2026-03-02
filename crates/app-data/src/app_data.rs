@@ -1,6 +1,6 @@
 use {
     crate::{AppDataHash, Hooks, app_data_hash::hash_full_app_data},
-    alloy::primitives::{Address, U256},
+    alloy_primitives::{Address, U256},
     anyhow::{Context, Result, anyhow},
     bytes_hex::BytesHex,
     moka::sync::Cache,

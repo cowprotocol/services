@@ -233,8 +233,11 @@ async fn fallback_native_price_estimator(web3: Web3) {
         )
         .await;
 
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--gas-estimators=http://localhost:11088/gasprice".to_string(),
             "--native-price-estimators-fallback=Driver|test_quoter|http://localhost:11088/test_solver"

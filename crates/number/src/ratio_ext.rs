@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{U256, U512, ruint::UintTryFrom},
+    alloy_primitives::{U256, U512, ruint::UintTryFrom},
     num::rational::Ratio,
 };
 
