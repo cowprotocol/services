@@ -235,7 +235,7 @@ impl Ethereum {
             .web3
             .provider
             .estimate_gas(tx)
-            .pending()
+            .latest()
             .await
             .map_err(Error::Rpc)?
             .into();
@@ -257,7 +257,7 @@ impl Ethereum {
             .trace_call(
                 &tx
             )
-            .pending() // FIX: Maybe need to check it later
+            .latest()
             .await?;
 
         let traces = trace.trace;
