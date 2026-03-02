@@ -65,6 +65,7 @@ pub struct Config {
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
+    pub compress_solve_request: bool,
 }
 
 pub struct Probes {
@@ -561,8 +562,10 @@ impl RunLoop {
             auction,
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
+            self.config.compress_solve_request,
         )
         .await;
+        Metrics::solve_request_body_size(request.body_size());
 
         let mut bids = futures::future::join_all(
             self.drivers
@@ -984,6 +987,12 @@ struct Metrics {
     /// function is started.
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
+
+    /// Tracks the size of the `/solve` request body in bytes.
+    #[metric(buckets(
+        1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
+    ))]
+    solve_request_body_size: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -1077,6 +1086,10 @@ impl Metrics {
         Self::get()
             .current_block_delay
             .observe(init_block_timestamp.elapsed().as_secs_f64())
+    }
+
+    fn solve_request_body_size(size: usize) {
+        Self::get().solve_request_body_size.observe(size as f64)
     }
 }
 

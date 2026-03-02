@@ -138,6 +138,7 @@ impl Api {
             // axum's default body limit is 2MB too low for solvers, 20MB is still too low
             // so instead of constantly guessing and updating, we disable the limit altogether
             .layer(axum::extract::DefaultBodyLimit::disable())
+            .layer(tower_http::decompression::RequestDecompressionLayer::new())
             .layer(
                 tower::ServiceBuilder::new()
                     .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
