@@ -506,7 +506,7 @@ impl NativePriceUpdater {
         // execution will happen faster, but we will build more smaller batches that we
         // send to CoinGecko. This happens because we also use estimations from solvers
         // which vary in time, so as requests in the buffer_unorderd() stream
-        // finishe, new ones start immediately, tokens "trickle in" and we build smaller
+        // finish, new ones start immediately, tokens "trickle in" and we build smaller
         // batches.
         let chunk_size = self.estimator.0.concurrent_requests;
         for chunk in expired_tokens.chunks(chunk_size) {
