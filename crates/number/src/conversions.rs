@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{U256, aliases::I512},
+    alloy_primitives::{U256, aliases::I512},
     anyhow::{Result, ensure},
     bigdecimal::{BigDecimal, num_bigint::ToBigInt},
     num::{BigInt, BigRational, BigUint, Zero, bigint::Sign, rational::Ratio},
@@ -80,8 +80,8 @@ pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
 pub fn i512_to_big_int(i512: &I512) -> BigInt {
     BigInt::from_bytes_be(
         match i512.sign() {
-            alloy::primitives::Sign::Positive => Sign::Plus,
-            alloy::primitives::Sign::Negative => Sign::Minus,
+            alloy_primitives::Sign::Positive => Sign::Plus,
+            alloy_primitives::Sign::Negative => Sign::Minus,
         },
         &i512.abs().to_be_bytes::<64>(),
     )
@@ -95,7 +95,7 @@ pub fn i512_to_big_rational(input: &I512) -> BigRational {
 pub fn i512_to_u256(input: &I512) -> Result<U256> {
     anyhow::ensure!(input >= &I512::ZERO, "Negative input value");
     anyhow::ensure!(input < &I512::from(U256::MAX), "Input exceeds U256::MAX");
-    Ok(alloy::primitives::U256::from_be_slice(
+    Ok(alloy_primitives::U256::from_be_slice(
         &input.to_be_bytes::<64>()[32..],
     ))
 }

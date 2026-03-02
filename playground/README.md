@@ -155,6 +155,78 @@ In this mode, the stack will spin up:
 
 - As per fork, but with a local node (not forked from Erigon)
 
+## Using Otterscan
+
+[Otterscan](https://github.com/otterscan/otterscan) is a local block explorer integrated into the playground.
+It provides powerful transaction analysis tools that work with your local Anvil chain — no external services required.
+
+For more details, see the [Otterscan documentation](https://docs.otterscan.io/).
+
+**Access Otterscan at:** http://localhost:8003
+
+### Inspecting Transactions
+
+When you make a swap in CoW Swap, all explorer links automatically point to your local Otterscan instance. You can:
+
+1. **View transaction overview**: See gas usage, status, block info, and decoded input data
+
+   ![Transaction overview](docs/images/otterscan-tx-overview.png)
+   *Transaction overview showing gas usage, status, token transfers, and decoded input data.*
+
+2. **Analyze transaction traces**: Expand the full call tree to see every internal call, including:
+   - Contract-to-contract calls
+   - Token transfers (ERC20, ERC721)
+   - Value transfers
+   - Delegate calls and static calls
+
+   ![Transaction trace](docs/images/otterscan-tx-trace.png)
+   *Full call trace of a `settle()` transaction showing internal calls, token transfers, and AMM interactions.*
+
+3. **View event logs**: See all emitted events with decoded parameters
+
+   ![Transaction logs](docs/images/otterscan-tx-logs.png)
+   *Event logs tab with decoded parameters for a CoW Swap settlement.*
+
+4. **Check gas profiling**: Understand gas consumption per operation
+
+For more on transaction analysis, see the [Otterscan documentation](https://docs.otterscan.io/).
+
+### Debugging Failed Transactions
+
+Otterscan is especially useful for debugging failed transactions:
+
+1. Navigate to the failed transaction in Otterscan
+
+   ![Failed transaction overview](docs/images/otterscan-failed-tx.png)
+   *Overview of a failed transaction showing the "Fail" status badge and decoded input data.*
+
+2. Check the **"Trace"** tab to see exactly where the transaction reverted
+
+   ![Failed transaction trace](docs/images/otterscan-revert-trace.png)
+   *Trace tab showing the full call tree of a failed transaction with multiple internal calls.*
+
+3. Look for the revert reason in the trace output (e.g., `Error(string)` or custom errors)
+4. For CoW Protocol transactions, you can trace the entire settlement flow including:
+   - Pre-interactions
+   - Token approvals and transfers
+   - AMM interactions (Uniswap, etc.)
+   - Post-interactions
+
+See the [Otterscan documentation](https://docs.otterscan.io/) for more details on trace analysis.
+
+### Example: Tracing a CoW Swap Settlement
+
+After executing a swap:
+
+1. Click the transaction link in the CoW Swap UI or CoW Explorer. This will open the transaction directly in your local Otterscan instance.
+2. Click on **"Trace"** to see the full execution flow.
+3. Expand the `settle()` call to see:
+   - How tokens flowed between parties
+   - Which liquidity sources were used
+   - Gas costs per operation
+
+> **Tip:** For details on how Otterscan displays verified source code, see the [Contract Verification with Sourcify](#contract-verification-with-sourcify) section below.
+
 ## Contract Verification with Sourcify
 
 The playground includes a local [Sourcify](https://sourcify.dev/) instance for contract verification. Sourcify is a decentralized contract verification service that matches deployed bytecode with source code. Verified contracts display their source code in Otterscan.

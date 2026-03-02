@@ -9,7 +9,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
-    shared::web3::Web3,
+    shared::{fee_factor::FeeFactor, web3::Web3},
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -75,12 +75,17 @@ async fn test(web3: Web3) {
     let services = Services::new(&onchain).await;
     let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     // Start API with 0.02% (2 bps) volume fee
-    let args = ExtraServiceArgs {
-        api: vec![
-            "--volume-fee-factor=0.0002".to_string(),
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            factor: Some(FeeFactor::new(0.0002)),
             // Set a far future effective timestamp to ensure the fee is not applied
-            "--volume-fee-effective-timestamp=2099-01-01T10:00:00Z".to_string(),
-        ],
+            effective_from_timestamp: Some("2099-01-01T10:00:00Z".parse().unwrap()),
+        }),
+        ..Default::default()
+    }
+    .to_cli_args();
+    let args = ExtraServiceArgs {
+        api: vec![ob_config_arg],
         autopilot: vec![config_arg],
     };
     services.start_protocol_with_args(args, solver).await;
@@ -308,8 +313,11 @@ async fn quote_timeout(web3: Web3) {
     /// (configurable but always 500ms in e2e tests)
     const MAX_QUOTE_TIME_MS: u64 = 500;
 
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
             "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
                 .to_string(),
@@ -451,11 +459,18 @@ async fn volume_fee(web3: Web3) {
     // Start API with 0.02% (2 bps) default volume fee
     // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must be
     // in bucket)
+    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
+        volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            factor: Some(FeeFactor::new(0.0002)),
+            // Set a past effective timestamp to ensure the fee is applied
+            effective_from_timestamp: Some("2000-01-01T10:00:00Z".parse().unwrap()),
+        }),
+        ..Default::default()
+    }
+    .to_cli_args();
     let args = ExtraServiceArgs {
         api: vec![
-            "--volume-fee-factor=0.0002".to_string(),
-            // Set a past effective timestamp to ensure the fee is applied
-            "--volume-fee-effective-timestamp=2000-01-01T10:00:00Z".to_string(),
+            ob_config_arg,
             format!(
                 "--volume-fee-bucket-overrides=0.0005:{};{}",
                 onchain.contracts().weth.address(),

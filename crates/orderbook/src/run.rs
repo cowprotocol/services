@@ -2,6 +2,7 @@ use {
     crate::{
         api,
         arguments::Arguments,
+        config::Configuration,
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
@@ -61,10 +62,13 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
-    run(args).await;
+    let config = Configuration::from_path(&args.config)
+        .await
+        .expect("failed to load configuration file");
+    run(args, config).await;
 }
 
-pub async fn run(args: Arguments) {
+pub async fn run(args: Arguments, config: Configuration) {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
@@ -192,7 +196,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to create gas price estimator"),
     ));
 
-    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
+    let deny_listed_tokens = DenyListedTokens::new(config.unsupported_tokens);
 
     let current_block_stream = args
         .shared
@@ -295,9 +299,9 @@ pub async fn run(args: Arguments) {
         .unwrap();
 
     let validity_configuration = OrderValidPeriodConfiguration {
-        min: args.min_order_validity_period,
-        max_market: args.max_order_validity_period,
-        max_limit: args.max_limit_order_validity_period,
+        min: config.order_validation.min_order_validity_period,
+        max_market: config.order_validation.max_order_validity_period,
+        max_limit: config.order_validation.max_limit_order_validity_period,
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
@@ -333,7 +337,7 @@ pub async fn run(args: Arguments) {
     // them.
     let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
 
-    let app_data_validator = Validator::new(args.app_data_size_limit);
+    let app_data_validator = Validator::new(config.app_data_size_limit);
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
         .await
         .ok();
@@ -341,32 +345,30 @@ pub async fn run(args: Arguments) {
         native_token,
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
-            args.banned_users,
-            args.banned_users_max_cache_size.get().to_u64().unwrap(),
+            config.banned_users.addresses,
+            config.banned_users.max_cache_size.get().to_u64().unwrap(),
         )),
         validity_configuration,
-        args.eip1271_skip_creation_validation,
+        config.eip1271_skip_creation_validation,
         deny_listed_tokens.clone(),
         hooks_contract,
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
         Arc::new(postgres_write.clone()),
-        args.max_limit_orders_per_user,
+        config.order_validation.max_limit_orders_per_user,
         code_fetcher,
         app_data_validator.clone(),
-        args.max_gas_per_order,
-        args.same_tokens_policy,
+        config.order_validation.max_gas_per_order,
+        config.order_validation.same_tokens_policy,
     ));
-    let ipfs = args
-        .ipfs_gateway
-        .map(|url| {
-            Ipfs::new(
-                http_factory.builder(),
-                url,
-                args.ipfs_pinata_auth
-                    .map(|auth| format!("pinataGatewayToken={auth}")),
-            )
+    let ipfs = config
+        .ipfs
+        .map(|ipfs| {
+            let pinata_query = ipfs
+                .auth_token
+                .map(|auth| format!("pinataGatewayToken={auth}"));
+            Ipfs::new(http_factory.builder(), ipfs.gateway, pinata_query)
         })
         .map(IpfsAppData::new);
     let app_data = Arc::new(crate::app_data::Registry::new(
@@ -381,7 +383,7 @@ pub async fn run(args: Arguments) {
         postgres_read.clone(),
         order_validator.clone(),
         app_data.clone(),
-        args.active_order_competition_threshold,
+        config.active_order_competition_threshold,
     ));
 
     check_database_connection(orderbook.as_ref()).await;
@@ -389,7 +391,7 @@ pub async fn run(args: Arguments) {
         order_validator,
         optimal_quoter,
         app_data.clone(),
-        args.volume_fee_config,
+        config.volume_fee,
         args.shared.volume_fee_bucket_overrides.clone(),
         args.shared.enable_sell_equals_buy_volume_fee,
     )

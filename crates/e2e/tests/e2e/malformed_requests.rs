@@ -3,6 +3,7 @@
 
 use {
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
+    model::order::{ORDER_UID_LIMIT, OrderUid},
     orderbook::api::Error,
     reqwest::StatusCode,
     serde_json::json,
@@ -25,8 +26,11 @@ async fn http_validation(web3: Web3) {
     let services = Services::new(&onchain).await;
     // since we're testing malformed paths, etc;
     // we don't really need the rest of the protocol
+    let (_ob_config_file, ob_config_arg) =
+        orderbook::config::Configuration::default().to_cli_args();
     services
         .start_api(vec![
+            ob_config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--gas-estimators=http://localhost:11088/gasprice".to_string(),
         ])
@@ -303,4 +307,30 @@ async fn http_validation(web3: Web3) {
         !error.description.is_empty(),
         "Error response should have non-empty 'description' field"
     );
+
+    // /api/v1/orders/by_uids requires Json body
+    let response = client
+        .post(format!("{API_HOST}/api/v1/orders/by_uids"))
+        .header("Content-Type", "application/json")
+        .body("Not json")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Querying for more than ORDER_UID_LIMIT orders should fail
+    let response = client
+        .post(format!("{API_HOST}/api/v1/orders/by_uids"))
+        .header("Content-Type", "application/json")
+        .json(&json!(
+            (0..ORDER_UID_LIMIT + 1)
+                .map(|_| OrderUid::default())
+                .collect::<Vec<_>>()
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

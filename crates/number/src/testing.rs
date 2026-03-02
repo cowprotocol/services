@@ -53,7 +53,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use {super::*, alloy::primitives::U256};
+    use {super::*, alloy_primitives::U256};
 
     #[test]
     fn u64_identical_values() {

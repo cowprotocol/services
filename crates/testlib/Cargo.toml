@@ -1,12 +1,15 @@
 [package]
 name = "testlib"
 version = "0.1.0"
-authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
+authors = [
+  "Gnosis Developers <developers@gnosis.io>",
+  "Cow Protocol Developers <dev@cow.fi>"
+]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = {workspace = true}
+alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 

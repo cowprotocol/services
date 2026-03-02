@@ -1,6 +1,6 @@
 use {
     crate::{AuctionId, order::OrderUid},
-    alloy::primitives::{Address, B256, U256},
+    alloy_primitives::{Address, B256, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -105,16 +105,16 @@ pub enum Order {
         id: OrderUid,
         /// The effective amount that left the user's wallet including all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        sell_amount: alloy::primitives::U256,
+        sell_amount: U256,
         /// The effective amount the user received after all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        buy_amount: alloy::primitives::U256,
+        buy_amount: U256,
     },
     #[serde(rename_all = "camelCase")]
     Legacy {
         id: OrderUid,
         #[serde_as(as = "HexOrDecimalU256")]
-        executed_amount: alloy::primitives::U256,
+        executed_amount: U256,
     },
 }
 

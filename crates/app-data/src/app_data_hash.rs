@@ -28,7 +28,6 @@ use {
         fmt::{self, Debug, Formatter},
         str::FromStr,
     },
-    tiny_keccak::{Hasher, Keccak},
 };
 
 /// A JSON object used to represent app data documents for uploading and
@@ -107,11 +106,7 @@ impl PartialEq<[u8; 32]> for AppDataHash {
 /// Hash full app data to get the bytes expected to be set as the contract level
 /// app data.
 pub fn hash_full_app_data(app_data: &[u8]) -> [u8; 32] {
-    let mut hasher = Keccak::v256();
-    hasher.update(app_data);
-    let mut hash = [0u8; 32];
-    hasher.finalize(&mut hash);
-    hash
+    alloy_primitives::keccak256(app_data).0
 }
 
 /// Create an IPFS CIDv1 from a hash created by `hash_full_app_data`.
