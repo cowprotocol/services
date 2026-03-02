@@ -1,15 +1,15 @@
 use {
     alloy::primitives::Address,
     serde::{Deserialize, Serialize},
-    std::time::Duration,
+    std::{num::NonZeroUsize, time::Duration},
 };
 
 const fn default_cache_max_age() -> Duration {
     Duration::from_mins(10)
 }
 
-const fn default_cache_concurrent_requests() -> usize {
-    1
+const fn default_cache_concurrent_requests() -> NonZeroUsize {
+    NonZeroUsize::new(1).expect("value should be greater than 0")
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -36,7 +36,7 @@ pub struct CacheConfig {
     /// How many price estimation requests can be executed concurrently in the
     /// maintenance task.
     #[serde(default = "default_cache_concurrent_requests")]
-    pub concurrent_requests: usize,
+    pub concurrent_requests: NonZeroUsize,
 }
 
 impl Default for CacheConfig {
@@ -66,7 +66,10 @@ mod tests {
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.approximation_tokens.len(), 1);
         assert_eq!(config.cache.max_age, Duration::from_secs(300));
-        assert_eq!(config.cache.concurrent_requests, 4);
+        assert_eq!(
+            config.cache.concurrent_requests,
+            NonZeroUsize::new(4).unwrap()
+        );
     }
 
     #[test]
@@ -77,7 +80,10 @@ mod tests {
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.cache.max_age, Duration::from_mins(10));
-        assert_eq!(config.cache.concurrent_requests, 1);
+        assert_eq!(
+            config.cache.concurrent_requests,
+            NonZeroUsize::new(1).unwrap()
+        );
     }
 
     #[test]
@@ -103,7 +109,7 @@ mod tests {
             approximation_tokens: vec![(Address::repeat_byte(1), Address::repeat_byte(2))],
             cache: CacheConfig {
                 max_age: Duration::from_secs(120),
-                concurrent_requests: 8,
+                concurrent_requests: NonZeroUsize::new(8).unwrap(),
             },
         };
 

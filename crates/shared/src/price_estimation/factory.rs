@@ -1,8 +1,6 @@
 use {
     super::{
-        Arguments,
-        NativePriceEstimator as NativePriceEstimatorSource,
-        PriceEstimating,
+        Arguments, NativePriceEstimator as NativePriceEstimatorSource, PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -416,7 +414,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         native_price_cache::CachingNativePriceEstimator::new(
             inner,
             cache,
-            self.config.cache.concurrent_requests,
+            self.config.cache.concurrent_requests.get(),
             approximation_tokens,
             self.args.quote_timeout,
         )
