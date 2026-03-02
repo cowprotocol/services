@@ -3,7 +3,8 @@
 
 use {
     crate::{
-        DomainSeparator, TokenPair,
+        DomainSeparator,
+        TokenPair,
         interaction::InteractionData,
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
