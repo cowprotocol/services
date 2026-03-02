@@ -146,7 +146,7 @@ impl<'de> Deserialize<'de> for FeePolicy {
         // deserialize numbers, for example, when users send bps as floats
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        struct Helper {
+        struct FeePolicyDeserializer {
             surplus_bps: Option<u64>,
             max_volume_bps: Option<u64>,
             price_improvement_bps: Option<u64>,
@@ -154,8 +154,8 @@ impl<'de> Deserialize<'de> for FeePolicy {
             bps: Option<u64>,
         }
 
-        match Helper::deserialize(deserializer)? {
-            Helper {
+        match FeePolicyDeserializer::deserialize(deserializer)? {
+            FeePolicyDeserializer {
                 surplus_bps: Some(surplus_bps),
                 max_volume_bps: Some(max_volume_bps),
                 price_improvement_bps: None,
@@ -165,7 +165,7 @@ impl<'de> Deserialize<'de> for FeePolicy {
                 bps: surplus_bps,
                 max_volume_bps,
             }),
-            Helper {
+            FeePolicyDeserializer {
                 surplus_bps: None,
                 max_volume_bps: Some(max_volume_bps),
                 price_improvement_bps: Some(price_improvement_bps),
@@ -175,14 +175,14 @@ impl<'de> Deserialize<'de> for FeePolicy {
                 bps: price_improvement_bps,
                 max_volume_bps,
             }),
-            Helper {
+            FeePolicyDeserializer {
                 surplus_bps: None,
                 max_volume_bps: None,
                 price_improvement_bps: None,
                 volume_bps: Some(volume_bps),
                 bps: None,
             } => Ok(FeePolicy::Volume { bps: volume_bps }),
-            Helper {
+            FeePolicyDeserializer {
                 surplus_bps: None,
                 max_volume_bps: None,
                 price_improvement_bps: None,
