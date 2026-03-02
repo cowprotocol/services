@@ -11,7 +11,10 @@ use {
             solver,
         },
     },
-    std::{num::{NonZeroU64, NonZeroUsize}, time::Duration},
+    std::{
+        num::{NonZeroU64, NonZeroUsize},
+        time::Duration,
+    },
 };
 
 pub mod file;
