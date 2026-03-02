@@ -15,6 +15,7 @@ use {
         body::{self, Body},
         http::Request,
     },
+    balance_overrides::BalanceOverrideRequest,
     chrono::Utc,
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
@@ -25,7 +26,6 @@ use {
     },
     shared::{
         account_balances::{BalanceFetching, Query},
-        price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
         signature_validator::SignatureValidating,
     },
     std::{

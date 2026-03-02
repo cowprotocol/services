@@ -1,7 +1,4 @@
-pub mod balance_overrides;
-
 use {
-    self::balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     super::{Estimate, Verification},
     crate::{
         code_fetching::CodeFetching,
@@ -22,6 +19,7 @@ use {
         rpc::types::{eth::state::StateOverride, state::AccountOverride},
     },
     anyhow::{Context, Result, anyhow},
+    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     bigdecimal::BigDecimal,
     contracts::alloy::{
         GPv2Settlement,

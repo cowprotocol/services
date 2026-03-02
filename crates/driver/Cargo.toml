@@ -19,6 +19,7 @@ alloy = { workspace = true, features = ["sol-types", "provider-txpool-api", "ran
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
 chain = { workspace = true }

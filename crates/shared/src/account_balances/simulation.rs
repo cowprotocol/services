@@ -167,8 +167,8 @@ impl BalanceFetching for Balances {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::trade_verifier::balance_overrides::DummyOverrider,
         alloy::primitives::address,
+        balance_overrides::DummyOverrider,
         contracts::alloy::GPv2Settlement,
         ethrpc::Web3,
         model::order::SellTokenSource,

@@ -10,11 +10,7 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::{
-            PriceEstimationError,
-            Verification,
-            trade_verifier::balance_overrides::BalanceOverrideRequest,
-        },
+        price_estimation::{PriceEstimationError, Verification},
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
@@ -22,6 +18,7 @@ use {
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
+    balance_overrides::BalanceOverrideRequest,
     contracts::alloy::{HooksTrampoline, WETH9},
     model::{
         DomainSeparator,

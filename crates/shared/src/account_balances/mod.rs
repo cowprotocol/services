@@ -1,13 +1,10 @@
 use {
-    crate::price_estimation::trade_verifier::balance_overrides::{
-        BalanceOverrideRequest,
-        BalanceOverriding,
-    },
     alloy::{
         primitives::{Address, U256},
         rpc::types::state::StateOverride,
         sol_types::{SolCall, SolType, sol_data},
     },
+    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     contracts::alloy::{GPv2Settlement, support::Balances},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{

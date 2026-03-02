@@ -23,7 +23,6 @@ use {
         fmt::{self, Display, Formatter},
         sync::Arc,
     },
-    thiserror::Error,
     tracing::instrument,
 };
 /// Trait for abstracting Tenderly API.
@@ -325,23 +324,6 @@ struct Metrics {
 impl Metrics {
     fn get() -> &'static Metrics {
         Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum SimulationError {
-    #[error("simulation reverted {0:?}")]
-    Revert(Option<String>),
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
-}
-
-impl Clone for SimulationError {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Revert(message) => Self::Revert(message.clone()),
-            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
-        }
     }
 }
 

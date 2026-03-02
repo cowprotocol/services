@@ -5,7 +5,6 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    crate::price_estimation::trade_verifier::balance_overrides::BalanceOverriding,
     alloy::{
         dyn_abi::SolType,
         primitives::{Address, U256},
@@ -14,6 +13,7 @@ use {
         transports::RpcError,
     },
     anyhow::{Context, Result},
+    balance_overrides::BalanceOverriding,
     contracts::alloy::{
         ERC1271SignatureValidator::ERC1271SignatureValidator,
         GPv2Settlement,

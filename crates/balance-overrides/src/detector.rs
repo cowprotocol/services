@@ -1,6 +1,5 @@
 use {
     super::Strategy,
-    crate::tenderly_api::SimulationError,
     alloy::{
         eips::BlockId,
         primitives::{Address, B256, TxKind, U256},
@@ -27,6 +26,15 @@ use {
 const SOLADY_MAGIC_BYTES: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87, 0xa2, 0x11, 0xa2,
 ];
+
+/// Error that occurs when verifying a balance override strategy.
+#[derive(Debug, Error)]
+pub enum SimulationError {
+    #[error("simulation reverted {0:?}")]
+    Revert(Option<String>),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
 
 /// A heuristic balance override detector based on `eth_call` simulations.
 ///
