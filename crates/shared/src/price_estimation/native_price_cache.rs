@@ -497,7 +497,17 @@ impl NativePriceUpdater {
         // Process expired tokens in chunks, waiting for each chunk to complete
         // before starting the next. This ensures all tokens in a chunk reach
         // the BufferedRequest channel simultaneously, producing full CoinGecko
-        // API batches instead of trickling tokens one-by-one.
+        // API batches instead of trickling tokens one-by-one. Normally it's
+        // better to just pass the whole vector to `estimate_prices_and_update_cache`
+        // and let it handle the chunking, but in this case we want to ensure that all
+        // tokens go in in chunks of 19 to fetch as many tokens from CoinGecko as is
+        // allowed. We debounce request to CoinGecko to happen once every 100ms
+        // to build the batches and if we use buffer_unordered deeper in the stack the
+        // execution will happen faster, but we will build more smaller batches that we
+        // send to CoinGecko. This happens because we also use estimations from solvers
+        // which vary in time, so as requests in the buffer_unorderd() stream
+        // finishe, new ones start immediately, tokens "trickle in" and we build smaller
+        // batches.
         let chunk_size = self.estimator.0.concurrent_requests;
         for chunk in expired_tokens.chunks(chunk_size) {
             self.estimator
