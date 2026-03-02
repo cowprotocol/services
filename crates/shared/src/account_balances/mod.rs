@@ -62,7 +62,7 @@ impl From<anyhow::Error> for TransferSimulationError {
     }
 }
 
-#[mockall::automock]
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
     // Returns the balance available to the allowance manager for the given owner
