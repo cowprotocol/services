@@ -1,6 +1,11 @@
 help:
     @just --list
 
+setup:
+    cd contracts && \
+    cargo r -r -- vendor && \
+    cargo r -r -- generate
+
 # Run unit tests
 test-unit:
     cargo nextest run

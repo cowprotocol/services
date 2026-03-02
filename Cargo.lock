@@ -239,9 +239,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-json-abi"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84e3cf01219c966f95a460c95f1d4c30e12f6c18150c21a30b768af2a2a29142"
+checksum = "e9dbe713da0c737d9e5e387b0ba790eb98b14dd207fe53eef50e19a5a8ec3dac"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-type-parser",
@@ -305,9 +305,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-primitives"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6a0fb18dd5fb43ec5f0f6a20be1ce0287c79825827de5744afaa6c957737c33"
+checksum = "de3b431b4e72cd8bd0ec7a50b4be18e73dab74de0dba180eef171055e5d5926e"
 dependencies = [
  "alloy-rlp",
  "bytes",
@@ -315,7 +315,7 @@ dependencies = [
  "const-hex",
  "derive_more 2.1.1",
  "foldhash 0.2.0",
- "getrandom 0.3.4",
+ "getrandom 0.4.1",
  "hashbrown 0.16.1",
  "indexmap 2.13.0",
  "itoa",
@@ -329,7 +329,6 @@ dependencies = [
  "rustc-hash",
  "serde",
  "sha3",
- "tiny-keccak",
 ]
 
 [[package]]
@@ -612,9 +611,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-macro"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09eb18ce0df92b4277291bbaa0ed70545d78b02948df756bbd3d6214bf39a218"
+checksum = "ab81bab693da9bb79f7a95b64b394718259fdd7e41dceeced4cad57cb71c4f6a"
 dependencies = [
  "alloy-sol-macro-expander",
  "alloy-sol-macro-input",
@@ -626,9 +625,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-macro-expander"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95d9fa2daf21f59aa546d549943f10b5cce1ae59986774019fbedae834ffe01b"
+checksum = "489f1620bb7e2483fb5819ed01ab6edc1d2f93939dce35a5695085a1afd1d699"
 dependencies = [
  "alloy-json-abi",
  "alloy-sol-macro-input",
@@ -638,16 +637,16 @@ dependencies = [
  "proc-macro-error2",
  "proc-macro2",
  "quote",
+ "sha3",
  "syn 2.0.114",
  "syn-solidity",
- "tiny-keccak",
 ]
 
 [[package]]
 name = "alloy-sol-macro-input"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9396007fe69c26ee118a19f4dee1f5d1d6be186ea75b3881adf16d87f8444686"
+checksum = "56cef806ad22d4392c5fc83cf8f2089f988eb99c7067b4e0c6f1971fc1cca318"
 dependencies = [
  "alloy-json-abi",
  "const-hex",
@@ -663,9 +662,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-type-parser"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af67a0b0dcebe14244fc92002cd8d96ecbf65db4639d479f5fcd5805755a4c27"
+checksum = "a6df77fea9d6a2a75c0ef8d2acbdfd92286cc599983d3175ccdc170d3433d249"
 dependencies = [
  "serde",
  "winnow",
@@ -673,9 +672,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-types"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09aeea64f09a7483bdcd4193634c7e5cf9fd7775ee767585270cd8ce2d69dc95"
+checksum = "64612d29379782a5dde6f4b6570d9c756d734d760c0c94c254d361e678a6591f"
 dependencies = [
  "alloy-json-abi",
  "alloy-primitives",
@@ -2317,7 +2316,6 @@ dependencies = [
 [[package]]
 name = "contracts"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
  "cow-contract-anyoneauthenticator",
  "cow-contract-balancerqueries",
@@ -2493,731 +2491,804 @@ dependencies = [
 [[package]]
 name = "cow-contract-anyoneauthenticator"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerqueries"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2authorizer"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2basepool"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2basepoolfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2composablestablepool"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2composablestablepoolfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2composablestablepoolfactoryv3"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2composablestablepoolfactoryv4"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2composablestablepoolfactoryv5"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2composablestablepoolfactoryv6"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2liquiditybootstrappingpool"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2liquiditybootstrappingpoolfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2noprotocolfeeliquiditybootstrappingpoolfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2stablepool"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2stablepoolfactoryv2"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2vault"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2weightedpool"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2weightedpool2tokensfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2weightedpoolfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2weightedpoolfactoryv3"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv2weightedpoolfactoryv4"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balancerv3batchrouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-balances"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-baoswaprouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-chainalysisoracle"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-counter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowamm"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowammconstantproductfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowammfactorygetter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowammlegacyhelper"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowammuniswapv2priceoracle"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowprotocoltoken"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowswapethflow"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-cowswaponchainorders"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-erc1271signaturevalidator"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-erc20"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-erc20mintable"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-flashloanrouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-gashog"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-gnosissafe"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-gnosissafecompatibilityfallbackhandler"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-gnosissafeproxy"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-gnosissafeproxyfactory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-gpv2allowlistauthentication"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-gpv2settlement"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-honeyswaprouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-hookstrampoline"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-icowwrapper"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-iswaprpair"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-iuniswaplikepair"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-iuniswaplikerouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-iuniswapv3factory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-izeroex"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-liquoricesettlement"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-nonstandarderc20balances"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-pancakerouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-permit2"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-remoteerc20balances"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-signatures"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-solver"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-spardose"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-sushiswaprouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-swapper"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-swaprrouter"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-testnetuniswapv2router02"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-trader"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-uniswapv2factory"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-uniswapv2router02"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-uniswapv3pool"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-uniswapv3quoterv2"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-uniswapv3swaprouterv2"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
 name = "cow-contract-weth9"
 version = "0.1.0"
-source = "git+https://github.com/jmg-duarte/cow-contracts.git#78b25b0b4bb6a01cc02ce3bb1db47ab454064979"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "anyhow",
- "serde",
 ]
 
 [[package]]
@@ -4108,6 +4179,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "getrandom"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "139ef39800118c7683f2fd3c98c1b23c09ae076556b435f8e9064ae108aaeeec"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi",
+ "wasip2",
+ "wasip3",
+]
+
+[[package]]
 name = "gimli"
 version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4621,6 +4705,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "id-arena"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
+
+[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4863,9 +4953,9 @@ dependencies = [
 
 [[package]]
 name = "keccak-asm"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "505d1856a39b200489082f90d897c3f07c455563880bc5952e38eabf731c83b6"
+checksum = "b646a74e746cd25045aa0fd42f4f7f78aa6d119380182c7e63a5593c4ab8df6f"
 dependencies = [
  "digest 0.10.7",
  "sha3-asm",
@@ -4879,6 +4969,12 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
  "spin",
 ]
+
+[[package]]
+name = "leb128fmt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
@@ -5859,6 +5955,16 @@ checksum = "72dd2d6d381dfb73a193c7fca536518d7caee39fc8503f74e7dc0be0531b425c"
 dependencies = [
  "predicates-core",
  "termtree",
+]
+
+[[package]]
+name = "prettyplease"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -7098,9 +7204,9 @@ dependencies = [
 
 [[package]]
 name = "sha3-asm"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c28efc5e327c837aa837c59eae585fc250715ef939ac32881bcc11677cd02d46"
+checksum = "b31139435f327c93c6038ed350ae4588e2c70a13d50599509fee6349967ba35a"
 dependencies = [
  "cc",
  "cfg-if",
@@ -7621,9 +7727,9 @@ dependencies = [
 
 [[package]]
 name = "syn-solidity"
-version = "1.5.2"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f92d01b5de07eaf324f7fca61cc6bd3d82bbc1de5b6c963e6fe79e86f36580d"
+checksum = "53f425ae0b12e2f5ae65542e00898d500d4d318b4baf09f40fd0d410454e9947"
 dependencies = [
  "paste",
  "proc-macro2",
@@ -8510,7 +8616,16 @@ version = "1.0.1+wasi-0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0562428422c63773dad2c345a1882263bbf4d65cf3f42e90921f787ef5ad58e7"
 dependencies = [
- "wit-bindgen",
+ "wit-bindgen 0.46.0",
+]
+
+[[package]]
+name = "wasip3"
+version = "0.4.0+wasi-0.3.0-rc-2026-01-06"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5428f8bf88ea5ddc08faddef2ac4a67e390b88186c703ce6dbd955e1c145aca5"
+dependencies = [
+ "wit-bindgen 0.51.0",
 ]
 
 [[package]]
@@ -8579,6 +8694,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-encoder"
+version = "0.244.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "990065f2fe63003fe337b932cfb5e3b80e0b4d0f5ff650e6985b1048f62c8319"
+dependencies = [
+ "leb128fmt",
+ "wasmparser",
+]
+
+[[package]]
+name = "wasm-metadata"
+version = "0.244.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb0e353e6a2fbdc176932bbaab493762eb1255a7900fe0fea1a2f96c296cc909"
+dependencies = [
+ "anyhow",
+ "indexmap 2.13.0",
+ "wasm-encoder",
+ "wasmparser",
+]
+
+[[package]]
 name = "wasm-streams"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8589,6 +8726,18 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.244.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47b807c72e1bac69382b3a6fb3dbe8ea4c0ed87ff5629b8685ae6b9a611028fe"
+dependencies = [
+ "bitflags 2.10.0",
+ "hashbrown 0.15.5",
+ "indexmap 2.13.0",
+ "semver 1.0.27",
 ]
 
 [[package]]
@@ -9055,6 +9204,94 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
+
+[[package]]
+name = "wit-bindgen"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
+dependencies = [
+ "wit-bindgen-rust-macro",
+]
+
+[[package]]
+name = "wit-bindgen-core"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea61de684c3ea68cb082b7a88508a8b27fcc8b797d738bfc99a82facf1d752dc"
+dependencies = [
+ "anyhow",
+ "heck",
+ "wit-parser",
+]
+
+[[package]]
+name = "wit-bindgen-rust"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7c566e0f4b284dd6561c786d9cb0142da491f46a9fbed79ea69cdad5db17f21"
+dependencies = [
+ "anyhow",
+ "heck",
+ "indexmap 2.13.0",
+ "prettyplease",
+ "syn 2.0.114",
+ "wasm-metadata",
+ "wit-bindgen-core",
+ "wit-component",
+]
+
+[[package]]
+name = "wit-bindgen-rust-macro"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c0f9bfd77e6a48eccf51359e3ae77140a7f50b1e2ebfe62422d8afdaffab17a"
+dependencies = [
+ "anyhow",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
+]
+
+[[package]]
+name = "wit-component"
+version = "0.244.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d66ea20e9553b30172b5e831994e35fbde2d165325bec84fc43dbf6f4eb9cb2"
+dependencies = [
+ "anyhow",
+ "bitflags 2.10.0",
+ "indexmap 2.13.0",
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "wasm-encoder",
+ "wasm-metadata",
+ "wasmparser",
+ "wit-parser",
+]
+
+[[package]]
+name = "wit-parser"
+version = "0.244.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecc8ac4bc1dc3381b7f59c34f00b67e18f910c2c0f50015669dde7def656a736"
+dependencies = [
+ "anyhow",
+ "id-arena",
+ "indexmap 2.13.0",
+ "log",
+ "semver 1.0.27",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "unicode-xid",
+ "wasmparser",
+]
 
 [[package]]
 name = "writeable"

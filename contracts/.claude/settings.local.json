@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check --manifest-path /Users/jmgduarte/Documents/cowprotocol/cow-contracts/generated/Cargo.toml)",
+      "Bash(cargo check)"
+    ]
+  }
+}

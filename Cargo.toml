@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["crates/contracts/"]
+exclude = ["contracts/"]
 
 [workspace.dependencies]
 alloy = { version = "1.7.3", default-features = false }
@@ -29,7 +29,7 @@ clap = { version = "4.5.6", features = ["derive", "env"] }
 console-subscriber = "0.3.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
-contracts = { git = "https://github.com/jmg-duarte/cow-contracts.git" }
+contracts = { path = "contracts/generated/contracts-facade" }
 cow-amm = { path = "crates/cow-amm" }
 dashmap = "6.1.0"
 database = { path = "crates/database" }
