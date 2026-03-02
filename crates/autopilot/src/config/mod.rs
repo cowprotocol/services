@@ -54,6 +54,7 @@ pub struct Configuration {
 
     /// Settings for the cache storing user balances that's maintained by a
     /// background task.
+    #[serde(default)]
     pub balances_cache: BalancesCacheConfig,
 }
 
@@ -186,7 +187,7 @@ mod tests {
             [{type = "Forwarder", url = "http://localhost:12088"}],
         ]
 
-        [balance-cache]
+        [balances-cache]
         max-request-age = 1
         max-concurrent-updates = 1
         "#;
