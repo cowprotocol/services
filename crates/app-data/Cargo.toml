@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true, features = ["serde"] }
+alloy-primitives = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
 bytes-hex = { workspace = true }
 const-hex = { workspace = true }
@@ -15,7 +15,6 @@ number = { path = "../number" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-tiny-keccak = { workspace = true, features = ["keccak"] }
 
 [dev-dependencies]
 hex-literal = { workspace = true }

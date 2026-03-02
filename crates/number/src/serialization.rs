@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::U256,
+    alloy_primitives::U256,
     serde::{Deserialize, Deserializer, Serializer},
     serde_with::{DeserializeAs, SerializeAs},
 };
@@ -22,7 +22,7 @@ impl SerializeAs<U256> for HexOrDecimalU256 {
     where
         S: Serializer,
     {
-        // alloy::primitives::U256 serializes as hex, this gives us decimals instead
+        // alloy_primitives::U256 serializes as hex, this gives us decimals instead
         serializer.serialize_str(&source.to_string())
     }
 }

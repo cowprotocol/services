@@ -11,7 +11,7 @@ use {
         solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
         state::{RankedItem, ScoredItem, UnscoredItem},
     },
-    alloy::primitives::{Address, U256},
+    alloy_primitives::{Address, U256},
     anyhow::{Context, Result},
     itertools::{Either, Itertools},
     number::u256_ext::U256Ext,
@@ -248,7 +248,7 @@ impl Arbitrator {
                 // to avoid loss of precision because we work with integers we first multiply
                 // and then divide:
                 // buy_amount = surplus * buy_price / sell_price
-                use alloy::primitives::{U512, ruint::UintTryFrom};
+                use alloy_primitives::{U512, ruint::UintTryFrom};
 
                 let surplus_in_buy_tokens = surplus_in_surplus_token
                     .widening_mul(order.buy_amount)
