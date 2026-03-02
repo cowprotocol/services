@@ -65,6 +65,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     let config = Configuration::from_path(&args.config)
         .await
         .expect("failed to load configuration file");
+    tracing::info!("file configuration:\n{:#?}", config);
     run(args, config).await;
 }
 

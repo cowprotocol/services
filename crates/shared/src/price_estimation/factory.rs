@@ -1,6 +1,8 @@
 use {
     super::{
-        Arguments, NativePriceEstimator as NativePriceEstimatorSource, PriceEstimating,
+        Arguments,
+        NativePriceEstimator as NativePriceEstimatorSource,
+        PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,

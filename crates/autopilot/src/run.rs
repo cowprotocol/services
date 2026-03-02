@@ -149,6 +149,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
 
     tracing::info!(%commit_hash, "running autopilot with validated arguments:\n{}", args);
+    tracing::info!("file configuration:\n{:#?}", config);
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
