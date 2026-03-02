@@ -1,6 +1,6 @@
 use {
     crate::{DomainSeparator, quote::QuoteSigningScheme},
-    alloy_primitives::{Address, B256},
+    alloy_primitives::{Address, B256, keccak256},
     alloy_signer::SignerSync,
     alloy_signer_local::PrivateKeySigner,
     anyhow::{Context as _, Result, ensure},
@@ -274,14 +274,14 @@ pub fn hashed_eip712_message(domain_separator: &DomainSeparator, struct_hash: &[
     message[0..2].copy_from_slice(&[0x19, 0x01]);
     message[2..34].copy_from_slice(&domain_separator.0);
     message[34..66].copy_from_slice(struct_hash);
-    alloy_primitives::keccak256(message)
+    keccak256(message)
 }
 
 fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> B256 {
     let mut message = [0u8; 60];
     message[..28].copy_from_slice(b"\x19Ethereum Signed Message:\n32");
     message[28..].copy_from_slice(hashed_eip712_message(domain_separator, struct_hash).as_slice());
-    alloy_primitives::keccak256(message)
+    keccak256(message)
 }
 
 /// Orders are always hashed into 32 bytes according to EIP-712.
@@ -426,7 +426,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json, testlib::assert_json_matches};
+    use {super::*, alloy_primitives::U256, serde_json::json, testlib::assert_json_matches};
 
     #[test]
     fn onchain_signatures_cannot_recover_owners() {
@@ -633,7 +633,7 @@ mod tests {
 
     #[test]
     fn test_ecdsa_signature_recovery() {
-        let private_key = alloy_primitives::U256::from(1u64);
+        let private_key = U256::from(1u64);
         let signer = PrivateKeySigner::from_bytes(&private_key.to_be_bytes().into()).unwrap();
         let signer_address = signer.address();
 
