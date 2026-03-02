@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     bytes_hex::BytesHex,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},

@@ -6,13 +6,13 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true }
+alloy-contract = { workspace = true }
+alloy-primitives = { workspace = true }
 contracts = { workspace = true }
+futures = { workspace = true }
 moka = { workspace = true, features = ["sync"] }
-thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-futures = {workspace = true }
 
 [lints]
 workspace = true

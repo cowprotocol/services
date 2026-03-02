@@ -1,8 +1,7 @@
 use {
-    alloy::primitives::U256,
+    alloy_primitives::U256,
     serde::{Deserialize, Deserializer, de},
-    std::time::Duration,
-    thiserror::Error,
+    std::{error::Error, fmt::Display, time::Duration},
 };
 
 /// Represents each available chain
@@ -177,9 +176,16 @@ impl<'de> Deserialize<'de> for Chain {
     }
 }
 
-#[derive(Error, Debug)]
-#[error("chain id not supported")]
+#[derive(Debug)]
 pub struct ChainIdNotSupported;
+
+impl Display for ChainIdNotSupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "chain id not supported")
+    }
+}
+
+impl Error for ChainIdNotSupported {}
 
 #[cfg(test)]
 mod test {

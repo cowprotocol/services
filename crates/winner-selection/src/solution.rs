@@ -9,7 +9,7 @@ use {
         primitives::{OrderUid, Side},
         state,
     },
-    alloy::primitives::{Address, U256},
+    alloy_primitives::{Address, U256},
     std::collections::HashMap,
 };
 pub type Scored = state::Scored<U256>;

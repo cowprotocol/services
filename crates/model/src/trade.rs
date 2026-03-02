@@ -3,7 +3,7 @@
 
 use {
     crate::{fee_policy::ExecutedProtocolFee, order::OrderUid},
-    alloy::primitives::{Address, B256},
+    alloy_primitives::{Address, B256},
     num::BigUint,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
@@ -37,7 +37,7 @@ mod tests {
     use {
         super::*,
         crate::fee_policy::{FeePolicy, Quote},
-        alloy::primitives::U256,
+        alloy_primitives::U256,
         serde_json::json,
         testlib::assert_json_matches,
     };

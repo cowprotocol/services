@@ -1,6 +1,6 @@
 use {
     crate::{AuctionId, order::OrderUid},
-    alloy::primitives::{Address, B256, U256},
+    alloy_primitives::{Address, B256, U256},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
