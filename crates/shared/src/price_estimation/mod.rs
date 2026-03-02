@@ -39,8 +39,34 @@ pub mod sanitized;
 pub mod trade_finder;
 pub mod trade_verifier;
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
+
+impl<'de> Deserialize<'de> for NativePriceEstimators {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let estimators = <Vec<Vec<NativePriceEstimator>>>::deserialize(deserializer)?;
+        if estimators.is_empty() {
+            return Err(serde::de::Error::invalid_length(
+                0,
+                &"expected stages to not be empty",
+            ));
+        }
+        match estimators
+            .iter()
+            .enumerate()
+            .find_map(|(n, stage)| stage.is_empty().then_some(n))
+        {
+            Some(n) => Err(serde::de::Error::invalid_length(
+                0,
+                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
+            )),
+            None => Ok(Self(estimators)),
+        }
+    }
+}
 
 impl NativePriceEstimators {
     pub fn new(estimators: Vec<Vec<NativePriceEstimator>>) -> Self {
