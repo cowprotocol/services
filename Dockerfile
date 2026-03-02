@@ -18,7 +18,9 @@ RUN rustup install stable && rustup default stable
 # Copy and Build Code
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
-    CARGO_PROFILE_RELEASE_DEBUG=1 RUSTFLAGS="${RUSTFLAGS}" cargo build --release ${CARGO_BUILD_FEATURES} && \
+    CARGO_PROFILE_RELEASE_DEBUG=1 RUSTFLAGS="${RUSTFLAGS}" cargo build --release \
+    -p autopilot -p driver -p orderbook -p refunder -p solvers \
+    ${CARGO_BUILD_FEATURES} && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
     cp target/release/orderbook / && \
