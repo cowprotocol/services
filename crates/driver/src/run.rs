@@ -18,7 +18,7 @@ use {
     },
     clap::Parser,
     futures::future::join_all,
-    shared::arguments::tracing_config,
+    shared::{account_balances, arguments::tracing_config},
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
@@ -74,6 +74,8 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth.web3(),
         eth.balance_simulator().clone(),
         eth.current_block().clone(),
+        config.balances_cache.max_age,
+        config.balances_cache.max_concurrent_updates,
     );
     let serve = Api {
         solvers: solvers(&config, &eth).await,

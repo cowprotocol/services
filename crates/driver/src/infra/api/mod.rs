@@ -23,7 +23,7 @@ use {
     error::Error,
     futures::Future,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    shared::account_balances,
+    shared::account_balances::BalanceFetching,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -40,6 +40,7 @@ pub struct Api {
     pub mempools: Mempools,
     pub addr: SocketAddr,
     pub bad_token_detector: risk_detector::bad_tokens::Detector,
+    pub balance_fetcher: Arc<dyn BalanceFetching>,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -55,19 +56,13 @@ impl Api {
         // Add middleware.
         let mut app = axum::Router::new();
 
-        let balance_fetcher = account_balances::cached(
-            self.eth.web3(),
-            self.eth.balance_simulator().clone(),
-            self.eth.current_block().clone(),
-        );
-
         let tokens = tokens::Fetcher::new(&self.eth);
         let fetcher = Arc::new(domain::competition::DataAggregator::new(
             self.eth.clone(),
             app_data_retriever.clone(),
             self.liquidity.clone(),
             tokens.clone(),
-            balance_fetcher,
+            self.balance_fetcher.clone(),
         ));
 
         let order_sorting_strategies =

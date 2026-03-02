@@ -52,7 +52,8 @@ pub struct Configuration {
 
     pub native_price_estimation: NativePriceConfig,
 
-    /// Settings for the cache storing user balances that's maintained by a background task.
+    /// Settings for the cache storing user balances that's maintained by a
+    /// background task.
     pub balances_cache: BalancesCacheConfig,
 }
 
