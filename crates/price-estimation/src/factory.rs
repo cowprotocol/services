@@ -12,17 +12,14 @@ use {
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
     crate::{
-        arguments,
-        http_client::HttpClientFactory,
-        price_estimation::{
-            ExternalSolver,
-            buffered::{self, BufferedRequest, NativePriceBatchFetching},
-            competition::PriceRanking,
-            trade_verifier::{
-                code_fetching::CachedCodeFetcher,
-                tenderly_api::TenderlyCodeSimulator,
-            },
+        ExternalSolver,
+        buffered::{self, BufferedRequest, NativePriceBatchFetching},
+        competition::PriceRanking,
+        trade_verifier::{
+            code_fetching::CachedCodeFetcher,
+            tenderly_api::TenderlyCodeSimulator,
         },
+        utils::HttpClientFactory,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
@@ -75,12 +72,11 @@ pub struct Components {
 impl<'a> PriceEstimatorFactory<'a> {
     pub async fn new(
         args: &'a Arguments,
-        shared_args: &'a arguments::Arguments,
         network: Network,
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components).await?,
+            trade_verifier: Self::trade_verifier(args, &network, &components).await?,
             args,
             network,
             components,
@@ -90,7 +86,6 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     async fn trade_verifier(
         args: &'a Arguments,
-        shared_args: &arguments::Arguments,
         network: &Network,
         components: &Components,
     ) -> Result<Option<Arc<dyn TradeVerifying>>> {
@@ -99,7 +94,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         };
         let web3 = web3.labeled("simulator");
 
-        let tenderly = shared_args
+        let tenderly = args
             .tenderly
             .get_api_instance(&components.http_factory, "price_estimation".to_owned())
             .unwrap()
@@ -225,7 +220,8 @@ impl<'a> PriceEstimatorFactory<'a> {
             NativePriceEstimatorSource::CoinGecko => {
                 anyhow::ensure!(
                     self.args.coin_gecko.coin_gecko_api_key.is_some(),
-                    "coin_gecko_api_key must be set when CoinGecko is used as native price                     estimator"
+                    "coin_gecko_api_key must be set when CoinGecko is used as native price \
+                     estimator"
                 );
 
                 let name = "CoinGecko".to_string();

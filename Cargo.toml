@@ -39,6 +39,7 @@ itertools = "0.14"
 maplit = "1.0.2"
 mockall = "0.12.1"
 num = "0.4.3"
+price-estimation = { path = "crates/price-estimation" }
 prometheus = "0.14"
 prometheus-metric-storage = "0.6"
 rand = "0.8.5"

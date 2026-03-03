@@ -6,7 +6,7 @@
 
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
+    crate::PriceEstimationError,
     alloy::primitives::Address,
     anyhow::Context,
     futures::{FutureExt, future::BoxFuture},

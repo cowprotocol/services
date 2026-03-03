@@ -2,7 +2,7 @@
 //! from an inner `TradeFinding`.
 
 use {
-    crate::price_estimation::{
+    crate::{
         Estimate,
         PriceEstimateResult,
         PriceEstimating,

@@ -30,8 +30,10 @@
 //! the switch. Domain errors like `NoLiquidity` do not affect the state.
 
 use {
-    super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
+    crate::{
+        PriceEstimationError,
+        native::{NativePriceEstimateResult, NativePriceEstimating},
+    },
     alloy::primitives::Address,
     futures::{FutureExt, future::BoxFuture},
     std::{
@@ -224,11 +226,7 @@ impl NativePriceEstimating for FallbackNativePriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::price_estimation::native::MockNativePriceEstimating,
-        futures::FutureExt,
-    };
+    use {super::*, crate::native::MockNativePriceEstimating, futures::FutureExt};
 
     const TOKEN: Address = Address::with_last_byte(1);
     const TIMEOUT: Duration = Duration::from_secs(5);

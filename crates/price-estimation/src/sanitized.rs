@@ -1,5 +1,5 @@
 use {
-    crate::price_estimation::{
+    crate::{
         Estimate,
         PriceEstimating,
         PriceEstimationError,
@@ -150,7 +150,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
+        crate::{HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         alloy::primitives::{Address, U256 as AlloyU256},
         model::order::OrderKind,
         number::nonzero::NonZeroU256,

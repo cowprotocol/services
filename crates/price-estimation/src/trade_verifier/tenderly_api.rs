@@ -1,10 +1,7 @@
 //! Module containing Tenderly API implementation.
 
 use {
-    crate::{
-        arguments::{display_option, display_secret_option},
-        http_client::HttpClientFactory,
-    },
+    crate::utils::{HttpClientFactory, display_option, display_secret_option},
     alloy::{
         primitives::{Address, B256, TxKind, U256, map::B256Map},
         rpc::types::{TransactionRequest, state::StateOverride as AlloyStateOverride},
@@ -84,7 +81,7 @@ impl TenderlyHttpApi {
 impl TenderlyApi for TenderlyHttpApi {
     #[instrument(skip_all)]
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
-        let url = crate::url::join(&self.api, "simulate");
+        let url = crate::utils::join_url(&self.api, "simulate");
         let body = serde_json::to_string(&simulation)?;
 
         let response = self
@@ -107,9 +104,9 @@ impl TenderlyApi for TenderlyHttpApi {
     }
 
     fn log(&self, simulation: SimulationRequest) -> Result<()> {
-        let request_url = crate::url::join(&self.api, "simulate");
+        let request_url = crate::utils::join_url(&self.api, "simulate");
         let simulation_url =
-            crate::url::join(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
+            crate::utils::join_url(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
         let body = serde_json::to_string(&simulation)?;
 
         #[rustfmt::skip]
@@ -126,7 +123,7 @@ impl TenderlyApi for TenderlyHttpApi {
     }
 
     fn simulation_url(&self, id: &str) -> Url {
-        crate::url::join(&self.dashboard, &format!("simulator/{id}"))
+        crate::utils::join_url(&self.dashboard, &format!("simulator/{id}"))
     }
 }
 

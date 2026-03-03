@@ -1,5 +1,5 @@
 use {
-    crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
+    crate::{PriceEstimating, PriceEstimationError, Query},
     alloy::primitives::Address,
     bigdecimal::{BigDecimal, ToPrimitive},
     futures::FutureExt,
@@ -135,7 +135,7 @@ pub(crate) fn is_price_malformed(price: f64) -> bool {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
+        crate::{Estimate, HEALTHY_PRICE_ESTIMATION_TIME, MockPriceEstimating},
         alloy::primitives::{Address, U256},
         std::str::FromStr,
     };

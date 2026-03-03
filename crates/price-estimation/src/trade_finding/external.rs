@@ -1,7 +1,7 @@
 //! A trade finder that uses an external driver.
 
 use {
-    crate::price_estimation::{
+    crate::{
         PriceEstimationError,
         Query,
         trade_finding::{
@@ -45,7 +45,7 @@ pub struct ExternalTradeFinder {
 impl ExternalTradeFinder {
     pub fn new(driver: Url, client: Client, block_stream: CurrentBlockWatcher) -> Self {
         Self {
-            quote_endpoint: crate::url::join(&driver, "quote"),
+            quote_endpoint: crate::utils::join_url(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{driver}")),
             client,
             block_stream,
@@ -233,7 +233,7 @@ impl TradeFinding for ExternalTradeFinder {
     }
 }
 
-pub(crate) mod dto {
+pub mod dto {
     use {
         alloy::primitives::{Address, U256},
         app_data::AppDataHash,

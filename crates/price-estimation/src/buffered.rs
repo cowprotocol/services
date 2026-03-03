@@ -2,7 +2,7 @@
 //! requests into batches.
 
 use {
-    crate::price_estimation::{
+    crate::{
         PriceEstimationError,
         native::{NativePriceEstimateResult, NativePriceEstimating},
     },
@@ -250,10 +250,7 @@ where
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
-            HEALTHY_PRICE_ESTIMATION_TIME,
-            native::MockNativePriceEstimating,
-        },
+        crate::{HEALTHY_PRICE_ESTIMATION_TIME, native::MockNativePriceEstimating},
         futures::future::try_join_all,
         num::ToPrimitive,
         tokio::time::sleep,

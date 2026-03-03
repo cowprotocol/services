@@ -1,6 +1,6 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
+    crate::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
         stream::{FuturesUnordered, StreamExt},
@@ -241,7 +241,7 @@ pub enum PriceRanking {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
+        crate::{
             Estimate,
             HEALTHY_PRICE_ESTIMATION_TIME,
             MockPriceEstimating,

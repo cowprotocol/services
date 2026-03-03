@@ -16,14 +16,12 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
-    shared::{
-        price_estimation::{
-            native::{NativePriceEstimating, to_normalized_price},
-            native_price_cache::NativePriceUpdater,
-        },
-        remaining_amounts,
+    price_estimation::{
+        native::{NativePriceEstimating, to_normalized_price},
+        native_price_cache::NativePriceUpdater,
     },
+    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
+    shared::remaining_amounts,
     std::{
         collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
         future::Future,
@@ -695,7 +693,7 @@ mod tests {
         futures::FutureExt,
         maplit::{btreemap, hashset},
         model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
-        shared::price_estimation::{
+        price_estimation::{
             HEALTHY_PRICE_ESTIMATION_TIME,
             PriceEstimationError,
             native::MockNativePriceEstimating,

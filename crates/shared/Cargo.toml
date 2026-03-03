@@ -41,6 +41,7 @@ model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
@@ -70,6 +71,7 @@ async-stream = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
+price-estimation = { workspace = true, features = ["test-util"] }
 regex = { workspace = true }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

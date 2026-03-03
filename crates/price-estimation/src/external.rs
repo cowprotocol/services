@@ -1,5 +1,5 @@
 use {
-    crate::price_estimation::{
+    crate::{
         PriceEstimateResult,
         PriceEstimating,
         Query,

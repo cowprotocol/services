@@ -1,6 +1,6 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::{PriceEstimationError, buffered::NativePriceBatchFetching},
+    crate::{PriceEstimationError, buffered::NativePriceBatchFetching},
     alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chain::Chain,
@@ -101,7 +101,7 @@ impl CoinGecko {
         tokens: &HashSet<Token>,
         timeout: Duration,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
-        let mut url = crate::url::join(&self.base_url, &self.chain);
+        let mut url = crate::utils::join_url(&self.base_url, &self.chain);
         metrics::batch_size(tokens.len());
         // Sort to make the token order deterministic for better caching on CoinGecko
         // egress proxy which needs the URL to be the same for cache to be hit
@@ -317,7 +317,7 @@ mod metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
+        crate::HEALTHY_PRICE_ESTIMATION_TIME,
         alloy::primitives::address,
         std::env,
         token_info::{MockTokenInfoFetching, TokenInfo},

@@ -45,6 +45,7 @@ num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
 observe = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }

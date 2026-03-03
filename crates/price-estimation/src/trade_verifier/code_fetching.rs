@@ -2,13 +2,13 @@
 //! more easily be tested with mocked versions of these behaviours.
 
 use {
-    crate::web3::Web3,
     alloy::{
         primitives::{Address, Bytes},
         providers::Provider,
     },
     anyhow::Result,
     cached::{Cached, SizedCache},
+    ethrpc::Web3,
     std::sync::{Arc, Mutex},
     tracing::instrument,
 };

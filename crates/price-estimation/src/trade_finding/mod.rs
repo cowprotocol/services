@@ -5,7 +5,7 @@ pub mod external;
 pub mod trade_estimator;
 
 use {
-    crate::price_estimation::{PriceEstimationError, Query},
+    crate::{PriceEstimationError, Query},
     alloy::primitives::{Address, Bytes, U256},
     anyhow::{Context, Result},
     derive_more::Debug,
@@ -280,7 +280,7 @@ impl Clone for TradeError {
             }
             Self::DeadlineExceeded => Self::DeadlineExceeded,
             Self::RateLimited => Self::RateLimited,
-            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
+            Self::Other(err) => Self::Other(crate::utils::clone_anyhow_error(err)),
         }
     }
 }

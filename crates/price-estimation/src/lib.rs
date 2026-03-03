@@ -1,11 +1,11 @@
 use {
     crate::{
-        arguments::{self, display_option, display_secret_option},
-        price_estimation::trade_finding::{Interaction, QuoteExecution},
+        trade_finding::{Interaction, QuoteExecution},
+        trade_verifier::tenderly_api,
+        utils::{display_option, display_secret_option},
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, ensure},
-    balance_overrides,
     bigdecimal::BigDecimal,
     futures::future::BoxFuture,
     itertools::Itertools,
@@ -38,6 +38,7 @@ pub mod native_price_cache;
 pub mod sanitized;
 pub mod trade_finding;
 pub mod trade_verifier;
+pub mod utils;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
@@ -52,15 +53,6 @@ impl NativePriceEstimators {
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
-}
-
-impl From<arguments::ExternalSolver> for ExternalSolver {
-    fn from(value: arguments::ExternalSolver) -> Self {
-        Self {
-            name: value.name,
-            url: value.url,
-        }
-    }
 }
 
 impl FromStr for ExternalSolver {
@@ -172,6 +164,9 @@ impl FromStr for NativePriceEstimator {
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {
+    #[clap(flatten)]
+    pub tenderly: tenderly_api::Arguments,
+
     /// Configures the back off strategy for price estimators when requests take
     /// too long. Requests issued while back off is active get dropped
     /// entirely. Needs to be passed as
@@ -345,6 +340,7 @@ pub enum QuoteVerificationMode {
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self {
+            tenderly,
             price_estimation_rate_limiter,
             native_price_cache_max_age,
             native_price_cache_concurrent_requests,
@@ -361,6 +357,7 @@ impl Display for Arguments {
             tokens_without_verification,
         } = self;
 
+        write!(f, "{tenderly}")?;
         display_option(
             f,
             "price_estimation_rate_limites",
@@ -469,8 +466,12 @@ impl Clone for PriceEstimationError {
                 Self::UnsupportedOrderType(order_type.clone())
             }
             Self::RateLimited => Self::RateLimited,
-            Self::EstimatorInternal(err) => Self::EstimatorInternal(crate::clone_anyhow_error(err)),
-            Self::ProtocolInternal(err) => Self::ProtocolInternal(crate::clone_anyhow_error(err)),
+            Self::EstimatorInternal(err) => {
+                Self::EstimatorInternal(crate::utils::clone_anyhow_error(err))
+            }
+            Self::ProtocolInternal(err) => {
+                Self::ProtocolInternal(crate::utils::clone_anyhow_error(err))
+            }
         }
     }
 }

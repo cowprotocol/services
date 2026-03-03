@@ -20,6 +20,7 @@ use {
         infra::persistence::dto,
     },
     clap::Parser,
+    ethrpc::Web3,
     model::{
         AuctionId,
         order::{CancellationPayload, Order, OrderCreation, OrderUid},
@@ -28,11 +29,8 @@ use {
         solver_competition_v2,
         trade::Trade,
     },
+    price_estimation::{NativePriceEstimator, NativePriceEstimators},
     reqwest::{Client, StatusCode, Url},
-    shared::{
-        price_estimation::{NativePriceEstimator, NativePriceEstimators},
-        web3::Web3,
-    },
     sqlx::Connection,
     std::{
         collections::{HashMap, hash_map::Entry},

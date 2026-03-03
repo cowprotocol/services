@@ -1,6 +1,6 @@
 use {
     super::{CompetitionEstimator, compare_error},
-    crate::price_estimation::{
+    crate::{
         PriceEstimationError,
         native::{NativePriceEstimateResult, NativePriceEstimating, is_price_malformed},
     },
@@ -76,7 +76,7 @@ fn compare_native_result(
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
+        crate::{
             HEALTHY_PRICE_ESTIMATION_TIME,
             competition::PriceRanking,
             native::MockNativePriceEstimating,

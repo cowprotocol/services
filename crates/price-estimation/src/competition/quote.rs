@@ -1,6 +1,6 @@
 use {
     super::{CompetitionEstimator, PriceRanking, compare_error},
-    crate::price_estimation::{
+    crate::{
         Estimate,
         PriceEstimateResult,
         PriceEstimating,
@@ -160,11 +160,7 @@ impl RankingContext {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
-            MockPriceEstimating,
-            QuoteVerificationMode,
-            native::MockNativePriceEstimating,
-        },
+        crate::{MockPriceEstimating, QuoteVerificationMode, native::MockNativePriceEstimating},
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         gas_price_estimation::FakeGasPriceEstimator,
         model::order::OrderKind,

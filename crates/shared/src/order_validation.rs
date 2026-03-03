@@ -7,12 +7,6 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::{
-            PriceEstimationError,
-            Verification,
-            trade_finding,
-            trade_verifier::code_fetching::CodeFetching,
-        },
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     },
     account_balances::{self, BalanceFetching, TransferSimulationError},
@@ -44,6 +38,12 @@ use {
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
+    },
+    price_estimation::{
+        PriceEstimationError,
+        Verification,
+        trade_finding,
+        trade_verifier::code_fetching::CodeFetching,
     },
     std::{sync::Arc, time::Duration},
     tracing::instrument,
@@ -1038,7 +1038,6 @@ mod tests {
         super::*,
         crate::{
             order_quoting::{FindQuoteError, MockOrderQuoting},
-            price_estimation::trade_verifier::code_fetching::MockCodeFetching,
             signature_validator::MockSignatureValidating,
         },
         account_balances::MockBalanceFetching,
@@ -1055,6 +1054,7 @@ mod tests {
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
         number::nonzero::NonZeroU256,
+        price_estimation::trade_verifier::code_fetching::MockCodeFetching,
         serde_json::json,
     };
 

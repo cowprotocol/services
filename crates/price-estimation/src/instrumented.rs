@@ -1,5 +1,5 @@
 use {
-    crate::price_estimation::{
+    crate::{
         PriceEstimating,
         PriceEstimationError,
         Query,
@@ -122,7 +122,7 @@ struct Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
+        crate::{
             Estimate,
             HEALTHY_PRICE_ESTIMATION_TIME,
             MockPriceEstimating,

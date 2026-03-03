@@ -1,10 +1,6 @@
 use {
     super::PriceEstimationError,
-    crate::price_estimation::native::{
-        NativePriceEstimateResult,
-        NativePriceEstimating,
-        from_normalized_price,
-    },
+    crate::native::{NativePriceEstimateResult, NativePriceEstimating, from_normalized_price},
     alloy::primitives::Address,
     arc_swap::ArcSwap,
     bigdecimal::BigDecimal,
@@ -536,7 +532,7 @@ impl NativePriceEstimating for NativePriceUpdater {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
+        crate::{
             HEALTHY_PRICE_ESTIMATION_TIME,
             PriceEstimationError,
             native::{MockNativePriceEstimating, NativePriceEstimating},

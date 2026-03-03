@@ -1,18 +1,15 @@
 use {
     super::{Estimate, Verification},
     crate::{
-        encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
-        interaction::EncodedInteraction,
-        price_estimation::{
-            trade_finding::{
-                Interaction,
-                QuoteExecution,
-                TradeKind,
-                external::dto::{self, JitOrder},
-                map_interactions_data,
-            },
-            trade_verifier::{code_fetching::CodeFetching, tenderly_api::TenderlyCodeSimulator},
+        trade_finding::{
+            Interaction,
+            QuoteExecution,
+            TradeKind,
+            external::dto::{self, JitOrder},
+            map_interactions_data,
         },
+        trade_verifier::{code_fetching::CodeFetching, tenderly_api::TenderlyCodeSimulator},
+        utils::{EncodedInteraction, EncodedSettlement, EncodedTrade, encode_trade},
     },
     ::alloy::sol_types::SolCall,
     alloy::{

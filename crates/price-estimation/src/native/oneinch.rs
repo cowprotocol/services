@@ -1,6 +1,6 @@
 use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
+    crate::PriceEstimationError,
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, anyhow},
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
@@ -115,7 +115,7 @@ async fn get_current_prices(
     chain: u64,
     token_info: &dyn TokenInfoFetching,
 ) -> Result<HashMap<Token, f64>> {
-    let url = crate::url::join(&base_url, &format!("/price/v1.1/{chain}"));
+    let url = crate::utils::join_url(&base_url, &format!("/price/v1.1/{chain}"));
     let mut builder = client.get(url);
     if let Some(api_key) = api_key {
         builder = builder.header(AUTHORIZATION, api_key)
@@ -162,7 +162,7 @@ async fn get_current_prices(
 mod tests {
     use {
         super::*,
-        crate::price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
+        crate::HEALTHY_PRICE_ESTIMATION_TIME,
         alloy::primitives::address,
         std::env,
         token_info::{MockTokenInfoFetching, TokenInfo},
