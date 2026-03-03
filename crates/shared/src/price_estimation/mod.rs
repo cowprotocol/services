@@ -74,6 +74,17 @@ impl NativePriceEstimators {
     }
 }
 
+#[cfg(any(test, feature = "test-util"))]
+impl NativePriceEstimators {
+    /// Returns a list with a single stage, said stage contains a Driver estimator named `test_quoter` with URL `http://localhost:11088/test_solver`.
+    pub fn test_default() -> Self {
+        NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
+            "test_quoter".to_string(),
+            Url::from_str("http://localhost:11088/test_solver").unwrap(),
+        )]])
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct ExternalSolver {
     pub name: String,
@@ -601,11 +612,10 @@ mod tests {
 
         #[derive(Deserialize)]
         struct Helper {
-            estimators: NativePriceEstimators,
+            _estimators: NativePriceEstimators,
         }
 
-        let parsed: Helper = toml::from_str(toml).unwrap();
-        assert!(parsed.estimators.as_slice().is_empty());
+        assert!(toml::from_str::<Helper>(toml).is_err());
     }
 
     #[test]

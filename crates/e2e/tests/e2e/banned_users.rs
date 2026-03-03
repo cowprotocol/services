@@ -95,5 +95,14 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
             ..Default::default()
         })
         .await;
-    assert!(matches!(result, Err((StatusCode::FORBIDDEN, _))));
+
+    match result {
+        Err((StatusCode::FORBIDDEN, _)) => { /* passed! */ }
+        Err((status_code, _)) => panic!(
+            "expected status_code to be {}; got {}",
+            StatusCode::FORBIDDEN,
+            status_code
+        ),
+        Ok(result) => panic!("expected error, got {:?}", result),
+    }
 }

@@ -4,7 +4,7 @@ use {
         NativePriceEstimators,
         config::native_price::NativePriceConfig as SharedNativePriceConfig,
     },
-    std::num::NonZeroUsize,
+    std::{num::NonZeroUsize, str::FromStr},
 };
 
 const fn default_results_required() -> NonZeroUsize {
@@ -35,10 +35,15 @@ pub struct NativePriceConfig {
     pub shared: SharedNativePriceConfig,
 }
 
-impl Default for NativePriceConfig {
-    fn default() -> Self {
+#[cfg(any(test, feature = "test-util"))]
+impl NativePriceConfig {
+    /// The orderbook forwards native price requests to the autopilot.
+    pub fn test_default() -> Self {
+        use shared::price_estimation::NativePriceEstimator;
         Self {
-            estimators: Default::default(),
+            estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::forwarder(
+                reqwest::Url::from_str("http://localhost:12088").unwrap(),
+            )]]),
             fallback_estimators: Default::default(),
             results_required: default_results_required(),
             shared: Default::default(),
@@ -52,7 +57,9 @@ mod tests {
 
     #[test]
     fn deserialize_defaults() {
-        let config: NativePriceConfig = toml::from_str("estimators = []").unwrap();
+        let config: NativePriceConfig =
+            toml::from_str(r#"estimators = [[{type = "CoinGecko"}]]"#).unwrap();
+        assert_eq!(config.estimators.as_slice().len(), 1);
         assert_eq!(config.results_required.get(), 2);
         assert!(config.fallback_estimators.is_none());
     }
@@ -88,7 +95,7 @@ mod tests {
                 shared::price_estimation::NativePriceEstimator::OneInchSpotPriceApi,
             ]])),
             results_required: NonZeroUsize::new(5).unwrap(),
-            ..Default::default()
+            shared: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

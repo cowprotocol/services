@@ -189,6 +189,7 @@ impl<'a> Services<'a> {
         &self,
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
+        config: autopilot::config::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
@@ -200,6 +201,8 @@ impl<'a> Services<'a> {
             .collect::<Vec<_>>()
             .join(",");
 
+        let (_autopilot_config_file, autopilot_config_arg) = config.to_cli_args();
+
         let args = [
             "autopilot".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
@@ -208,6 +211,7 @@ impl<'a> Services<'a> {
             "--skip-event-sync=true".to_string(),
             "--api-address=0.0.0.0:12088".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
+            autopilot_config_arg,
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -219,25 +223,6 @@ impl<'a> Services<'a> {
         let args = autopilot::arguments::CliArguments::try_parse_from(args)
             .map_err(|err| err.to_string())
             .unwrap();
-        let config = Configuration {
-            native_price_estimation: NativePriceConfig {
-                estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
-                    "test_quoter".to_string(),
-                    Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                )]]),
-                prefetch_time: Duration::from_millis(500),
-                shared: shared::price_estimation::config::native_price::NativePriceConfig {
-                    cache: shared::price_estimation::config::native_price::CacheConfig {
-                        max_age: Duration::from_secs(2),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Configuration::from_path(&args.config).await.unwrap()
-        };
-        tracing::info!("Loaded config: {:?}", config);
         let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
         self.wait_until_autopilot_ready().await;
 
@@ -253,10 +238,12 @@ impl<'a> Services<'a> {
         &self,
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
+        config: autopilot::config::Configuration,
     ) -> JoinHandle<()> {
         self.start_autopilot_with_shutdown_controller(
             solve_deadline,
             extra_args,
+            config,
             autopilot::shutdown_controller::ShutdownController::default(),
         )
         .await
@@ -264,12 +251,18 @@ impl<'a> Services<'a> {
 
     /// Start the api service in a background tasks.
     /// Wait until the service is responsive.
-    pub async fn start_api(&self, extra_args: Vec<String>) {
+    pub async fn start_api(
+        &self,
+        extra_args: Vec<String>,
+        config: orderbook::config::Configuration,
+    ) {
+        let (_config_file, config_arg) = config.to_cli_args();
         let args: Vec<_> = [
             "orderbook".to_string(),
             "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
             format!("--db-read-url={}", &*LOCAL_READ_ONLY_DB_URL),
+            config_arg,
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -279,20 +272,6 @@ impl<'a> Services<'a> {
         let args = ignore_overwritten_cli_params(args);
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
-        let mut config = orderbook::config::Configuration::from_path(&args.config)
-            .await
-            .unwrap();
-        if config
-            .native_price_estimation
-            .estimators
-            .as_slice()
-            .is_empty()
-        {
-            config.native_price_estimation.estimators =
-                NativePriceEstimators::new(vec![vec![NativePriceEstimator::forwarder(
-                    Url::from_str("http://localhost:12088").unwrap(),
-                )]]);
-        }
         tokio::task::spawn(orderbook::run(args, config));
 
         Self::wait_for_api_to_come_up().await;
@@ -300,26 +279,37 @@ impl<'a> Services<'a> {
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
-        let (_autopilot_config_file, autopilot_cli_arg) =
-            Configuration::test("test_solver", solver.address()).to_cli_args();
         self.start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![autopilot_cli_arg],
-                ..Default::default()
-            },
+            Default::default(),
+            autopilot::config::Configuration::test("test_solver", solver.address()),
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
     }
 
-    pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
-        self.start_protocol_with_args_and_haircut(args, solver, 0)
-            .await;
+    pub async fn start_protocol_with_args(
+        &self,
+        args: ExtraServiceArgs,
+        autopilot_config: autopilot::config::Configuration,
+        orderbook_config: orderbook::config::Configuration,
+        solver: TestAccount,
+    ) {
+        self.start_protocol_with_args_and_haircut(
+            args,
+            autopilot_config,
+            orderbook_config,
+            solver,
+            0,
+        )
+        .await;
     }
 
     pub async fn start_protocol_with_args_and_haircut(
         &self,
         args: ExtraServiceArgs,
+        autopilot_config: autopilot::config::Configuration,
+        orderbook_config: orderbook::config::Configuration,
         solver: TestAccount,
         haircut_bps: u32,
     ) {
@@ -352,18 +342,9 @@ impl<'a> Services<'a> {
                 args.autopilot,
             ]
             .concat(),
+            autopilot_config,
         )
         .await;
-
-        let has_ob_config = args.api.iter().any(|a| a.starts_with("--config="));
-        let (_default_ob_config_file, api_args) = if has_ob_config {
-            (None, args.api)
-        } else {
-            let (file, arg) = orderbook::config::Configuration::default().to_cli_args();
-            let mut api = args.api;
-            api.push(arg);
-            (Some(file), api)
-        };
 
         self.start_api(
             [
@@ -372,9 +353,10 @@ impl<'a> Services<'a> {
                         .to_string(),
                     "--gas-estimators=http://localhost:11088/gasprice".to_string(),
                 ],
-                api_args,
+                args.api,
             ]
             .concat(),
+            orderbook_config,
         )
         .await;
     }
@@ -409,7 +391,7 @@ impl<'a> Services<'a> {
             };
 
         // Create TOML config files
-        let (_autopilot_config_file, autopilot_config_arg) = Configuration {
+        let autopilot_config = Configuration {
             native_price_estimation: {
                 if run_baseline {
                     NativePriceConfig {
@@ -424,7 +406,7 @@ impl<'a> Services<'a> {
                             ),
                         ]]),
                         shared: shared_native_price_config.clone(),
-                        ..Default::default()
+                        ..NativePriceConfig::test_default()
                     }
                 } else {
                     NativePriceConfig {
@@ -435,15 +417,12 @@ impl<'a> Services<'a> {
                             ),
                         ]]),
                         shared: shared_native_price_config,
-                        ..Default::default()
+                        ..NativePriceConfig::test_default()
                     }
                 }
             },
             ..Configuration::test("test_solver", solver.address())
-        }
-        .to_cli_args();
-        let (_orderbook_config_file, orderbook_config_arg) =
-            orderbook::config::Configuration::default().to_cli_args();
+        };
 
         let (autopilot_args, api_args) = if run_baseline {
             solvers.push(
@@ -461,23 +440,19 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                autopilot_config_arg.clone(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
-                orderbook_config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                autopilot_config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
 
             let api_args = vec![
-                orderbook_config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
@@ -491,9 +466,14 @@ impl<'a> Services<'a> {
             false,
         );
 
-        self.start_autopilot(Some(Duration::from_secs(11)), autopilot_args)
+        self.start_autopilot(
+            Some(Duration::from_secs(11)),
+            autopilot_args,
+            autopilot_config,
+        )
+        .await;
+        self.start_api(api_args, orderbook::config::Configuration::test_default())
             .await;
-        self.start_api(api_args).await;
     }
 
     async fn wait_for_api_to_come_up() {

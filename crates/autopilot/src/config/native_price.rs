@@ -16,6 +16,8 @@ const fn default_native_price_prefetch_time() -> Duration {
     Duration::from_secs(80)
 }
 
+// Does not implement Default because `estimators` *cannot* be empty,
+// as such, we cannot provide a proper default value for this structure.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct NativePriceConfig {
@@ -57,15 +59,25 @@ pub struct NativePriceConfig {
     pub shared: shared::price_estimation::config::native_price::NativePriceConfig,
 }
 
-impl Default for NativePriceConfig {
-    fn default() -> Self {
+#[cfg(any(test, feature = "test-util"))]
+impl NativePriceConfig {
+    /// Test configuration for [`NativePriceConfig`], must always be able to do
+    /// a serialization/deserialization roundtrip, as otherwise it may not
+    /// be loadable in end-to-end tests.
+    pub fn test_default() -> Self {
         Self {
-            estimators: Default::default(),
+            estimators: NativePriceEstimators::test_default(),
             api_estimators: Default::default(),
             results_required: default_native_price_estimation_results_required(),
             cache_refresh_interval: default_native_price_cache_refresh(),
-            prefetch_time: default_native_price_prefetch_time(),
-            shared: Default::default(),
+            prefetch_time: Duration::from_millis(500),
+            shared: shared::price_estimation::config::native_price::NativePriceConfig {
+                cache: shared::price_estimation::config::native_price::CacheConfig {
+                    max_age: Duration::from_secs(2),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 }
@@ -73,19 +85,6 @@ impl Default for NativePriceConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn deserialize_defaults() {
-        let toml = r#"
-        estimators = []
-        "#;
-        let config: NativePriceConfig = toml::from_str(toml).unwrap();
-        assert!(config.estimators.as_slice().is_empty());
-        assert!(config.api_estimators.is_none());
-        assert_eq!(config.results_required.get(), 2);
-        assert_eq!(config.cache_refresh_interval, Duration::from_secs(1));
-        assert_eq!(config.prefetch_time, Duration::from_secs(80));
-    }
 
     #[test]
     fn deserialize_full() {
@@ -111,12 +110,9 @@ mod tests {
     }
 
     #[test]
-    fn default_impl() {
-        let config = NativePriceConfig::default();
-        assert!(config.estimators.as_slice().is_empty());
-        assert!(config.api_estimators.is_none());
-        assert_eq!(config.results_required.get(), 2);
-        assert_eq!(config.cache_refresh_interval, Duration::from_secs(1));
-        assert_eq!(config.prefetch_time, Duration::from_secs(80));
+    fn test_default_roundtrip() {
+        let config = NativePriceConfig::test_default();
+        let serialized = toml::to_string(&config).unwrap();
+        let _: NativePriceConfig = toml::from_str(&serialized).unwrap();
     }
 }

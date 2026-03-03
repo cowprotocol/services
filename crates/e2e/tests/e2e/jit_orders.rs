@@ -88,27 +88,24 @@ async fn single_limit_order_test(web3: Web3) {
 
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
-
-    let (_config_file, config_arg) =
-        Configuration::test("mock_solver", solver.address()).to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
+            Configuration::test("mock_solver", solver.address()),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Place order
