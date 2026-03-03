@@ -23,7 +23,6 @@ pub mod signature_validator;
 pub mod token_list;
 pub mod trade_finding;
 pub mod url;
-
 pub mod web3;
 pub mod zeroex_api;
 
