@@ -58,65 +58,142 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 /// driver, and allows them to be executed onchain when requested later. The
 /// solutions expire after a certain amount of time, at which point trying to
 /// use them will return an `[Error::InvalidSolutionId]`.
-/// Pool of submission accounts for EIP-7702 parallel settlement. Accounts
-/// are borrowed for the duration of a settlement and returned afterward.
+/// Unified pool of submission slots. Contains one "direct" slot (solver EOA,
+/// no forwarding overhead) and zero or more "delegated" slots (EIP-7702
+/// submission accounts). The direct slot is preferred; delegated slots are
+/// used only when the solver EOA is already busy with an in-flight settlement.
 #[derive(Debug)]
-struct SubmissionAccountPool {
-    /// Sender to return accounts after use.
+struct SubmitterPool {
+    /// 1-permit semaphore for the solver EOA (direct submission).
+    direct_slot: Arc<tokio::sync::Semaphore>,
+    /// EIP-7702 submission accounts. `None` in legacy single-EOA mode.
+    delegated: Option<DelegatedSlots>,
+    solver_address: eth::Address,
+}
+
+#[derive(Debug)]
+struct DelegatedSlots {
     release: mpsc::Sender<Account>,
-    /// Receiver to acquire an idle account.
     acquire: tokio::sync::Mutex<mpsc::Receiver<Account>>,
 }
 
-impl SubmissionAccountPool {
-    fn new(accounts: Vec<Account>) -> Self {
-        let (tx, rx) = mpsc::channel(accounts.len());
-        for account in accounts {
-            tx.try_send(account)
-                .expect("channel has sufficient capacity");
-        }
+impl SubmitterPool {
+    fn new(solver_address: eth::Address, submission_accounts: Vec<Account>) -> Self {
+        let delegated = if submission_accounts.is_empty() {
+            None
+        } else {
+            let (tx, rx) = mpsc::channel(submission_accounts.len());
+            for account in submission_accounts {
+                tx.try_send(account)
+                    .expect("channel has sufficient capacity");
+            }
+            Some(DelegatedSlots {
+                release: tx,
+                acquire: tokio::sync::Mutex::new(rx),
+            })
+        };
         Self {
-            release: tx,
-            acquire: tokio::sync::Mutex::new(rx),
+            direct_slot: Arc::new(tokio::sync::Semaphore::new(1)),
+            delegated,
+            solver_address,
         }
     }
 
-    /// Acquire a submission account from the pool, returning an RAII guard
-    /// that returns the account on drop. Returns `None` if the pool is
-    /// closed.
-    async fn acquire(&self) -> Option<AccountGuard> {
-        let account = self.acquire.lock().await.recv().await?;
-        Some(AccountGuard {
-            account,
-            release_sender: self.release.clone(),
+    /// Acquire a submission slot. Prefers the direct solver EOA slot
+    /// (cheaper, no forwarding). Falls back to a delegated EIP-7702 account
+    /// when the direct slot is busy. Blocks if all slots are in use.
+    async fn acquire(&self) -> Option<SubmitterGuard> {
+        // Try the direct slot first (non-blocking).
+        if let Ok(permit) = Arc::clone(&self.direct_slot).try_acquire_owned() {
+            tracing::debug!("submitting directly from solver EOA");
+            return Some(SubmitterGuard {
+                inner: GuardInner::Direct(permit),
+                solver_address: self.solver_address,
+            });
+        }
+
+        // Direct slot busy — use a delegated account if available.
+        if let Some(delegated) = &self.delegated {
+            let account = delegated.acquire.lock().await.recv().await?;
+            tracing::debug!(submitter = ?account.address(), "using EIP-7702 submission account");
+            return Some(SubmitterGuard {
+                inner: GuardInner::Delegated {
+                    account,
+                    release: delegated.release.clone(),
+                },
+                solver_address: self.solver_address,
+            });
+        }
+
+        // No delegated accounts configured — wait for the direct slot.
+        let permit = Arc::clone(&self.direct_slot).acquire_owned().await.ok()?;
+        tracing::debug!("waited for direct solver EOA slot");
+        Some(SubmitterGuard {
+            inner: GuardInner::Direct(permit),
+            solver_address: self.solver_address,
         })
     }
-}
 
-/// RAII guard that returns the submission account to the pool on drop,
-/// ensuring the account is not leaked even if the future is cancelled.
-struct AccountGuard {
-    account: Account,
-    release_sender: mpsc::Sender<Account>,
-}
+    fn total_slots(&self) -> usize {
+        // 1 slot for solver EOA + number of delegated EIP7702 accounts (if any)
+        1 + self
+            .delegated
+            .as_ref()
+            .map_or(0, |d| d.release.max_capacity())
+    }
 
-impl std::ops::Deref for AccountGuard {
-    type Target = Account;
-
-    fn deref(&self) -> &Account {
-        &self.account
+    fn has_capacity(&self) -> bool {
+        if self.direct_slot.available_permits() > 0 {
+            return true;
+        }
+        self.delegated
+            .as_ref()
+            .is_some_and(|d| d.release.capacity() < d.release.max_capacity())
     }
 }
 
-impl Drop for AccountGuard {
+/// RAII guard for a submission slot. Dropping returns the slot to the pool.
+struct SubmitterGuard {
+    inner: GuardInner,
+    solver_address: eth::Address,
+}
+
+enum GuardInner {
+    /// Solver EOA submits directly. Permit released on drop.
+    Direct(#[expect(dead_code)] tokio::sync::OwnedSemaphorePermit),
+    /// Delegated EIP-7702 submission. Account returned to channel on drop.
+    Delegated {
+        account: Account,
+        release: mpsc::Sender<Account>,
+    },
+    /// Sentinel used during `Drop` to move data out of `self`.
+    Dropped,
+}
+
+impl SubmitterGuard {
+    fn delegation_context(&self) -> Option<DelegatedSubmission> {
+        match &self.inner {
+            GuardInner::Direct(_) => None,
+            GuardInner::Delegated { account, .. } => Some(DelegatedSubmission {
+                submitter_eoa: account.address(),
+                solver_eoa: self.solver_address,
+            }),
+            GuardInner::Dropped => unreachable!(),
+        }
+    }
+}
+
+impl Drop for SubmitterGuard {
     fn drop(&mut self) {
-        let account = std::mem::replace(&mut self.account, Account::Address(Default::default()));
-        let sender = self.release_sender.clone();
-        tokio::spawn(async move {
-            if sender.send(account).await.is_err() {
-                tracing::error!("failed to return submission account to pool: channel closed");
-            }
-        });
+        let inner = std::mem::replace(&mut self.inner, GuardInner::Dropped);
+        if let GuardInner::Delegated { account, release } = inner {
+            tokio::spawn(async move {
+                if release.send(account).await.is_err() {
+                    tracing::error!("failed to return submission account to pool: channel closed");
+                }
+            });
+        }
+        // Direct: OwnedSemaphorePermit drops here, releasing the permit.
     }
 }
 
@@ -135,12 +212,7 @@ pub struct Competition {
     fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
-    /// When configured, enables concurrent settlement submission via EIP-7702.
-    submission_account_pool: Option<SubmissionAccountPool>,
-    /// 1-permit semaphore: when acquired, the solver EOA submits directly
-    /// (no 7702 forwarding overhead/gas). Only present when
-    /// `submission_account_pool` is configured.
-    settlement_in_flight: Option<tokio::sync::Semaphore>,
+    submitter_pool: SubmitterPool,
 }
 
 impl Competition {
@@ -157,26 +229,14 @@ impl Competition {
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
-        let submission_account_pool = if submission_accounts.is_empty() {
-            None
-        } else {
+        if !submission_accounts.is_empty() {
             tracing::info!(
                 count = submission_accounts.len(),
                 "EIP-7702 parallel submission enabled"
             );
-            Some(SubmissionAccountPool::new(submission_accounts))
-        };
-
-        let settlement_in_flight = submission_account_pool
-            .as_ref()
-            .map(|_| tokio::sync::Semaphore::new(1));
-
-        // When using parallel submission, the queue size should accommodate all
-        // submission accounts plus the direct solver slot.
-        let queue_size = match &submission_account_pool {
-            Some(pool) => pool.release.max_capacity() + 1,
-            None => solver.settle_queue_size(),
-        };
+        }
+        let submitter_pool = SubmitterPool::new(solver.address(), submission_accounts);
+        let queue_size = submitter_pool.total_slots().max(solver.settle_queue_size());
         let (settle_sender, settle_receiver) = mpsc::channel(queue_size);
 
         let competition = Arc::new(Self {
@@ -191,8 +251,7 @@ impl Competition {
             risk_detector,
             fetcher,
             order_sorting_strategies,
-            submission_account_pool,
-            settlement_in_flight,
+            submitter_pool,
         });
 
         let competition_clone = Arc::clone(&competition);
@@ -697,8 +756,8 @@ impl Competition {
     }
 
     pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
-        if self.settle_queue.capacity() == 0 {
-            tracing::warn!("settlement queue is full; auction is rejected");
+        if !self.submitter_pool.has_capacity() {
+            tracing::warn!("no idle submission slots; auction is rejected");
             Err(Error::TooManyPendingSettlements)
         } else {
             Ok(())
@@ -710,16 +769,13 @@ impl Competition {
         mut settle_receiver: mpsc::Receiver<SettleRequest>,
     ) {
         while let Some(request) = settle_receiver.recv().await {
-            if self.submission_account_pool.is_some() {
-                // EIP-7702 mode: spawn each settlement as a concurrent task.
-                let this = Arc::clone(&self);
-                tokio::spawn(async move {
-                    this.handle_settle_request(request).await;
-                });
-            } else {
-                // Legacy mode: process settlements sequentially.
-                self.handle_settle_request(request).await;
-            }
+            // When only the direct solver EOA slot exists and no delegated accounts are set
+            // up, the pool's acquire() blocks until the slot is free,  serializing
+            // settlements.
+            let this = Arc::clone(&self);
+            tokio::spawn(async move {
+                this.handle_settle_request(request).await;
+            });
         }
     }
 
@@ -804,34 +860,15 @@ impl Competition {
             });
         }
 
-        // When EIP-7702 submission accounts are configured, decide whether to
-        // submit directly from the solver EOA (cheaper, no forwarding) or via a
-        // delegated submission account.
-        //
-        // The direct slot is a 1-permit semaphore: if no settlement is
-        // in-flight the solver EOA submits directly; otherwise we fall back to
-        // an EIP-7702 submission account. Semaphore is freed on drop.
-        let (guard, _direct_permit) = if let Some(pool) = &self.submission_account_pool {
-            let direct_slot = self
-                .settlement_in_flight
-                .as_ref()
-                .expect("always set with pool");
-            if let Ok(permit) = direct_slot.try_acquire() {
-                tracing::debug!("no settlement in flight, submitting directly from solver EOA");
-                (None, Some(permit))
-            } else {
-                tracing::debug!("settlement in flight, using EIP-7702 submission account");
-                let account = pool.acquire().await.ok_or(Error::SubmissionError)?;
-                (Some(account), None)
-            }
-        } else {
-            (None, None)
-        };
-
-        let delegated_ctx = guard.as_ref().map(|g| DelegatedSubmission {
-            submitter_eoa: g.address(),
-            solver_eoa: self.solver.address(),
-        });
+        // Acquire a submission slot. The pool prefers the direct solver EOA
+        // (no forwarding overhead); falls back to a delegated EIP-7702
+        // submission account when the solver EOA is busy.
+        let guard = self
+            .submitter_pool
+            .acquire()
+            .await
+            .ok_or(Error::SubmissionError)?;
+        let delegated_ctx = guard.delegation_context();
 
         let executed = self
             .mempools
