@@ -1,9 +1,6 @@
-use {alloy::primitives::Address, std::sync::LazyLock};
-
 #[macro_use]
 pub mod macros;
 
-pub mod account_balances;
 pub mod arguments;
 pub mod bad_token;
 pub mod baseline_solver;
@@ -40,7 +37,3 @@ pub mod zeroex_api;
 pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("{:#}", err)
 }
-
-// ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
-// specified, so we need to use a random account when sending a simulation tx.
-pub static SIMULATION_ACCOUNT: LazyLock<Address> = LazyLock::new(|| Address::random());

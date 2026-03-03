@@ -3,6 +3,25 @@
 version = 4
 
 [[package]]
+name = "account-balances"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "balance-overrides",
+ "contracts",
+ "ethrpc",
+ "futures",
+ "itertools 0.14.0",
+ "mockall",
+ "model",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1185,6 +1204,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 name = "autopilot"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",
@@ -2887,6 +2907,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 name = "driver"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",
@@ -4934,6 +4955,7 @@ dependencies = [
 name = "orderbook"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",
@@ -6492,6 +6514,7 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",

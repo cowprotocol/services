@@ -6,7 +6,6 @@ use {
         native::NativePriceEstimating,
     },
     crate::{
-        account_balances::{BalanceFetching, Query},
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
         gas_price_estimation::GasPriceEstimating,
@@ -14,6 +13,7 @@ use {
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
     },
+    account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
@@ -785,7 +785,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            account_balances::MockBalanceFetching,
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{
                 HEALTHY_PRICE_ESTIMATION_TIME,
@@ -795,6 +794,7 @@ mod tests {
         },
         Address,
         U256 as AlloyU256,
+        account_balances::MockBalanceFetching,
         alloy::eips::eip1559::Eip1559Estimation,
         chrono::Utc,
         futures::FutureExt,

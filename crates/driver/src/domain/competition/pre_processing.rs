@@ -9,6 +9,7 @@ use {
         },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
     },
+    account_balances::{BalanceFetching, Query},
     alloy::primitives::{Bytes, FixedBytes},
     anyhow::{Context, Result},
     axum::{
@@ -24,10 +25,7 @@ use {
         order::{OrderKind, SellTokenSource},
         signature::Signature,
     },
-    shared::{
-        account_balances::{BalanceFetching, Query},
-        signature_validator::SignatureValidating,
-    },
+    shared::signature_validator::SignatureValidating,
     std::{
         collections::HashMap,
         future::Future,

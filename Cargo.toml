@@ -9,6 +9,7 @@ alloy-primitives = { version = "1.5.2", default-features = false }
 alloy-signer = { version = "1.7.3", default-features = false}
 alloy-signer-local = { version = "1.7.3", default-features = false}
 alloy-sol-types = { version = "1.5.2" }
+account-balances = { path = "crates/account-balances" }
 anyhow = "1.0.100"
 async-trait = "0.1.80"
 axum = "0.8"

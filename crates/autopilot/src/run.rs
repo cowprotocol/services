@@ -25,6 +25,7 @@ use {
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
+    account_balances::{self, BalanceSimulator},
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
     chain::Chain,
     clap::Parser,
@@ -35,7 +36,6 @@ use {
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
     shared::{
-        account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::list_based::DenyListedTokens,
         http_client::HttpClientFactory,

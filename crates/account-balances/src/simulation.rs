@@ -4,7 +4,7 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    crate::account_balances::BalanceSimulator,
+    crate::BalanceSimulator,
     alloy::primitives::{Address, U256},
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},

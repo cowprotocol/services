@@ -15,6 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
+account-balances = { workspace = true }
 alloy = { workspace = true, features = ["sol-types", "provider-txpool-api", "rand", "provider-anvil-api", "json-rpc", "rpc-types"] }
 app-data = { workspace = true }
 async-trait = { workspace = true }

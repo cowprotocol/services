@@ -16,6 +16,7 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
+account-balances = { workspace = true }
 alloy = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }

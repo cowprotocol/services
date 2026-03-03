@@ -1,0 +1,30 @@
+[package]
+name = "account-balances"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+alloy = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+balance-overrides = { workspace = true }
+contracts = { workspace = true }
+ethrpc = { workspace = true }
+futures = { workspace = true }
+itertools = { workspace = true }
+mockall = { workspace = true, optional = true }
+model = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+
+[features]
+test-util = ["dep:mockall"]
+
+[lints]
+workspace = true

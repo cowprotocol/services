@@ -11,7 +11,7 @@ use {
         interaction::InteractionData,
         order::{Order, SellTokenSource},
     },
-    std::sync::Arc,
+    std::sync::{Arc, LazyLock},
     thiserror::Error,
 };
 
@@ -175,7 +175,7 @@ impl BalanceSimulator {
             .simulateDelegatecall(*self.balances.address(), balance_call.abi_encode().into())
             .with_cloned_provider()
             .state(overrides)
-            .from(*crate::SIMULATION_ACCOUNT)
+            .from(*SIMULATION_ACCOUNT)
             .call()
             .await?;
 
@@ -224,3 +224,7 @@ pub enum SimulationError {
     #[error("method error: {0:?}")]
     Method(#[from] alloy::contract::Error),
 }
+
+// ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
+// specified, so we need to use a random account when sending a simulation tx.
+static SIMULATION_ACCOUNT: LazyLock<Address> = LazyLock::new(|| Address::random());

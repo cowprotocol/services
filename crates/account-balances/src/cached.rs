@@ -1,5 +1,5 @@
 use {
-    crate::account_balances::{BalanceFetching, Query, TransferSimulationError},
+    crate::{BalanceFetching, Query, TransferSimulationError},
     alloy::primitives::U256,
     anyhow::Result,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
@@ -201,7 +201,7 @@ impl BalanceFetching for Balances {
 mod tests {
     use {
         super::*,
-        crate::account_balances::MockBalanceFetching,
+        crate::MockBalanceFetching,
         alloy::primitives::Address,
         ethrpc::block_stream::BlockInfo,
         model::order::SellTokenSource,

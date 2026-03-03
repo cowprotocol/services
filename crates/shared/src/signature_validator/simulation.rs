@@ -20,7 +20,7 @@ use {
         support::Signatures,
     },
     ethrpc::{Web3, alloy::ProviderLabelingExt},
-    std::sync::Arc,
+    std::sync::{Arc, LazyLock},
     tracing::instrument,
 };
 
@@ -127,11 +127,15 @@ impl Validator {
                 })
                 .collect(),
         };
+
+        // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not
+        // specified, so we need to use a random account when sending a simulation tx.
+        static SIMULATION_ACCOUNT: LazyLock<Address> = LazyLock::new(|| Address::random());
         let simulation = self
             .settlement
             .simulateDelegatecall(self.signatures_address, validate_call.abi_encode().into())
             .state(overrides.clone())
-            .from(*crate::SIMULATION_ACCOUNT);
+            .from(*SIMULATION_ACCOUNT);
 
         let result = simulation.clone().call().await;
 
