@@ -15,10 +15,7 @@ use {
         ExternalSolver,
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
-        trade_verifier::{
-            code_fetching::CachedCodeFetcher,
-            tenderly_api::TenderlyCodeSimulator,
-        },
+        trade_verifier::{code_fetching::CachedCodeFetcher, tenderly_api::TenderlyCodeSimulator},
         utils::HttpClientFactory,
     },
     alloy::primitives::Address,
