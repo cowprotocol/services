@@ -373,8 +373,10 @@ impl Mempools {
     }
 }
 
-/// Prepare the settlement tx for the given submission mode. Sets `tx.from`
-/// explicitly in both cases so the signer is always determined by the mode.
+/// In EIP-7702 mode, reroute the tx through the solver EOA's delegated
+/// forwarder contract. The original target and calldata are wrapped in a
+/// `forward()` call. `from` is set to the submission EOA so that simulations
+/// see the correct `msg.sender` for the forwarder's caller whitelist.
 fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
     let mut tx = tx.clone();
     match mode {
