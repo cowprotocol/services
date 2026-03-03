@@ -10,7 +10,7 @@
 
 use {
     super::swap::fixed_point::Bfp,
-    crate::subgraph::SubgraphClient,
+    crate::sources::subgraph::SubgraphClient,
     alloy::primitives::{Address, B256},
     anyhow::Result,
     event_indexing::event_handler::MAX_REORG_BLOCK_COUNT,

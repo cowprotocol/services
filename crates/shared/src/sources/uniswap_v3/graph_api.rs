@@ -2,7 +2,7 @@
 //! data from the Uniswap V3 subgraph.
 
 use {
-    crate::subgraph::{ContainsId, SubgraphClient},
+    crate::sources::subgraph::{ContainsId, SubgraphClient},
     alloy::primitives::{Address, U256},
     anyhow::Result,
     event_indexing::event_handler::MAX_REORG_BLOCK_COUNT,
@@ -365,7 +365,7 @@ mod block_number_query {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::subgraph::Data, alloy::primitives::address, serde_json::json};
+    use {super::*, crate::sources::subgraph::Data, alloy::primitives::address, serde_json::json};
 
     #[test]
     fn decode_pools_data() {

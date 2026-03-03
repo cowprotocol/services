@@ -27,7 +27,6 @@ pub mod remaining_amounts;
 pub mod request_sharing;
 pub mod signature_validator;
 pub mod sources;
-pub mod subgraph;
 pub mod token_info;
 pub mod token_list;
 pub mod trace_many;
