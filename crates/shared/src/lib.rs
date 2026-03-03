@@ -21,9 +21,9 @@ pub mod price_estimation;
 pub mod remaining_amounts;
 pub mod signature_validator;
 pub mod token_list;
-pub mod trace_many;
 pub mod trade_finding;
 pub mod url;
+
 pub mod web3;
 pub mod zeroex_api;
 
