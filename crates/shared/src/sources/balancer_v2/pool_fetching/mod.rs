@@ -51,10 +51,8 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         BalancerV2WeightedPoolFactoryV4,
     },
-    ethrpc::{
-        alloy::ProviderLabelingExt,
-        block_stream::{BlockRetrieving, CurrentBlockWatcher},
-    },
+    ethrpc::{alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
+    event_indexing::block_retriever::BlockRetrieving,
     model::TokenPair,
     reqwest::{Client, Url},
     std::{

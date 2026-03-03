@@ -13,12 +13,9 @@ use {
         UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
         UniswapV3PoolEvents,
     },
-    ethrpc::{
-        Web3,
-        alloy::ProviderLabelingExt,
-        block_stream::{BlockRetrieving, RangeInclusive},
-    },
+    ethrpc::{Web3, alloy::ProviderLabelingExt},
     event_indexing::{
+        block_retriever::{BlockRetrieving, RangeInclusive},
         event_handler::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
     },

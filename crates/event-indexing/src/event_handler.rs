@@ -1,5 +1,8 @@
 use {
-    crate::maintenance::Maintaining,
+    crate::{
+        block_retriever::{BlockRetrieving, RangeInclusive},
+        maintenance::Maintaining,
+    },
     alloy::{
         primitives::{Address, B256},
         providers::{DynProvider, Provider},
@@ -7,7 +10,7 @@ use {
         sol_types::SolEventInterface,
     },
     anyhow::{Context, Result},
-    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+    ethrpc::block_stream::BlockNumberHash,
     futures::{Stream, StreamExt},
     std::{pin::Pin, sync::Arc},
     tokio::sync::Mutex,

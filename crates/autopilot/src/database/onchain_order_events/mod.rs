@@ -27,11 +27,8 @@ use {
         onchain_broadcasted_orders::{OnchainOrderPlacement, OnchainOrderPlacementError},
         orders::{Order, OrderClass, insert_quotes},
     },
-    ethrpc::{
-        Web3,
-        block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
-    },
-    event_indexing::event_handler::EventStoring,
+    ethrpc::{Web3, block_stream::timestamp_of_block_in_seconds},
+    event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
     futures::{StreamExt, stream},
     itertools::{izip, multiunzip},
     model::{

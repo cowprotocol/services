@@ -29,10 +29,8 @@ use {
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
-    ethrpc::{
-        Web3,
-        block_stream::{BlockRetriever, block_number_to_block_number_hash},
-    },
+    ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
+    event_indexing::block_retriever::BlockRetriever,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,

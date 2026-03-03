@@ -11,8 +11,10 @@ use {
         UniswapV3Pool,
         UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap, UniswapV3PoolEvents},
     },
-    ethrpc::block_stream::RangeInclusive,
-    event_indexing::event_handler::{AlloyEventRetrieving, EventStoring},
+    event_indexing::{
+        block_retriever::RangeInclusive,
+        event_handler::{AlloyEventRetrieving, EventStoring},
+    },
     std::collections::BTreeMap,
 };
 

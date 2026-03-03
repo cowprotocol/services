@@ -16,7 +16,8 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
-    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
+    ethrpc::block_stream::CurrentBlockWatcher,
+    event_indexing::block_retriever::BlockRetrieving,
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{

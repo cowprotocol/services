@@ -6,8 +6,7 @@ use {
     anyhow::Result,
     contracts::alloy::CoWSwapEthFlow::CoWSwapEthFlow::CoWSwapEthFlowEvents,
     database::ethflow_orders::Refund,
-    ethrpc::block_stream::RangeInclusive,
-    event_indexing::event_handler::EventStoring,
+    event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
 };
 
 fn get_refunds(events: Vec<(CoWSwapEthFlowEvents, Log)>) -> Result<Vec<Refund>> {

@@ -26,8 +26,7 @@ use {
         BalancerV2BasePoolFactoryEvents,
         PoolCreated,
     },
-    ethrpc::block_stream::RangeInclusive,
-    event_indexing::event_handler::EventStoring,
+    event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
     model::TokenPair,
     std::{
         cmp,

@@ -11,8 +11,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    ethrpc::block_stream::BlockRetrieving,
-    event_indexing::maintenance::ServiceMaintenance,
+    event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
