@@ -3163,6 +3163,8 @@ dependencies = [
  "const-hex",
  "futures",
  "itertools 0.14.0",
+ "jsonrpc-core",
+ "mockall",
  "observe",
  "prometheus",
  "prometheus-metric-storage",
@@ -4242,6 +4244,21 @@ checksum = "8c942ebf8e95485ca0d52d97da7c5a2c387d0e7f0ba4c35e93bfcaee045955b3"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "jsonrpc-core"
+version = "18.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14f7f76aef2d054868398427f6c54943cf3d1caa9a7ec7d0c38d69df97a965eb"
+dependencies = [
+ "futures",
+ "futures-executor",
+ "futures-util",
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
 ]
 
 [[package]]
@@ -6667,12 +6684,14 @@ dependencies = [
  "database",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-indexing",
  "futures",
  "gas-price-estimation",
  "hex-literal",
  "humantime",
  "indexmap 2.13.0",
  "itertools 0.14.0",
+ "liquidity-sources",
  "maplit",
  "mockall",
  "model",

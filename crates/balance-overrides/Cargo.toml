@@ -20,7 +20,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-ethrpc = { workspace = true }
+ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
