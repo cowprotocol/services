@@ -1,6 +1,6 @@
 use {
     ::alloy::primitives::U256,
-    autopilot::config::{Configuration, trusted_tokens::TrustedTokensConfig},
+    autopilot::config::trusted_tokens::TrustedTokensConfig,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -68,7 +68,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            Configuration {
+            autopilot::config::Configuration {
                 trusted_tokens: TrustedTokensConfig {
                     tokens: vec![
                         *onchain.contracts().weth.address(),
@@ -77,7 +77,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                     ],
                     ..Default::default()
                 },
-                ..Configuration::test("test_solver", solver.address())
+                ..autopilot::config::Configuration::test("test_solver", solver.address())
             },
         )
         .await;

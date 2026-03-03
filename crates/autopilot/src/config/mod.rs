@@ -21,6 +21,9 @@ pub mod s3;
 pub mod solver;
 pub mod trusted_tokens;
 
+// Does not implement Default because `native_price_estimation` *cannot* have
+// empty `estimators`, as such, we cannot provide a proper default value for
+// this structure.
 #[derive(Debug, Deserialize, Serialize)]
 // NOTE: cannot add deny_unknown_fields during the config migration
 // as new ones get added in the config will fail parsing if extra fields are present
@@ -353,11 +356,7 @@ mod tests {
                 max_partner_fee: 0.02.try_into().unwrap(),
                 upcoming_policies: UpcomingFeePolicies::default(),
             },
-            trusted_tokens: Default::default(),
-            order_events_cleanup: Default::default(),
-            banned_users: Default::default(),
-            s3: Default::default(),
-            native_price_estimation: NativePriceConfig::test_default(),
+            ..Configuration::test_no_drivers()
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

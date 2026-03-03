@@ -109,6 +109,7 @@ mod tests {
         assert!(toml::from_str::<NativePriceConfig>(toml).is_err());
     }
 
+    // This test keeps the sanity of `test_default` upon which other tests rely!
     #[test]
     fn test_default_roundtrip() {
         let config = NativePriceConfig::test_default();
