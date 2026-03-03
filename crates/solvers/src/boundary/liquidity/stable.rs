@@ -1,8 +1,8 @@
-pub use shared::sources::balancer_v2::pool_fetching::StablePool as Pool;
+pub use liquidity_sources::balancer_v2::pool_fetching::StablePool as Pool;
 use {
     crate::domain::{eth, liquidity},
     alloy::primitives::{Address, B256, U256},
-    shared::sources::balancer_v2::{
+    liquidity_sources::balancer_v2::{
         pool_fetching::{AmplificationParameter, CommonPoolState, TokenState},
         swap::fixed_point::Bfp,
     },

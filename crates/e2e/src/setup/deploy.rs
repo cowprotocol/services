@@ -258,8 +258,8 @@ impl Contracts {
 
     pub fn default_pool_code(&self) -> B256 {
         match self.chain_id {
-            100 => B256::new(shared::sources::uniswap_v2::HONEYSWAP_INIT),
-            _ => B256::new(shared::sources::uniswap_v2::UNISWAP_INIT),
+            100 => B256::new(liquidity_sources::uniswap_v2::HONEYSWAP_INIT),
+            _ => B256::new(liquidity_sources::uniswap_v2::UNISWAP_INIT),
         }
     }
 }

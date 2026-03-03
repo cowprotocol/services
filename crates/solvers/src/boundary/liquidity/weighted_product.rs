@@ -1,8 +1,8 @@
-pub use shared::sources::balancer_v2::pool_fetching::WeightedPool as Pool;
+pub use liquidity_sources::balancer_v2::pool_fetching::WeightedPool as Pool;
 use {
     crate::domain::{eth, liquidity},
     alloy::primitives::{Address, B256, U256},
-    shared::sources::balancer_v2::{
+    liquidity_sources::balancer_v2::{
         pool_fetching::{CommonPoolState, TokenState, WeightedPoolVersion, WeightedTokenState},
         swap::fixed_point::Bfp,
     },

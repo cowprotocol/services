@@ -11,13 +11,9 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    ethrpc::block_stream::BlockRetrieving,
-    shared::{
-        http_solver::model::TokenAmount,
-        interaction::Interaction,
-        maintenance::ServiceMaintenance,
-        sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-    },
+    event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
+    liquidity_sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+    shared::{http_solver::model::TokenAmount, interaction::Interaction},
     solver::{
         liquidity::{
             ConcentratedLiquidity,

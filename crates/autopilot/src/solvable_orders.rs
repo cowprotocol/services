@@ -4,6 +4,7 @@ use {
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
+    account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
@@ -16,7 +17,6 @@ use {
     },
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
-        account_balances::{BalanceFetching, Query},
         bad_token::list_based::DenyListedTokens,
         price_estimation::{
             native::{NativePriceEstimating, to_normalized_price},

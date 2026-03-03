@@ -8,12 +8,9 @@ use {
     },
     alloy::primitives::Address,
     anyhow::Result,
+    liquidity_sources::{recent_block_cache::Block, uniswap_v2::pool_fetching::PoolFetching},
     model::TokenPair,
-    shared::{
-        http_solver::model::TokenAmount,
-        recent_block_cache::Block,
-        sources::uniswap_v2::pool_fetching::PoolFetching,
-    },
+    shared::http_solver::model::TokenAmount,
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,
 };

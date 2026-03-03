@@ -2,13 +2,16 @@
 
 use {
     crate::{
-        boundary,
+        boundary::{
+            self,
+            routing::{estimate_buy_amount, estimate_sell_amount},
+        },
         domain::{eth, liquidity, order, solver},
     },
     alloy::primitives::{Address, U256},
     contracts::alloy::UniswapV3QuoterV2,
+    liquidity_sources::{base_tokens::BaseTokens, baseline_solvable::BaselineSolvable},
     model::TokenPair,
-    shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -52,12 +55,9 @@ impl<'a> Solver<'a> {
         let (segments, _) = match request.side {
             order::Side::Buy => {
                 let futures = candidates.iter().map(|path| async {
-                    let sell = baseline_solver::estimate_sell_amount(
-                        request.buy.amount,
-                        path,
-                        &self.onchain_liquidity,
-                    )
-                    .await?;
+                    let sell =
+                        estimate_sell_amount(request.buy.amount, path, &self.onchain_liquidity)
+                            .await?;
 
                     let segments = self
                         .traverse_path(&sell.path, request.sell.token.0, sell.value)
@@ -83,12 +83,9 @@ impl<'a> Solver<'a> {
             }
             order::Side::Sell => {
                 let futures = candidates.iter().map(|path| async {
-                    let buy = baseline_solver::estimate_buy_amount(
-                        request.sell.amount,
-                        path,
-                        &self.onchain_liquidity,
-                    )
-                    .await?;
+                    let buy =
+                        estimate_buy_amount(request.sell.amount, path, &self.onchain_liquidity)
+                            .await?;
 
                     let segments = self
                         .traverse_path(&buy.path, request.sell.token.0, request.sell.amount)

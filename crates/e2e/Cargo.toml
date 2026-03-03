@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 app-data = { workspace = true }
 autopilot = { workspace = true, features = ["test-util"] }
 axum = { workspace = true }
+balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -39,6 +40,7 @@ solvers = { workspace = true }
 solvers-dto = { workspace = true }
 sqlx = { workspace = true }
 tempfile = { workspace = true }
+liquidity-sources = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
 toml = { workspace = true }
 tracing = { workspace = true }

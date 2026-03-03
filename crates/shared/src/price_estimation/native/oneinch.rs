@@ -1,6 +1,6 @@
 use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
-    crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
+    crate::price_estimation::PriceEstimationError,
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, anyhow},
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
@@ -15,6 +15,7 @@ use {
         sync::{Arc, Mutex},
         time::Duration,
     },
+    token_info::TokenInfoFetching,
     tracing::instrument,
     url::Url,
 };
@@ -161,12 +162,10 @@ async fn get_current_prices(
 mod tests {
     use {
         super::*,
-        crate::{
-            price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
-            token_info::{MockTokenInfoFetching, TokenInfo},
-        },
+        crate::price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
         alloy::primitives::address,
         std::env,
+        token_info::{MockTokenInfoFetching, TokenInfo},
     };
 
     const BASE_URL: &str = "https://api.1inch.dev/";

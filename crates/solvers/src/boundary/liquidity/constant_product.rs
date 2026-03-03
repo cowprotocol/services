@@ -1,4 +1,4 @@
-pub use shared::sources::uniswap_v2::pool_fetching::Pool;
+pub use liquidity_sources::uniswap_v2::pool_fetching::Pool;
 use {crate::domain::liquidity, alloy::primitives::Address, model::TokenPair};
 
 /// Converts a domain pool into a [`shared`] Uniswap V2 pool. Returns `None` if

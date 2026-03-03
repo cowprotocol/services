@@ -2,11 +2,11 @@ use {
     crate::{Amm, cache::Storage},
     contracts::alloy::ERC20,
     ethrpc::AlloyProvider,
+    event_indexing::maintenance::Maintaining,
     futures::{
         future::{join_all, select_ok},
         stream::{FuturesUnordered, StreamExt},
     },
-    shared::maintenance::Maintaining,
     std::sync::Arc,
     tokio::sync::RwLock,
 };

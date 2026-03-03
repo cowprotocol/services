@@ -1,9 +1,6 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::{
-        price_estimation::{PriceEstimationError, buffered::NativePriceBatchFetching},
-        token_info::{TokenInfo, TokenInfoFetching},
-    },
+    crate::price_estimation::{PriceEstimationError, buffered::NativePriceBatchFetching},
     alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chain::Chain,
@@ -16,6 +13,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    token_info::{TokenInfo, TokenInfoFetching},
     tracing::instrument,
     url::Url,
 };
@@ -319,12 +317,10 @@ mod metrics {
 mod tests {
     use {
         super::*,
-        crate::{
-            price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
-            token_info::{MockTokenInfoFetching, TokenInfo},
-        },
+        crate::price_estimation::HEALTHY_PRICE_ESTIMATION_TIME,
         alloy::primitives::address,
         std::env,
+        token_info::{MockTokenInfoFetching, TokenInfo},
     };
 
     impl CoinGecko {

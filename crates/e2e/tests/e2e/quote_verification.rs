@@ -4,6 +4,7 @@ use {
         providers::Provider,
     },
     autopilot::config::Configuration,
+    balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
     bigdecimal::{BigDecimal, Zero},
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
@@ -18,12 +19,7 @@ use {
         price_estimation::{
             Estimate,
             Verification,
-            trade_verifier::{
-                PriceQuery,
-                TradeVerifier,
-                TradeVerifying,
-                balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
-            },
+            trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
         },
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
     },
@@ -557,7 +553,7 @@ async fn usdt_quote_verification(web3: Web3) {
 /// This test verifies the trace-based detection strategy that's similar to
 /// Foundry's `deal`.
 async fn trace_based_balance_detection(web3: Web3) {
-    use shared::price_estimation::trade_verifier::balance_overrides::detector::Detector;
+    use balance_overrides::detector::Detector;
 
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
@@ -680,10 +676,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         test_account: Address,
         test_balance: U256,
     ) {
-        use {
-            shared::price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
-            std::collections::HashMap,
-        };
+        use {balance_overrides::BalanceOverrideRequest, std::collections::HashMap};
 
         let balance_overrides = BalanceOverrides {
             hardcoded: HashMap::from([(token, strategy)]),

@@ -3,6 +3,7 @@ use {
         boundary,
         domain::{eth, eth::U256},
     },
+    account_balances::{BalanceSimulator, SimulationError},
     alloy::{
         eips::eip1559::Eip1559Estimation,
         network::TransactionBuilder,
@@ -11,17 +12,10 @@ use {
         transports::TransportErrorKind,
     },
     anyhow::anyhow,
+    balance_overrides::{BalanceOverrides, BalanceOverriding},
     chain::Chain,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
-    shared::{
-        account_balances::{BalanceSimulator, SimulationError},
-        gas_price_estimation::Eip1559EstimationExt,
-        price_estimation::trade_verifier::balance_overrides::{
-            BalanceOverrides,
-            BalanceOverriding,
-        },
-        web3,
-    },
+    shared::{gas_price_estimation::Eip1559EstimationExt, web3},
     std::{fmt, sync::Arc},
     thiserror::Error,
     tracing::{Level, instrument},

@@ -1,13 +1,13 @@
 use {
     super::TokenQuality,
-    crate::{trace_many, web3::Web3},
     alloy::{
         primitives::{Address, U256, keccak256},
+        providers::ext::TraceApi,
         rpc::{
             json_rpc::ErrorPayload,
             types::{
                 TransactionRequest,
-                trace::parity::{TraceOutput, TraceResults},
+                trace::parity::{TraceOutput, TraceResults, TraceType},
             },
         },
         signers::local::PrivateKeySigner,
@@ -16,6 +16,7 @@ use {
     },
     anyhow::{Context, Result, bail, ensure},
     contracts::alloy::ERC20,
+    ethrpc::Web3,
     model::interaction::InteractionData,
 };
 
@@ -59,7 +60,7 @@ impl TraceCallDetectorRaw {
         // implementation sending to an address that does not have any balance
         // yet (implicitly 0) causes an allocation.
         request.append(&mut self.create_trace_request(token, amount, take_from));
-        let traces = match trace_many::trace_many(&self.web3, request).await {
+        let traces = match trace_many(&self.web3, request).await {
             Ok(result) => result,
             Err(RpcError::UnsupportedFeature(err)) => {
                 tracing::warn!(error = ?err, "node does not support trace_callMany");
@@ -327,6 +328,22 @@ fn u256_from_be_bytes_strict(b: &[u8]) -> Option<U256> {
         return None;
     }
     U256::try_from_be_slice(b)
+}
+
+/// Use the trace_callMany API (<https://openethereum.github.io/JSONRPC-trace-module#trace_callmany>)
+/// to simulate these call requests applied together one after another.
+///
+/// Returns `Err` if communication with the node failed.
+async fn trace_many(
+    web3: &Web3,
+    requests: Vec<TransactionRequest>,
+) -> Result<Vec<TraceResults>, RpcError<TransportErrorKind>> {
+    let r: Vec<_> = requests
+        .into_iter()
+        .zip(std::iter::repeat([TraceType::Trace].as_slice()))
+        .collect();
+
+    web3.provider.trace_call_many(r.as_slice()).latest().await
 }
 
 #[cfg(test)]

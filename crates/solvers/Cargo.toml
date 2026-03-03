@@ -24,6 +24,7 @@ derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
+liquidity-sources = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 num = { workspace = true }
 number = { workspace = true }
@@ -53,6 +54,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+maplit = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }
