@@ -23,6 +23,7 @@ use {
         util::math,
     },
     alloy::{network::TxSigner as _, primitives::Bytes},
+    anyhow::Context as _,
     axum::{body::Body, http::Request},
     futures::{FutureExt, StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
@@ -112,39 +113,42 @@ impl SubmitterPool {
             });
         }
 
-        // Direct slot busy — race it against delegated accounts if configured.
-        if let Some(delegated) = &self.delegated {
-            let mut rx = delegated.acquire.lock().await;
-            futures::select_biased! {
-                permit = Arc::clone(&self.direct_slot).acquire_owned().fuse() => {
-                    let permit = permit.ok()?;
-                    tracing::debug!("direct solver EOA slot found");
-                    Some(SubmitterGuard {
-                        inner: GuardInner::Direct(permit),
-                        solver_address: self.solver_address,
-                    })
-                }
-                account = rx.recv().fuse() => {
-                    let account = account?;
-                    tracing::debug!(submitter = ?account.address(), "using EIP-7702 submission account");
-                    Some(SubmitterGuard {
-                        inner: GuardInner::Delegated {
-                            account,
-                            release: delegated.release.clone(),
-                        },
-                        solver_address: self.solver_address,
-                    })
-                }
-            }
-        } else {
-            // No delegated accounts — wait for the direct slot.
-            let permit = Arc::clone(&self.direct_slot).acquire_owned().await.ok()?;
-            tracing::debug!("waited for direct solver EOA slot");
-            Some(SubmitterGuard {
-                inner: GuardInner::Direct(permit),
-                solver_address: self.solver_address,
+        // Direct slot busy — race it against delegated accounts. select_ok
+        // ensures that if one future errors the other is still awaited.
+        let fetch_direct_slot = async {
+            let permit = Arc::clone(&self.direct_slot)
+                .acquire_owned()
+                .await
+                .context("semaphore closed")?;
+            tracing::debug!("submitting directly from solver EOA");
+            Ok(GuardInner::Direct(permit))
+        }
+        .boxed();
+
+        let fetch_eip7702_slot = async {
+            let Some(ref delegated) = self.delegated else {
+                return Err(anyhow::anyhow!("no EIP-7702 accounts configured"));
+            };
+            let mut channel = delegated.acquire.lock().await;
+            let account = channel.recv().await.context("channel closed")?;
+            tracing::debug!(submitter = ?account.address(), "using EIP-7702 submission account");
+            Ok(GuardInner::Delegated {
+                account,
+                release: delegated.release.clone(),
             })
         }
+        .boxed();
+
+        let (inner, _remaining) =
+            futures::future::select_ok([fetch_direct_slot, fetch_eip7702_slot])
+                .await
+                .inspect_err(|err| tracing::error!(?err, "could not acquire submission account"))
+                .ok()?;
+
+        Some(SubmitterGuard {
+            inner,
+            solver_address: self.solver_address,
+        })
     }
 
     fn total_slots(&self) -> usize {
