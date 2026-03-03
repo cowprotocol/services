@@ -3,8 +3,10 @@ use {
     crate::{
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
-        price_estimation::trade_verifier::code_fetching::CodeFetching,
-        tenderly_api::TenderlyCodeSimulator,
+        price_estimation::trade_verifier::{
+            code_fetching::CodeFetching,
+            tenderly_api::TenderlyCodeSimulator,
+        },
         trade_finding::{
             Interaction,
             QuoteExecution,
@@ -51,6 +53,7 @@ use {
 };
 
 pub mod code_fetching;
+pub mod tenderly_api;
 
 #[async_trait::async_trait]
 pub trait TradeVerifying: Send + Sync + 'static {

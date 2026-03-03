@@ -20,9 +20,11 @@ use {
             ExternalSolver,
             buffered::{self, BufferedRequest, NativePriceBatchFetching},
             competition::PriceRanking,
-            trade_verifier::code_fetching::CachedCodeFetcher,
+            trade_verifier::{
+                code_fetching::CachedCodeFetcher,
+                tenderly_api::TenderlyCodeSimulator,
+            },
         },
-        tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,
         web3::Web3,
     },
