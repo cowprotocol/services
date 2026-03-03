@@ -13,6 +13,7 @@ use {
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
+    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     contracts::alloy::{
@@ -30,7 +31,6 @@ use {
     order_validation,
     shared::{
         arguments::tracing_config,
-        bad_token::list_based::DenyListedTokens,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},

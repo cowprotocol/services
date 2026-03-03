@@ -13,7 +13,6 @@ use {
     },
     crate::{
         arguments,
-        bad_token::list_based::DenyListedTokens,
         http_client::HttpClientFactory,
         price_estimation::{
             ExternalSolver,
@@ -27,6 +26,7 @@ use {
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
+    bad_tokens::list_based::DenyListedTokens,
     contracts::alloy::WETH9,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,

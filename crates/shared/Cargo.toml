@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 app-data = { workspace = true }
 arc-swap = { workspace = true }
 balance-overrides = { workspace = true }
+bad-tokens = { workspace = true }
 bytes-hex = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }

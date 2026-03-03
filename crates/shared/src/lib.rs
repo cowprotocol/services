@@ -2,7 +2,6 @@
 pub mod macros;
 
 pub mod arguments;
-pub mod bad_token;
 pub mod current_block;
 pub mod db_order_conversions;
 pub mod encoded_settlement;

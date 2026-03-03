@@ -1,6 +1,5 @@
 use {
     crate::{
-        bad_token::list_based::DenyListedTokens,
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
@@ -21,6 +20,7 @@ use {
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
+    bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::{HooksTrampoline, WETH9},
     model::{

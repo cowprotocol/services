@@ -1,16 +1,14 @@
 use {
-    crate::{
-        bad_token::list_based::DenyListedTokens,
-        price_estimation::{
-            Estimate,
-            PriceEstimating,
-            PriceEstimationError,
-            Query,
-            gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
-        },
+    crate::price_estimation::{
+        Estimate,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
+        gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
     },
     alloy::primitives::Address,
     anyhow::anyhow,
+    bad_tokens::list_based::DenyListedTokens,
     futures::FutureExt,
     model::order::BUY_ETH_ADDRESS,
     std::sync::Arc,

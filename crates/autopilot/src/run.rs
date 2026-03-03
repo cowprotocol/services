@@ -27,6 +27,7 @@ use {
     },
     account_balances::{self, BalanceSimulator},
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
+    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
@@ -37,7 +38,6 @@ use {
     observe::metrics::LivenessChecking,
     shared::{
         arguments::tracing_config,
-        bad_token::list_based::DenyListedTokens,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         price_estimation::{
