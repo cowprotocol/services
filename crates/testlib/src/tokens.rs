@@ -1,6 +1,6 @@
 //! Mainnet addresses of commonly used tokens.
 
-use alloy::primitives::{Address, address};
+use alloy_primitives::{Address, address};
 
 /// Address for the `WETH` token.
 pub const WETH: Address = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");

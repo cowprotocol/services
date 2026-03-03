@@ -4,9 +4,11 @@ members = ["crates/*"]
 
 [workspace.dependencies]
 alloy = { version = "1.7.3", default-features = false }
-# alloy-signer was added because eip712 on the regular alloy crate brings way too much stuff with it
-# as such, this is a workaround to force feature unification over alloy to the feature set we want
+alloy-contract = { version = "1.7.3", default-features = false }
+alloy-primitives = { version = "1.5.2", default-features = false }
 alloy-signer = { version = "1.7.3", default-features = false}
+alloy-signer-local = { version = "1.7.3", default-features = false}
+alloy-sol-types = { version = "1.5.2" }
 anyhow = "1.0.100"
 async-trait = "0.1.80"
 axum = "0.8"
@@ -19,6 +21,7 @@ derive_more = { version = "1.0.0", features = ["full"] }
 mimalloc = "0.1.43"
 tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms", "profiling"] }
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
+brotli = "8"
 flate2 = "1.0.30"
 futures = "0.3.30"
 const-hex = "1.17.0"
@@ -93,7 +96,6 @@ solvers-dto = { path = "crates/solvers-dto" }
 testlib = { path = "crates/testlib" }
 winner-selection = { path = "crates/winner-selection" }
 time = "0.3.47"
-tiny-keccak = "2.0.2"
 tower = "0.5"
 tower-http = "0.6"
 tracing-opentelemetry = "0.32.1"

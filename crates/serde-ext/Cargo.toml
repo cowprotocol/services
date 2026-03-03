@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true }
+alloy-primitives = { workspace = true }
 const-hex = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }

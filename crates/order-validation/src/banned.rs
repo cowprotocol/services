@@ -5,7 +5,7 @@
 //! expiry, LRU eviction) with background refresh every 60 seconds.
 
 use {
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     contracts::alloy::ChainalysisOracle,
     futures::future::join_all,
     moka::sync::Cache,
@@ -221,13 +221,7 @@ impl Users {
 }
 
 impl Onchain {
-    async fn fetch(&self, address: Address) -> Result<bool, Error> {
-        Ok(self.contract.isSanctioned(address).call().await?)
+    async fn fetch(&self, address: Address) -> Result<bool, alloy_contract::Error> {
+        self.contract.isSanctioned(address).call().await
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("failed to fetch banned users from onchain")]
-    Onchain(#[from] alloy::contract::Error),
 }
