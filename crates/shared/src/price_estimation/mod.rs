@@ -1,11 +1,11 @@
 use {
-    self::trade_verifier::balance_overrides,
     crate::{
         arguments::{self, display_option, display_secret_option},
         trade_finding::{Interaction, QuoteExecution},
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, ensure},
+    balance_overrides,
     bigdecimal::BigDecimal,
     futures::future::BoxFuture,
     itertools::Itertools,

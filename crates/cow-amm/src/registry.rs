@@ -2,12 +2,10 @@ use {
     crate::{Amm, cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval},
     alloy::primitives::Address,
     contracts::alloy::cow_amm::CowAmmLegacyHelper,
-    ethrpc::{
-        AlloyProvider,
-        block_stream::{BlockRetriever, CurrentBlockWatcher},
-    },
-    shared::{
-        event_handling::EventHandler,
+    ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
+    event_indexing::{
+        block_retriever::BlockRetriever,
+        event_handler::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
     },
     sqlx::PgPool,

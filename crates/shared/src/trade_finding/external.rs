@@ -3,7 +3,6 @@
 use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
-        request_sharing::{BoxRequestSharing, RequestSharing},
         trade_finding::{
             Interaction,
             LegacyTrade,
@@ -20,6 +19,7 @@ use {
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::FutureExt,
     observe::tracing::distributed::headers::tracing_headers,
+    request_sharing::{BoxRequestSharing, RequestSharing},
     reqwest::{Client, header},
     tracing::instrument,
     url::Url,

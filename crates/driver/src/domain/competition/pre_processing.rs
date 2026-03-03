@@ -9,12 +9,14 @@ use {
         },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
     },
+    account_balances::{BalanceFetching, Query},
     alloy::primitives::{Bytes, FixedBytes},
     anyhow::{Context, Result},
     axum::{
         body::{self, Body},
         http::Request,
     },
+    balance_overrides::BalanceOverrideRequest,
     chrono::Utc,
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
@@ -23,11 +25,7 @@ use {
         order::{OrderKind, SellTokenSource},
         signature::Signature,
     },
-    shared::{
-        account_balances::{BalanceFetching, Query},
-        price_estimation::trade_verifier::balance_overrides::BalanceOverrideRequest,
-        signature_validator::SignatureValidating,
-    },
+    shared::signature_validator::SignatureValidating,
     std::{
         collections::HashMap,
         future::Future,

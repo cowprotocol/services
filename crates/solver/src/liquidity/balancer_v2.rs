@@ -15,12 +15,12 @@ use {
     },
     alloy::primitives::{Address, B256},
     anyhow::Result,
-    model::TokenPair,
-    shared::{
-        http_solver::model::TokenAmount,
+    liquidity_sources::{
+        balancer_v2::pool_fetching::BalancerPoolFetching,
         recent_block_cache::Block,
-        sources::balancer_v2::pool_fetching::BalancerPoolFetching,
     },
+    model::TokenPair,
+    shared::http_solver::model::TokenAmount,
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,
 };
@@ -196,14 +196,8 @@ mod tests {
         super::*,
         alloy::primitives::U256,
         contracts::alloy::BalancerV2Vault,
-        maplit::{btreemap, hashset},
-        mockall::predicate::*,
-        model::TokenPair,
-        shared::{
-            baseline_solver::BaseTokens,
-            http_solver::model::{InternalizationStrategy, TokenAmount},
-            interaction::Interaction,
-            sources::balancer_v2::{
+        liquidity_sources::{
+            balancer_v2::{
                 pool_fetching::{
                     AmplificationParameter,
                     CommonPoolState,
@@ -217,6 +211,14 @@ mod tests {
                 },
                 swap::fixed_point::Bfp,
             },
+            base_tokens::BaseTokens,
+        },
+        maplit::{btreemap, hashset},
+        mockall::predicate::*,
+        model::TokenPair,
+        shared::{
+            http_solver::model::{InternalizationStrategy, TokenAmount},
+            interaction::Interaction,
         },
     };
 

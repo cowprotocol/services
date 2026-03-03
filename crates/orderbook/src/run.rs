@@ -9,6 +9,7 @@ use {
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
+    account_balances::{self, BalanceSimulator},
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
@@ -27,10 +28,8 @@ use {
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     shared::{
-        account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::list_based::DenyListedTokens,
-        code_fetching::CachedCodeFetcher,
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
@@ -40,11 +39,12 @@ use {
             QuoteVerificationMode,
             factory::{self, PriceEstimatorFactory},
             native::{FallbackNativePriceEstimator, NativePriceEstimating},
+            trade_verifier::code_fetching::CachedCodeFetcher,
         },
         signature_validator,
-        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
 };
 

@@ -1,13 +1,12 @@
-pub mod balance_overrides;
-
 use {
-    self::balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     super::{Estimate, Verification},
     crate::{
-        code_fetching::CodeFetching,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
-        tenderly_api::TenderlyCodeSimulator,
+        price_estimation::trade_verifier::{
+            code_fetching::CodeFetching,
+            tenderly_api::TenderlyCodeSimulator,
+        },
         trade_finding::{
             Interaction,
             QuoteExecution,
@@ -22,6 +21,7 @@ use {
         rpc::types::{eth::state::StateOverride, state::AccountOverride},
     },
     anyhow::{Context, Result, anyhow},
+    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     bigdecimal::BigDecimal,
     contracts::alloy::{
         GPv2Settlement,
@@ -51,6 +51,9 @@ use {
     },
     tracing::instrument,
 };
+
+pub mod code_fetching;
+pub mod tenderly_api;
 
 #[async_trait::async_trait]
 pub trait TradeVerifying: Send + Sync + 'static {

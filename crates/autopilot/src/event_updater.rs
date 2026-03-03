@@ -1,8 +1,9 @@
 use {
     anyhow::Result,
-    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
-    shared::{
-        event_handling::{EventHandler, EventRetrieving, EventStoring},
+    ethrpc::block_stream::BlockNumberHash,
+    event_indexing::{
+        block_retriever::BlockRetrieving,
+        event_handler::{EventHandler, EventRetrieving, EventStoring},
         maintenance::Maintaining,
     },
     std::sync::Arc,

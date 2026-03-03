@@ -1,9 +1,6 @@
 use {
-    crate::price_estimation::trade_verifier::balance_overrides::{
-        BalanceOverrideRequest,
-        BalanceOverriding,
-    },
     alloy::primitives::{Address, FixedBytes},
+    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     contracts::alloy::GPv2Settlement,
     ethrpc::Web3,
     hex_literal::hex,

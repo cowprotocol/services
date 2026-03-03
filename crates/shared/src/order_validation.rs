@@ -1,8 +1,6 @@
 use {
     crate::{
-        account_balances::{self, BalanceFetching, TransferSimulationError},
         bad_token::list_based::DenyListedTokens,
-        code_fetching::CodeFetching,
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
@@ -13,15 +11,17 @@ use {
         price_estimation::{
             PriceEstimationError,
             Verification,
-            trade_verifier::balance_overrides::BalanceOverrideRequest,
+            trade_verifier::code_fetching::CodeFetching,
         },
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
+    account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
+    balance_overrides::BalanceOverrideRequest,
     contracts::alloy::{HooksTrampoline, WETH9},
     model::{
         DomainSeparator,
@@ -1037,11 +1037,11 @@ mod tests {
     use {
         super::*,
         crate::{
-            account_balances::MockBalanceFetching,
-            code_fetching::MockCodeFetching,
             order_quoting::{FindQuoteError, MockOrderQuoting},
+            price_estimation::trade_verifier::code_fetching::MockCodeFetching,
             signature_validator::MockSignatureValidating,
         },
+        account_balances::MockBalanceFetching,
         alloy::{
             primitives::{Address, U160, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},

@@ -1,7 +1,8 @@
 use {
     crate::domain::liquidity::limit_order::LimitOrder,
     alloy::primitives::{Address, U256},
-    shared::{baseline_solver::BaselineSolvable, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
+    liquidity_sources::baseline_solvable::BaselineSolvable,
+    shared::price_estimation::gas::GAS_PER_ZEROEX_ORDER,
 };
 
 // Follows 0x's contract implementation: <https://github.com/0xProject/protocol/blob/%400x/contracts-utils%404.8.52/contracts/utils/contracts/src/v06/LibMathV06.sol#L71-L83>

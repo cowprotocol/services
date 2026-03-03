@@ -4,8 +4,8 @@ use {
         QuoteExactInputSingleParams,
         QuoteExactOutputSingleParams,
     },
+    liquidity_sources::baseline_solvable::BaselineSolvable,
     model::TokenPair,
-    shared::baseline_solver::BaselineSolvable,
     std::sync::Arc,
 };
 
