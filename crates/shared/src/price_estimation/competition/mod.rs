@@ -1,10 +1,11 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::{gas_price_estimation::GasPriceEstimating, price_estimation::PriceEstimationError},
+    crate::price_estimation::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
         stream::{FuturesUnordered, StreamExt},
     },
+    gas_price_estimation::GasPriceEstimating,
     model::order::OrderKind,
     std::{
         cmp::Ordering,

@@ -160,15 +160,13 @@ impl RankingContext {
 mod tests {
     use {
         super::*,
-        crate::{
-            gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::{
-                MockPriceEstimating,
-                QuoteVerificationMode,
-                native::MockNativePriceEstimating,
-            },
+        crate::price_estimation::{
+            MockPriceEstimating,
+            QuoteVerificationMode,
+            native::MockNativePriceEstimating,
         },
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
+        gas_price_estimation::FakeGasPriceEstimator,
         model::order::OrderKind,
     };
 

@@ -2,28 +2,26 @@ pub mod configurable_alloy;
 pub mod driver;
 pub mod eth_node;
 pub mod fake;
+pub mod gas_price;
 pub mod priority;
 
 use {
     crate::{
-        gas_price_estimation::{
-            configurable_alloy::{
-                ConfigurableGasPriceEstimator,
-                EstimatorConfig,
-                default_past_blocks,
-                default_reward_percentile,
-            },
-            eth_node::NodeGasPriceEstimator,
-            priority::PriorityGasPriceEstimating,
+        configurable_alloy::{
+            ConfigurableGasPriceEstimator,
+            EstimatorConfig,
+            default_past_blocks,
+            default_reward_percentile,
         },
-        http_client::HttpClientFactory,
-        web3::Web3,
+        eth_node::NodeGasPriceEstimator,
+        priority::PriorityGasPriceEstimating,
     },
     ::alloy::{
         eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
         providers::Provider,
     },
     anyhow::Result,
+    ethrpc::Web3,
     std::str::FromStr,
     tracing::instrument,
     url::Url,
@@ -72,7 +70,7 @@ impl FromStr for GasEstimatorType {
 
 #[instrument(skip_all)]
 pub async fn create_priority_estimator(
-    http_factory: &HttpClientFactory,
+    http_client: reqwest::Client,
     web3: &Web3,
     estimator_types: &[GasEstimatorType],
 ) -> Result<impl GasPriceEstimating + use<>> {
@@ -84,7 +82,7 @@ pub async fn create_priority_estimator(
         match estimator_type {
             GasEstimatorType::Driver(url) => {
                 estimators.push(Box::new(DriverGasEstimator::new(
-                    http_factory.create(),
+                    http_client.clone(),
                     url.clone(),
                     web3.provider.clone(),
                 )));

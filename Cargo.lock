@@ -1226,6 +1226,7 @@ dependencies = [
  "ethrpc",
  "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -2928,6 +2929,7 @@ dependencies = [
  "ethrpc",
  "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -3450,6 +3452,25 @@ name = "futures-utils-wasm"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42012b0f064e01aa58b545fe3727f90f7dd4020f4a3ea735b50344965f5a57e9"
+
+[[package]]
+name = "gas-price-estimation"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "ethrpc",
+ "futures",
+ "mockall",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest 0.13.2",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "generic-array"
@@ -5014,6 +5035,7 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -5751,6 +5773,7 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "humantime",
  "mimalloc",
  "mockall",
@@ -6591,6 +6614,7 @@ dependencies = [
  "ethrpc",
  "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "indexmap 2.13.0",

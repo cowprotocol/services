@@ -258,8 +258,8 @@ pub async fn run(
     );
 
     let gas_price_estimator = Arc::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
+        gas_price_estimation::create_priority_estimator(
+            http_factory.create(),
             &web3,
             args.shared.gas_estimators.as_slice(),
         )

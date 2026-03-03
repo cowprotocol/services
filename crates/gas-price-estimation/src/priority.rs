@@ -1,5 +1,5 @@
 use {
-    crate::gas_price_estimation::GasPriceEstimating,
+    crate::GasPriceEstimating,
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::{Result, anyhow},
     std::{
@@ -75,11 +75,7 @@ impl GasPriceEstimating for PriorityGasPriceEstimating {
 #[cfg(test)]
 mod tests {
     use {
-        crate::gas_price_estimation::{
-            GasPriceEstimating,
-            MockGasPriceEstimating,
-            priority::PriorityGasPriceEstimating,
-        },
+        crate::{GasPriceEstimating, MockGasPriceEstimating, priority::PriorityGasPriceEstimating},
         alloy::eips::eip1559::Eip1559Estimation,
         anyhow::anyhow,
         futures::future::FutureExt,

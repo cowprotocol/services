@@ -8,7 +8,6 @@ use {
     crate::{
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
-        gas_price_estimation::GasPriceEstimating,
         order_validation::PreOrderData,
         price_estimation::{Estimate, QuoteVerificationMode, Verification},
         trade_finding::external::dto,
@@ -19,6 +18,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     futures::TryFutureExt,
+    gas_price_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
         order::{OrderClass, OrderKind},
@@ -784,13 +784,10 @@ pub struct QuoteMetadataV1 {
 mod tests {
     use {
         super::*,
-        crate::{
-            gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME,
-                MockPriceEstimating,
-                native::MockNativePriceEstimating,
-            },
+        crate::price_estimation::{
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            MockPriceEstimating,
+            native::MockNativePriceEstimating,
         },
         Address,
         U256 as AlloyU256,
@@ -798,6 +795,7 @@ mod tests {
         alloy::eips::eip1559::Eip1559Estimation,
         chrono::Utc,
         futures::FutureExt,
+        gas_price_estimation::FakeGasPriceEstimator,
         mockall::{Sequence, predicate::eq},
         model::time,
         number::nonzero::NonZeroU256,

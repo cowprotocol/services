@@ -1,5 +1,5 @@
 use {
-    crate::gas_price_estimation::GasPriceEstimating,
+    crate::GasPriceEstimating,
     alloy::{
         eips::{BlockId, eip1559::Eip1559Estimation},
         providers::{DynProvider, Provider},

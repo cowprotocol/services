@@ -29,6 +29,7 @@ derive_more = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
 futures = { workspace = true }
+gas-price-estimation = { workspace = true }
 observe = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }

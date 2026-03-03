@@ -2,14 +2,11 @@ pub use load::load;
 use {
     crate::{domain::eth, infra},
     alloy::{eips::BlockNumberOrTag, primitives::Address},
+    gas_price_estimation::configurable_alloy::{default_past_blocks, default_reward_percentile},
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
-    shared::gas_price_estimation::configurable_alloy::{
-        default_past_blocks,
-        default_reward_percentile,
-    },
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
 };

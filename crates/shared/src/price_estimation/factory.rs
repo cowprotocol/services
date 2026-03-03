@@ -14,7 +14,6 @@ use {
     crate::{
         arguments,
         bad_token::list_based::DenyListedTokens,
-        gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
         price_estimation::{
             ExternalSolver,
@@ -30,6 +29,7 @@ use {
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
+    gas_price_estimation::GasPriceEstimating,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,

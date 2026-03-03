@@ -27,6 +27,7 @@ brotli = "8"
 flate2 = "1.0.30"
 futures = "0.3.30"
 const-hex = "1.17.0"
+gas-price-estimation = { path = "crates/gas-price-estimation" }
 hex-literal = "0.4.1"
 http-body = "1"
 http-body-util = "0.1"

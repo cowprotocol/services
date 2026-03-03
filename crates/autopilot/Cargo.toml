@@ -34,6 +34,7 @@ database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
+gas-price-estimation = { workspace = true }
 brotli = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }

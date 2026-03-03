@@ -2,13 +2,10 @@
 //! the binaries.
 
 use {
-    crate::{
-        fee_factor::FeeFactor,
-        gas_price_estimation::GasEstimatorType,
-        price_estimation::trade_verifier::tenderly_api,
-    },
+    crate::{fee_factor::FeeFactor, price_estimation::trade_verifier::tenderly_api},
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
+    gas_price_estimation::GasEstimatorType,
     observe::TracingConfig,
     std::{
         collections::HashSet,

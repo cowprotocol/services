@@ -5,7 +5,7 @@
 //! anomalies.
 
 use {
-    crate::gas_price_estimation::GasPriceEstimating,
+    crate::GasPriceEstimating,
     alloy::eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
     anyhow::Result,
 };

@@ -23,6 +23,7 @@ use {
         WETH9,
         support::Balances,
     },
+    gas_price_estimation::gas_price::InstrumentedGasEstimator,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
@@ -30,7 +31,6 @@ use {
     shared::{
         arguments::tracing_config,
         bad_token::list_based::DenyListedTokens,
-        gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
@@ -187,8 +187,8 @@ pub async fn run(args: Arguments, config: Configuration) {
     );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
+        gas_price_estimation::create_priority_estimator(
+            http_factory.create(),
             &web3,
             args.shared.gas_estimators.as_slice(),
         )

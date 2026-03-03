@@ -6,7 +6,7 @@
 //! - Reward percentile to use
 
 use {
-    crate::gas_price_estimation::GasPriceEstimating,
+    crate::GasPriceEstimating,
     alloy::{
         eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
         providers::{Provider, utils::eip1559_default_estimator},

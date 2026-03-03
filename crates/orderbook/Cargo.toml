@@ -33,6 +33,7 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
+gas-price-estimation = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 mimalloc = { workspace = true, optional = true }
