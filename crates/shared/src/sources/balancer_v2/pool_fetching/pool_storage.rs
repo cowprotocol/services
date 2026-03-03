@@ -16,10 +16,7 @@
 //!    efficient lookup searching for pools based on token pairs.
 
 use {
-    crate::{
-        event_handling::EventStoring,
-        sources::balancer_v2::pools::{FactoryIndexing, PoolIndexing, common},
-    },
+    crate::sources::balancer_v2::pools::{FactoryIndexing, PoolIndexing, common},
     alloy::{
         primitives::{Address, B256},
         rpc::types::Log,
@@ -30,6 +27,7 @@ use {
         PoolCreated,
     },
     ethrpc::block_stream::RangeInclusive,
+    event_indexing::event_handler::EventStoring,
     model::TokenPair,
     std::{
         cmp,

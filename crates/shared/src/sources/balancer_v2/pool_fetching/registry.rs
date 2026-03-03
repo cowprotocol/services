@@ -4,8 +4,6 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        event_handling::{AlloyEventRetrieving, EventHandler},
-        maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::{
             pool_fetching::BalancerFactoryInstance,
@@ -24,6 +22,10 @@ use {
     ethrpc::{
         alloy::errors::ContractErrorExt,
         block_stream::{BlockNumberHash, BlockRetrieving},
+    },
+    event_indexing::{
+        event_handler::{AlloyEventRetrieving, EventHandler},
+        maintenance::Maintaining,
     },
     futures::future,
     model::TokenPair,

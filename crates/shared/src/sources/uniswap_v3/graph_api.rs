@@ -2,12 +2,10 @@
 //! data from the Uniswap V3 subgraph.
 
 use {
-    crate::{
-        event_handling::MAX_REORG_BLOCK_COUNT,
-        subgraph::{ContainsId, SubgraphClient},
-    },
+    crate::subgraph::{ContainsId, SubgraphClient},
     alloy::primitives::{Address, U256},
     anyhow::Result,
+    event_indexing::event_handler::MAX_REORG_BLOCK_COUNT,
     num::BigInt,
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},

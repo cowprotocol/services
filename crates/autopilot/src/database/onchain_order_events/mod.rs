@@ -31,6 +31,7 @@ use {
         Web3,
         block_stream::{RangeInclusive, timestamp_of_block_in_seconds},
     },
+    event_indexing::event_handler::EventStoring,
     futures::{StreamExt, stream},
     itertools::{izip, multiunzip},
     model::{
@@ -53,7 +54,6 @@ use {
             sell_token_source_into,
             signing_scheme_into,
         },
-        event_handling::EventStoring,
         order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
             ValidationError,

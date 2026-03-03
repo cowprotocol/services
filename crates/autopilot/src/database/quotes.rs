@@ -4,22 +4,21 @@ use {
         domain::{self},
         infra::persistence::dto,
     },
-    anyhow::{Context, Result},
+    anyhow::Result,
     database::byte_array::ByteArray,
-    shared::maintenance::Maintaining,
-    sqlx::types::chrono::{DateTime, Utc},
+    sqlx::types::chrono::Utc,
     std::collections::HashMap,
 };
 
 impl Postgres {
-    pub async fn remove_expired_quotes(&self, max_expiry: DateTime<Utc>) -> Result<()> {
+    pub async fn remove_expired_quotes(&self) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["remove_expired_quotes"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        database::quotes::remove_expired_quotes(&mut ex, max_expiry).await?;
+        database::quotes::remove_expired_quotes(&mut ex, Utc::now()).await?;
         Ok(())
     }
 
@@ -59,18 +58,5 @@ impl Postgres {
             tracing::warn!(?order_uid, "quote not found for order");
         }
         Ok(quotes)
-    }
-}
-
-#[async_trait::async_trait]
-impl Maintaining for Postgres {
-    async fn run_maintenance(&self) -> Result<()> {
-        self.remove_expired_quotes(Utc::now())
-            .await
-            .context("fee measurement maintenance error")
-    }
-
-    fn name(&self) -> &str {
-        "Postgres"
     }
 }

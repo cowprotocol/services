@@ -1204,6 +1204,7 @@ dependencies = [
  "database",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-indexing",
  "futures",
  "hex-literal",
  "humantime",
@@ -2505,6 +2506,7 @@ dependencies = [
  "contracts",
  "database",
  "ethrpc",
+ "event-indexing",
  "futures",
  "model",
  "observe",
@@ -2902,6 +2904,7 @@ dependencies = [
  "dashmap",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-indexing",
  "futures",
  "hex-literal",
  "humantime",
@@ -3130,6 +3133,26 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "event-indexing"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "contracts",
+ "ethrpc",
+ "futures",
+ "mockall",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -6488,6 +6511,7 @@ dependencies = [
  "database",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-indexing",
  "futures",
  "hex-literal",
  "humantime",

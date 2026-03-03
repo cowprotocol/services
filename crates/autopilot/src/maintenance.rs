@@ -15,13 +15,13 @@ use {
     },
     anyhow::Result,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher, into_stream},
+    event_indexing::maintenance::Maintaining,
     futures::{FutureExt, StreamExt},
     prometheus::{
         HistogramVec,
         IntCounterVec,
         core::{AtomicU64, GenericGauge},
     },
-    shared::maintenance::Maintaining,
     std::{
         future::Future,
         sync::Arc,
@@ -235,7 +235,7 @@ impl Maintenance {
         let _timer = observe::metrics::metrics()
             .on_auction_overhead_start("autopilot", "maintenance_optional");
         tokio::try_join!(
-            Self::timed_future("db_cleanup", self.db_cleanup.run_maintenance()),
+            Self::timed_future("db_cleanup", self.db_cleanup.remove_expired_quotes()),
             Self::timed_future(
                 "ethflow_refund_indexer",
                 futures::future::try_join_all(

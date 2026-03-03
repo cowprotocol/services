@@ -3,12 +3,7 @@ use {
         event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
         graph_api::{PoolData, Token, UniV3SubgraphClient},
     },
-    crate::{
-        event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
-        maintenance::Maintaining,
-        recent_block_cache::Block,
-        sources::uniswap_v3::event_fetching::WithAddress,
-    },
+    crate::{recent_block_cache::Block, sources::uniswap_v3::event_fetching::WithAddress},
     alloy::{
         primitives::{Address, U256},
         rpc::types::Log,
@@ -22,6 +17,10 @@ use {
         Web3,
         alloy::ProviderLabelingExt,
         block_stream::{BlockRetrieving, RangeInclusive},
+    },
+    event_indexing::{
+        event_handler::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
+        maintenance::Maintaining,
     },
     model::TokenPair,
     num::{BigInt, Zero, rational::Ratio},

@@ -10,9 +10,10 @@
 
 use {
     super::swap::fixed_point::Bfp,
-    crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
+    crate::subgraph::SubgraphClient,
     alloy::primitives::{Address, B256},
     anyhow::Result,
+    event_indexing::event_handler::MAX_REORG_BLOCK_COUNT,
     reqwest::{Client, Url},
     serde::Deserialize,
     serde_json::json,

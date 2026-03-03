@@ -6,8 +6,8 @@ use {
         AlloyProvider,
         block_stream::{BlockRetriever, CurrentBlockWatcher},
     },
-    shared::{
-        event_handling::EventHandler,
+    event_indexing::{
+        event_handler::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
     },
     sqlx::PgPool,

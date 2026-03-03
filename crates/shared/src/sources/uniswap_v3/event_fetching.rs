@@ -1,5 +1,4 @@
 use {
-    crate::event_handling::{AlloyEventRetrieving, EventStoring},
     UniswapV3Pool::UniswapV3Pool::UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
     alloy::{
         primitives::Address,
@@ -13,6 +12,7 @@ use {
         UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap, UniswapV3PoolEvents},
     },
     ethrpc::block_stream::RangeInclusive,
+    event_indexing::event_handler::{AlloyEventRetrieving, EventStoring},
     std::collections::BTreeMap,
 };
 

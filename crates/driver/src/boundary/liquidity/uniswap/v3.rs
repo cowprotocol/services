@@ -12,10 +12,10 @@ use {
     },
     anyhow::Context,
     ethrpc::block_stream::BlockRetrieving,
+    event_indexing::maintenance::ServiceMaintenance,
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
-        maintenance::ServiceMaintenance,
         sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
     },
     solver::{

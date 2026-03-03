@@ -8,7 +8,7 @@ use {
     },
     database::byte_array::ByteArray,
     ethrpc::block_stream::RangeInclusive,
-    shared::event_handling::EventStoring,
+    event_indexing::event_handler::EventStoring,
     sqlx::PgPool,
     std::{collections::HashMap, sync::Arc},
     tokio::sync::RwLock,
