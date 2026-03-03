@@ -3,12 +3,12 @@
 
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
-    crate::{
-        recent_block_cache::Block,
-        sources::balancer_v2::{
+    crate::sources::{
+        balancer_v2::{
             pool_fetching::BalancerFactoryInstance,
             pools::{FactoryIndexing, Pool, PoolStatus, common::PoolInfoFetching},
         },
+        recent_block_cache::Block,
     },
     BalancerV2BasePoolFactory::BalancerV2BasePoolFactory::BalancerV2BasePoolFactoryEvents,
     alloy::{

@@ -5,9 +5,9 @@
 
 use {
     super::internal::InternalPoolFetching,
-    crate::{
+    crate::sources::{
+        balancer_v2::pools::Pool,
         recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
-        sources::balancer_v2::pools::Pool,
     },
     alloy::primitives::B256,
     anyhow::Result,

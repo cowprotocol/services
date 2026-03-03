@@ -13,8 +13,7 @@ use {
     num::{CheckedMul, rational::Ratio},
     shared::{
         http_solver::model::TokenAmount,
-        recent_block_cache::Block,
-        sources::uniswap_v3::pool_fetching::PoolFetching,
+        sources::{recent_block_cache::Block, uniswap_v3::pool_fetching::PoolFetching},
     },
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,

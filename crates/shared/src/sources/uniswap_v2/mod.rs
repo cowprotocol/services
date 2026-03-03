@@ -168,7 +168,7 @@ impl FromStr for UniV2BaselineSourceParameters {
 mod tests {
     use {
         super::*,
-        crate::recent_block_cache::Block,
+        crate::sources::recent_block_cache::Block,
         alloy::{
             primitives::{Address, B256, address},
             providers::Provider,

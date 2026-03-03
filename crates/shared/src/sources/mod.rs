@@ -1,6 +1,7 @@
 //! Top-level module organizing all baseline liquidity sources.
 
 pub mod balancer_v2;
+pub mod recent_block_cache;
 pub mod subgraph;
 pub mod swapr;
 pub mod uniswap_v2;

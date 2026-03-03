@@ -3,7 +3,7 @@ use {
         event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
         graph_api::{PoolData, Token, UniV3SubgraphClient},
     },
-    crate::{recent_block_cache::Block, sources::uniswap_v3::event_fetching::WithAddress},
+    crate::sources::{recent_block_cache::Block, uniswap_v3::event_fetching::WithAddress},
     alloy::{
         primitives::{Address, U256},
         rpc::types::Log,

@@ -1,7 +1,7 @@
 use {
-    crate::{
+    crate::sources::{
         recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
-        sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
+        uniswap_v2::pool_fetching::{Pool, PoolFetching},
     },
     anyhow::Result,
     ethrpc::block_stream::CurrentBlockWatcher,

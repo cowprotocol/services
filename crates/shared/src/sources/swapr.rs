@@ -55,8 +55,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            recent_block_cache::Block,
-            sources::{BaselineSource, uniswap_v2},
+            sources::{BaselineSource, recent_block_cache::Block, uniswap_v2},
             web3::Web3,
         },
         alloy::{

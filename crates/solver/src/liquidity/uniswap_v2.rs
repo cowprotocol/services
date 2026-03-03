@@ -11,8 +11,7 @@ use {
     model::TokenPair,
     shared::{
         http_solver::model::TokenAmount,
-        recent_block_cache::Block,
-        sources::uniswap_v2::pool_fetching::PoolFetching,
+        sources::{recent_block_cache::Block, uniswap_v2::pool_fetching::PoolFetching},
     },
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,

@@ -2,7 +2,7 @@ use {
     crate::liquidity::Liquidity,
     anyhow::Result,
     model::TokenPair,
-    shared::{baseline_solver::BaseTokens, recent_block_cache::Block},
+    shared::{baseline_solver::BaseTokens, sources::recent_block_cache::Block},
     std::{collections::HashSet, future::Future, sync::Arc, time::Duration},
     tokio::sync::RwLock,
     tracing::{Instrument, instrument},
@@ -146,7 +146,7 @@ mod test {
     use {
         super::*,
         futures::FutureExt,
-        shared::recent_block_cache::Block,
+        shared::sources::recent_block_cache::Block,
         std::sync::atomic::{AtomicUsize, Ordering},
     };
 

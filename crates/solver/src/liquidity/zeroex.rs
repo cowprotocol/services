@@ -15,7 +15,7 @@ use {
     itertools::Itertools,
     model::{TokenPair, order::OrderKind},
     shared::{
-        recent_block_cache::Block,
+        sources::recent_block_cache::Block,
         zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
     },
     std::{

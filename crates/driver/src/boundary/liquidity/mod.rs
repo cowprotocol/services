@@ -10,7 +10,7 @@ use {
     shared::{
         baseline_solver::BaseTokens,
         http_client::HttpClientFactory,
-        recent_block_cache::{self, CacheConfig},
+        sources::recent_block_cache::{self, CacheConfig},
     },
     solver::{
         liquidity::Liquidity,

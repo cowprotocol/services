@@ -1,6 +1,6 @@
 use {
     super::pair_provider::PairProvider,
-    crate::{baseline_solver::BaselineSolvable, recent_block_cache::Block, web3::Web3},
+    crate::{baseline_solver::BaselineSolvable, sources::recent_block_cache::Block, web3::Web3},
     alloy::{
         eips::BlockId,
         primitives::{Address, U256},
@@ -345,7 +345,7 @@ fn handle_results(fetched_pool: FetchedPool, address: Address) -> Result<Option<
 pub mod test_util {
     use {
         super::{Pool, PoolFetching},
-        crate::recent_block_cache::Block,
+        crate::sources::recent_block_cache::Block,
         anyhow::Result,
         model::TokenPair,
         std::collections::HashSet,

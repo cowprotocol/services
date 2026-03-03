@@ -3,7 +3,7 @@
 
 use {
     super::internal::InternalPoolFetching,
-    crate::{recent_block_cache::Block, sources::balancer_v2::pools::Pool},
+    crate::sources::{balancer_v2::pools::Pool, recent_block_cache::Block},
     alloy::primitives::B256,
     anyhow::Result,
     futures::future,

@@ -18,8 +18,7 @@ use {
     model::TokenPair,
     shared::{
         http_solver::model::TokenAmount,
-        recent_block_cache::Block,
-        sources::balancer_v2::pool_fetching::BalancerPoolFetching,
+        sources::{balancer_v2::pool_fetching::BalancerPoolFetching, recent_block_cache::Block},
     },
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,
