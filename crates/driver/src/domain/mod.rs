@@ -9,7 +9,7 @@ pub mod time;
 pub use {
     competition::Competition,
     liquidity::Liquidity,
-    mempools::{DelegatedSubmission, Mempools, RevertProtection},
+    mempools::{Mempools, RevertProtection},
 };
 
 pub type BlockNo = u64;

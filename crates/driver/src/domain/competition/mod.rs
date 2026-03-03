@@ -2,7 +2,7 @@ use {
     self::solution::settlement,
     super::{
         Mempools,
-        mempools::DelegatedSubmission,
+        mempools::SubmissionMode,
         time::{self, Remaining},
     },
     crate::{
@@ -184,13 +184,13 @@ enum GuardInner {
 }
 
 impl SubmitterGuard {
-    fn delegation_context(&self) -> Option<DelegatedSubmission> {
+    fn submission_mode(&self) -> SubmissionMode {
         match &self.inner {
-            GuardInner::Direct(_) => None,
-            GuardInner::Delegated { account, .. } => Some(DelegatedSubmission {
+            GuardInner::Direct(_) => SubmissionMode::Direct(self.solver_address),
+            GuardInner::Delegated { account, .. } => SubmissionMode::Delegated {
                 submitter_eoa: account.address(),
                 solver_eoa: self.solver_address,
-            }),
+            },
             GuardInner::Dropped => unreachable!(),
         }
     }
@@ -881,11 +881,11 @@ impl Competition {
             .acquire()
             .await
             .ok_or(Error::SubmissionError)?;
-        let delegated_ctx = guard.delegation_context();
+        let mode = guard.submission_mode();
 
         let executed = self
             .mempools
-            .execute(&settlement, submission_deadline, delegated_ctx.as_ref())
+            .execute(&settlement, submission_deadline, &mode)
             .await;
 
         notify::executed(

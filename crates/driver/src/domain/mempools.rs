@@ -26,17 +26,21 @@ const GAS_PRICE_BUMP_PCT: u64 = 13;
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
 
-/// Context for EIP-7702 delegated submission. When present, a dedicated
-/// submission EOA signs and pays for the tx while routing it through the
-/// solver's delegated code.
+/// How the settlement transaction should be submitted on-chain.
 #[derive(Debug, Clone)]
-pub struct DelegatedSubmission {
-    /// The address that signs the transaction and whose nonce is used.
-    pub submitter_eoa: eth::Address,
-    /// The solver EOA address. In EIP-7702 mode tx.to is set to this address
-    /// (which delegates to a forwarder contract), instead of the settlement
-    /// contract.
-    pub solver_eoa: eth::Address,
+pub enum SubmissionMode {
+    /// Solver EOA signs and submits directly to the settlement contract.
+    Direct(eth::Address),
+    /// A dedicated submission EOA signs and pays for the tx while routing it
+    /// through the solver's EIP-7702 delegated forwarder contract.
+    Delegated {
+        /// The address that signs the transaction and whose nonce is used.
+        submitter_eoa: eth::Address,
+        /// The solver EOA address. In EIP-7702 mode tx.to is set to this
+        /// address (which delegates to a forwarder contract), instead of the
+        /// settlement contract.
+        solver_eoa: eth::Address,
+    },
 }
 
 /// The mempools used to execute settlements.
@@ -55,19 +59,16 @@ impl Mempools {
         }
     }
 
-    /// Publish a settlement to the mempools. When `delegated` is `Some`, the
-    /// settlement is submitted via an EIP-7702 submission account instead of
-    /// the solver directly.
     pub async fn execute(
         &self,
         settlement: &Settlement,
         submission_deadline: BlockNo,
-        delegated: Option<&DelegatedSubmission>,
+        mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
         let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
             async move {
                 let result = self
-                    .submit(mempool, settlement, submission_deadline, delegated)
+                    .submit(mempool, settlement, submission_deadline, mode)
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
                 observe::mempool_executed(mempool, settlement, &result);
@@ -98,7 +99,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         settlement: &Settlement,
         submission_deadline: BlockNo,
-        delegated: Option<&DelegatedSubmission>,
+        mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
@@ -110,10 +111,7 @@ impl Mempools {
         }
 
         let tx = settlement.transaction(settlement::Internalization::Enable);
-        let tx = wrap_for_delegated_submission(tx, delegated);
-
-        // The address that signs and pays for gas: either the submission EOA in
-        // EIP-7702 mode or the solver EOA.
+        let tx = prepare_submission(tx, mode);
         let signer = tx.from;
 
         // Instantiate block stream and skip the current block before we submit the
@@ -375,17 +373,22 @@ impl Mempools {
     }
 }
 
-/// In EIP-7702 mode, reroute the tx through the solver EOA's delegated
-/// forwarder contract. The original target and calldata are wrapped in a
-/// `forward()` call. `from` is set to the submission EOA so that simulations
-/// see the correct `msg.sender` for the forwarder's caller whitelist.
-fn wrap_for_delegated_submission(tx: &eth::Tx, delegated: Option<&DelegatedSubmission>) -> eth::Tx {
-    match delegated {
-        Some(ctx) => {
-            let mut tx = tx.clone();
+/// Prepare the settlement tx for the given submission mode. Sets `tx.from`
+/// explicitly in both cases so the signer is always determined by the mode.
+fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
+    let mut tx = tx.clone();
+    match mode {
+        SubmissionMode::Direct(solver_eoa) => {
+            tx.from = *solver_eoa;
+            tx
+        }
+        SubmissionMode::Delegated {
+            submitter_eoa,
+            solver_eoa,
+        } => {
             let original_target = tx.to;
-            tx.from = ctx.submitter_eoa;
-            tx.to = ctx.solver_eoa;
+            tx.from = *submitter_eoa;
+            tx.to = *solver_eoa;
             tx.input = CowSettlementForwarder::forwardCall {
                 target: original_target,
                 data: tx.input.clone(),
@@ -394,7 +397,6 @@ fn wrap_for_delegated_submission(tx: &eth::Tx, delegated: Option<&DelegatedSubmi
             .into();
             tx
         }
-        None => tx.clone(),
     }
 }
 
