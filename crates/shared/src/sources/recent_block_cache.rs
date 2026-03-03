@@ -25,7 +25,6 @@
 //! could simplify this module if it was only used by by the former.
 
 use {
-    crate::request_sharing::BoxRequestSharing,
     alloy::eips::BlockId,
     anyhow::{Context, Result},
     cached::{Cached, SizedCache},
@@ -33,6 +32,7 @@ use {
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
     prometheus::IntCounterVec,
+    request_sharing::BoxRequestSharing,
     std::{
         cmp,
         collections::{BTreeMap, HashMap, HashSet, hash_map::Entry},

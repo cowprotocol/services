@@ -2941,6 +2941,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
+ "request-sharing",
  "reqwest 0.13.2",
  "s3",
  "serde",
@@ -5766,6 +5767,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
+name = "request-sharing"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "tokio",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6553,6 +6565,7 @@ dependencies = [
  "rand 0.8.5",
  "rate-limit",
  "regex",
+ "request-sharing",
  "reqwest 0.13.2",
  "rust_decimal",
  "serde",

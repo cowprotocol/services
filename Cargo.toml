@@ -41,6 +41,7 @@ prometheus = "0.14"
 prometheus-metric-storage = "0.6"
 rand = "0.8.5"
 regex = "1.10.4"
+request-sharing = { path = "crates/request-sharing" }
 reqwest = "0.13"
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }

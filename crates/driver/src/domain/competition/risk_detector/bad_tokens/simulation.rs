@@ -6,10 +6,8 @@ use {
     },
     futures::FutureExt,
     model::interaction::InteractionData,
-    shared::{
-        bad_token::{TokenQuality, trace_call::TraceCallDetectorRaw},
-        request_sharing::BoxRequestSharing,
-    },
+    request_sharing::BoxRequestSharing,
+    shared::bad_token::{TokenQuality, trace_call::TraceCallDetectorRaw},
     std::{
         sync::Arc,
         time::{Duration, Instant},

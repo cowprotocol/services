@@ -20,7 +20,6 @@ pub mod order_quoting;
 pub mod order_validation;
 pub mod price_estimation;
 pub mod remaining_amounts;
-pub mod request_sharing;
 pub mod signature_validator;
 pub mod sources;
 pub mod token_info;

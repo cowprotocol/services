@@ -1,0 +1,16 @@
+[package]
+name = "request-sharing"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+futures = { workspace = true }
+observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
