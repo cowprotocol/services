@@ -9,14 +9,12 @@ use {
     },
     contracts::alloy::IUniswapLikeRouter,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    shared::{
-        http_solver::model::TokenAmount,
-        sources::uniswap_v2::{
-            pair_provider::PairProvider,
-            pool_cache::PoolCache,
-            pool_fetching::{DefaultPoolReader, PoolFetcher, PoolReading},
-        },
+    liquidity_sources::uniswap_v2::{
+        pair_provider::PairProvider,
+        pool_cache::PoolCache,
+        pool_fetching::{DefaultPoolReader, PoolFetcher, PoolReading},
     },
+    shared::http_solver::model::TokenAmount,
     solver::{
         liquidity::{
             ConstantProductOrder,

@@ -25,17 +25,16 @@ use {
                 tenderly_api::TenderlyCodeSimulator,
             },
         },
-        token_info::TokenInfoFetching,
-        web3::Web3,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     contracts::alloy::WETH9,
-    ethrpc::{alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
+    ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
+    token_info::TokenInfoFetching,
 };
 
 /// A factory for initializing shared price estimators.

@@ -42,9 +42,9 @@ use {
             trade_verifier::code_fetching::CachedCodeFetcher,
         },
         signature_validator,
-        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
 };
 

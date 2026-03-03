@@ -62,6 +62,7 @@ sqlx = { workspace = true }
 strum = { workspace = true }
 tikv-jemallocator = { workspace = true }
 thiserror = { workspace = true }
+token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { workspace = true }
 tower = { workspace = true }

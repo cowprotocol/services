@@ -54,6 +54,7 @@ strum = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tempfile = { workspace = true, optional = true }
+token-info = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 toml = { workspace = true }
 tower = { workspace = true }

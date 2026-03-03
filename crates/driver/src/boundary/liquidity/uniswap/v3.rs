@@ -12,11 +12,8 @@ use {
     },
     anyhow::Context,
     event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
-    shared::{
-        http_solver::model::TokenAmount,
-        interaction::Interaction,
-        sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-    },
+    liquidity_sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+    shared::{http_solver::model::TokenAmount, interaction::Interaction},
     solver::{
         liquidity::{
             ConcentratedLiquidity,

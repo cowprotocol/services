@@ -1,8 +1,8 @@
 use {
     crate::liquidity::Liquidity,
     anyhow::Result,
+    liquidity_sources::{base_tokens::BaseTokens, recent_block_cache::Block},
     model::TokenPair,
-    shared::{baseline_solver::BaseTokens, sources::recent_block_cache::Block},
     std::{collections::HashSet, future::Future, sync::Arc, time::Duration},
     tokio::sync::RwLock,
     tracing::{Instrument, instrument},
@@ -146,7 +146,7 @@ mod test {
     use {
         super::*,
         futures::FutureExt,
-        shared::sources::recent_block_cache::Block,
+        liquidity_sources::recent_block_cache::Block,
         std::sync::atomic::{AtomicUsize, Ordering},
     };
 

@@ -1254,6 +1254,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
+ "token-info",
  "tokio",
  "tokio-stream",
  "toml",
@@ -2931,6 +2932,7 @@ dependencies = [
  "humantime",
  "humantime-serde",
  "itertools 0.14.0",
+ "liquidity-sources",
  "maplit",
  "mimalloc",
  "model",
@@ -2954,6 +2956,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
+ "token-info",
  "tokio",
  "toml",
  "tower 0.5.3",
@@ -2998,6 +3001,7 @@ dependencies = [
  "futures",
  "hex-literal",
  "itertools 0.14.0",
+ "liquidity-sources",
  "model",
  "number",
  "observe",
@@ -4312,6 +4316,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
 
 [[package]]
+name = "liquidity-sources"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "cached",
+ "chain",
+ "clap",
+ "contracts",
+ "ethrpc",
+ "event-indexing",
+ "futures",
+ "hex-literal",
+ "itertools 0.14.0",
+ "maplit",
+ "mockall",
+ "model",
+ "num",
+ "number",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "regex",
+ "request-sharing",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "strum",
+ "testlib",
+ "thiserror 1.0.69",
+ "token-info",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "litemap"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4995,6 +5037,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
+ "token-info",
  "tokio",
  "toml",
  "tower 0.5.3",
@@ -6552,6 +6595,7 @@ dependencies = [
  "humantime",
  "indexmap 2.13.0",
  "itertools 0.14.0",
+ "liquidity-sources",
  "maplit",
  "mockall",
  "model",
@@ -6574,6 +6618,7 @@ dependencies = [
  "strum",
  "testlib",
  "thiserror 1.0.69",
+ "token-info",
  "tokio",
  "toml",
  "tracing",
@@ -6662,6 +6707,7 @@ dependencies = [
  "futures",
  "hex-literal",
  "itertools 0.14.0",
+ "liquidity-sources",
  "maplit",
  "mockall",
  "model",
@@ -6695,6 +6741,8 @@ dependencies = [
  "ethrpc",
  "futures",
  "itertools 0.14.0",
+ "liquidity-sources",
+ "maplit",
  "mimalloc",
  "model",
  "num",
@@ -7291,6 +7339,24 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "token-info"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "contracts",
+ "ethrpc",
+ "futures",
+ "maplit",
+ "mockall",
+ "model",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "tokio"

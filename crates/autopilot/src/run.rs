@@ -45,13 +45,13 @@ use {
             native::NativePriceEstimating,
             trade_verifier::code_fetching::CachedCodeFetcher,
         },
-        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
         sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
+    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };

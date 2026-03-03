@@ -9,12 +9,10 @@ use {
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
     contracts::alloy::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
+    liquidity_sources::{recent_block_cache::Block, uniswap_v3::pool_fetching::PoolFetching},
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},
-    shared::{
-        http_solver::model::TokenAmount,
-        sources::{recent_block_cache::Block, uniswap_v3::pool_fetching::PoolFetching},
-    },
+    shared::http_solver::model::TokenAmount,
     std::{collections::HashSet, sync::Arc},
     tracing::instrument,
 };

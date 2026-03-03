@@ -18,19 +18,17 @@ use {
     },
     ethrpc::block_stream::CurrentBlockWatcher,
     event_indexing::block_retriever::BlockRetrieving,
-    shared::{
-        http_solver::model::TokenAmount,
-        sources::balancer_v2::{
-            BalancerPoolFetcher,
-            pool_fetching::{BalancerContracts, BalancerFactoryInstance},
-        },
-        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    liquidity_sources::balancer_v2::{
+        BalancerPoolFetcher,
+        pool_fetching::{BalancerContracts, BalancerFactoryInstance},
     },
+    shared::http_solver::model::TokenAmount,
     solver::{
         liquidity::balancer_v2::{self, BalancerV2Liquidity},
         liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
     std::sync::Arc,
+    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
 };
 
 pub mod stable;

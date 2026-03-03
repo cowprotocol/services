@@ -53,6 +53,7 @@ strum = { version = "0.27.2", features = ["derive"] }
 tempfile = "3.10.1"
 thiserror = "1.0.61"
 toml = "0.8.14"
+token-info = { path = "crates/token-info" }
 tokio = { version = "1.38.0", features = ["tracing"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.41"
@@ -113,6 +114,7 @@ alloy-sol-macro-input = "1.4.1"
 alloy-sol-macro-expander = "1.4.1"
 jsonrpc-core = "18.0.0"
 serde-ext = { path = "crates/serde-ext" }
+liquidity-sources = { path = "crates/liquidity-sources" }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"

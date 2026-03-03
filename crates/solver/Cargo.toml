@@ -19,6 +19,7 @@ contracts = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
+liquidity-sources = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
@@ -40,6 +41,7 @@ testlib = { workspace = true }
 mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 ethrpc = {workspace = true, features = ["test-util"]}
+liquidity-sources = { workspace = true, features = [ "test-util" ] }
 
 [lints]
 workspace = true

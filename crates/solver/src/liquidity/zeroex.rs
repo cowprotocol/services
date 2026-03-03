@@ -13,11 +13,9 @@ use {
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
+    liquidity_sources::recent_block_cache::Block,
     model::{TokenPair, order::OrderKind},
-    shared::{
-        sources::recent_block_cache::Block,
-        zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
-    },
+    shared::zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -217,8 +215,8 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 pub mod tests {
     use {
         super::*,
+        liquidity_sources::base_tokens::BaseTokens,
         shared::{
-            baseline_solver::BaseTokens,
             http_solver::model::InternalizationStrategy,
             interaction::Interaction,
             zeroex_api::{self, OrderMetadata},

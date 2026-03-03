@@ -3,7 +3,6 @@ pub mod macros;
 
 pub mod arguments;
 pub mod bad_token;
-pub mod baseline_solver;
 pub mod current_block;
 pub mod db_order_conversions;
 pub mod encoded_settlement;
@@ -21,8 +20,6 @@ pub mod order_validation;
 pub mod price_estimation;
 pub mod remaining_amounts;
 pub mod signature_validator;
-pub mod sources;
-pub mod token_info;
 pub mod token_list;
 pub mod trace_many;
 pub mod trade_finding;

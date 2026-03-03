@@ -51,13 +51,14 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
+token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time", "signal"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }
-
 moka = { workspace = true, features = ["sync"] }
 mockall = { workspace = true, optional = true }
+liquidity-sources = { workspace = true }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["rand"] }
