@@ -24,7 +24,7 @@ use {
     },
     alloy::{network::TxSigner as _, primitives::Bytes},
     axum::{body::Body, http::Request},
-    futures::{StreamExt, future::Either, stream::FuturesUnordered},
+    futures::{FutureExt, StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     std::{
         cmp::Reverse,
@@ -112,26 +112,39 @@ impl SubmitterPool {
             });
         }
 
-        // Direct slot busy — use a delegated account if available.
+        // Direct slot busy — race it against delegated accounts if configured.
         if let Some(delegated) = &self.delegated {
-            let account = delegated.acquire.lock().await.recv().await?;
-            tracing::debug!(submitter = ?account.address(), "using EIP-7702 submission account");
-            return Some(SubmitterGuard {
-                inner: GuardInner::Delegated {
-                    account,
-                    release: delegated.release.clone(),
-                },
+            let mut rx = delegated.acquire.lock().await;
+            futures::select_biased! {
+                permit = Arc::clone(&self.direct_slot).acquire_owned().fuse() => {
+                    let permit = permit.ok()?;
+                    tracing::debug!("direct solver EOA slot found");
+                    Some(SubmitterGuard {
+                        inner: GuardInner::Direct(permit),
+                        solver_address: self.solver_address,
+                    })
+                }
+                account = rx.recv().fuse() => {
+                    let account = account?;
+                    tracing::debug!(submitter = ?account.address(), "using EIP-7702 submission account");
+                    Some(SubmitterGuard {
+                        inner: GuardInner::Delegated {
+                            account,
+                            release: delegated.release.clone(),
+                        },
+                        solver_address: self.solver_address,
+                    })
+                }
+            }
+        } else {
+            // No delegated accounts — wait for the direct slot.
+            let permit = Arc::clone(&self.direct_slot).acquire_owned().await.ok()?;
+            tracing::debug!("waited for direct solver EOA slot");
+            Some(SubmitterGuard {
+                inner: GuardInner::Direct(permit),
                 solver_address: self.solver_address,
-            });
+            })
         }
-
-        // No delegated accounts configured — wait for the direct slot.
-        let permit = Arc::clone(&self.direct_slot).acquire_owned().await.ok()?;
-        tracing::debug!("waited for direct solver EOA slot");
-        Some(SubmitterGuard {
-            inner: GuardInner::Direct(permit),
-            solver_address: self.solver_address,
-        })
     }
 
     fn total_slots(&self) -> usize {
