@@ -25,7 +25,6 @@ number = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-regex = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -40,6 +39,7 @@ tokio = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 maplit = { workspace = true }
+regex = { workspace = true }
 testlib = { workspace = true }
 token-info = { workspace = true, features = ["test-util"] }
 

@@ -28,7 +28,6 @@ dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
-event-indexing = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 observe = { workspace = true }
@@ -61,7 +60,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"
 url = { workspace = true }
 moka = { workspace = true, features = ["sync"] }
 mockall = { workspace = true, optional = true }
-liquidity-sources = { workspace = true }
 
 [dev-dependencies]
 account-balances = { workspace = true, features = ["test-util"] }

@@ -17,8 +17,6 @@ async-trait = { workspace = true }
 const-hex = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
-jsonrpc-core.workspace = true
-mockall = { workspace = true, optional = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
@@ -32,12 +30,6 @@ tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
-
-[dev-dependencies]
-mockall = { workspace = true }
-
-[features]
-test-util = ["dep:mockall"]
 
 [lints]
 workspace = true

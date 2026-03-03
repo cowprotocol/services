@@ -46,7 +46,6 @@ serde_with = { workspace = true }
 thiserror = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true }
-toml = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 
@@ -55,6 +54,7 @@ hex-literal = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
 testlib = { workspace = true }
+toml = { workspace = true }
 
 [features]
 test-util = ["dep:mockall"]

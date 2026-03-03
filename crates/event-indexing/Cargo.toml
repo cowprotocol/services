@@ -9,7 +9,6 @@ license = "MIT OR Apache-2.0"
 alloy = { workspace = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true }
-contracts = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 ethrpc = { workspace = true }
@@ -22,6 +21,7 @@ prometheus-metric-storage = { workspace = true }
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
 mockall = { workspace = true }
+contracts = { workspace = true }
 
 [lints]
 workspace = true
