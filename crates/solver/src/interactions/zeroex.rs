@@ -1,10 +1,8 @@
 use {
     contracts::alloy::IZeroex,
-    shared::{
-        interaction::{EncodedInteraction, Interaction},
-        zeroex_api::Order,
-    },
+    shared::interaction::{EncodedInteraction, Interaction},
     std::sync::Arc,
+    zeroex_api::Order,
 };
 
 #[derive(Clone, Debug)]

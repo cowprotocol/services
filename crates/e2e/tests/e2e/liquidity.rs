@@ -296,7 +296,7 @@ fn create_zeroex_liquidity_orders(
     zeroex_addr: Address,
     chain_id: u64,
     weth_address: Address,
-) -> [shared::zeroex_api::OrderRecord; 3] {
+) -> [zeroex_api::OrderRecord; 3] {
     let typed_order = Eip712TypedZeroExOrder {
         maker_token: order_creation.buy_token,
         taker_token: order_creation.sell_token,
@@ -366,7 +366,7 @@ struct ZeroExOrderAmounts {
 
 async fn get_zeroex_order_amounts(
     zeroex: &IZeroex::Instance,
-    zeroex_order: &shared::zeroex_api::OrderRecord,
+    zeroex_order: &zeroex_api::OrderRecord,
 ) -> anyhow::Result<ZeroExOrderAmounts> {
     Ok(zeroex
         .getLimitOrderRelevantState(
@@ -401,7 +401,7 @@ async fn get_zeroex_order_amounts(
 
 async fn fill_or_kill_zeroex_limit_order(
     zeroex: &IZeroex::Instance,
-    zeroex_order: &shared::zeroex_api::OrderRecord,
+    zeroex_order: &zeroex_api::OrderRecord,
     from: Address,
 ) -> anyhow::Result<B256> {
     let order = zeroex_order.order();

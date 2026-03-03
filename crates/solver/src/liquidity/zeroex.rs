@@ -15,12 +15,12 @@ use {
     itertools::Itertools,
     liquidity_sources::recent_block_cache::Block,
     model::{TokenPair, order::OrderKind},
-    shared::zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
     },
     tracing::instrument,
+    zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
 };
 
 type OrderBuckets = HashMap<(Address, Address), Vec<OrderRecord>>;
@@ -216,11 +216,8 @@ pub mod tests {
     use {
         super::*,
         liquidity_sources::base_tokens::BaseTokens,
-        shared::{
-            http_solver::model::InternalizationStrategy,
-            interaction::Interaction,
-            zeroex_api::{self, OrderMetadata},
-        },
+        shared::{http_solver::model::InternalizationStrategy, interaction::Interaction},
+        zeroex_api::{self, OrderMetadata},
     };
 
     fn get_relevant_pairs(token_a: Address, token_b: Address) -> HashSet<TokenPair> {

@@ -17,7 +17,7 @@ model = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-shared = { workspace = true }
+signature-validator = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }

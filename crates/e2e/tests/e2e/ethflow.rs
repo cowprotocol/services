@@ -48,7 +48,7 @@ use {
     number::{nonzero::NonZeroU256, units::EthUnit},
     refunder::RefundStatus,
     reqwest::Client,
-    shared::signature_validator::check_erc1271_result,
+    signature_validator::check_erc1271_result,
     std::ops::DerefMut,
 };
 

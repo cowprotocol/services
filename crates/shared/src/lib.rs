@@ -19,12 +19,10 @@ pub mod order_quoting;
 pub mod order_validation;
 pub mod price_estimation;
 pub mod remaining_amounts;
-pub mod signature_validator;
 pub mod token_list;
 pub mod trade_finding;
 pub mod url;
 pub mod web3;
-pub mod zeroex_api;
 
 /// anyhow errors are not clonable natively. This is a workaround that creates a
 /// new anyhow error based on formatting the error with its inner sources

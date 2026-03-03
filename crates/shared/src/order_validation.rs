@@ -13,7 +13,6 @@ use {
             Verification,
             trade_verifier::code_fetching::CodeFetching,
         },
-        signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
     account_balances::{self, BalanceFetching, TransferSimulationError},
@@ -45,6 +44,7 @@ use {
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
+    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     std::{sync::Arc, time::Duration},
     tracing::instrument,
 };
@@ -1039,7 +1039,6 @@ mod tests {
         crate::{
             order_quoting::{FindQuoteError, MockOrderQuoting},
             price_estimation::trade_verifier::code_fetching::MockCodeFetching,
-            signature_validator::MockSignatureValidating,
         },
         account_balances::MockBalanceFetching,
         alloy::{
@@ -1056,6 +1055,7 @@ mod tests {
         },
         number::nonzero::NonZeroU256,
         serde_json::json,
+        signature_validator::MockSignatureValidating,
     };
 
     #[tokio::test]

@@ -1,0 +1,40 @@
+[package]
+name = "zeroex-api"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes-hex = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+ethrpc = { workspace = true }
+mockall = { workspace = true, optional = true }
+number = { workspace = true }
+observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+alloy-primitives = { workspace = true }
+chrono = { workspace = true }
+const-hex = { workspace = true }
+mockall = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
+
+[features]
+test-util = ["dep:mockall"]
+
+[lints]
+workspace = true

@@ -13,7 +13,7 @@ use {
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, hashed_eip712_message},
     },
-    shared::signature_validator::{SignatureCheck, SignatureValidating},
+    signature_validator::{SignatureCheck, SignatureValidating},
 };
 
 #[derive(Clone, Debug)]

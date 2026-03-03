@@ -5,11 +5,11 @@ use {
     chrono::{DateTime, NaiveDateTime, Utc},
     hex_literal::hex,
     model::DomainSeparator,
-    shared::zeroex_api::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
     std::{
         net::{Ipv4Addr, SocketAddr},
         sync::Arc,
     },
+    zeroex_api::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
 };
 
 // Mock pagination constants for test API responses
