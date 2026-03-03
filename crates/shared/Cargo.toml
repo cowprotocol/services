@@ -61,6 +61,7 @@ mockall = { workspace = true, optional = true }
 liquidity-sources = { workspace = true }
 
 [dev-dependencies]
+account-balances = { workspace = true, features = ["test-util"] }
 alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 async-stream = { workspace = true }
