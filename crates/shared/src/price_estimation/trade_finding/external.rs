@@ -1,8 +1,9 @@
 //! A trade finder that uses an external driver.
 
 use {
-    crate::{
-        price_estimation::{PriceEstimationError, Query},
+    crate::price_estimation::{
+        PriceEstimationError,
+        Query,
         trade_finding::{
             Interaction,
             LegacyTrade,

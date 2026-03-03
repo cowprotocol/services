@@ -2,15 +2,14 @@
 //! for a specified token pair and amount.
 
 pub mod external;
+pub mod trade_estimator;
 
 use {
-    crate::{
-        price_estimation::{PriceEstimationError, Query},
-        trade_finding::external::dto,
-    },
+    crate::price_estimation::{PriceEstimationError, Query},
     alloy::primitives::{Address, Bytes, U256},
     anyhow::{Context, Result},
     derive_more::Debug,
+    external::dto,
     model::{interaction::InteractionData, order::OrderKind},
     num::CheckedDiv,
     number::{conversions::big_rational_to_u256, u256_ext::U256Ext},

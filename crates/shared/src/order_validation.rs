@@ -11,10 +11,10 @@ use {
         price_estimation::{
             PriceEstimationError,
             Verification,
+            trade_finding,
             trade_verifier::code_fetching::CodeFetching,
         },
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-        trade_finding,
     },
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},

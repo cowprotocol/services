@@ -15,13 +15,11 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
-    shared::{
-        price_estimation::{
-            Estimate,
-            Verification,
-            trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
-        },
+    shared::price_estimation::{
+        Estimate,
+        Verification,
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
+        trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
     std::sync::Arc,
 };

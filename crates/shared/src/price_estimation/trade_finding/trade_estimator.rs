@@ -2,16 +2,16 @@
 //! from an inner `TradeFinding`.
 
 use {
-    super::{
+    crate::price_estimation::{
         Estimate,
         PriceEstimateResult,
         PriceEstimating,
         PriceEstimationError,
         Query,
         rate_limited,
+        trade_finding::{TradeError, TradeFinding},
         trade_verifier::{PriceQuery, TradeVerifying},
     },
-    crate::trade_finding::{TradeError, TradeFinding},
     anyhow::{Result, anyhow},
     futures::future::FutureExt,
     rate_limit::RateLimiter,

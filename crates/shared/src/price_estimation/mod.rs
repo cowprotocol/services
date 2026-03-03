@@ -1,7 +1,7 @@
 use {
     crate::{
         arguments::{self, display_option, display_secret_option},
-        trade_finding::{Interaction, QuoteExecution},
+        price_estimation::trade_finding::{Interaction, QuoteExecution},
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result, ensure},
@@ -36,7 +36,7 @@ pub mod instrumented;
 pub mod native;
 pub mod native_price_cache;
 pub mod sanitized;
-pub mod trade_finder;
+pub mod trade_finding;
 pub mod trade_verifier;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

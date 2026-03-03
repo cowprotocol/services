@@ -1,12 +1,11 @@
 use {
-    super::{
+    crate::price_estimation::{
         PriceEstimateResult,
         PriceEstimating,
         Query,
-        trade_finder::TradeEstimator,
+        trade_finding::{external::ExternalTradeFinder, trade_estimator::TradeEstimator},
         trade_verifier::TradeVerifying,
     },
-    crate::trade_finding::external::ExternalTradeFinder,
     ethrpc::block_stream::CurrentBlockWatcher,
     rate_limit::RateLimiter,
     reqwest::{Client, Url},
