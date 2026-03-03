@@ -40,12 +40,12 @@ use {
         account_balances::{self, BalanceSimulator},
         arguments::tracing_config,
         bad_token::list_based::DenyListedTokens,
-        code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         price_estimation::{
             factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
+            trade_verifier::code_fetching::CachedCodeFetcher,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},

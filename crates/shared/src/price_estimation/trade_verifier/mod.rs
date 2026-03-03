@@ -1,9 +1,9 @@
 use {
     super::{Estimate, Verification},
     crate::{
-        code_fetching::CodeFetching,
         encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
         interaction::EncodedInteraction,
+        price_estimation::trade_verifier::code_fetching::CodeFetching,
         tenderly_api::TenderlyCodeSimulator,
         trade_finding::{
             Interaction,
@@ -49,6 +49,8 @@ use {
     },
     tracing::instrument,
 };
+
+pub mod code_fetching;
 
 #[async_trait::async_trait]
 pub trait TradeVerifying: Send + Sync + 'static {

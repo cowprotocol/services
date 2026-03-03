@@ -14,13 +14,13 @@ use {
     crate::{
         arguments,
         bad_token::list_based::DenyListedTokens,
-        code_fetching::CachedCodeFetcher,
         gas_price_estimation::GasPriceEstimating,
         http_client::HttpClientFactory,
         price_estimation::{
             ExternalSolver,
             buffered::{self, BufferedRequest, NativePriceBatchFetching},
             competition::PriceRanking,
+            trade_verifier::code_fetching::CachedCodeFetcher,
         },
         tenderly_api::TenderlyCodeSimulator,
         token_info::TokenInfoFetching,

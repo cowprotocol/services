@@ -2,7 +2,6 @@ use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
         bad_token::list_based::DenyListedTokens,
-        code_fetching::CodeFetching,
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
@@ -10,7 +9,11 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::{PriceEstimationError, Verification},
+        price_estimation::{
+            PriceEstimationError,
+            Verification,
+            trade_verifier::code_fetching::CodeFetching,
+        },
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
@@ -1035,8 +1038,8 @@ mod tests {
         super::*,
         crate::{
             account_balances::MockBalanceFetching,
-            code_fetching::MockCodeFetching,
             order_quoting::{FindQuoteError, MockOrderQuoting},
+            price_estimation::trade_verifier::code_fetching::MockCodeFetching,
             signature_validator::MockSignatureValidating,
         },
         alloy::{
