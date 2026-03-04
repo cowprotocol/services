@@ -13,14 +13,15 @@ name = "vendor"
 required-features = ["bin"]
 
 [dependencies]
-alloy = { workspace = true, features = ["contract", "json", "json-abi", "sol-types"] }
+alloy-contract = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-sol-types = { workspace = true, features = ["json"] }
 anyhow = { workspace = true }
 paste = { workspace = true }
+reqwest = { workspace = true, features = ["blocking", "json"], optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-reqwest = { workspace = true, features = ["blocking", "json"], optional = true }
-# [bin-dependencies]
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"], optional = true }
 

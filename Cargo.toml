@@ -7,6 +7,7 @@ account-balances = { path = "crates/account-balances" }
 alloy = { version = "1.7.3", default-features = false }
 alloy-contract = { version = "1.7.3", default-features = false }
 alloy-dyn-abi = { version = "1.5.7", default-features = false }
+alloy-json-abi = { version = "1.5.7", default-features = false }
 alloy-json-rpc = { version = "1.7.3", default-features = false }
 alloy-primitives = { version = "1.5.2", default-features = false }
 alloy-provider = { version = "1.7.3", default-features = false }

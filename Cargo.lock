@@ -2448,9 +2448,12 @@ dependencies = [
 name = "contracts"
 version = "0.1.0"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
  "alloy-sol-macro-expander",
  "alloy-sol-macro-input",
+ "alloy-sol-types",
  "anyhow",
  "paste",
  "prettyplease",
