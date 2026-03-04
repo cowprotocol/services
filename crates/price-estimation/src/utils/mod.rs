@@ -19,7 +19,7 @@ pub fn join_url(url: &Url, mut path: &str) -> Url {
     while path.starts_with('/') {
         path = &path[1..]
     }
-    Url::parse(&format!("{url}/{path}")).unwrap()
+    Url::parse(&format!("{url}/{path}")).expect("\"path\" contains a valid path segement")
 }
 
 /// anyhow errors are not clonable natively. This is a workaround that creates a

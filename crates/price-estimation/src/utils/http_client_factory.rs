@@ -21,12 +21,16 @@ impl HttpClientFactory {
 
     /// Creates a new HTTP client with the default settings.
     pub fn create(&self) -> Client {
-        self.builder().build().unwrap()
+        self.builder()
+            .build()
+            .expect("builder config is not malformed")
     }
 
     /// Creates a new HTTP client, allowing for additional configuration.
     pub fn configure(&self, config: impl FnOnce(ClientBuilder) -> ClientBuilder) -> Client {
-        config(self.builder()).build().unwrap()
+        config(self.builder())
+            .build()
+            .expect("builder config is not malformed")
     }
 
     /// Returns a `ClientBuilder` with the default settings.
