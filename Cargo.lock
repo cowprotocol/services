@@ -6784,7 +6784,12 @@ dependencies = [
 name = "signature-validator"
 version = "0.1.0"
 dependencies = [
- "alloy",
+ "alloy-contract",
+ "alloy-dyn-abi",
+ "alloy-primitives",
+ "alloy-rpc-types",
+ "alloy-sol-types",
+ "alloy-transport",
  "anyhow",
  "async-trait",
  "balance-overrides",
