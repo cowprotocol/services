@@ -1155,7 +1155,6 @@ components:
             This will ensure the account has correct allowance and available balance for the order
             to be created.
 
-            The default value is false
           type: boolean
           default: false
       required:
