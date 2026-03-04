@@ -21,6 +21,7 @@ app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 balance-overrides = { workspace = true }
+bad-tokens = { workspace = true }
 bigdecimal = { workspace = true }
 bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
 chain = { workspace = true }
@@ -32,6 +33,7 @@ ethrpc = { workspace = true }
 event-indexing = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
+gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
@@ -42,6 +44,7 @@ tikv-jemallocator = { workspace = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }

@@ -1210,6 +1210,7 @@ dependencies = [
  "app-data",
  "async-trait",
  "axum 0.8.8",
+ "bad-tokens",
  "bigdecimal",
  "brotli",
  "bytes",
@@ -1226,6 +1227,7 @@ dependencies = [
  "ethrpc",
  "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -1239,6 +1241,7 @@ dependencies = [
  "number",
  "observe",
  "order-validation",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
@@ -1823,6 +1826,18 @@ dependencies = [
  "object",
  "rustc-demangle",
  "windows-link",
+]
+
+[[package]]
+name = "bad-tokens"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "contracts",
+ "ethrpc",
+ "model",
+ "tracing",
 ]
 
 [[package]]
@@ -2914,6 +2929,7 @@ dependencies = [
  "app-data",
  "async-trait",
  "axum 0.8.8",
+ "bad-tokens",
  "balance-overrides",
  "bigdecimal",
  "bytes-hex",
@@ -2928,6 +2944,7 @@ dependencies = [
  "ethrpc",
  "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -2940,6 +2957,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
@@ -3006,6 +3024,7 @@ dependencies = [
  "number",
  "observe",
  "orderbook",
+ "price-estimation",
  "refunder",
  "reqwest 0.13.2",
  "rstest",
@@ -3144,8 +3163,6 @@ dependencies = [
  "const-hex",
  "futures",
  "itertools 0.14.0",
- "jsonrpc-core",
- "mockall",
  "observe",
  "prometheus",
  "prometheus-metric-storage",
@@ -3450,6 +3467,25 @@ name = "futures-utils-wasm"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42012b0f064e01aa58b545fe3727f90f7dd4020f4a3ea735b50344965f5a57e9"
+
+[[package]]
+name = "gas-price-estimation"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "ethrpc",
+ "futures",
+ "mockall",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest 0.13.2",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "generic-array"
@@ -4206,21 +4242,6 @@ checksum = "8c942ebf8e95485ca0d52d97da7c5a2c387d0e7f0ba4c35e93bfcaee045955b3"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "jsonrpc-core"
-version = "18.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14f7f76aef2d054868398427f6c54943cf3d1caa9a7ec7d0c38d69df97a965eb"
-dependencies = [
- "futures",
- "futures-executor",
- "futures-util",
- "log",
- "serde",
- "serde_derive",
- "serde_json",
 ]
 
 [[package]]
@@ -5004,6 +5025,7 @@ dependencies = [
  "app-data",
  "async-trait",
  "axum 0.8.8",
+ "bad-tokens",
  "bigdecimal",
  "cached",
  "chain",
@@ -5014,6 +5036,7 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -5025,6 +5048,7 @@ dependencies = [
  "number",
  "observe",
  "order-validation",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "reqwest 0.13.2",
@@ -5298,6 +5322,58 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "price-estimation"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "app-data",
+ "arc-swap",
+ "async-trait",
+ "bad-tokens",
+ "balance-overrides",
+ "bigdecimal",
+ "bytes-hex",
+ "cached",
+ "chain",
+ "chrono",
+ "clap",
+ "const-hex",
+ "contracts",
+ "derive_more 1.0.0",
+ "ethrpc",
+ "futures",
+ "gas-price-estimation",
+ "hex-literal",
+ "humantime",
+ "itertools 0.14.0",
+ "maplit",
+ "mockall",
+ "model",
+ "moka",
+ "num",
+ "number",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "rand 0.8.5",
+ "rate-limit",
+ "request-sharing",
+ "reqwest 0.13.2",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "testlib",
+ "thiserror 1.0.69",
+ "token-info",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -5751,6 +5827,7 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "humantime",
  "mimalloc",
  "mockall",
@@ -6576,6 +6653,7 @@ dependencies = [
  "arc-swap",
  "async-stream",
  "async-trait",
+ "bad-tokens",
  "balance-overrides",
  "bigdecimal",
  "bytes-hex",
@@ -6589,13 +6667,12 @@ dependencies = [
  "database",
  "derive_more 1.0.0",
  "ethrpc",
- "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "indexmap 2.13.0",
  "itertools 0.14.0",
- "liquidity-sources",
  "maplit",
  "mockall",
  "model",
@@ -6604,6 +6681,7 @@ dependencies = [
  "number",
  "observe",
  "order-validation",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
@@ -6748,6 +6826,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "reqwest 0.13.2",

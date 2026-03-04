@@ -16,11 +16,11 @@ use {
     alloy::{primitives::Address, signers::local::PrivateKeySigner},
     const_hex::ToHexExt,
     contracts::alloy::ERC20,
+    gas_price_estimation::Eip1559EstimationExt,
     itertools::Itertools,
     number::testing::ApproxEq,
     serde_json::{Value, json},
     serde_with::{DisplayFromStr, serde_as},
-    shared::gas_price_estimation::Eip1559EstimationExt,
     solvers_dto::auction::FlashloanHint,
     std::{
         collections::{HashMap, HashSet},

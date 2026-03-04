@@ -9,8 +9,8 @@ use {
     },
     model::quote::NativeTokenPrice,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
+    price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     serde::Deserialize,
-    shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
         net::SocketAddr,
         ops::RangeInclusive,
