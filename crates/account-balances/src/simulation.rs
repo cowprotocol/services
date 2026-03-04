@@ -3,7 +3,7 @@
 //! from a node in a single round-trip, while accounting for pre-interactions.
 
 use {
-    crate::{BalanceFetching, Query, TransferSimulationError, BalanceSimulator},
+    crate::{BalanceFetching, BalanceSimulator, Query, TransferSimulationError},
     alloy::primitives::U256,
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20::ERC20::ERC20Instance},

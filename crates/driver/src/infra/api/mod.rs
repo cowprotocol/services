@@ -20,10 +20,10 @@ use {
             tokens,
         },
     },
+    account_balances::BalanceFetching,
     error::Error,
     futures::Future,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    account_balances::BalanceFetching,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
