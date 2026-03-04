@@ -5,7 +5,7 @@
 //! <https://api.0x.org/>
 
 use {
-    alloy_primitives::{Address, B256, U256, address},
+    alloy::primitives::{Address, B256, U256, address},
     anyhow::{Context, Result},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
@@ -489,7 +489,7 @@ impl Metrics {
 mod tests {
     use {
         super::*,
-        alloy_primitives::{address, b256},
+        alloy::primitives::{address, b256},
         chrono::{DateTime, NaiveDate},
     };
 

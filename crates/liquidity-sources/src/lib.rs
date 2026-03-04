@@ -10,6 +10,7 @@ pub mod swapr;
 pub mod uniswap_v2;
 pub mod uniswap_v3;
 pub mod uniswap_v3_pair_provider;
+pub mod zeroex;
 
 use {chain::Chain, core::panic};
 

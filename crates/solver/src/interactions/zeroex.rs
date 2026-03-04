@@ -1,8 +1,8 @@
 use {
     contracts::alloy::IZeroex,
+    liquidity_sources::zeroex::Order,
     shared::interaction::{EncodedInteraction, Interaction},
     std::sync::Arc,
-    zeroex_api::Order,
 };
 
 #[derive(Clone, Debug)]

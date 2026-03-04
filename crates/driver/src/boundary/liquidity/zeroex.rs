@@ -8,13 +8,13 @@ use {
     },
     anyhow::anyhow,
     ethrpc::block_stream::CurrentBlockWatcher,
+    liquidity_sources::zeroex::DefaultZeroExApi,
     shared::{http_client::HttpClientFactory, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
     solver::{
         liquidity::{LimitOrder, zeroex::ZeroExLiquidity},
         liquidity_collector::LiquidityCollecting,
     },
     std::sync::Arc,
-    zeroex_api::DefaultZeroExApi,
 };
 
 pub fn to_domain(

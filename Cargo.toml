@@ -101,7 +101,6 @@ solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
 testlib = { path = "crates/testlib" }
 winner-selection = { path = "crates/winner-selection" }
-zeroex-api = { path = "crates/zeroex-api" }
 time = "0.3.47"
 tower = "0.5"
 tower-http = "0.6"

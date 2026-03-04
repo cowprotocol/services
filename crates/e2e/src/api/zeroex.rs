@@ -4,12 +4,12 @@ use {
     axum::Json,
     chrono::{DateTime, NaiveDateTime, Utc},
     hex_literal::hex,
+    liquidity_sources::zeroex::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
     model::DomainSeparator,
     std::{
         net::{Ipv4Addr, SocketAddr},
         sync::Arc,
     },
-    zeroex_api::{self, Order, OrderMetadata, OrderRecord, ZeroExSignature},
 };
 
 // Mock pagination constants for test API responses
@@ -63,8 +63,8 @@ impl ZeroExApi {
 
 async fn orders_handler(
     axum::extract::State(state): axum::extract::State<State>,
-) -> Json<zeroex_api::OrdersResponse> {
-    Json(zeroex_api::OrdersResponse {
+) -> Json<zeroex::OrdersResponse> {
+    Json(zeroex::OrdersResponse {
         total: state.orders.len() as u64,
         page: MOCK_PAGE,
         per_page: MOCK_PER_PAGE,
