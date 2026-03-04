@@ -10,14 +10,10 @@
 //! [`LabelingLayer`].
 use {
     crate::{Web3, alloy::RpcClientRandomIdExt},
-    alloy::{
-        providers::{Provider, ProviderBuilder},
-        rpc::{
-            client::RpcClient,
-            json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
-        },
-        transports::TransportError,
-    },
+    alloy_json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
+    alloy_provider::{Provider, ProviderBuilder},
+    alloy_rpc_client::RpcClient,
+    alloy_transport::TransportError,
     std::{
         fmt::Debug,
         pin::Pin,

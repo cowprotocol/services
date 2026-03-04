@@ -1,4 +1,4 @@
-use alloy::{contract::Error as ContractError, transports::RpcError};
+use {alloy_contract::Error as ContractError, alloy_transport::RpcError};
 
 /// Bubbles up node errors, ignoring all other errors.
 pub fn ignore_non_node_error<T>(result: Result<T, ContractError>) -> anyhow::Result<Option<T>> {
@@ -55,16 +55,16 @@ impl ContractErrorExt for ContractError {
 /// Create an arbitrary alloy error that will convert into a "contract" error.
 /// Useful for testing.
 #[cfg(any(test, feature = "test-util"))]
-pub fn testing_alloy_contract_error() -> alloy::contract::Error {
-    alloy::contract::Error::NotADeploymentTransaction
+pub fn testing_alloy_contract_error() -> alloy_contract::Error {
+    alloy_contract::Error::NotADeploymentTransaction
 }
 
 /// Create an arbitrary alloy error that will convert into a "node" error.
 /// Useful for testing.
 #[cfg(any(test, feature = "test-util"))]
-pub fn testing_alloy_node_error() -> alloy::contract::Error {
-    alloy::contract::Error::TransportError(alloy::transports::TransportError::ErrorResp(
-        alloy::rpc::json_rpc::ErrorPayload::internal_error(),
+pub fn testing_alloy_node_error() -> alloy_contract::Error {
+    alloy_contract::Error::TransportError(alloy_transport::TransportError::ErrorResp(
+        alloy_json_rpc::ErrorPayload::internal_error(),
     ))
 }
 

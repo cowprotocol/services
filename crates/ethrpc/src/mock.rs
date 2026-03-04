@@ -2,7 +2,7 @@
 
 use {
     crate::{Web3, alloy::MutWallet},
-    alloy::providers::{Provider, ProviderBuilder, mock::Asserter},
+    alloy_provider::{Provider, ProviderBuilder, mock::Asserter},
 };
 
 impl Web3 {
