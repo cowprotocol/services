@@ -1851,7 +1851,12 @@ dependencies = [
 name = "balance-overrides"
 version = "0.1.0"
 dependencies = [
- "alloy",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types",
+ "alloy-sol-types",
+ "alloy-transport",
  "anyhow",
  "async-trait",
  "cached",
