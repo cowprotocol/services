@@ -342,7 +342,8 @@ pub struct OrderCreation {
     /// The order's AppData (can be an hash, the JSON body or both).
     #[serde(flatten)]
     pub app_data: OrderCreationAppData,
-    /// Should a transfer of the order's full balance be verified before placement.
+    /// Should a transfer of the order's full balance be verified before
+    /// placement.
     #[serde(default)]
     pub full_balance_check: bool,
 }

@@ -157,7 +157,10 @@ async fn test_full_balance_check(web3: Web3) {
     // This order can not be created, because despite the token being transferrable
     // The account does not have enough sell token balance to cover the order.
     assert!(
-        dbg!(services.create_order(&order).await.unwrap_err())
+        services
+            .create_order(&order)
+            .await
+            .unwrap_err()
             .1
             .contains("InsufficientBalance")
     );
@@ -172,7 +175,10 @@ async fn test_full_balance_check(web3: Web3) {
     // This order can not be created, because the account does not have enough
     // sell token allowance.
     assert!(
-        dbg!(services.create_order(&order).await.unwrap_err())
+        services
+            .create_order(&order)
+            .await
+            .unwrap_err()
             .1
             .contains("InsufficientAllowance")
     );
@@ -184,5 +190,5 @@ async fn test_full_balance_check(web3: Web3) {
         .unwrap();
 
     // The account has correct balance and allowance
-    dbg!(services.create_order(&order).await).unwrap();
+    services.create_order(&order).await.unwrap();
 }
