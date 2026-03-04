@@ -65,7 +65,6 @@ url = { workspace = true }
 
 [dev-dependencies]
 account-balances = { workspace = true, features = ["test-util"] }
-signature-validator = { workspace = true, features = ["test-util"] }
 alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 async-stream = { workspace = true }
@@ -74,6 +73,7 @@ maplit = { workspace = true }
 mockall = { workspace = true }
 price-estimation = { workspace = true, features = ["test-util"] }
 regex = { workspace = true }
+signature-validator = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 toml = { workspace = true }
