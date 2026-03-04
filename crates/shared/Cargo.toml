@@ -54,6 +54,7 @@ rust_decimal = { workspace = true, features = ["maths"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+signature-validator = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 token-info = { workspace = true }
@@ -72,6 +73,7 @@ maplit = { workspace = true }
 mockall = { workspace = true }
 price-estimation = { workspace = true, features = ["test-util"] }
 regex = { workspace = true }
+signature-validator = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 toml = { workspace = true }

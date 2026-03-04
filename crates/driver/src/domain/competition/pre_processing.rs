@@ -25,7 +25,7 @@ use {
         order::{OrderKind, SellTokenSource},
         signature::Signature,
     },
-    shared::signature_validator::SignatureValidating,
+    signature_validator::SignatureValidating,
     std::{
         collections::HashMap,
         future::Future,
@@ -137,9 +137,9 @@ impl DataAggregator {
         tokens: tokens::Fetcher,
         balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
-        let signature_validator = shared::signature_validator::validator(
+        let signature_validator = signature_validator::validator(
             eth.web3(),
-            shared::signature_validator::Contracts {
+            signature_validator::Contracts {
                 settlement: eth.contracts().settlement().clone(),
                 vault_relayer: eth.contracts().vault_relayer().0,
                 signatures: eth.contracts().signatures().clone(),

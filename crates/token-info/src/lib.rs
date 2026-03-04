@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::Result,
     async_trait::async_trait,
     contracts::alloy::ERC20,
@@ -13,7 +13,6 @@ use {
         collections::HashMap,
         sync::{Arc, Mutex},
     },
-    thiserror::Error,
 };
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
@@ -23,9 +22,16 @@ pub struct TokenInfo {
     pub symbol: Option<String>,
 }
 
-#[derive(Clone, Debug, Error)]
-#[error("error fetching token info: {0}")]
+#[derive(Clone, Debug)]
 pub struct Error(String);
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "error fetching token info: {}", self.0)
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait]

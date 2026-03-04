@@ -9,9 +9,12 @@ license = "MIT OR Apache-2.0"
 alloy = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+bytes-hex = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }

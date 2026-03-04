@@ -1,9 +1,7 @@
 use {
     contracts::alloy::IZeroex,
-    shared::{
-        interaction::{EncodedInteraction, Interaction},
-        zeroex_api::Order,
-    },
+    liquidity_sources::zeroex::Order,
+    shared::interaction::{EncodedInteraction, Interaction},
     std::sync::Arc,
 };
 

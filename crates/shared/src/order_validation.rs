@@ -1,13 +1,10 @@
 use {
-    crate::{
-        order_quoting::{
-            CalculateQuoteError,
-            OrderQuoting,
-            Quote,
-            QuoteParameters,
-            QuoteSearchParameters,
-        },
-        signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
+    crate::order_quoting::{
+        CalculateQuoteError,
+        OrderQuoting,
+        Quote,
+        QuoteParameters,
+        QuoteSearchParameters,
     },
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
@@ -45,6 +42,7 @@ use {
         trade_finding,
         trade_verifier::code_fetching::CodeFetching,
     },
+    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     std::{sync::Arc, time::Duration},
     tracing::instrument,
 };
@@ -1060,10 +1058,7 @@ pub fn convert_signing_scheme_into_quote_signing_scheme(
 mod tests {
     use {
         super::*,
-        crate::{
-            order_quoting::{FindQuoteError, MockOrderQuoting},
-            signature_validator::MockSignatureValidating,
-        },
+        crate::order_quoting::{FindQuoteError, MockOrderQuoting},
         account_balances::MockBalanceFetching,
         alloy::{
             primitives::{Address, U160, address, b256},
@@ -1080,6 +1075,7 @@ mod tests {
         number::nonzero::NonZeroU256,
         price_estimation::trade_verifier::code_fetching::MockCodeFetching,
         serde_json::json,
+        signature_validator::MockSignatureValidating,
     };
 
     #[tokio::test]

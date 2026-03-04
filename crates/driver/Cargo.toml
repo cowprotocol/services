@@ -82,6 +82,7 @@ contracts = { workspace = true }
 model = { workspace = true }
 observe = { workspace = true }
 shared = { workspace = true }
+signature-validator = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
 
