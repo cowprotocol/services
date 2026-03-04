@@ -6,7 +6,9 @@ members = ["crates/*"]
 account-balances = { path = "crates/account-balances" }
 alloy = { version = "1.7.3", default-features = false }
 alloy-contract = { version = "1.7.3", default-features = false }
+alloy-dyn-abi = { version = "1.5.7", default-features = false }
 alloy-primitives = { version = "1.5.2", default-features = false }
+alloy-rpc-types = { version = "1.7.3", default-features = false }
 alloy-signer = { version = "1.7.3", default-features = false }
 alloy-signer-local = { version = "1.7.3", default-features = false }
 alloy-sol-macro-expander = "1.4.1"
