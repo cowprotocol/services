@@ -1,0 +1,27 @@
+[package]
+name = "event-indexing"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+alloy = { workspace = true }
+async-stream = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+ethrpc = { workspace = true }
+observe = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }
+mockall = { workspace = true }
+contracts = { workspace = true }
+
+[lints]
+workspace = true

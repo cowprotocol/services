@@ -81,7 +81,8 @@ impl AppDataRetriever {
                         true => None, // empty app data
                         false => Some(Arc::new(app_data::ValidatedAppData {
                             hash: app_data::AppDataHash(app_data.0.0),
-                            protocol: app_data::parse(appdata.full_app_data.as_bytes())?,
+                            protocol: app_data::parse(appdata.full_app_data.as_bytes())
+                                .context("invalid app data json")?,
                             document: appdata.full_app_data,
                         })),
                     }

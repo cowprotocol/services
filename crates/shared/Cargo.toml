@@ -9,10 +9,13 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
+account-balances = { workspace = true }
 alloy = { workspace = true, features = ["sol-types", "signer-local", "rand", "provider-trace-api"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 arc-swap = { workspace = true }
+balance-overrides = { workspace = true }
+bad-tokens = { workspace = true }
 bytes-hex = { workspace = true }
 async-trait = { workspace = true }
 async-stream = { workspace = true }
@@ -27,6 +30,7 @@ database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
+gas-price-estimation = { workspace = true }
 observe = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
@@ -37,10 +41,12 @@ model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
+request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json", "query"] }
 rust_decimal = { workspace = true, features = ["maths"] }
 serde = { workspace = true }
@@ -48,20 +54,22 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
+token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "time", "signal"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }
-
 moka = { workspace = true, features = ["sync"] }
 mockall = { workspace = true, optional = true }
 
 [dev-dependencies]
+account-balances = { workspace = true, features = ["test-util"] }
 alloy = { workspace = true, features = ["rand"] }
 app-data = { workspace = true, features = ["test_helpers"] }
 ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
+price-estimation = { workspace = true, features = ["test-util"] }
 regex = { workspace = true }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

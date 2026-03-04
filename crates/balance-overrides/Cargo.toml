@@ -1,0 +1,28 @@
+[package]
+name = "balance-overrides"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[lib]
+doctest = false
+
+[dependencies]
+alloy = { workspace = true, features = ["sol-types", "provider-debug-api"] }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+cached = { workspace = true, features = ["default"] }
+clap = { workspace = true }
+contracts = { workspace = true }
+ethrpc = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+ethrpc = { workspace = true, features = ["test-util"] }
+maplit = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

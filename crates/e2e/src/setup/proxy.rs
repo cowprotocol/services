@@ -23,6 +23,8 @@ use {
     url::Url,
 };
 
+pub type OnRequest = Arc<dyn Fn(&axum::http::request::Parts, &[u8]) + Send + Sync>;
+
 /// HTTP reverse proxy with automatic failover that permanently switches
 /// to the fallback backend when the current backend fails.
 ///
@@ -35,6 +37,7 @@ pub struct ReverseProxy {
 #[derive(Clone)]
 struct ProxyState {
     backends: Arc<RwLock<VecDeque<Url>>>,
+    on_request: Option<OnRequest>,
 }
 
 impl ProxyState {
@@ -71,6 +74,27 @@ impl ReverseProxy {
     /// # Panics
     /// Panics if `backends` is empty. At least one backend URL is required.
     pub fn start(listen_addr: SocketAddr, backends: &[Url]) -> Self {
+        Self::start_inner(listen_addr, backends, None)
+    }
+
+    /// Start a new proxy server with a callback invoked on each request
+    /// before it is forwarded to the backend.
+    ///
+    /// # Panics
+    /// Panics if `backends` is empty. At least one backend URL is required.
+    pub fn start_with_callback(
+        listen_addr: SocketAddr,
+        backends: &[Url],
+        on_request: OnRequest,
+    ) -> Self {
+        Self::start_inner(listen_addr, backends, Some(on_request))
+    }
+
+    fn start_inner(
+        listen_addr: SocketAddr,
+        backends: &[Url],
+        on_request: Option<OnRequest>,
+    ) -> Self {
         assert!(
             !backends.is_empty(),
             "At least one backend URL is required for the proxy"
@@ -80,6 +104,7 @@ impl ReverseProxy {
 
         let state = ProxyState {
             backends: Arc::new(RwLock::new(backends_queue)),
+            on_request,
         };
 
         let backends_log: Vec<Url> = backends.to_vec();
@@ -127,6 +152,10 @@ async fn handle_request(
         }
     };
 
+    if let Some(on_request) = &state.on_request {
+        on_request(&parts, &body_bytes);
+    }
+
     let backend_count = state.backend_count().await;
 
     for attempt in 0..backend_count {
@@ -160,8 +189,10 @@ async fn try_backend(
         .map(|pq| pq.as_str())
         .unwrap_or("");
 
-    // Build the full URL by combining backend and path
-    let url = format!("{}{}", backend, path);
+    // Build the full URL by combining backend and path.
+    // Url Display always includes a trailing slash, so trim it to avoid
+    // double slashes (e.g. "http://host:port//path").
+    let url = format!("{}{}", backend.as_str().trim_end_matches('/'), path);
     // Build a reqwest request with the same method
     let mut backend_req = client.request(parts.method.clone(), &url);
     // Forward all headers from the original request

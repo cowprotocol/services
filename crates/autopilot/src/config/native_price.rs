@@ -1,6 +1,6 @@
 use {
+    price_estimation::NativePriceEstimators,
     serde::{Deserialize, Serialize},
-    shared::price_estimation::NativePriceEstimators,
     std::{num::NonZeroUsize, time::Duration},
 };
 

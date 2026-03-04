@@ -6,8 +6,11 @@ use {
     },
     anyhow::Result,
     contracts::alloy::GPv2Settlement::GPv2Settlement::GPv2SettlementEvents,
-    ethrpc::{AlloyProvider, block_stream::RangeInclusive},
-    shared::event_handling::{AlloyEventRetrieving, EventStoring},
+    ethrpc::AlloyProvider,
+    event_indexing::{
+        block_retriever::RangeInclusive,
+        event_handler::{AlloyEventRetrieving, EventStoring},
+    },
 };
 
 pub struct GPv2SettlementContract {

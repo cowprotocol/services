@@ -8,27 +8,25 @@ use {
     crate::settlement::SettlementEncoder,
     alloy::primitives::{Address, U256},
     anyhow::Result,
+    liquidity_sources::{
+        balancer_v2::{
+            pool_fetching::{
+                AmplificationParameter,
+                TokenState,
+                WeightedPoolVersion,
+                WeightedTokenState,
+            },
+            swap::fixed_point::Bfp,
+        },
+        uniswap_v2::pool_fetching::Pool,
+        uniswap_v3::pool_fetching::PoolInfo,
+    },
     model::{
         TokenPair,
         order::{Order, OrderKind, OrderUid},
     },
     num::rational::Ratio,
-    shared::{
-        http_solver::model::TokenAmount,
-        sources::{
-            balancer_v2::{
-                pool_fetching::{
-                    AmplificationParameter,
-                    TokenState,
-                    WeightedPoolVersion,
-                    WeightedTokenState,
-                },
-                swap::fixed_point::Bfp,
-            },
-            uniswap_v2::pool_fetching::Pool,
-            uniswap_v3::pool_fetching::PoolInfo,
-        },
-    },
+    shared::http_solver::model::TokenAmount,
     std::{collections::BTreeMap, sync::Arc},
     strum::IntoStaticStr,
 };

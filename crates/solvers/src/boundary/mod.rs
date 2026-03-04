@@ -3,5 +3,6 @@
 
 pub mod baseline;
 pub mod liquidity;
+pub mod routing;
 
 pub type Result<T> = anyhow::Result<T>;

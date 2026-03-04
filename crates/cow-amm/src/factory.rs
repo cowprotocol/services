@@ -10,7 +10,7 @@ use {
         CowAmmLegacyHelperEvents as CowAmmEvent,
     },
     ethrpc::AlloyProvider,
-    shared::event_handling::AlloyEventRetrieving,
+    event_indexing::event_handler::AlloyEventRetrieving,
 };
 
 pub(crate) struct Factory {

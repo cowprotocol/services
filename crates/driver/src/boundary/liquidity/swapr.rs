@@ -5,7 +5,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     ethrpc::block_stream::CurrentBlockWatcher,
-    shared::sources::{swapr::SwaprPoolReader, uniswap_v2::pool_fetching::DefaultPoolReader},
+    liquidity_sources::{swapr::SwaprPoolReader, uniswap_v2::pool_fetching::DefaultPoolReader},
     solver::{liquidity::ConstantProductOrder, liquidity_collector::LiquidityCollecting},
 };
 

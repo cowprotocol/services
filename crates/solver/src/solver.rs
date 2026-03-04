@@ -2,9 +2,10 @@ use {
     crate::liquidity::{ConstantProductOrder, WeightedProductOrder},
     alloy::primitives::{Address, U256},
     anyhow::anyhow,
-    shared::{
-        baseline_solver::BaselineSolvable,
-        sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
+    liquidity_sources::{
+        balancer_v2::swap::WeightedPoolRef,
+        baseline_solvable::BaselineSolvable,
+        uniswap_v2::pool_fetching::Pool,
     },
     std::{fmt::Debug, str::FromStr},
 };

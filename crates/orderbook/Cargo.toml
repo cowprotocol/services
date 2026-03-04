@@ -16,12 +16,14 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
+account-balances = { workspace = true }
 alloy = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
+bad-tokens = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
@@ -32,6 +34,7 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 const-hex = { workspace = true }
 hex-literal = { workspace = true }
+gas-price-estimation = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 mimalloc = { workspace = true, optional = true }
@@ -42,6 +45,7 @@ num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
 observe = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
@@ -53,6 +57,7 @@ strum = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tempfile = { workspace = true, optional = true }
+token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 toml = { workspace = true }
 tower = { workspace = true }

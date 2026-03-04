@@ -3,6 +3,26 @@
 version = 4
 
 [[package]]
+name = "account-balances"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "balance-overrides",
+ "contracts",
+ "dashmap",
+ "ethrpc",
+ "futures",
+ "itertools 0.14.0",
+ "mockall",
+ "model",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18,12 +38,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "alloc-no-stdlib"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
+
+[[package]]
+name = "alloc-stdlib"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94fb8275041c72129eb51b7d0322c29b8387a0386127718b096429201a5d6ece"
+dependencies = [
+ "alloc-no-stdlib",
 ]
 
 [[package]]
@@ -761,7 +808,7 @@ version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fa0c53e8c1e1ef4d01066b01c737fb62fc9397ab52c6e7bb5669f97d281b9bc"
 dependencies = [
- "darling",
+ "darling 0.21.3",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -1158,12 +1205,15 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 name = "autopilot"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",
  "async-trait",
  "axum 0.8.8",
+ "bad-tokens",
  "bigdecimal",
+ "brotli",
  "bytes",
  "bytes-hex",
  "chain",
@@ -1176,7 +1226,9 @@ dependencies = [
  "database",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -1190,6 +1242,7 @@ dependencies = [
  "number",
  "observe",
  "order-validation",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
@@ -1205,6 +1258,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
+ "token-info",
  "tokio",
  "tokio-stream",
  "toml",
@@ -1776,6 +1830,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "bad-tokens"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "contracts",
+ "ethrpc",
+ "model",
+ "tracing",
+]
+
+[[package]]
+name = "balance-overrides"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "cached",
+ "clap",
+ "contracts",
+ "ethrpc",
+ "maplit",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "base-x"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1954,6 +2037,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "brotli"
+version = "8.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bd8b9603c7aa97359dbd97ecf258968c95f3adddd6db2f7e7a5bef101c84560"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
+ "brotli-decompressor",
+]
+
+[[package]]
+name = "brotli-decompressor"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "874bb8112abecc98cbd6d81ea4fa7e94fb9449648c93cc89aa40c81c24d7de03"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2031,11 +2135,32 @@ version = "0.49.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e8e463fceca5674287f32d252fb1d94083758b8709c160efae66d263e5f4eba"
 dependencies = [
+ "ahash",
+ "cached_proc_macro",
+ "cached_proc_macro_types",
  "hashbrown 0.14.5",
  "instant",
  "once_cell",
  "thiserror 1.0.69",
 ]
+
+[[package]]
+name = "cached_proc_macro"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad9f16c0d84de31a2ab7fdf5f7783c14631f7075cf464eb3bb43119f61c9cb2a"
+dependencies = [
+ "darling 0.14.4",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "cached_proc_macro_types"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ade8366b8bd5ba243f0a58f036cc0ca8a2f069cff1a2351ef1cac6b083e16fc0"
 
 [[package]]
 name = "cc"
@@ -2107,7 +2232,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "clap_lex",
- "strsim",
+ "strsim 0.11.1",
 ]
 
 [[package]]
@@ -2210,6 +2335,7 @@ version = "0.4.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00828ba6fd27b45a448e57dbfe84f1029d4c9f26b368157e9a448a5f49a2ec2a"
 dependencies = [
+ "brotli",
  "compression-core",
  "flate2",
  "memchr",
@@ -2417,6 +2543,7 @@ dependencies = [
  "contracts",
  "database",
  "ethrpc",
+ "event-indexing",
  "futures",
  "model",
  "observe",
@@ -2537,12 +2664,36 @@ dependencies = [
 
 [[package]]
 name = "darling"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b750cb3417fd1b327431a470f388520309479ab0bf5e323505daf0290cd3850"
+dependencies = [
+ "darling_core 0.14.4",
+ "darling_macro 0.14.4",
+]
+
+[[package]]
+name = "darling"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
 dependencies = [
- "darling_core",
- "darling_macro",
+ "darling_core 0.21.3",
+ "darling_macro 0.21.3",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "109c1ca6e6b7f82cc233a97004ea8ed7ca123a9af07a8230878fcfda9b158bf0"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim 0.10.0",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2556,8 +2707,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "strsim",
+ "strsim 0.11.1",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4aab4dbc9f7611d8b55048a3a16d2d010c2c8334e46304b40ac1cc14bf3b48e"
+dependencies = [
+ "darling_core 0.14.4",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2566,7 +2728,7 @@ version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
 dependencies = [
- "darling_core",
+ "darling_core 0.21.3",
  "quote",
  "syn 2.0.114",
 ]
@@ -2762,11 +2924,14 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 name = "driver"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",
  "async-trait",
  "axum 0.8.8",
+ "bad-tokens",
+ "balance-overrides",
  "bigdecimal",
  "bytes-hex",
  "chain",
@@ -2778,11 +2943,14 @@ dependencies = [
  "dashmap",
  "derive_more 1.0.0",
  "ethrpc",
+ "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
  "itertools 0.14.0",
+ "liquidity-sources",
  "maplit",
  "mimalloc",
  "model",
@@ -2790,9 +2958,11 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
+ "request-sharing",
  "reqwest 0.13.2",
  "s3",
  "serde",
@@ -2805,6 +2975,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
+ "token-info",
  "tokio",
  "toml",
  "tower 0.5.3",
@@ -2836,6 +3007,7 @@ dependencies = [
  "app-data",
  "autopilot",
  "axum 0.8.8",
+ "balance-overrides",
  "bigdecimal",
  "chrono",
  "clap",
@@ -2848,10 +3020,12 @@ dependencies = [
  "futures",
  "hex-literal",
  "itertools 0.14.0",
+ "liquidity-sources",
  "model",
  "number",
  "observe",
  "orderbook",
+ "price-estimation",
  "refunder",
  "reqwest 0.13.2",
  "rstest",
@@ -2990,8 +3164,6 @@ dependencies = [
  "const-hex",
  "futures",
  "itertools 0.14.0",
- "jsonrpc-core",
- "mockall",
  "observe",
  "prometheus",
  "prometheus-metric-storage",
@@ -3005,6 +3177,26 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "event-indexing"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "contracts",
+ "ethrpc",
+ "futures",
+ "mockall",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3278,6 +3470,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42012b0f064e01aa58b545fe3727f90f7dd4020f4a3ea735b50344965f5a57e9"
 
 [[package]]
+name = "gas-price-estimation"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "ethrpc",
+ "futures",
+ "mockall",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest 0.13.2",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3387,6 +3598,10 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+ "allocator-api2",
+]
 
 [[package]]
 name = "hashbrown"
@@ -4031,21 +4246,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jsonrpc-core"
-version = "18.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14f7f76aef2d054868398427f6c54943cf3d1caa9a7ec7d0c38d69df97a965eb"
-dependencies = [
- "futures",
- "futures-executor",
- "futures-util",
- "log",
- "serde",
- "serde_derive",
- "serde_json",
-]
-
-[[package]]
 name = "k256"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4136,6 +4336,44 @@ name = "linux-raw-sys"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
+
+[[package]]
+name = "liquidity-sources"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "cached",
+ "chain",
+ "clap",
+ "contracts",
+ "ethrpc",
+ "event-indexing",
+ "futures",
+ "hex-literal",
+ "itertools 0.14.0",
+ "maplit",
+ "mockall",
+ "model",
+ "num",
+ "number",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "regex",
+ "request-sharing",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "strum",
+ "testlib",
+ "thiserror 1.0.69",
+ "token-info",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "litemap"
@@ -4782,11 +5020,13 @@ dependencies = [
 name = "orderbook"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",
  "async-trait",
  "axum 0.8.8",
+ "bad-tokens",
  "bigdecimal",
  "cached",
  "chain",
@@ -4797,6 +5037,7 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
@@ -4808,6 +5049,7 @@ dependencies = [
  "number",
  "observe",
  "order-validation",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "reqwest 0.13.2",
@@ -4820,6 +5062,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
+ "token-info",
  "tokio",
  "toml",
  "tower 0.5.3",
@@ -5080,6 +5323,58 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "price-estimation"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "app-data",
+ "arc-swap",
+ "async-trait",
+ "bad-tokens",
+ "balance-overrides",
+ "bigdecimal",
+ "bytes-hex",
+ "cached",
+ "chain",
+ "chrono",
+ "clap",
+ "const-hex",
+ "contracts",
+ "derive_more 1.0.0",
+ "ethrpc",
+ "futures",
+ "gas-price-estimation",
+ "hex-literal",
+ "humantime",
+ "itertools 0.14.0",
+ "maplit",
+ "mockall",
+ "model",
+ "moka",
+ "num",
+ "number",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "rand 0.8.5",
+ "rate-limit",
+ "request-sharing",
+ "reqwest 0.13.2",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "testlib",
+ "thiserror 1.0.69",
+ "token-info",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -5533,6 +5828,7 @@ dependencies = [
  "database",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "humantime",
  "mimalloc",
  "mockall",
@@ -5590,6 +5886,17 @@ name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
+
+[[package]]
+name = "request-sharing"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "tokio",
+]
 
 [[package]]
 name = "reqwest"
@@ -6269,7 +6576,7 @@ version = "3.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52a8e3ca0ca629121f70ab50f95249e5a6f925cc0f6ffe8256c45b728875706c"
 dependencies = [
- "darling",
+ "darling 0.21.3",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -6340,12 +6647,15 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "account-balances",
  "alloy",
  "anyhow",
  "app-data",
  "arc-swap",
  "async-stream",
  "async-trait",
+ "bad-tokens",
+ "balance-overrides",
  "bigdecimal",
  "bytes-hex",
  "cached",
@@ -6359,6 +6669,7 @@ dependencies = [
  "derive_more 1.0.0",
  "ethrpc",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "indexmap 2.13.0",
@@ -6371,11 +6682,13 @@ dependencies = [
  "number",
  "observe",
  "order-validation",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.8.5",
  "rate-limit",
  "regex",
+ "request-sharing",
  "reqwest 0.13.2",
  "rust_decimal",
  "serde",
@@ -6384,6 +6697,7 @@ dependencies = [
  "strum",
  "testlib",
  "thiserror 1.0.69",
+ "token-info",
  "tokio",
  "toml",
  "tracing",
@@ -6472,6 +6786,7 @@ dependencies = [
  "futures",
  "hex-literal",
  "itertools 0.14.0",
+ "liquidity-sources",
  "maplit",
  "mockall",
  "model",
@@ -6505,11 +6820,14 @@ dependencies = [
  "ethrpc",
  "futures",
  "itertools 0.14.0",
+ "liquidity-sources",
+ "maplit",
  "mimalloc",
  "model",
  "num",
  "number",
  "observe",
+ "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
  "reqwest 0.13.2",
@@ -6784,6 +7102,12 @@ dependencies = [
  "unicode-normalization",
  "unicode-properties",
 ]
+
+[[package]]
+name = "strsim"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "strsim"
@@ -7095,6 +7419,24 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "token-info"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "contracts",
+ "ethrpc",
+ "futures",
+ "maplit",
+ "mockall",
+ "model",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "tokio"

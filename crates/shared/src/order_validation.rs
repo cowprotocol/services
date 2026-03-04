@@ -1,8 +1,5 @@
 use {
     crate::{
-        account_balances::{self, BalanceFetching, TransferSimulationError},
-        bad_token::list_based::DenyListedTokens,
-        code_fetching::CodeFetching,
         order_quoting::{
             CalculateQuoteError,
             OrderQuoting,
@@ -10,18 +7,15 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::{
-            PriceEstimationError,
-            Verification,
-            trade_verifier::balance_overrides::BalanceOverrideRequest,
-        },
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-        trade_finding,
     },
+    account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
+    bad_tokens::list_based::DenyListedTokens,
+    balance_overrides::BalanceOverrideRequest,
     contracts::alloy::{HooksTrampoline, WETH9},
     model::{
         DomainSeparator,
@@ -44,6 +38,12 @@ use {
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
+    },
+    price_estimation::{
+        PriceEstimationError,
+        Verification,
+        trade_finding,
+        trade_verifier::code_fetching::CodeFetching,
     },
     std::{sync::Arc, time::Duration},
     tracing::instrument,
@@ -1037,11 +1037,10 @@ mod tests {
     use {
         super::*,
         crate::{
-            account_balances::MockBalanceFetching,
-            code_fetching::MockCodeFetching,
             order_quoting::{FindQuoteError, MockOrderQuoting},
             signature_validator::MockSignatureValidating,
         },
+        account_balances::MockBalanceFetching,
         alloy::{
             primitives::{Address, U160, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
@@ -1055,6 +1054,7 @@ mod tests {
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
         number::nonzero::NonZeroU256,
+        price_estimation::trade_verifier::code_fetching::MockCodeFetching,
         serde_json::json,
     };
 
