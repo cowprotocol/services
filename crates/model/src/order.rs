@@ -1250,6 +1250,7 @@ mod tests {
             "signingScheme": "presign",
             "signature": "0x",
             "from": owner,
+            "fullBalanceCheck": false
         });
         assert_json_matches!(json!(presign_order), presign_json);
         assert_eq!(presign_order, serde_json::from_value(presign_json).unwrap());
@@ -1275,6 +1276,7 @@ mod tests {
                           0000000000000000000000000000000000000000000000000000000000000000\
                           00",
             "from": owner,
+            "fullBalanceCheck": false,
         });
         let expected_order = OrderCreation {
             signature: Signature::Eip712(EcdsaSignature {
@@ -1309,6 +1311,7 @@ mod tests {
                           0000000000000000000000000000000000000000000000000000000000000000\
                           1b",
             "from": owner,
+            "fullBalanceCheck": false,
         });
         assert_json_matches!(json!(expected_order), output_json_v27);
     }
