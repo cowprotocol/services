@@ -29,6 +29,18 @@ use {
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
 
+/// Join a path with a URL, ensuring that there is only one slash between them.
+fn join_url(url: &Url, mut path: &str) -> Url {
+    let mut url = url.to_string();
+    while url.ends_with('/') {
+        url.pop();
+    }
+    while path.starts_with('/') {
+        path = &path[1..]
+    }
+    Url::parse(&format!("{url}/{path}")).unwrap()
+}
+
 /// 0x API orders query parameters.
 ///
 /// These parameters are currently incomplete, and missing parameters can be
@@ -51,7 +63,7 @@ pub struct OrdersQuery {
 impl OrdersQuery {
     /// Encodes the orders query as a url with parameters.
     fn format_url(&self, base_url: &Url) -> Url {
-        let mut url = crate::url::join(base_url, "/orderbook/v1/orders");
+        let mut url = join_url(base_url, "/orderbook/v1/orders");
 
         if let Some(taker) = self.taker {
             url.query_pairs_mut()

@@ -13,9 +13,11 @@ use {
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
     futures::StreamExt,
     itertools::Itertools,
-    liquidity_sources::recent_block_cache::Block,
+    liquidity_sources::{
+        recent_block_cache::Block,
+        zeroex::{OrderRecord, OrdersQuery, ZeroExApi},
+    },
     model::{TokenPair, order::OrderKind},
-    shared::zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -215,12 +217,11 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 pub mod tests {
     use {
         super::*,
-        liquidity_sources::base_tokens::BaseTokens,
-        shared::{
-            http_solver::model::InternalizationStrategy,
-            interaction::Interaction,
-            zeroex_api::{self, OrderMetadata},
+        liquidity_sources::{
+            base_tokens::BaseTokens,
+            zeroex::{self, OrderMetadata},
         },
+        shared::{http_solver::model::InternalizationStrategy, interaction::Interaction},
     };
 
     fn get_relevant_pairs(token_a: Address, token_b: Address) -> HashSet<TokenPair> {
@@ -231,7 +232,7 @@ pub mod tests {
 
     fn order_with_tokens(token_a: Address, token_b: Address) -> OrderRecord {
         OrderRecord::new(
-            zeroex_api::Order {
+            zeroex::Order {
                 taker_token: token_a,
                 maker_token: token_b,
                 ..Default::default()
@@ -275,7 +276,7 @@ pub mod tests {
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_fillable_amount = |remaining_fillable_taker_amount| {
             OrderRecord::new(
-                zeroex_api::Order {
+                zeroex::Order {
                     taker_token: token_a,
                     maker_token: token_b,
                     taker_amount: 100_000_000,
@@ -315,7 +316,7 @@ pub mod tests {
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_amount = |taker_amount, remaining_fillable_taker_amount| {
             OrderRecord::new(
-                zeroex_api::Order {
+                zeroex::Order {
                     taker_token: token_a,
                     maker_token: token_b,
                     taker_amount,
@@ -350,7 +351,7 @@ pub mod tests {
             ethrpc::mock::web3().provider,
         ));
         let order_record = OrderRecord::new(
-            zeroex_api::Order {
+            zeroex::Order {
                 taker_amount: 100,
                 taker_token: sell_token,
                 ..Default::default()

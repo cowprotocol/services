@@ -16,7 +16,6 @@ dependencies = [
  "itertools 0.14.0",
  "mockall",
  "model",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]
@@ -2548,7 +2547,7 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
- "shared",
+ "signature-validator",
  "sqlx",
  "tokio",
  "tracing",
@@ -2969,6 +2968,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "shared",
+ "signature-validator",
  "solver",
  "solvers-dto",
  "tempfile",
@@ -3030,6 +3030,7 @@ dependencies = [
  "rstest",
  "serde_json",
  "shared",
+ "signature-validator",
  "solver",
  "solvers",
  "solvers-dto",
@@ -4343,9 +4344,12 @@ dependencies = [
  "alloy",
  "anyhow",
  "async-trait",
+ "bytes-hex",
  "cached",
  "chain",
+ "chrono",
  "clap",
+ "const-hex",
  "contracts",
  "ethrpc",
  "event-indexing",
@@ -5056,6 +5060,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "shared",
+ "signature-validator",
  "sqlx",
  "strum",
  "tempfile",
@@ -6695,6 +6700,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "signature-validator",
  "strum",
  "testlib",
  "thiserror 1.0.69",
@@ -6730,6 +6736,24 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "signature-validator"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "balance-overrides",
+ "const-hex",
+ "contracts",
+ "ethrpc",
+ "hex-literal",
+ "mockall",
+ "model",
+ "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
@@ -7425,7 +7449,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "token-info"
 version = "0.1.0"
 dependencies = [
- "alloy",
+ "alloy-primitives",
  "anyhow",
  "async-trait",
  "contracts",
@@ -7434,7 +7458,6 @@ dependencies = [
  "maplit",
  "mockall",
  "model",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]

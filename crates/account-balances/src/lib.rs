@@ -12,7 +12,6 @@ use {
         order::{Order, SellTokenSource},
     },
     std::sync::{Arc, LazyLock},
-    thiserror::Error,
 };
 
 mod cached;
@@ -219,10 +218,25 @@ pub struct Simulation {
     pub can_transfer: bool,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum SimulationError {
-    #[error("method error: {0:?}")]
-    Method(#[from] alloy::contract::Error),
+    Method(alloy::contract::Error),
+}
+
+impl std::fmt::Display for SimulationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Method(err) => write!(f, "method error: {err:?}"),
+        }
+    }
+}
+
+impl std::error::Error for SimulationError {}
+
+impl From<alloy::contract::Error> for SimulationError {
+    fn from(err: alloy::contract::Error) -> Self {
+        Self::Method(err)
+    }
 }
 
 // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not

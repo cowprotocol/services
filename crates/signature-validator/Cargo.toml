@@ -1,5 +1,5 @@
 [package]
-name = "account-balances"
+name = "signature-validator"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
@@ -10,17 +10,14 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 balance-overrides = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
-futures = { workspace = true }
-itertools = { workspace = true }
+hex-literal = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }
-tokio = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
-
-[dev-dependencies]
-mockall = { workspace = true }
 
 [features]
 test-util = ["dep:mockall"]
