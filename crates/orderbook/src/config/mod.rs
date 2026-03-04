@@ -9,7 +9,7 @@ use {
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     shared::fee_factor::FeeFactor,
-    std::path::Path,
+    std::{collections::HashMap, path::Path},
 };
 
 pub mod banned_users;
@@ -64,6 +64,12 @@ pub struct Configuration {
     /// Whether to skip EIP-1271 signature validation.
     #[serde(default)]
     pub eip1271_skip_creation_validation: bool,
+
+    /// Named authentication tokens for the debug API.
+    /// Map of token name to secret value in config (flipped to secret → name at
+    /// runtime for O(1) lookup). The debug endpoint is disabled when empty.
+    #[serde(default)]
+    pub debug_route_auth_tokens: HashMap<String, String>,
 }
 
 impl Default for Configuration {
@@ -77,6 +83,7 @@ impl Default for Configuration {
             unsupported_tokens: Default::default(),
             banned_users: Default::default(),
             eip1271_skip_creation_validation: false,
+            debug_route_auth_tokens: Default::default(),
         }
     }
 }
@@ -246,6 +253,7 @@ mod tests {
             ],
             banned_users: Default::default(),
             eip1271_skip_creation_validation: true,
+            debug_route_auth_tokens: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

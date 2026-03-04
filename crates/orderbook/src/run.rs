@@ -4,6 +4,7 @@ use {
         arguments::Arguments,
         config::Configuration,
         database::Postgres,
+        debug_simulation::OrderSimulator,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
@@ -125,6 +126,35 @@ pub async fn run(args: Arguments, config: Configuration) {
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
     let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
+
+    let debug_simulator = {
+        let tenderly = match args
+            .shared
+            .tenderly
+            .get_api_instance(&http_factory, "order_debug".to_owned())
+        {
+            Ok(api) => api,
+            Err(err) => {
+                tracing::warn!(?err, "failed to initialize Tenderly API for debug endpoint");
+                None
+            }
+        };
+        Arc::new(OrderSimulator::new(
+            web3.clone(),
+            settlement_contract.clone(),
+            balance_overrider.clone(),
+            tenderly,
+            chain_id,
+        ))
+    };
+    // flip the debug auth token map to have O(1) lookup by token value from http
+    // header at runtime
+    let debug_route_auth_tokens: std::collections::HashMap<String, String> = config
+        .debug_route_auth_tokens
+        .iter()
+        .map(|(name, secret)| (secret.clone(), name.clone()))
+        .collect();
+
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
@@ -410,6 +440,8 @@ pub async fn run(args: Arguments, config: Configuration) {
         },
         native_price_estimator,
         args.price_estimation.quote_timeout,
+        debug_simulator,
+        debug_route_auth_tokens,
     );
 
     let mut metrics_address = args.bind_address;
@@ -482,6 +514,8 @@ fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
+    debug_simulator: Arc<OrderSimulator>,
+    debug_route_auth_tokens: std::collections::HashMap<String, String>,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -491,6 +525,8 @@ fn serve_api(
         app_data,
         native_price_estimator,
         quote_timeout,
+        debug_simulator,
+        debug_route_auth_tokens,
     );
     tracing::info!(%address, "serving order book");
 

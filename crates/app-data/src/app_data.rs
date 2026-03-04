@@ -355,6 +355,10 @@ impl Root {
             backend: None,
         }
     }
+
+    pub fn metadata(&self) -> Option<&ProtocolAppData> {
+        self.metadata.as_ref()
+    }
 }
 
 /// Caches whether a given app data document contains wrappers, keyed by

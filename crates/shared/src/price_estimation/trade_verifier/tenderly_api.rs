@@ -29,8 +29,12 @@ use {
 #[async_trait::async_trait]
 pub trait TenderlyApi: Send + Sync + 'static {
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse>;
+    /// Makes a saved simulation publicly accessible via a shareable URL.
+    async fn share_simulation(&self, id: &str) -> Result<()>;
     fn log(&self, simulation: SimulationRequest) -> Result<()>;
     fn simulation_url(&self, id: &str) -> Url;
+    /// URL that works without authentication (after `share_simulation`).
+    fn shared_simulation_url(&self, id: &str) -> Url;
 }
 
 const API_URL: &str = "https://api.tenderly.co";
@@ -106,6 +110,12 @@ impl TenderlyApi for TenderlyHttpApi {
         Ok(serde_json::from_str(&body)?)
     }
 
+    async fn share_simulation(&self, id: &str) -> Result<()> {
+        let url = crate::url::join(&self.api, &format!("simulations/{id}/share"));
+        self.client.post(url).send().await?.error_for_status()?;
+        Ok(())
+    }
+
     fn log(&self, simulation: SimulationRequest) -> Result<()> {
         let request_url = crate::url::join(&self.api, "simulate");
         let simulation_url =
@@ -127,6 +137,11 @@ impl TenderlyApi for TenderlyHttpApi {
 
     fn simulation_url(&self, id: &str) -> Url {
         crate::url::join(&self.dashboard, &format!("simulator/{id}"))
+    }
+
+    fn shared_simulation_url(&self, id: &str) -> Url {
+        Url::parse(&format!("{DASHBOARD_URL}/shared/simulation/{id}"))
+            .expect("valid shared simulation URL")
     }
 }
 
@@ -155,12 +170,20 @@ impl TenderlyApi for Instrumented {
         result
     }
 
+    async fn share_simulation(&self, id: &str) -> Result<()> {
+        self.inner.share_simulation(id).await
+    }
+
     fn log(&self, simulation: SimulationRequest) -> Result<()> {
         self.inner.log(simulation)
     }
 
     fn simulation_url(&self, id: &str) -> Url {
         self.inner.simulation_url(id)
+    }
+
+    fn shared_simulation_url(&self, id: &str) -> Url {
+        self.inner.shared_simulation_url(id)
     }
 }
 

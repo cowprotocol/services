@@ -458,7 +458,7 @@ impl TradeVerifier {
     }
 }
 
-fn legacy_settlement_to_alloy(
+pub fn legacy_settlement_to_alloy(
     settlement: EncodedSettlement,
 ) -> GPv2Settlement::GPv2Settlement::settleCall {
     GPv2Settlement::GPv2Settlement::settleCall {

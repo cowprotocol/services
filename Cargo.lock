@@ -5004,6 +5004,7 @@ dependencies = [
  "app-data",
  "async-trait",
  "axum 0.8.8",
+ "balance-overrides",
  "bigdecimal",
  "cached",
  "chain",

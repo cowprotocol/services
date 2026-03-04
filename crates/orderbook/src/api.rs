@@ -2,6 +2,7 @@ use {
     crate::{
         app_data,
         database::Postgres,
+        debug_simulation::OrderSimulator,
         orderbook::Orderbook,
         quoter::QuoteHandler,
         solver_competition::LoadSolverCompetitionError,
@@ -19,6 +20,7 @@ use {
     shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
         borrow::Cow,
+        collections::HashMap,
         fmt::Debug,
         sync::Arc,
         time::{Duration, Instant},
@@ -29,6 +31,7 @@ use {
 
 mod cancel_order;
 mod cancel_orders;
+mod debug_order;
 mod get_app_data;
 mod get_auction;
 mod get_native_price;
@@ -67,6 +70,8 @@ pub struct AppState {
     pub app_data: Arc<app_data::Registry>,
     pub native_price_estimator: Arc<dyn NativePriceEstimating>,
     pub quote_timeout: Duration,
+    pub debug_simulator: Arc<OrderSimulator>,
+    pub debug_route_auth_tokens: HashMap<String, String>,
 }
 
 async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Response {
@@ -136,6 +141,7 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
+#[expect(clippy::too_many_arguments)]
 pub fn handle_all_routes(
     database_write: Postgres,
     database_read: Postgres,
@@ -144,6 +150,8 @@ pub fn handle_all_routes(
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
+    debug_simulator: Arc<OrderSimulator>,
+    debug_route_auth_tokens: HashMap<String, String>,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -155,6 +163,8 @@ pub fn handle_all_routes(
         app_data,
         native_price_estimator,
         quote_timeout,
+        debug_simulator,
+        debug_route_auth_tokens,
     });
 
     let routes = [
@@ -259,6 +269,11 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        (
+            "POST",
+            "/api/v1/debug/order/{uid}",
+            post(debug_order::debug_order_handler),
+        ),
         // V2 routes
         // /solver_competition routes (specific before parameterized)
         (
