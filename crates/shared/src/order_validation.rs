@@ -414,77 +414,88 @@ impl OrderValidator {
         owner: Address,
         app_data: &OrderAppData,
     ) -> Result<(), ValidationError> {
-        let mut res = Ok(());
-        let has_wrappers = !app_data.inner.protocol.wrappers.is_empty();
+        let simulate_transfers = async |transfer_amounts: &[U256]| {
+            let mut res = Ok(());
+            let has_wrappers = !app_data.inner.protocol.wrappers.is_empty();
 
-        // Simulate transferring a small token balance into the settlement contract.
-        // As a spam protection we require that an account must have at least 1 atom
-        // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
-        // into numerical issues with such small amounts. But there are also tokens
-        // where a single atom is already quite expensive (tokenized stocks).
-        // To cover both cases we simulate multiple small transfers. As soon as one
-        // passes we consider the token transferable. If all transfers fail we return
-        // the last error.
-        for transfer_amount in [1, 10, 100].into_iter().map(U256::from) {
-            match self
-                .balance_fetcher
-                .can_transfer(
-                    &account_balances::Query {
-                        token: order.data().sell_token,
-                        owner,
-                        source: order.data().sell_token_balance,
-                        interactions: app_data.interactions.pre.clone(),
-                        balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
-                            BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
-                            }
-                        }),
+            for transfer_amount in transfer_amounts {
+                match self
+                    .balance_fetcher
+                    .can_transfer(
+                        &account_balances::Query {
+                            token: order.data().sell_token,
+                            owner,
+                            source: order.data().sell_token_balance,
+                            interactions: app_data.interactions.pre.clone(),
+                            balance_override: app_data.inner.protocol.flashloan.as_ref().map(
+                                |loan| BalanceOverrideRequest {
+                                    token: loan.token,
+                                    holder: loan.receiver,
+                                    amount: loan.amount,
+                                },
+                            ),
+                        },
+                        *transfer_amount,
+                    )
+                    .await
+                {
+                    Ok(_) => return Ok(()),
+                    Err(
+                        TransferSimulationError::InsufficientAllowance
+                        | TransferSimulationError::InsufficientBalance
+                        | TransferSimulationError::TransferFailed,
+                    ) if order.signature == Signature::PreSign || has_wrappers => {
+                        // Pre-sign orders do not require sufficient balance or allowance.
+                        // The idea is that this allows smart contracts to place orders bundled with
+                        // other transactions that either produce the required balance or set the
+                        // allowance. This would, for example, allow a Gnosis Safe to bundle the
+                        // pre-signature transaction with a WETH wrap and WETH approval to the vault
+                        // relayer contract.
+                        //
+                        // Similarly, orders with wrappers may produce the required balance or
+                        // allowance as part of the wrapper execution.
+                        return Ok(());
+                    }
+                    Err(err) => match err {
+                        TransferSimulationError::InsufficientAllowance => {
+                            // This error will be triggered regardless of the amount
+                            return Err(ValidationError::InsufficientAllowance);
+                        }
+                        TransferSimulationError::InsufficientBalance => {
+                            // Since the amount starts at 1 atom, if this error is triggered then it
+                            // will be triggered for the other amounts too
+                            return Err(ValidationError::InsufficientBalance);
+                        }
+                        TransferSimulationError::TransferFailed => {
+                            res = Err(ValidationError::TransferSimulationFailed);
+                        }
+                        TransferSimulationError::Other(err) => {
+                            tracing::warn!("TransferSimulation failed: {:?}", err);
+                            res = Err(ValidationError::TransferSimulationFailed);
+                        }
                     },
-                    transfer_amount,
-                )
-                .await
-            {
-                Ok(_) => return Ok(()),
-                Err(
-                    TransferSimulationError::InsufficientAllowance
-                    | TransferSimulationError::InsufficientBalance
-                    | TransferSimulationError::TransferFailed,
-                ) if order.signature == Signature::PreSign || has_wrappers => {
-                    // Pre-sign orders do not require sufficient balance or allowance.
-                    // The idea is that this allows smart contracts to place orders bundled with
-                    // other transactions that either produce the required balance or set the
-                    // allowance. This would, for example, allow a Gnosis Safe to bundle the
-                    // pre-signature transaction with a WETH wrap and WETH approval to the vault
-                    // relayer contract.
-                    //
-                    // Similarly, orders with wrappers may produce the required balance or
-                    // allowance as part of the wrapper execution.
-                    return Ok(());
                 }
-                Err(err) => match err {
-                    TransferSimulationError::InsufficientAllowance => {
-                        // This error will be triggered regardless of the amount
-                        return Err(ValidationError::InsufficientAllowance);
-                    }
-                    TransferSimulationError::InsufficientBalance => {
-                        // Since the amount starts at 1 atom, if this error is triggered then it
-                        // will be triggered for the other amounts too
-                        return Err(ValidationError::InsufficientBalance);
-                    }
-                    TransferSimulationError::TransferFailed => {
-                        res = Err(ValidationError::TransferSimulationFailed);
-                    }
-                    TransferSimulationError::Other(err) => {
-                        tracing::warn!("TransferSimulation failed: {:?}", err);
-                        res = Err(ValidationError::TransferSimulationFailed);
-                    }
-                },
             }
-        }
+            res
+        };
 
-        res
+        if order.full_balance_check {
+            // If requested at order creation, simulate transferring full sell_amount
+            // into the settlement contract.
+            // This will ensure the account has enough allowance and balance for
+            // the transfer.
+            simulate_transfers([order.data().sell_amount].as_slice()).await
+        } else {
+            // Simulate transferring a small token balance into the settlement contract.
+            // As a spam protection we require that an account must have at least 1 atom
+            // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
+            // into numerical issues with such small amounts. But there are also tokens
+            // where a single atom is already quite expensive (tokenized stocks).
+            // To cover both cases we simulate multiple small transfers. As soon as one
+            // passes we consider the token transferable. If all transfers fail we return
+            // the last error.
+            simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await
+        }
     }
 }
 

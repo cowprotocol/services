@@ -15,6 +15,12 @@ async fn local_node_uncovered_order() {
     run_test(test).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_full_balance_check() {
+    run_test(test_full_balance_check).await;
+}
+
 /// Tests that a user can already create an order if they only have
 /// 1 wei of the sell token and later fund their account to get the
 /// order executed.
@@ -86,4 +92,97 @@ async fn test(web3: Web3) {
     })
     .await
     .unwrap();
+}
+
+async fn test_full_balance_check(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+    let weth = &onchain.contracts().weth;
+
+    weth.approve(onchain.contracts().allowance, 1u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    weth.deposit()
+        .from(trader.address())
+        .value(1u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    tracing::info!("Placing order with 0 sell tokens");
+    let order = OrderCreation {
+        sell_token: *weth.address(),
+        sell_amount: 2u64.eth(),
+        fee_amount: ::alloy::primitives::U256::ZERO,
+        buy_token: *token.address(),
+        buy_amount: 1u64.eth(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        ..Default::default()
+    };
+    let unchecked_order = order.clone().sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+
+    let order = OrderCreation {
+        full_balance_check: true,
+        // different valid_to for orders to be considered distinct
+        valid_to: model::time::now_in_epoch_seconds() + 301,
+        ..order
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    // This order can be created because full balance checks are not enabled.
+    // The account has 1 WEI of the token.
+    services.create_order(&unchecked_order).await.unwrap();
+
+    // This order can not be created, because despite the token being transferrable
+    // The account does not have enough sell token balance to cover the order.
+    assert!(
+        dbg!(services.create_order(&order).await.unwrap_err())
+            .1
+            .contains("InsufficientBalance")
+    );
+
+    weth.deposit()
+        .from(trader.address())
+        .value(1u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // This order can not be created, because the account does not have enough
+    // sell token allowance.
+    assert!(
+        dbg!(services.create_order(&order).await.unwrap_err())
+            .1
+            .contains("InsufficientAllowance")
+    );
+
+    weth.approve(onchain.contracts().allowance, 2u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // The account has correct balance and allowance
+    dbg!(services.create_order(&order).await).unwrap();
 }

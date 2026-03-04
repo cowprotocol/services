@@ -342,6 +342,9 @@ pub struct OrderCreation {
     /// The order's AppData (can be an hash, the JSON body or both).
     #[serde(flatten)]
     pub app_data: OrderCreationAppData,
+    /// Should the order's balance checks be skipped
+    #[serde(default)]
+    pub full_balance_check: bool,
 }
 
 impl OrderCreation {
@@ -1229,6 +1232,7 @@ mod tests {
             from: Some(owner),
             signature: Signature::PreSign,
             quote_id: Some(42),
+            full_balance_check: false,
         };
 
         // Test PreSign round-trip (no signature normalization needed)
