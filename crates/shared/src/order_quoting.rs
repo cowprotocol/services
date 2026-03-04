@@ -1,17 +1,8 @@
 use {
-    super::price_estimation::{
-        self,
-        PriceEstimating,
-        PriceEstimationError,
-        native::NativePriceEstimating,
-    },
     crate::{
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
-        gas_price_estimation::GasPriceEstimating,
         order_validation::PreOrderData,
-        price_estimation::{Estimate, QuoteVerificationMode, Verification},
-        trade_finding::external::dto,
     },
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
@@ -19,6 +10,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
     futures::TryFutureExt,
+    gas_price_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
         order::{OrderClass, OrderKind},
@@ -26,6 +18,16 @@ use {
     },
     num::FromPrimitive,
     number::conversions::big_decimal_to_u256,
+    price_estimation::{
+        self,
+        Estimate,
+        PriceEstimating,
+        PriceEstimationError,
+        QuoteVerificationMode,
+        Verification,
+        native::NativePriceEstimating,
+        trade_finding::external::dto,
+    },
     std::sync::Arc,
     thiserror::Error,
     tracing::instrument,
@@ -784,23 +786,21 @@ pub struct QuoteMetadataV1 {
 mod tests {
     use {
         super::*,
-        crate::{
-            gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME,
-                MockPriceEstimating,
-                native::MockNativePriceEstimating,
-            },
-        },
         Address,
         U256 as AlloyU256,
         account_balances::MockBalanceFetching,
         alloy::eips::eip1559::Eip1559Estimation,
         chrono::Utc,
         futures::FutureExt,
+        gas_price_estimation::FakeGasPriceEstimator,
         mockall::{Sequence, predicate::eq},
         model::time,
         number::nonzero::NonZeroU256,
+        price_estimation::{
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            MockPriceEstimating,
+            native::MockNativePriceEstimating,
+        },
     };
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {

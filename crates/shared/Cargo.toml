@@ -10,35 +10,40 @@ doctest = false
 
 [dependencies]
 account-balances = { workspace = true }
-alloy = { workspace = true, features = ["sol-types", "signer-local", "rand", "provider-trace-api"] }
+alloy = { workspace = true, features = ["provider-trace-api", "rand", "signer-local", "sol-types"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 arc-swap = { workspace = true }
-balance-overrides = { workspace = true }
-bytes-hex = { workspace = true }
 async-trait = { workspace = true }
+bad-tokens = { workspace = true }
+balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
+bytes-hex = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
-event-indexing = { workspace = true }
 futures = { workspace = true }
-observe = { workspace = true }
-const-hex = { workspace = true }
+gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
+liquidity-sources = { workspace = true }
+mockall = { workspace = true, optional = true }
 model = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 num = { workspace = true }
 number = { workspace = true }
+observe = { workspace = true }
 order-validation = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
@@ -53,13 +58,10 @@ signature-validator = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 token-info = { workspace = true }
-tokio = { workspace = true, features = ["macros", "time", "signal"] }
+tokio = { workspace = true, features = ["macros", "signal", "time"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }
-moka = { workspace = true, features = ["sync"] }
-mockall = { workspace = true, optional = true }
-liquidity-sources = { workspace = true }
 
 [dev-dependencies]
 account-balances = { workspace = true, features = ["test-util"] }
@@ -70,6 +72,7 @@ async-stream = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
+price-estimation = { workspace = true, features = ["test-util"] }
 regex = { workspace = true }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

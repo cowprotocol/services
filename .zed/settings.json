@@ -1,0 +1,13 @@
+{
+    "languages": {
+        "TOML": {
+            "language_servers": ["tombi"],
+            "formatter": {
+                "language_server": {
+                    "name": "tombi",
+                },
+            },
+            "format_on_save": "on",
+        },
+    },
+}

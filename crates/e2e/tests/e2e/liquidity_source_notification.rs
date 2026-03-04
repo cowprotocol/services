@@ -185,6 +185,8 @@ async fn liquidity_source_notification(web3: Web3) {
                 base_tokens: vec![],
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -200,8 +202,6 @@ http-timeout = "10s"
             liquorice_api.port
         )),
     );
-    let (_config_file, config_arg) =
-        Configuration::test("liquorice_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(
@@ -209,17 +209,18 @@ http-timeout = "10s"
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                config_arg,
             ],
+            Configuration::test("liquorice_solver", solver.address()),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Create CoW order

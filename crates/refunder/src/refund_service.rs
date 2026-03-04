@@ -10,6 +10,7 @@ use {
     anyhow::Result,
     database::{OrderUid, ethflow_orders::EthOrderPlacement},
     futures::{StreamExt, stream},
+    gas_price_estimation::eth_node::NodeGasPriceEstimator,
     std::collections::HashMap,
 };
 
@@ -254,11 +255,7 @@ impl RefundService<Postgres, AlloyChain, Submitter> {
         web3.wallet.register_signer(signer);
 
         // Transaction submitter
-        let gas_estimator = Box::new(
-            shared::gas_price_estimation::eth_node::NodeGasPriceEstimator::new(
-                web3.provider.clone(),
-            ),
-        );
+        let gas_estimator = Box::new(NodeGasPriceEstimator::new(web3.provider.clone()));
         let submitter = Submitter {
             web3,
             signer_address,

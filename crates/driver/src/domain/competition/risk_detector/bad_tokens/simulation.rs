@@ -4,10 +4,10 @@ use {
         domain::competition::{Order, order, risk_detector::Quality},
         infra::{self, observe::metrics},
     },
+    bad_tokens::{TokenQuality, trace_call::TraceCallDetectorRaw},
     futures::FutureExt,
     model::interaction::InteractionData,
     request_sharing::BoxRequestSharing,
-    shared::bad_token::{TokenQuality, trace_call::TraceCallDetectorRaw},
     std::{
         sync::Arc,
         time::{Duration, Instant},

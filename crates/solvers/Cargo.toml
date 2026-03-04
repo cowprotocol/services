@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
+doctest = false
 name = "solvers"
 path = "src/lib.rs"
-doctest = false
 
 [[bin]]
 name = "solvers"
@@ -17,7 +17,7 @@ alloy = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chain = { workspace = true }
-chrono = { workspace = true, features = ["serde"], default-features = false }
+chrono = { workspace = true, default-features = false, features = ["serde"] }
 clap = { workspace = true, features = ["derive", "env"] }
 const-hex = { workspace = true }
 derive_more = { workspace = true }
@@ -28,6 +28,7 @@ liquidity-sources = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 num = { workspace = true }
 number = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true }
@@ -53,16 +54,16 @@ solver = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 maplit = { workspace = true }
+tempfile = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }
 vergen = { workspace = true, features = ["git", "gitcl"] }
 
-[lints]
-workspace = true
-
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "bad-tokens"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+alloy = { workspace = true }
+anyhow = { workspace = true }
+contracts = { workspace = true }
+ethrpc = { workspace = true }
+model = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

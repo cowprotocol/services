@@ -9,7 +9,8 @@ use {
     anyhow::anyhow,
     ethrpc::block_stream::CurrentBlockWatcher,
     liquidity_sources::zeroex::DefaultZeroExApi,
-    shared::{http_client::HttpClientFactory, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
+    price_estimation::gas::GAS_PER_ZEROEX_ORDER,
+    shared::http_client::HttpClientFactory,
     solver::{
         liquidity::{LimitOrder, zeroex::ZeroExLiquidity},
         liquidity_collector::LiquidityCollecting,

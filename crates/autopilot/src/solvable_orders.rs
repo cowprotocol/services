@@ -7,6 +7,7 @@ use {
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
+    bad_tokens::list_based::DenyListedTokens,
     database::order_events::OrderEventLabel,
     futures::FutureExt,
     itertools::Itertools,
@@ -15,15 +16,12 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
-    shared::{
-        bad_token::list_based::DenyListedTokens,
-        price_estimation::{
-            native::{NativePriceEstimating, to_normalized_price},
-            native_price_cache::NativePriceUpdater,
-        },
-        remaining_amounts,
+    price_estimation::{
+        native::{NativePriceEstimating, to_normalized_price},
+        native_price_cache::NativePriceUpdater,
     },
+    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
+    shared::remaining_amounts,
     std::{
         collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
         future::Future,
@@ -691,21 +689,19 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{Address, B256},
+        bad_tokens::list_based::DenyListedTokens,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
-        shared::{
-            bad_token::list_based::DenyListedTokens,
-            price_estimation::{
-                HEALTHY_PRICE_ESTIMATION_TIME,
-                PriceEstimationError,
-                native::MockNativePriceEstimating,
-                native_price_cache::{
-                    ApproximationToken,
-                    Cache,
-                    CachingNativePriceEstimator,
-                    NativePriceUpdater,
-                },
+        price_estimation::{
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            PriceEstimationError,
+            native::MockNativePriceEstimating,
+            native_price_cache::{
+                ApproximationToken,
+                Cache,
+                CachingNativePriceEstimator,
+                NativePriceUpdater,
             },
         },
     };

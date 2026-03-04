@@ -15,8 +15,8 @@ use {
         routing::{delete, get, post, put},
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
+    price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     serde::{Deserialize, Serialize},
-    shared::price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     std::{
         borrow::Cow,
         fmt::Debug,
@@ -476,7 +476,23 @@ pub async fn response_body(response: axum::http::Response<axum::body::Body>) -> 
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde::ser, serde_json::json};
+    use {
+        crate::api::{Error, rich_error},
+        alloy::primitives::{Address, B256},
+        app_data::AppDataHash,
+        axum::{
+            Router,
+            body::Body,
+            extract::{Path, Query},
+            http::{Request, StatusCode},
+            response::IntoResponse,
+            routing::get,
+        },
+        model::order::OrderUid,
+        serde::{Deserialize, Serialize, ser},
+        serde_json::json,
+        tower::ServiceExt as _,
+    };
 
     #[test]
     fn rich_errors_skip_unset_data_field() {
@@ -532,5 +548,371 @@ mod tests {
                 "description": "bar",
             })
         );
+    }
+
+    // Tests for Axum extractor type parsing.
+    //
+    // Since the parsing behavior depends on the type, not the endpoint,
+    // we test each type once here rather than duplicating across handlers.
+
+    async fn get_request(router: Router, path: &str) -> axum::response::Response<Body> {
+        router
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    mod path_order_uid {
+        use super::*;
+
+        async fn handler(Path(_uid): Path<OrderUid>) -> StatusCode {
+            StatusCode::OK
+        }
+
+        fn router() -> Router {
+            Router::new().route("/orders/{uid}", get(handler))
+        }
+
+        async fn request(uid: &str) -> axum::response::Response<Body> {
+            get_request(router(), &format!("/orders/{uid}")).await
+        }
+
+        #[tokio::test]
+        async fn with_0x_prefix() {
+            let uid = format!("0x{}", "01".repeat(56));
+            assert_eq!(request(&uid).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn without_0x_prefix() {
+            let uid = "01".repeat(56);
+            assert_eq!(request(&uid).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_with_0x() {
+            let uid = format!("0x{}", "01".repeat(56).strip_suffix('1').unwrap());
+            assert_eq!(request(&uid).await.status(), StatusCode::BAD_REQUEST);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_without_0x() {
+            let uid = "01".repeat(56);
+            let uid = uid.strip_suffix('1').unwrap();
+            assert_eq!(request(uid).await.status(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    mod path_address {
+        use super::*;
+
+        async fn handler(Path(_addr): Path<Address>) -> StatusCode {
+            StatusCode::OK
+        }
+
+        fn router() -> Router {
+            Router::new().route("/token/{addr}", get(handler))
+        }
+
+        async fn request(addr: &str) -> axum::response::Response<Body> {
+            get_request(router(), &format!("/token/{addr}")).await
+        }
+
+        #[tokio::test]
+        async fn with_0x_prefix() {
+            let addr = format!("0x{}", "01".repeat(20));
+            assert_eq!(request(&addr).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn without_0x_prefix() {
+            let addr = "01".repeat(20);
+            assert_eq!(request(&addr).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_with_0x() {
+            let addr = format!("0x{}", "01".repeat(20).strip_suffix('1').unwrap());
+            assert_eq!(request(&addr).await.status(), StatusCode::BAD_REQUEST);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_without_0x() {
+            let addr = "01".repeat(20);
+            let addr = addr.strip_suffix('1').unwrap();
+            assert_eq!(request(addr).await.status(), StatusCode::BAD_REQUEST);
+        }
+
+        #[tokio::test]
+        async fn too_short() {
+            assert_eq!(request("0x0101").await.status(), StatusCode::BAD_REQUEST);
+        }
+
+        #[tokio::test]
+        async fn invalid_hex_chars() {
+            let addr = format!("0x{}", "GG".repeat(20));
+            assert_eq!(request(&addr).await.status(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    mod path_b256 {
+        use super::*;
+
+        async fn handler(Path(_hash): Path<B256>) -> StatusCode {
+            StatusCode::OK
+        }
+
+        fn router() -> Router {
+            Router::new().route("/tx/{hash}", get(handler))
+        }
+
+        async fn request(hash: &str) -> axum::response::Response<Body> {
+            get_request(router(), &format!("/tx/{hash}")).await
+        }
+
+        #[tokio::test]
+        async fn with_0x_prefix() {
+            let hash = format!("0x{}", "01".repeat(32));
+            assert_eq!(request(&hash).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn without_0x_prefix() {
+            let hash = "01".repeat(32);
+            assert_eq!(request(&hash).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_with_0x() {
+            let hash = format!("0x{}", "01".repeat(32).strip_suffix('1').unwrap());
+            assert_eq!(request(&hash).await.status(), StatusCode::BAD_REQUEST);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_without_0x() {
+            let hash = "01".repeat(32);
+            let hash = hash.strip_suffix('1').unwrap();
+            assert_eq!(request(hash).await.status(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    mod path_app_data_hash {
+        use super::*;
+
+        async fn handler(Path(_hash): Path<AppDataHash>) -> StatusCode {
+            StatusCode::OK
+        }
+
+        fn router() -> Router {
+            Router::new().route("/app_data/{hash}", get(handler))
+        }
+
+        async fn request(hash: &str) -> axum::response::Response<Body> {
+            get_request(router(), &format!("/app_data/{hash}")).await
+        }
+
+        #[tokio::test]
+        async fn with_0x_prefix() {
+            let hash = format!("0x{}", "01".repeat(32));
+            assert_eq!(request(&hash).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn without_0x_prefix() {
+            let hash = "01".repeat(32);
+            assert_eq!(request(&hash).await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_with_0x() {
+            let hash = format!("0x{}", "01".repeat(32).strip_suffix('1').unwrap());
+            assert_eq!(request(&hash).await.status(), StatusCode::BAD_REQUEST);
+        }
+
+        #[tokio::test]
+        async fn odd_hex_chars_without_0x() {
+            let hash = "01".repeat(32);
+            let hash = hash.strip_suffix('1').unwrap();
+            assert_eq!(request(hash).await.status(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    mod path_u64 {
+        use super::*;
+
+        async fn handler(Path(_id): Path<u64>) -> StatusCode {
+            StatusCode::OK
+        }
+
+        fn router() -> Router {
+            Router::new().route("/resource/{id}", get(handler))
+        }
+
+        async fn request(path: &str) -> axum::response::Response<Body> {
+            get_request(router(), path).await
+        }
+
+        #[tokio::test]
+        async fn valid() {
+            assert_eq!(request("/resource/123").await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn invalid_string() {
+            assert_eq!(
+                request("/resource/abc").await.status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+
+        #[tokio::test]
+        async fn negative() {
+            assert_eq!(
+                request("/resource/-1").await.status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+    }
+
+    mod query_hex_types {
+        use super::*;
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Params {
+            #[allow(unused)]
+            order_uid: Option<OrderUid>,
+            #[allow(unused)]
+            owner: Option<Address>,
+        }
+
+        async fn handler(Query(_q): Query<Params>) -> StatusCode {
+            StatusCode::OK
+        }
+
+        fn router() -> Router {
+            Router::new().route("/trades", get(handler))
+        }
+
+        async fn request(query: &str) -> axum::response::Response<Body> {
+            get_request(router(), &format!("/trades?{query}")).await
+        }
+
+        #[tokio::test]
+        async fn order_uid_with_0x_prefix() {
+            let uid = format!("0x{}", "01".repeat(56));
+            assert_eq!(
+                request(&format!("orderUid={uid}")).await.status(),
+                StatusCode::OK
+            );
+        }
+
+        #[tokio::test]
+        async fn order_uid_without_0x_prefix() {
+            let uid = "01".repeat(56);
+            assert_eq!(
+                request(&format!("orderUid={uid}")).await.status(),
+                StatusCode::OK
+            );
+        }
+
+        #[tokio::test]
+        async fn order_uid_odd_hex_chars() {
+            let uid = format!("0x{}", "01".repeat(56).strip_suffix('1').unwrap());
+            assert_eq!(
+                request(&format!("orderUid={uid}")).await.status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+
+        #[tokio::test]
+        async fn owner_with_0x_prefix() {
+            let owner = format!("0x{}", "01".repeat(20));
+            assert_eq!(
+                request(&format!("owner={owner}")).await.status(),
+                StatusCode::OK
+            );
+        }
+
+        #[tokio::test]
+        async fn owner_without_0x_prefix() {
+            let owner = "01".repeat(20);
+            assert_eq!(
+                request(&format!("owner={owner}")).await.status(),
+                StatusCode::OK
+            );
+        }
+
+        #[tokio::test]
+        async fn owner_odd_hex_chars() {
+            let owner = format!("0x{}", "01".repeat(20).strip_suffix('1').unwrap());
+            assert_eq!(
+                request(&format!("owner={owner}")).await.status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+    }
+
+    mod query_numeric_types {
+        use super::*;
+
+        #[derive(Deserialize)]
+        struct Params {
+            #[allow(unused)]
+            offset: Option<u64>,
+            #[allow(unused)]
+            limit: Option<u64>,
+        }
+
+        async fn handler(Query(_q): Query<Params>) -> StatusCode {
+            StatusCode::OK
+        }
+
+        fn router() -> Router {
+            Router::new().route("/items", get(handler))
+        }
+
+        async fn request(path: &str) -> axum::response::Response<Body> {
+            get_request(router(), path).await
+        }
+
+        #[tokio::test]
+        async fn no_params() {
+            assert_eq!(request("/items").await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn only_offset() {
+            assert_eq!(request("/items?offset=5").await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn only_limit() {
+            assert_eq!(request("/items?limit=20").await.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn both_params() {
+            assert_eq!(
+                request("/items?offset=5&limit=20").await.status(),
+                StatusCode::OK
+            );
+        }
+
+        #[tokio::test]
+        async fn invalid_offset() {
+            assert_eq!(
+                request("/items?offset=abc").await.status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+
+        #[tokio::test]
+        async fn invalid_limit() {
+            assert_eq!(
+                request("/items?limit=abc").await.status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
     }
 }

@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true, features = ["sol-types", "provider-debug-api"] }
+alloy = { workspace = true, features = ["provider-debug-api", "sol-types"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 cached = { workspace = true, features = ["default"] }

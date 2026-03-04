@@ -733,7 +733,8 @@ pub struct OrderMetadata {
 /// Chosen to be under the MAX_JSON_BODY_PAYLOAD size of 1024 * 16
 pub const ORDER_UID_LIMIT: usize = 128;
 
-// uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
+/// Uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
+/// Should be readable from prefixed and non-prefixed hex!
 #[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct OrderUid(pub [u8; 56]);
 
@@ -769,8 +770,7 @@ impl FromStr for OrderUid {
 
     fn from_str(s: &str) -> Result<OrderUid, const_hex::FromHexError> {
         let mut value = [0u8; 56];
-        let s_without_prefix = s.strip_prefix("0x").unwrap_or(s);
-        const_hex::decode_to_slice(s_without_prefix, value.as_mut())?;
+        const_hex::decode_to_slice(s, value.as_mut())?;
         Ok(OrderUid(value))
     }
 }
@@ -825,11 +825,6 @@ impl<'de> Deserialize<'de> for OrderUid {
             where
                 E: de::Error,
             {
-                let s = s.strip_prefix("0x").ok_or_else(|| {
-                    de::Error::custom(format!(
-                        "{s:?} can't be decoded as hex uid because it does not start with '0x'"
-                    ))
-                })?;
                 let mut value = [0u8; 56];
                 const_hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
                     de::Error::custom(format!("failed to decode {s:?} as hex uid: {err}"))

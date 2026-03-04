@@ -86,28 +86,27 @@ async fn solver_competition(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![
-            Solver::test("test_solver", solver.address()),
-            Solver::test("solver2", solver.address()),
-        ],
-        ..Default::default()
-    }
-    .to_cli_args();
-
     services.start_autopilot(
         None,
         vec![
-            config_arg,
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
+        Configuration {
+            drivers: vec![
+                Solver::test("test_solver", solver.address()),
+                Solver::test("solver2", solver.address()),
+            ],
+            ..Configuration::test_no_drivers()
+        }
     ).await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
-    services.start_api(vec![
-        ob_config_arg,
-        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
-    ]).await;
+    services
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
+        .await;
 
     // Place Order
     let order = OrderCreation {
@@ -238,37 +237,34 @@ async fn wrong_solution_submission_address(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    // Solver 1 has a wrong submission address, meaning that the solutions should be
-    // discarded from solver1
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![
-            Solver::new(
-                "solver1".to_string(),
-                Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
-            ),
-            Solver::test("solver2", solver.address()),
-        ],
-        ..Default::default()
-    }
-    .to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             ],
+            Configuration {
+                drivers: vec![
+                    // Solver 1 has a wrong submission address, meaning that the solutions should
+                    // be discarded from solver1
+                    Solver::new(
+                        "solver1".to_string(),
+                        Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                        Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+                    ),
+                    Solver::test("solver2", solver.address()),
+                ],
+                ..Configuration::test_no_drivers()
+            },
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Place Orders
@@ -387,6 +383,8 @@ async fn store_filtered_solutions(web3: Web3) {
                 base_tokens: base_tokens.clone(),
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
             },
             SolverEngine {
                 name: "bad_solver".into(),
@@ -395,6 +393,8 @@ async fn store_filtered_solutions(web3: Web3) {
                 base_tokens,
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -403,34 +403,31 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
-
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![
-            Solver::test("good_solver", good_solver_account.address()),
-            Solver::test("bad_solver", bad_solver_account.address()),
-        ],
-        ..Default::default()
-    }
-    .to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 "--max-winners-per-auction=10".to_string(),
             ],
+            Configuration {
+                drivers: vec![
+                    Solver::test("good_solver", good_solver_account.address()),
+                    Solver::test("bad_solver", bad_solver_account.address()),
+                ],
+                ..Configuration::test_no_drivers()
+            },
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Place order

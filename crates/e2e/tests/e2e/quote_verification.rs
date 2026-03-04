@@ -14,15 +14,13 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
-    serde_json::json,
-    shared::{
-        price_estimation::{
-            Estimate,
-            Verification,
-            trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
-        },
+    price_estimation::{
+        Estimate,
+        Verification,
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
+        trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
+    serde_json::json,
     std::sync::Arc,
 };
 
@@ -369,7 +367,6 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let (_config_file, config_arg) = Configuration::default().to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
@@ -381,8 +378,10 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                     // auto-detection for balance overrides.
                     "--quote-autodetect-token-balance-overrides=true".to_string(),
                 ],
-                autopilot: vec![config_arg],
+                ..Default::default()
             },
+            Configuration::test("test_solver", solver.address()),
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -520,13 +519,14 @@ async fn usdt_quote_verification(web3: Web3) {
 
     // Place Orders
     let services = Services::new(&onchain).await;
-    let (_config_file, config_arg) = autopilot::config::Configuration::default().to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
                 api: vec!["--quote-autodetect-token-balance-overrides=true".to_string()],
-                autopilot: vec![config_arg],
+                ..Default::default()
             },
+            Configuration::test("test_solver", solver.address()),
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
