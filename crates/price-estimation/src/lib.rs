@@ -16,7 +16,6 @@ use {
     serde::{Deserialize, Serialize},
     std::{
         cmp::{Eq, PartialEq},
-        error::Error,
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
@@ -29,6 +28,7 @@ use {
 
 mod buffered;
 pub mod competition;
+pub mod config;
 pub mod external;
 pub mod factory;
 pub mod gas;
@@ -40,12 +40,49 @@ pub mod trade_finding;
 pub mod trade_verifier;
 pub mod utils;
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
+
+impl<'de> Deserialize<'de> for NativePriceEstimators {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let estimators = <Vec<Vec<NativePriceEstimator>>>::deserialize(deserializer)?;
+        if estimators.is_empty() {
+            return Err(serde::de::Error::invalid_length(
+                0,
+                &"expected native price estimator stages to be configured",
+            ));
+        }
+        match estimators
+            .iter()
+            .enumerate()
+            .find_map(|(n, stage)| stage.is_empty().then_some(n))
+        {
+            Some(n) => Err(serde::de::Error::invalid_length(
+                0,
+                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
+            )),
+            None => Ok(Self(estimators)),
+        }
+    }
+}
 
 impl NativePriceEstimators {
     pub fn new(estimators: Vec<Vec<NativePriceEstimator>>) -> Self {
         Self(estimators)
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl NativePriceEstimators {
+    /// Returns a list with a single stage, said stage contains a Driver estimator named `test_quoter` with URL `http://localhost:11088/test_solver`.
+    pub fn test_default() -> Self {
+        NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
+            "test_quoter".to_string(),
+            Url::from_str("http://localhost:11088/test_solver").unwrap(),
+        )]])
     }
 }
 
@@ -177,29 +214,11 @@ pub struct Arguments {
     #[clap(long, env, verbatim_doc_comment)]
     pub price_estimation_rate_limiter: Option<Strategy>,
 
-    /// How long cached native prices stay valid.
-    #[clap(
-        long,
-        env,
-        default_value = "10m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub native_price_cache_max_age: Duration,
-
-    /// How many price estimation requests can be executed concurrently in the
-    /// maintenance task.
-    #[clap(long, env, default_value = "1")]
-    pub native_price_cache_concurrent_requests: usize,
-
     /// The amount in native tokens atoms to use for price estimation. Should be
     /// reasonably large so that small pools do not influence the prices. If
     /// not set a reasonable default is used based on network id.
     #[clap(long, env)]
     pub amount_to_estimate_prices_with: Option<alloy::primitives::U256>,
-
-    /// The API endpoint for the Balancer SOR API for solving.
-    #[clap(long, env)]
-    pub balancer_sor_url: Option<Url>,
 
     /// The API key for the 1Inch API.
     #[clap(long, env)]
@@ -242,44 +261,12 @@ pub struct Arguments {
     #[clap(flatten)]
     pub balance_overrides: balance_overrides::Arguments,
 
-    /// List of mappings of native price tokens substitutions with approximated
-    /// value from other token:
-    /// "<token1>|<approx_token1>,<token2>|<approx_token2>"
-    /// - token1 is a token address for which we get the native token price
-    /// - approx_token1 is a token address used for the price approximation
-    #[clap(
-        long,
-        env,
-        value_delimiter = ',',
-        value_parser = parse_tuple::<Address, Address>
-    )]
-    pub native_price_approximation_tokens: Vec<(Address, Address)>,
-
     /// Tokens for which quote verification should not be attempted. This is an
     /// escape hatch when there is a very bad but verifiable liquidity source
     /// that would win against a very good but unverifiable liquidity source
     /// (e.g. private liquidity that exists but can't be verified).
     #[clap(long, env, value_delimiter = ',')]
     pub tokens_without_verification: Vec<Address>,
-}
-
-/// Custom Clap parser for tuple pair
-fn parse_tuple<T, U>(input: &str) -> Result<(T, U), Box<dyn Error + Send + Sync + 'static>>
-where
-    T: std::str::FromStr,
-    T::Err: Error + Send + Sync + 'static,
-    U: std::str::FromStr,
-    U::Err: Error + Send + Sync + 'static,
-{
-    let pos = input.find('|').ok_or_else(|| {
-        format!(
-            "invalid pair values delimiter character, expected: 'value1|value2', got: '{input}'"
-        )
-    })?;
-    Ok((
-        input[..pos].trim().parse()?,
-        input[pos + 1..].trim().parse()?,
-    ))
 }
 
 #[derive(clap::Parser)]
@@ -342,10 +329,7 @@ impl Display for Arguments {
         let Self {
             tenderly,
             price_estimation_rate_limiter,
-            native_price_cache_max_age,
-            native_price_cache_concurrent_requests,
             amount_to_estimate_prices_with,
-            balancer_sor_url,
             one_inch_api_key,
             one_inch_url,
             coin_gecko,
@@ -353,7 +337,6 @@ impl Display for Arguments {
             quote_verification,
             quote_timeout,
             balance_overrides,
-            native_price_approximation_tokens,
             tokens_without_verification,
         } = self;
 
@@ -363,20 +346,11 @@ impl Display for Arguments {
             "price_estimation_rate_limites",
             price_estimation_rate_limiter,
         )?;
-        writeln!(
-            f,
-            "native_price_cache_max_age: {native_price_cache_max_age:?}"
-        )?;
-        writeln!(
-            f,
-            "native_price_cache_concurrent_requests: {native_price_cache_concurrent_requests}"
-        )?;
         display_option(
             f,
             "amount_to_estimate_prices_with: {}",
             amount_to_estimate_prices_with,
         )?;
-        display_option(f, "balancer_sor_url", balancer_sor_url)?;
         display_secret_option(
             f,
             "one_inch_spot_price_api_key: {:?}",
@@ -409,10 +383,6 @@ impl Display for Arguments {
         writeln!(f, "quote_verification: {quote_verification:?}")?;
         writeln!(f, "quote_timeout: {quote_timeout:?}")?;
         write!(f, "{balance_overrides}")?;
-        writeln!(
-            f,
-            "native_price_approximation_tokens: {native_price_approximation_tokens:?}"
-        )?;
         writeln!(
             f,
             "tokens_without_verification: {tokens_without_verification:?}"
@@ -601,7 +571,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address, clap::Parser};
+    use {super::*, clap::Parser};
 
     #[test]
     fn string_repr_round_trip_native_price_estimators() {
@@ -639,15 +609,13 @@ mod tests {
 
     #[test]
     fn toml_deserialize_estimators_empty() {
-        let toml = "estimators = []";
-
         #[derive(Deserialize)]
         struct Helper {
-            estimators: NativePriceEstimators,
+            _estimators: NativePriceEstimators,
         }
 
-        let parsed: Helper = toml::from_str(toml).unwrap();
-        assert!(parsed.estimators.as_slice().is_empty());
+        assert!(toml::from_str::<Helper>("estimators = []").is_err());
+        assert!(toml::from_str::<Helper>("estimators = [[]]").is_err());
     }
 
     #[test]
@@ -765,53 +733,5 @@ mod tests {
         let result = CoinGecko::try_parse_from(args);
 
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_tuple() {
-        let result = parse_tuple::<Address, Address>(
-            "0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
-        )
-        .unwrap();
-        assert_eq!(
-            result.0,
-            address!("0102030405060708091011121314151617181920")
-        );
-        assert_eq!(
-            result.1,
-            address!("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
-        );
-
-        let result = parse_tuple::<Address, Address>(
-            "0102030405060708091011121314151617181920 a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0",
-        );
-        assert!(result.is_err());
-
-        // test parsing with delimiter
-        #[derive(Parser)]
-        struct Cli {
-            #[arg(value_delimiter = ',', value_parser = parse_tuple::<Address, Address>)]
-            param: Vec<(Address, Address)>,
-        }
-        let cli = Cli::parse_from(vec![
-            "",
-            r#"0102030405060708091011121314151617181920|a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0,
-            f102030405060708091011121314151617181920|f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0"#,
-        ]);
-
-        assert_eq!(
-            cli.param[0],
-            (
-                address!("0102030405060708091011121314151617181920"),
-                address!("a1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
-            )
-        );
-        assert_eq!(
-            cli.param[1],
-            (
-                address!("f102030405060708091011121314151617181920"),
-                address!("f1a2a3a4a5a6a7a8a9a0a1a2a3a4a5a6a7a8a9a0")
-            )
-        );
     }
 }

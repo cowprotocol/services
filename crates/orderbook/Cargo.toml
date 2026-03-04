@@ -78,7 +78,7 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 [features]
 e2e = []
 mimalloc-allocator = ["dep:mimalloc"]
-test-util = ["dep:tempfile"]
+test-util = ["dep:tempfile", "shared/test-util"]
 tokio-console = ["observe/tokio-console"]
 
 [lints]
