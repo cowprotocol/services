@@ -131,10 +131,8 @@ impl Configuration {
 mod tests {
     use {
         super::*,
-        shared::{
-            order_validation::SameTokensPolicy,
-            price_estimation::{NativePriceEstimator, NativePriceEstimators},
-        },
+        price_estimation::{NativePriceEstimator, NativePriceEstimators},
+        shared::order_validation::SameTokensPolicy,
         std::time::Duration,
     };
 
