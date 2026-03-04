@@ -94,6 +94,12 @@ async fn test(web3: Web3) {
     .unwrap();
 }
 
+/// Tests that when order is placed with full balance checks, it would not be
+/// possible to place it, unless the account has both - sufficient allowance and
+/// balance.
+///
+/// It compares and asserts on the behaviour when the full balance check is
+/// disabled and enabled.
 async fn test_full_balance_check(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
@@ -104,12 +110,16 @@ async fn test_full_balance_check(web3: Web3) {
         .await;
     let weth = &onchain.contracts().weth;
 
+    // Initial allowance is enough to pass basic checks, but not enough to execute
+    // the order
     weth.approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
+    // Initial balance is enough to pass basic checks, but not enough to execute the
+    // order
     weth.deposit()
         .from(trader.address())
         .value(1u64.eth())
@@ -121,7 +131,6 @@ async fn test_full_balance_check(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    tracing::info!("Placing order with 0 sell tokens");
     let order = OrderCreation {
         sell_token: *weth.address(),
         sell_amount: 2u64.eth(),
@@ -150,8 +159,9 @@ async fn test_full_balance_check(web3: Web3) {
         &onchain.contracts().domain_separator,
         &trader.signer,
     );
+
     // This order can be created because full balance checks are not enabled.
-    // The account has 1 WEI of the token.
+    // The account has 1 WEI of the token and allowance for this amount.
     services.create_order(&unchecked_order).await.unwrap();
 
     // This order can not be created, because despite the token being transferrable
@@ -165,6 +175,7 @@ async fn test_full_balance_check(web3: Web3) {
             .contains("InsufficientBalance")
     );
 
+    // Add the missing balance for the balance checkE
     weth.deposit()
         .from(trader.address())
         .value(1u64.eth())
@@ -183,12 +194,14 @@ async fn test_full_balance_check(web3: Web3) {
             .contains("InsufficientAllowance")
     );
 
+    // Set allowance to the full amount
     weth.approve(onchain.contracts().allowance, 2u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
-    // The account has correct balance and allowance
+    // This order can be created now, because account has correct balance and
+    // allowance
     services.create_order(&order).await.unwrap();
 }

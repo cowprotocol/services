@@ -406,6 +406,33 @@ impl OrderValidator {
         }
     }
 
+    async fn simulate_token_transfer(
+        &self,
+        order: &OrderCreation,
+        owner: Address,
+        app_data: &OrderAppData,
+        transfer_amount: U256,
+    ) -> Result<(), TransferSimulationError> {
+        self.balance_fetcher
+            .can_transfer(
+                &account_balances::Query {
+                    token: order.data().sell_token,
+                    owner,
+                    source: order.data().sell_token_balance,
+                    interactions: app_data.interactions.pre.clone(),
+                    balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
+                        BalanceOverrideRequest {
+                            token: loan.token,
+                            holder: loan.receiver,
+                            amount: loan.amount,
+                        }
+                    }),
+                },
+                transfer_amount,
+            )
+            .await
+    }
+
     /// Verifies that tokens can actually be transferred from the user account
     /// to the settlement contract (takes pre-hooks into account).
     async fn ensure_token_is_transferable(
@@ -419,32 +446,19 @@ impl OrderValidator {
             let has_wrappers = !app_data.inner.protocol.wrappers.is_empty();
 
             for transfer_amount in transfer_amounts {
-                match self
-                    .balance_fetcher
-                    .can_transfer(
-                        &account_balances::Query {
-                            token: order.data().sell_token,
-                            owner,
-                            source: order.data().sell_token_balance,
-                            interactions: app_data.interactions.pre.clone(),
-                            balance_override: app_data.inner.protocol.flashloan.as_ref().map(
-                                |loan| BalanceOverrideRequest {
-                                    token: loan.token,
-                                    holder: loan.receiver,
-                                    amount: loan.amount,
-                                },
-                            ),
-                        },
-                        *transfer_amount,
-                    )
+                let Err(err) = self
+                    .simulate_token_transfer(order, owner, app_data, *transfer_amount)
                     .await
-                {
-                    Ok(_) => return Ok(()),
-                    Err(
-                        TransferSimulationError::InsufficientAllowance
-                        | TransferSimulationError::InsufficientBalance
-                        | TransferSimulationError::TransferFailed,
-                    ) if order.signature == Signature::PreSign || has_wrappers => {
+                else {
+                    return Ok(());
+                };
+
+                res = match err {
+                    TransferSimulationError::InsufficientAllowance
+                    | TransferSimulationError::InsufficientBalance
+                    | TransferSimulationError::TransferFailed
+                        if order.signature == Signature::PreSign || has_wrappers =>
+                    {
                         // Pre-sign orders do not require sufficient balance or allowance.
                         // The idea is that this allows smart contracts to place orders bundled with
                         // other transactions that either produce the required balance or set the
@@ -456,25 +470,24 @@ impl OrderValidator {
                         // allowance as part of the wrapper execution.
                         return Ok(());
                     }
-                    Err(err) => match err {
-                        TransferSimulationError::InsufficientAllowance => {
-                            // This error will be triggered regardless of the amount
-                            return Err(ValidationError::InsufficientAllowance);
-                        }
-                        TransferSimulationError::InsufficientBalance => {
-                            // Since the amount starts at 1 atom, if this error is triggered then it
-                            // will be triggered for the other amounts too
-                            return Err(ValidationError::InsufficientBalance);
-                        }
-                        TransferSimulationError::TransferFailed => {
-                            res = Err(ValidationError::TransferSimulationFailed);
-                        }
-                        TransferSimulationError::Other(err) => {
-                            tracing::warn!("TransferSimulation failed: {:?}", err);
-                            res = Err(ValidationError::TransferSimulationFailed);
-                        }
-                    },
-                }
+                    TransferSimulationError::InsufficientAllowance => {
+                        // This error will be triggered regardless of the amount
+                        return Err(ValidationError::InsufficientAllowance);
+                    }
+                    TransferSimulationError::InsufficientBalance => {
+                        // Since the amount either starts at 1 atom, or is set to the full sell
+                        // token amount if this error is triggered then it
+                        // will be triggered for the other amounts too
+                        return Err(ValidationError::InsufficientBalance);
+                    }
+                    TransferSimulationError::TransferFailed => {
+                        Err(ValidationError::TransferSimulationFailed)
+                    }
+                    TransferSimulationError::Other(err) => {
+                        tracing::warn!("TransferSimulation failed: {:?}", err);
+                        Err(ValidationError::TransferSimulationFailed)
+                    }
+                };
             }
             res
         };
