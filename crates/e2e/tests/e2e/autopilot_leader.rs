@@ -85,15 +85,10 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         ],
     );
 
-    // Configure autopilot-leader only with test_solver
-    let (_config_file_leader, config_arg_leader) =
-        Configuration::test("test_solver", solver1.address()).to_cli_args();
-
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
             None,
             vec![
-                config_arg_leader,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -101,19 +96,16 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                 "--api-address=0.0.0.0:12088".to_string(),
                 "--enable-leader-lock=true".to_string(),
             ],
+            // Configure autopilot-leader only with test_solver
+            Configuration::test("test_solver", solver1.address()),
             control,
         )
         .await;
-
-    // Configure autopilot-backup only with test_solver2
-    let (_config_file_follower, config_arg_follower) =
-        Configuration::test("test_solver2", solver2.address()).to_cli_args();
 
     let _autopilot_follower = services
         .start_autopilot(
             None,
             vec![
-                config_arg_follower,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
@@ -121,17 +113,28 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                 "--api-address=0.0.0.0:12089".to_string(),
                 "--enable-leader-lock=true".to_string(),
             ],
+            // Configure autopilot-backup only with test_solver2
+            Configuration::test("test_solver2", solver2.address()),
         )
         .await;
 
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver1,test_solver2|http://localhost:11088/test_solver2".to_string(),
-            "--native-price-estimators=Forwarder|http://0.0.0.0:9588".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver1,test_solver2|http://localhost:11088/test_solver2".to_string(),
+            ],
+            orderbook::config::Configuration {
+                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
+                        price_estimation::NativePriceEstimator::forwarder(
+                            "http://0.0.0.0:9588".parse().unwrap(),
+                        ),
+                    ]]),
+                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                },
+                ..orderbook::config::Configuration::test_default()
+            },
+        )
         .await;
 
     let order = || {

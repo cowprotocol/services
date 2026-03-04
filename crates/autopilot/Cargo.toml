@@ -93,4 +93,4 @@ workspace = true
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
-test-util = ["dep:tempfile"]
+test-util = ["dep:tempfile", "price-estimation/test-util"]

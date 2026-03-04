@@ -26,6 +26,7 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 humantime = { workspace = true }
+humantime-serde = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }

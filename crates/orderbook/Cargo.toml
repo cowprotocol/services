@@ -81,5 +81,5 @@ workspace = true
 [features]
 e2e = []
 mimalloc-allocator = ["dep:mimalloc"]
-test-util = ["dep:tempfile"]
+test-util = ["dep:tempfile", "shared/test-util"]
 tokio-console = ["observe/tokio-console"]
