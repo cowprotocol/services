@@ -496,7 +496,7 @@ impl OrderValidator {
             // If requested at order creation, simulate transferring full sell_amount
             // into the settlement contract.
             // This will ensure the account has enough allowance and balance for
-            // the transfer.
+            // the transfer at the order creation time.
             simulate_transfers([order.data().sell_amount].as_slice()).await
         } else {
             // Simulate transferring a small token balance into the settlement contract.
