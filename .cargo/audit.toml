@@ -5,43 +5,31 @@
 [advisories]
 # Known vulnerabilities that are tracked in https://github.com/cowprotocol/services/issues/3338
 ignore = [
-    # alloy-dyn-abi - DoS vulnerability (RUSTSEC-2025-0073)
-    # Needs upgrade to 1.4.1+ (part of alloy migration)
-    "RUSTSEC-2025-0073",
+  # idna - Punycode label vulnerability (RUSTSEC-2024-0421)
+  # Needs upgrade to 1.0.0+ (transitive dependency)
+  "RUSTSEC-2024-0421",
 
-    # idna - Punycode label vulnerability (RUSTSEC-2024-0421)
-    # Needs upgrade to 1.0.0+ (transitive dependency)
-    "RUSTSEC-2024-0421",
+  # protobuf - Uncontrolled recursion (RUSTSEC-2024-0437)
+  # Needs upgrade to 3.7.2+ (transitive dependency)
+  "RUSTSEC-2024-0437",
 
-    # protobuf - Uncontrolled recursion (RUSTSEC-2024-0437)
-    # Needs upgrade to 3.7.2+ (transitive dependency)
-    "RUSTSEC-2024-0437",
+  # rsa - Marvin Attack timing sidechannel (RUSTSEC-2023-0071)
+  # No patch available yet (cryptography vulnerability)
+  "RUSTSEC-2023-0071",
 
-    # rsa - Marvin Attack timing sidechannel (RUSTSEC-2023-0071)
-    # No patch available yet (cryptography vulnerability)
-    "RUSTSEC-2023-0071",
+  # derivative - Unmaintained (RUSTSEC-2024-0388)
+  # Evaluate alternatives (tracked in #3338)
+  "RUSTSEC-2024-0388",
 
-    # tracing-subscriber - ANSI escape injection (RUSTSEC-2025-0055)
-    # Needs upgrade to 0.3.20+ (minimal risk in current usage)
-    "RUSTSEC-2025-0055",
+  # instant - Unmaintained (RUSTSEC-2024-0384)
+  # Use web-time instead (tracked in #3338)
+  "RUSTSEC-2024-0384",
 
-    # derivative - Unmaintained (RUSTSEC-2024-0388)
-    # Evaluate alternatives (tracked in #3338)
-    "RUSTSEC-2024-0388",
+  # paste - Unmaintained (RUSTSEC-2024-0436)
+  # Archived upstream (tracked in #3338)
+  "RUSTSEC-2024-0436",
 
-    # instant - Unmaintained (RUSTSEC-2024-0384)
-    # Use web-time instead (tracked in #3338)
-    "RUSTSEC-2024-0384",
-
-    # paste - Unmaintained (RUSTSEC-2024-0436)
-    # Archived upstream (tracked in #3338)
-    "RUSTSEC-2024-0436",
-
-    # proc-macro-error - Unmaintained (RUSTSEC-2024-0370)
-    # Transitive dependency (tracked in #3338)
-    "RUSTSEC-2024-0370",
-
-    # model crate - data race in Shared (RUSTSEC-2020-0140)
-    # Internal crate issue (tracked in #3338)
-    "RUSTSEC-2020-0140",
+  # model crate - data race in Shared (RUSTSEC-2020-0140)
+  # Internal crate issue (tracked in #3338)
+  "RUSTSEC-2020-0140",
 ]

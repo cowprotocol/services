@@ -10,21 +10,21 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-const-hex = { workspace = true }
 humantime = { workspace = true }
 mimalloc = { workspace = true, optional = true }
-tikv-jemallocator = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 shared = { workspace = true }
 sqlx = { workspace = true }
-tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
+tikv-jemallocator = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 url = { workspace = true }
 
@@ -33,9 +33,9 @@ mockall = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 
-[lints]
-workspace = true
-
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
+
+[lints]
+workspace = true

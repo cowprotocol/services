@@ -5,7 +5,7 @@ on:
   # We require PRs to be up to date before merging so technically it is not needed run the rust job
   # on main. However for the cache to be usable in PRs we do need the job on main.
   push:
-    branches: [ main ]
+    branches: [main]
 jobs:
   lint:
     timeout-minutes: 60
@@ -24,15 +24,18 @@ jobs:
       - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
         with:
           just-version: 1.39.0
+      - uses: tombi-toml/setup-tombi@cebfd308ba02edadfcee148b7473536990950c92 # v1.0.8
       - run: |
           rustup --version
           rustup show
           cargo --version
           cargo +nightly fmt --version
           cargo clippy --version
+          tombi --version
       - run: just fmt --check
-      - run: just clippy 
-  
+      - run: just clippy
+      - run: just fmt-toml --check
+
   trivy:
     runs-on: ubuntu-latest
     steps:
@@ -43,14 +46,14 @@ jobs:
       - name: Run Trivy
         uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
         with:
-          scan-type: 'fs'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          scan-type: "fs"
+          format: "sarif"
+          output: "trivy-results.sarif"
 
       - name: Upload Trivy scan results to GitHub Security
         uses: github/codeql-action/upload-sarif@51f77329afa6477de8c49fc9c7046c15b9a4e79d # v3.29.5
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: "trivy-results.sarif"
 
   cargo-audit:
     runs-on: ubuntu-latest
@@ -261,7 +264,6 @@ jobs:
             git diff --exit-code -- 'crates/contracts/artifacts/*.json'
             exit 1
           fi
-
 
   openapi:
     timeout-minutes: 60

@@ -160,3 +160,21 @@ Each process opens a UNIX socket at `/tmp/log_filter_override_<program_name>_<pi
 You can also reset the log filter to the filter the program was initially started with by entering `reset`.
 
 See [here](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for documentation on the supported log filter format.
+
+## Formatting
+
+Rust code is formatted with `rustfmt` (nightly) and TOML files are formatted with [Tombi](https://tombi-toml.github.io/tombi/).
+
+```bash
+# Format Rust code
+just fmt
+
+# Format TOML files
+just fmt-toml
+
+# Check formatting without modifying files
+just fmt --check
+just fmt-toml --check
+```
+
+Editor extensions are available for [VS Code](https://marketplace.visualstudio.com/items?itemName=tombi-toml.tombi), [Zed](https://tombi-toml.github.io/tombi/docs/editors/zed-extension), and [JetBrains](https://plugins.jetbrains.com/plugin/28017-tombi).
