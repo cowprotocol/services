@@ -247,7 +247,7 @@ pub async fn run(args: Arguments, config: Configuration) {
     let primary = price_estimator_factory
         .native_price_estimator(
             config.native_price_estimation.estimators.as_slice(),
-            config.native_price_estimation.results_required,
+            config.native_price_estimation.shared.results_required,
             &native_token,
         )
         .await
@@ -258,7 +258,7 @@ pub async fn run(args: Arguments, config: Configuration) {
             let fallback = price_estimator_factory
                 .native_price_estimator(
                     fallback_config.as_slice(),
-                    config.native_price_estimation.results_required,
+                    config.native_price_estimation.shared.results_required,
                     &native_token,
                 )
                 .await
@@ -294,7 +294,7 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .iter()
                 .map(|price_estimator| price_estimator.clone().into())
                 .collect::<Vec<_>>(),
-            config.native_price_estimation.results_required,
+            config.native_price_estimation.shared.results_required,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )

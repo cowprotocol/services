@@ -12,8 +12,12 @@ const fn default_cache_concurrent_requests() -> NonZeroUsize {
     NonZeroUsize::new(1).expect("value should be greater than 0")
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-#[serde(rename_all = "kebab-case")]
+const fn default_results_required() -> NonZeroUsize {
+    NonZeroUsize::new(2).expect("value should not be zero")
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePriceConfig {
     /// List of mappings of native price tokens substitutions with approximated:
     /// - the first is a token address for which we get the native token price
@@ -24,6 +28,27 @@ pub struct NativePriceConfig {
     /// Configuration for the native price caching mechanism.
     #[serde(default)]
     pub cache: CacheConfig,
+
+    /// How many successful price estimates for each order will cause a native
+    /// price estimation to return its result early.
+    ///
+    /// As this value increases, the fast estimator behavior will approximate
+    /// the behavior of the optimal estimator.
+    ///
+    /// It's possible to pass values greater than the total number of enabled
+    /// estimators but that will not have any further effect.
+    #[serde(default = "default_results_required")]
+    pub results_required: NonZeroUsize,
+}
+
+impl Default for NativePriceConfig {
+    fn default() -> Self {
+        Self {
+            approximation_tokens: Default::default(),
+            cache: Default::default(),
+            results_required: default_results_required(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -111,6 +136,7 @@ mod tests {
                 max_age: Duration::from_secs(120),
                 concurrent_requests: NonZeroUsize::new(8).unwrap(),
             },
+            results_required: default_results_required(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

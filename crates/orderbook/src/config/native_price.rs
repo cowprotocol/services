@@ -4,12 +4,8 @@ use {
         NativePriceEstimators,
         config::native_price::NativePriceConfig as SharedNativePriceConfig,
     },
-    std::{num::NonZeroUsize, str::FromStr},
+    std::str::FromStr,
 };
-
-const fn default_results_required() -> NonZeroUsize {
-    NonZeroUsize::new(2).expect("results required should be greater than 0")
-}
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -21,15 +17,6 @@ pub struct NativePriceConfig {
     /// Fallback native price estimators to use when all primary estimators
     /// are down.
     pub fallback_estimators: Option<NativePriceEstimators>,
-
-    /// How many successful price estimates for each order will cause a fast
-    /// or native price estimation to return its result early.
-    /// The bigger the value the more the fast price estimation performs like
-    /// the optimal price estimation.
-    /// It's possible to pass values greater than the total number of enabled
-    /// estimators but that will not have any further effect.
-    #[serde(default = "default_results_required")]
-    pub results_required: NonZeroUsize,
 
     #[serde(flatten)]
     pub shared: SharedNativePriceConfig,
@@ -45,7 +32,6 @@ impl NativePriceConfig {
                 reqwest::Url::from_str("http://localhost:12088").unwrap(),
             )]]),
             fallback_estimators: Default::default(),
-            results_required: default_results_required(),
             shared: Default::default(),
         }
     }
@@ -60,7 +46,6 @@ mod tests {
         let config: NativePriceConfig =
             toml::from_str(r#"estimators = [[{type = "CoinGecko"}]]"#).unwrap();
         assert_eq!(config.estimators.as_slice().len(), 1);
-        assert_eq!(config.results_required.get(), 2);
         assert!(config.fallback_estimators.is_none());
     }
 
@@ -72,7 +57,6 @@ mod tests {
             results-required = 3
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.results_required.get(), 3);
         assert!(config.fallback_estimators.is_some());
     }
 
@@ -87,20 +71,28 @@ mod tests {
 
     #[test]
     fn roundtrip_serialization() {
+        use shared::price_estimation::NativePriceEstimator;
+
         let config = NativePriceConfig {
-            estimators: NativePriceEstimators::new(vec![vec![
-                shared::price_estimation::NativePriceEstimator::CoinGecko,
-            ]]),
+            estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),
             fallback_estimators: Some(NativePriceEstimators::new(vec![vec![
-                shared::price_estimation::NativePriceEstimator::OneInchSpotPriceApi,
+                NativePriceEstimator::OneInchSpotPriceApi,
             ]])),
-            results_required: NonZeroUsize::new(5).unwrap(),
             shared: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
         let deserialized: NativePriceConfig = toml::from_str(&serialized).unwrap();
-
-        assert_eq!(config.results_required, deserialized.results_required,);
+        assert_eq!(
+            deserialized.estimators.as_slice(),
+            config.estimators.as_slice(),
+        );
+        assert_eq!(
+            deserialized
+                .fallback_estimators
+                .as_ref()
+                .map(|e| e.as_slice()),
+            config.fallback_estimators.as_ref().map(|e| e.as_slice()),
+        );
     }
 }

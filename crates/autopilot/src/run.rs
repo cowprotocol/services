@@ -325,7 +325,7 @@ pub async fn run(
         price_estimator_factory
             .caching_native_price_estimator(
                 api_sources.as_slice(),
-                config.native_price_estimation.results_required,
+                config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
             )
@@ -337,7 +337,7 @@ pub async fn run(
         let caching = price_estimator_factory
             .caching_native_price_estimator(
                 config.native_price_estimation.estimators.as_slice(),
-                config.native_price_estimation.results_required,
+                config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
             )

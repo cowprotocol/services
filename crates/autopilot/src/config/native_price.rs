@@ -1,12 +1,8 @@
 use {
     serde::{Deserialize, Serialize},
     shared::price_estimation::NativePriceEstimators,
-    std::{num::NonZeroUsize, time::Duration},
+    std::time::Duration,
 };
-
-const fn default_native_price_estimation_results_required() -> NonZeroUsize {
-    NonZeroUsize::new(2).expect("value should not be zero")
-}
 
 const fn default_native_price_cache_refresh() -> Duration {
     Duration::from_secs(1)
@@ -30,13 +26,6 @@ pub struct NativePriceConfig {
     /// Estimators for the API endpoint. Falls back to
     /// `--native-price-estimators` if unset.
     pub api_estimators: Option<NativePriceEstimators>,
-
-    /// How many successful price estimates for each order will cause a native
-    /// price estimation to return its result early. It's possible to pass
-    /// values greater than the total number of enabled estimators but that
-    /// will not have any further effect.
-    #[serde(default = "default_native_price_estimation_results_required")]
-    pub results_required: NonZeroUsize,
 
     /// How often the native price estimator should check for prices that need
     /// to be udpated.
@@ -68,7 +57,6 @@ impl NativePriceConfig {
         Self {
             estimators: NativePriceEstimators::test_default(),
             api_estimators: Default::default(),
-            results_required: default_native_price_estimation_results_required(),
             cache_refresh_interval: default_native_price_cache_refresh(),
             prefetch_time: Duration::from_millis(500),
             shared: shared::price_estimation::config::native_price::NativePriceConfig {
@@ -91,14 +79,12 @@ mod tests {
         let toml = r#"
         estimators = [[{type = "CoinGecko"}]]
         api-estimators = [[{type = "OneInchSpotPriceApi"}]]
-        results-required = 3
         cache-refresh-interval = "30s"
         prefetch-time = "2m"
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.estimators.as_slice().len(), 1);
         assert!(config.api_estimators.is_some());
-        assert_eq!(config.results_required.get(), 3);
         assert_eq!(config.cache_refresh_interval, Duration::from_secs(30));
         assert_eq!(config.prefetch_time, Duration::from_secs(120));
     }

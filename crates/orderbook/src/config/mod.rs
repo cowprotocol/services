@@ -135,7 +135,7 @@ mod tests {
             order_validation::SameTokensPolicy,
             price_estimation::{NativePriceEstimator, NativePriceEstimators},
         },
-        std::{num::NonZeroUsize, time::Duration},
+        std::time::Duration,
     };
 
     #[test]
@@ -267,7 +267,6 @@ mod tests {
             native_price_estimation: NativePriceConfig {
                 estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),
                 fallback_estimators: None,
-                results_required: NonZeroUsize::new(5).unwrap(),
                 ..NativePriceConfig::test_default()
             },
         };

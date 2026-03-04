@@ -51,7 +51,7 @@ impl<'de> Deserialize<'de> for NativePriceEstimators {
         if estimators.is_empty() {
             return Err(serde::de::Error::invalid_length(
                 0,
-                &"expected stages to not be empty",
+                &"expected native price estimator stages to be configured",
             ));
         }
         match estimators
@@ -608,14 +608,13 @@ mod tests {
 
     #[test]
     fn toml_deserialize_estimators_empty() {
-        let toml = "estimators = []";
-
         #[derive(Deserialize)]
         struct Helper {
             _estimators: NativePriceEstimators,
         }
 
-        assert!(toml::from_str::<Helper>(toml).is_err());
+        assert!(toml::from_str::<Helper>("estimators = []").is_err());
+        assert!(toml::from_str::<Helper>("estimators = [[]]").is_err());
     }
 
     #[test]
