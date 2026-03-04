@@ -769,6 +769,51 @@ paths:
                 $ref: "#/components/schemas/TotalSurplus"
         "400":
           description: Invalid address.
+  "/api/v1/debug/order/{uid}":
+    post:
+      operationId: debugOrder
+      summary: Simulate an order's settlement and return debug information.
+      description: >
+        Simulates the given order via `eth_call` with state overrides
+        (AnyoneAuthenticator, buy token balance funding) and returns calldata,
+        gas estimate, revert reason, and optionally a Tenderly simulation URL.
+
+        This endpoint is disabled by default and returns 404 unless
+        `debug-route-auth-tokens` is configured on the server. Requires a valid
+        `x-auth-token` header matching one of the configured auth tokens.
+      parameters:
+        - in: path
+          name: uid
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: true
+        - in: header
+          name: x-auth-token
+          schema:
+            type: string
+          required: true
+          description: Authentication token configured on the server.
+      requestBody:
+        description: Optional simulation parameters.
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DebugOrderRequest"
+      responses:
+        "200":
+          description: Simulation completed (may have succeeded or reverted).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebugOrderResponse"
+        "401":
+          description: Invalid or missing authentication token.
+        "404":
+          description: >
+            Endpoint is not enabled (no tokens configured) or order not found.
+        "500":
+          description: Simulation failed due to an internal error.
 components:
   schemas:
     TransactionHash:
@@ -2271,3 +2316,60 @@ components:
           allOf:
             - description: The token in which the fee is taken
             - $ref: "#/components/schemas/Address"
+    DebugOrderRequest:
+      type: object
+      properties:
+        createTenderlySimulation:
+          description: >
+            If true, a Tenderly simulation is created even when the `eth_call`
+            succeeds. By default, a Tenderly simulation is only created on
+            failure (and only when the server has Tenderly configured).
+          type: boolean
+          default: false
+    DebugOrderResponse:
+      type: object
+      properties:
+        simulationSucceeded:
+          description: Whether the `eth_call` simulation succeeded.
+          type: boolean
+        gasEstimate:
+          description: >
+            Estimated gas for the settlement transaction. Only present when
+            the simulation succeeded.
+          type: integer
+          nullable: true
+        revertReason:
+          description: >
+            Human-readable revert reason. Only present when the simulation
+            failed.
+          type: string
+          nullable: true
+        tenderlyUrl:
+          description: >
+            URL to the Tenderly simulation dashboard. Only present when a
+            Tenderly simulation was created (on failure or when explicitly
+            requested) and the server has Tenderly configured.
+          type: string
+          nullable: true
+        from:
+          description: The sender address used for the simulation.
+          $ref: "#/components/schemas/Address"
+        callTarget:
+          description: >
+            The address the settlement call is sent to. This is the settlement
+            contract unless the order uses wrappers.
+          $ref: "#/components/schemas/Address"
+        usedWrapper:
+          description: Whether a CowWrapper was used for the settlement call.
+          type: boolean
+        blockNumber:
+          description: The block number at which the simulation was executed.
+          type: integer
+        calldata:
+          description: The hex-encoded calldata of the settlement transaction.
+          type: string
+        stateOverrides:
+          description: >
+            The state overrides applied during simulation (authenticator
+            bytecode replacement, buy token balance funding, etc.).
+          type: object
