@@ -265,7 +265,7 @@ mod tests {
         assert_eq!(s3.bucket, "my-bucket");
         assert_eq!(s3.filename_prefix, "staging/mainnet/");
 
-        use shared::price_estimation::{ExternalSolver, NativePriceEstimator};
+        use price_estimation::{ExternalSolver, NativePriceEstimator};
         assert_eq!(
             config.native_price_estimation.estimators.as_slice(),
             vec![

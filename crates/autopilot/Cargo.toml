@@ -24,6 +24,7 @@ bytes = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
+bad-tokens = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -34,6 +35,7 @@ database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
+gas-price-estimation = { workspace = true }
 brotli = { workspace = true }
 futures = { workspace = true }
 observe = { workspace = true }
@@ -48,6 +50,7 @@ model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 order-validation = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
@@ -90,4 +93,4 @@ workspace = true
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
-test-util = ["dep:tempfile"]
+test-util = ["dep:tempfile", "price-estimation/test-util"]

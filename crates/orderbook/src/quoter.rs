@@ -7,6 +7,7 @@ use {
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
+    price_estimation::{Verification, trade_finding},
     shared::{
         arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
@@ -18,8 +19,6 @@ use {
             PartialValidationError,
             PreOrderData,
         },
-        price_estimation::Verification,
-        trade_finding,
     },
     std::sync::Arc,
     thiserror::Error,

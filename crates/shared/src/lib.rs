@@ -2,7 +2,6 @@
 pub mod macros;
 
 pub mod arguments;
-pub mod bad_token;
 pub mod current_block;
 pub mod db_order_conversions;
 pub mod encoded_settlement;
@@ -10,18 +9,14 @@ pub mod event_storing_helpers;
 pub mod external_prices;
 pub mod fee;
 pub mod fee_factor;
-pub mod gas_price;
-pub mod gas_price_estimation;
 pub mod http_client;
 pub mod http_solver;
 pub mod interaction;
 pub mod order_quoting;
 pub mod order_validation;
-pub mod price_estimation;
 pub mod remaining_amounts;
 pub mod signature_validator;
 pub mod token_list;
-pub mod trade_finding;
 pub mod url;
 pub mod web3;
 pub mod zeroex_api;

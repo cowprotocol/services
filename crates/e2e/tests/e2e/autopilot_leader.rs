@@ -125,8 +125,8 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             ],
             orderbook::config::Configuration {
                 native_price_estimation: orderbook::config::native_price::NativePriceConfig {
-                    estimators: shared::price_estimation::NativePriceEstimators::new(vec![vec![
-                        shared::price_estimation::NativePriceEstimator::forwarder(
+                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
+                        price_estimation::NativePriceEstimator::forwarder(
                             "http://0.0.0.0:9588".parse().unwrap(),
                         ),
                     ]]),

@@ -1,9 +1,9 @@
 use {
-    serde::{Deserialize, Serialize},
-    shared::price_estimation::{
+    price_estimation::{
         NativePriceEstimators,
         config::native_price::NativePriceConfig as SharedNativePriceConfig,
     },
+    serde::{Deserialize, Serialize},
     std::str::FromStr,
 };
 
@@ -26,7 +26,7 @@ pub struct NativePriceConfig {
 impl NativePriceConfig {
     /// The orderbook forwards native price requests to the autopilot.
     pub fn test_default() -> Self {
-        use shared::price_estimation::NativePriceEstimator;
+        use price_estimation::NativePriceEstimator;
         Self {
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::forwarder(
                 reqwest::Url::from_str("http://localhost:12088").unwrap(),
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn roundtrip_serialization() {
-        use shared::price_estimation::NativePriceEstimator;
+        use price_estimation::NativePriceEstimator;
 
         let config = NativePriceConfig {
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),

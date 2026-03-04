@@ -1,10 +1,7 @@
 use {
+    price_estimation,
     reqwest::Url,
-    shared::{
-        arguments::display_secret_option,
-        http_client,
-        price_estimation::{self},
-    },
+    shared::{arguments::display_secret_option, http_client},
     std::{net::SocketAddr, path::PathBuf},
 };
 

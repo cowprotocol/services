@@ -296,6 +296,8 @@ async fn quote_timeout(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
             },
             SolverEngine {
                 name: "test_quoter".into(),
@@ -304,6 +306,8 @@ async fn quote_timeout(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -323,8 +327,8 @@ async fn quote_timeout(web3: Web3) {
             ],
             orderbook::config::Configuration {
                 native_price_estimation: orderbook::config::native_price::NativePriceConfig {
-                    estimators: shared::price_estimation::NativePriceEstimators::new(vec![vec![
-                        shared::price_estimation::NativePriceEstimator::driver(
+                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
+                        price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_solver".parse().unwrap(),
                         ),
