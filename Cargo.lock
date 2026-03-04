@@ -1227,6 +1227,7 @@ dependencies = [
  "ethrpc",
  "event-indexing",
  "futures",
+ "gas-price-estimation",
  "hex-literal",
  "humantime",
  "humantime-serde",
