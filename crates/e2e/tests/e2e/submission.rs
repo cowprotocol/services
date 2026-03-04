@@ -8,6 +8,7 @@ use {
         },
     },
     autopilot::config::Configuration,
+    configs::test_util::TestDefault,
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     futures::StreamExt,

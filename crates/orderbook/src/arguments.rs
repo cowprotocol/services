@@ -19,9 +19,6 @@ pub struct Arguments {
     #[clap(flatten)]
     pub price_estimation: price_estimation::Arguments,
 
-    #[clap(flatten)]
-    pub database_pool: shared::arguments::DatabasePoolConfig,
-
     /// Path to the TOML configuration file.
     #[clap(long, env)]
     pub config: PathBuf,
@@ -47,7 +44,6 @@ impl std::fmt::Display for Arguments {
             order_quoting,
             http_client,
             price_estimation,
-            database_pool,
             config,
             bind_address,
             db_write_url: db_url,
@@ -58,7 +54,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{order_quoting}")?;
         write!(f, "{http_client}")?;
         write!(f, "{price_estimation}")?;
-        write!(f, "{database_pool}")?;
         writeln!(f, "config: {}", config.display())?;
         writeln!(f, "bind_address: {bind_address}")?;
         let _intentionally_ignored = db_url;

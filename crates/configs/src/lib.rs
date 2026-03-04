@@ -1,0 +1,18 @@
+pub mod database;
+pub(crate) mod deserialize_env;
+
+#[cfg(any(test, feature = "test-util"))]
+pub mod test_util {
+    /// Provides standard test defaults while keeping separate from the regular
+    /// `Default` trait.
+    pub trait TestDefault {
+        /// Returns a test specific default.
+        ///
+        /// For example, when providing a default for a database connection for
+        /// tests, this can return a `localhost` connection.
+        fn test_default() -> Self;
+    }
+
+    // No blanket implementation due to lack of specialization features:
+    // https://github.com/rust-lang/rfcs/blob/master/text/1210-impl-specialization.md
+}

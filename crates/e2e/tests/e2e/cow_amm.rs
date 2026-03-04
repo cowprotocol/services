@@ -7,6 +7,7 @@ use {
         },
     },
     autopilot::config::{Configuration, solver::Solver},
+    configs::test_util::TestDefault,
     contracts::alloy::{
         ERC20,
         support::{Balances, Signatures},
