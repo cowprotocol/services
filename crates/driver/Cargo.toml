@@ -27,6 +27,7 @@ alloy = { workspace = true, features = [
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes-hex = { workspace = true }  # may get marked as unused but it's used with serde
@@ -39,6 +40,7 @@ derive_more = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
 futures = { workspace = true }
+gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
@@ -48,6 +50,7 @@ mimalloc = { workspace = true, optional = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }

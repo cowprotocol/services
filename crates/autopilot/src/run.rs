@@ -27,6 +27,7 @@ use {
     },
     account_balances::{self, BalanceSimulator},
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
+    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
@@ -35,16 +36,15 @@ use {
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
+    price_estimation::{
+        factory::{self, PriceEstimatorFactory},
+        native::NativePriceEstimating,
+        trade_verifier::code_fetching::CachedCodeFetcher,
+    },
     shared::{
         arguments::tracing_config,
-        bad_token::list_based::DenyListedTokens,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
-        price_estimation::{
-            factory::{self, PriceEstimatorFactory},
-            native::NativePriceEstimating,
-            trade_verifier::code_fetching::CachedCodeFetcher,
-        },
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
@@ -258,8 +258,8 @@ pub async fn run(
     );
 
     let gas_price_estimator = Arc::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
+        gas_price_estimation::create_priority_estimator(
+            http_factory.create(),
             &web3,
             args.shared.gas_estimators.as_slice(),
         )
@@ -281,7 +281,6 @@ pub async fn run(
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
-        &args.shared,
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
@@ -298,7 +297,9 @@ pub async fn run(
             block_stream: eth.current_block().clone(),
         },
         factory::Components {
-            http_factory: http_factory.clone(),
+            http_factory: price_estimation::utils::http_client_factory::HttpClientFactory::new(
+                http_factory.timeout,
+            ),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
@@ -310,7 +311,7 @@ pub async fn run(
 
     let weth = eth.contracts().weth().clone();
     let prices = db_write.fetch_latest_prices().await.unwrap();
-    let shared_cache = shared::price_estimation::native_price_cache::Cache::new(
+    let shared_cache = price_estimation::native_price_cache::Cache::new(
         args.price_estimation.native_price_cache_max_age,
         prices,
     );
@@ -341,7 +342,7 @@ pub async fn run(
             )
             .instrument(info_span!("competition_native_price_updater"))
             .await;
-        shared::price_estimation::native_price_cache::NativePriceUpdater::new(
+        price_estimation::native_price_cache::NativePriceUpdater::new(
             caching,
             config.native_price_estimation.cache_refresh_interval,
             config.native_price_estimation.prefetch_time,
@@ -354,7 +355,10 @@ pub async fn run(
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
-                .map(|price_estimator_driver| price_estimator_driver.clone().into())
+                .map(|price_estimator_driver| price_estimation::ExternalSolver {
+                    name: price_estimator_driver.name.clone(),
+                    url: price_estimator_driver.url.clone(),
+                })
                 .collect::<Vec<_>>(),
             api_native_price_estimator.clone(),
             gas_price_estimator.clone(),

@@ -6,10 +6,11 @@ use {
             competition::solution::Settlement,
             eth::{TxId, TxStatus},
         },
-        infra::{self, Ethereum, observe, solver::Solver},
+        infra::{self, Ethereum, observe},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
     anyhow::Context,
+    contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
     thiserror::Error,
@@ -24,6 +25,23 @@ const GAS_PRICE_BUMP_PCT: u64 = 13;
 
 /// The gas amount required to cancel a transaction.
 const CANCELLATION_GAS_AMOUNT: u64 = 21000;
+
+/// How the settlement transaction should be submitted on-chain.
+#[derive(Debug, Clone)]
+pub enum SubmissionMode {
+    /// Solver EOA signs and submits directly to the settlement contract.
+    Direct(eth::Address),
+    /// A dedicated submission EOA signs and pays for the tx while routing it
+    /// through the solver's EIP-7702 delegated forwarder contract.
+    Delegated {
+        /// The address that signs the transaction and whose nonce is used.
+        submitter_eoa: eth::Address,
+        /// The solver EOA address. In EIP-7702 mode tx.to is set to this
+        /// address (which delegates to a forwarder contract), instead of the
+        /// settlement contract.
+        solver_eoa: eth::Address,
+    },
+}
 
 /// The mempools used to execute settlements.
 #[derive(Debug, Clone)]
@@ -41,17 +59,16 @@ impl Mempools {
         }
     }
 
-    /// Publish a settlement to the mempools.
     pub async fn execute(
         &self,
-        solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
+        mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
         let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
             async move {
                 let result = self
-                    .submit(mempool, solver, settlement, submission_deadline)
+                    .submit(mempool, settlement, submission_deadline, mode)
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
                 observe::mempool_executed(mempool, settlement, &result);
@@ -80,9 +97,9 @@ impl Mempools {
     async fn submit(
         &self,
         mempool: &infra::mempool::Mempool,
-        solver: &Solver,
         settlement: &Settlement,
         submission_deadline: BlockNo,
+        mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
@@ -94,6 +111,8 @@ impl Mempools {
         }
 
         let tx = settlement.transaction(settlement::Internalization::Enable);
+        let tx = prepare_submission(tx, mode);
+        let signer = tx.from;
 
         // Instantiate block stream and skip the current block before we submit the
         // settlement. This way we only run iterations in blocks that can potentially
@@ -127,10 +146,8 @@ impl Mempools {
             tracing::trace!("skipping tx simulation because mempool does not mine reverting txs");
         }
 
-        // Fetch the nonce to avoid race conditions between concurrent
-        // transactions (e.g., settlement tx and cancellation tx) from the same
-        // solver address.
-        let nonce = mempool.get_nonce(solver.address()).await?;
+        // Fetch the nonce for the signing account (not the solver in 7702 mode).
+        let nonce = mempool.get_nonce(signer).await?;
 
         // estimate the gas price such that the tx should still be included
         // even if the gas price increases the maximum amount until the submission
@@ -146,7 +163,7 @@ impl Mempools {
         // if there is still a tx pending we also have to make sure we outbid that one
         // enough to make the node replace it in the mempool
         let replacement_gas_price = self
-            .minimum_replacement_gas_price(mempool, solver, nonce)
+            .minimum_replacement_gas_price(mempool, signer, nonce)
             .await;
         let final_gas_price = match &replacement_gas_price {
             Some(replacement_gas_price)
@@ -163,6 +180,7 @@ impl Mempools {
             ?replacement_gas_price,
             ?current_gas_price,
             ?final_gas_price,
+            ?signer,
             "submitting settlement tx"
         );
         let hash = mempool
@@ -170,7 +188,7 @@ impl Mempools {
                 tx.clone(),
                 final_gas_price,
                 settlement.gas.limit,
-                solver,
+                signer,
                 nonce,
             )
             .await?;
@@ -210,7 +228,7 @@ impl Mempools {
                                 "exceeded submission deadline, cancelling"
                             );
                             let _ = self
-                                .cancel(mempool, final_gas_price, solver, nonce)
+                                .cancel(mempool, final_gas_price, signer, nonce)
                                 .await;
                             return Err(Error::Expired {
                                 tx_id: hash.clone(),
@@ -227,7 +245,7 @@ impl Mempools {
                                     "tx started failing in mempool, cancelling"
                                 );
                                 let _ = self
-                                    .cancel(mempool, final_gas_price, solver, nonce)
+                                    .cancel(mempool, final_gas_price, signer, nonce)
                                     .await;
                                 return Err(Error::SimulationRevert {
                                     submitted_at_block: submission_block,
@@ -273,12 +291,12 @@ impl Mempools {
         &self,
         mempool: &infra::mempool::Mempool,
         original_tx_gas_price: Eip1559Estimation,
-        solver: &Solver,
+        signer: eth::Address,
         nonce: u64,
     ) -> Result<TxId, Error> {
         let fallback_gas_price = original_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT);
         let replacement_gas_price = self
-            .minimum_replacement_gas_price(mempool, solver, nonce)
+            .minimum_replacement_gas_price(mempool, signer, nonce)
             .await;
 
         // the node is the ultimate source of truth to compute the minimum
@@ -290,8 +308,8 @@ impl Mempools {
         };
 
         let cancellation = eth::Tx {
-            from: solver.address(),
-            to: solver.address(),
+            from: signer,
+            to: signer,
             value: 0.into(),
             input: Default::default(),
             access_list: Default::default(),
@@ -309,7 +327,7 @@ impl Mempools {
                 cancellation,
                 final_gas_price,
                 CANCELLATION_GAS_AMOUNT.into(),
-                solver,
+                signer,
                 nonce,
             )
             .await
@@ -322,10 +340,10 @@ impl Mempools {
     async fn minimum_replacement_gas_price(
         &self,
         mempool: &infra::Mempool,
-        solver: &Solver,
+        signer: eth::Address,
         next_nonce: u64,
     ) -> Option<Eip1559Estimation> {
-        if let Some(last_submission) = mempool.last_submission(solver.address()) {
+        if let Some(last_submission) = mempool.last_submission(signer) {
             if last_submission.nonce == next_nonce {
                 Some(last_submission.gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
             } else {
@@ -337,7 +355,7 @@ impl Mempools {
             // This is only done as a backup since it can incur significant latency and
             // is generally not very widely supported.
             let pending_tx = mempool
-                .find_pending_tx_in_mempool(solver.address(), next_nonce)
+                .find_pending_tx_in_mempool(signer, next_nonce)
                 .await
                 .inspect_err(|err| tracing::debug!(?err, "could not inspect tx mempool"))
                 .ok()??;
@@ -351,6 +369,35 @@ impl Mempools {
             };
 
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
+        }
+    }
+}
+
+/// In EIP-7702 mode, reroute the tx through the solver EOA's delegated
+/// forwarder contract. The original target and calldata are wrapped in a
+/// `forward()` call. `from` is set to the submission EOA so that simulations
+/// see the correct `msg.sender` for the forwarder's caller whitelist.
+fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
+    let mut tx = tx.clone();
+    match mode {
+        SubmissionMode::Direct(solver_eoa) => {
+            tx.from = *solver_eoa;
+            tx
+        }
+        SubmissionMode::Delegated {
+            submitter_eoa,
+            solver_eoa,
+        } => {
+            let original_target = tx.to;
+            tx.from = *submitter_eoa;
+            tx.to = *solver_eoa;
+            tx.input = CowSettlementForwarder::forwardCall {
+                target: original_target,
+                data: tx.input.clone(),
+            }
+            .abi_encode()
+            .into();
+            tx
         }
     }
 }

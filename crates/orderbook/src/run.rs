@@ -13,6 +13,7 @@ use {
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
+    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     contracts::alloy::{
@@ -23,24 +24,23 @@ use {
         WETH9,
         support::Balances,
     },
+    gas_price_estimation::gas_price::InstrumentedGasEstimator,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
+    price_estimation::{
+        PriceEstimating,
+        QuoteVerificationMode,
+        factory::{self, PriceEstimatorFactory},
+        native::{FallbackNativePriceEstimator, NativePriceEstimating},
+        trade_verifier::code_fetching::CachedCodeFetcher,
+    },
     shared::{
         arguments::tracing_config,
-        bad_token::list_based::DenyListedTokens,
-        gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
-        price_estimation::{
-            PriceEstimating,
-            QuoteVerificationMode,
-            factory::{self, PriceEstimatorFactory},
-            native::{FallbackNativePriceEstimator, NativePriceEstimating},
-            trade_verifier::code_fetching::CachedCodeFetcher,
-        },
         signature_validator,
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
@@ -187,8 +187,8 @@ pub async fn run(args: Arguments, config: Configuration) {
     );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
+        gas_price_estimation::create_priority_estimator(
+            http_factory.create(),
             &web3,
             args.shared.gas_estimators.as_slice(),
         )
@@ -213,7 +213,6 @@ pub async fn run(args: Arguments, config: Configuration) {
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
-        &args.shared,
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
@@ -228,7 +227,9 @@ pub async fn run(args: Arguments, config: Configuration) {
             block_stream: current_block_stream.clone(),
         },
         factory::Components {
-            http_factory: http_factory.clone(),
+            http_factory: price_estimation::utils::http_client_factory::HttpClientFactory::new(
+                http_factory.timeout,
+            ),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
@@ -238,7 +239,7 @@ pub async fn run(args: Arguments, config: Configuration) {
     .expect("failed to initialize price estimator factory");
 
     let prices = postgres_write.fetch_latest_prices().await.unwrap();
-    let cache = shared::price_estimation::native_price_cache::Cache::new(
+    let cache = price_estimation::native_price_cache::Cache::new(
         args.price_estimation.native_price_cache_max_age,
         prices,
     );
@@ -278,7 +279,10 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
-                .map(|price_estimator| price_estimator.clone().into())
+                .map(|price_estimator_driver| price_estimation::ExternalSolver {
+                    name: price_estimator_driver.name.clone(),
+                    url: price_estimator_driver.url.clone(),
+                })
                 .collect::<Vec<_>>(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -290,7 +294,10 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
-                .map(|price_estimator| price_estimator.clone().into())
+                .map(|price_estimator_driver| price_estimation::ExternalSolver {
+                    name: price_estimator_driver.name.clone(),
+                    url: price_estimator_driver.url.clone(),
+                })
                 .collect::<Vec<_>>(),
             args.fast_price_estimation_results_required,
             native_price_estimator.clone(),

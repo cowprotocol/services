@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 app-data = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
+bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes-hex = { workspace = true }
@@ -28,8 +29,8 @@ dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
-event-indexing = { workspace = true }
 futures = { workspace = true }
+gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
@@ -42,6 +43,7 @@ num = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
 order-validation = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
@@ -68,6 +70,7 @@ async-stream = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
+price-estimation = { workspace = true, features = ["test-util"] }
 regex = { workspace = true }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

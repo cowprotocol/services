@@ -21,6 +21,7 @@ autopilot = { path = "crates/autopilot" }
 aws-config = "1.5.1"
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
+bad-tokens = { path = "crates/bad-tokens" }
 balance-overrides = { path = "crates/balance-overrides" }
 bigdecimal = "0.4"
 brotli = "8"
@@ -43,6 +44,7 @@ ethrpc = { path = "crates/ethrpc" }
 event-indexing = { path = "crates/event-indexing" }
 flate2 = "1.0.30"
 futures = "0.3.30"
+gas-price-estimation = { path = "crates/gas-price-estimation" }
 hex-literal = "0.4.1"
 http-body = "1"
 http-body-util = "0.1"
@@ -71,6 +73,7 @@ orderbook = { path = "crates/orderbook" }
 paste = "1.0"
 pin-project-lite = "0.2.14"
 prettyplease = "0.2.37"
+price-estimation = { path = "crates/price-estimation" }
 proc-macro2 = "1.0.103"
 prometheus = "0.14"
 prometheus-metric-storage = "0.6"

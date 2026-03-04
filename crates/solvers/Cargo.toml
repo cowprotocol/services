@@ -28,6 +28,7 @@ liquidity-sources = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 num = { workspace = true }
 number = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true }

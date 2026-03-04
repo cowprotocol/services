@@ -22,6 +22,7 @@ anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+bad-tokens = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
@@ -32,6 +33,7 @@ contracts = { workspace = true }
 database = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
+gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
@@ -42,6 +44,7 @@ num = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
 order-validation = { workspace = true }
+price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }

@@ -1,10 +1,7 @@
 use {
+    price_estimation::{self, NativePriceEstimators},
     reqwest::Url,
-    shared::{
-        arguments::display_secret_option,
-        http_client,
-        price_estimation::{self, NativePriceEstimators},
-    },
+    shared::{arguments::display_secret_option, http_client},
     std::{net::SocketAddr, num::NonZeroUsize, path::PathBuf},
 };
 

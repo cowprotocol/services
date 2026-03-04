@@ -2,13 +2,10 @@
 //! the binaries.
 
 use {
-    crate::{
-        fee_factor::FeeFactor,
-        gas_price_estimation::GasEstimatorType,
-        price_estimation::trade_verifier::tenderly_api,
-    },
+    crate::fee_factor::FeeFactor,
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
+    gas_price_estimation::GasEstimatorType,
     observe::TracingConfig,
     std::{
         collections::HashSet,
@@ -151,9 +148,6 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub current_block: crate::current_block::Arguments,
-
-    #[clap(flatten)]
-    pub tenderly: tenderly_api::Arguments,
 
     #[clap(flatten)]
     pub logging: LoggingArguments,
@@ -307,7 +301,6 @@ impl Display for Arguments {
         let Self {
             ethrpc,
             current_block,
-            tenderly,
             logging,
             node_url,
             chain_id,
@@ -327,7 +320,6 @@ impl Display for Arguments {
 
         write!(f, "{ethrpc}")?;
         write!(f, "{current_block}")?;
-        write!(f, "{tenderly}")?;
         write!(f, "{logging}")?;
         writeln!(f, "node_url: {node_url}")?;
         display_option(f, "chain_id", chain_id)?;
