@@ -11,10 +11,10 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-reqwest = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+reqwest = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }

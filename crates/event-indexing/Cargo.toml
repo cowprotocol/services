@@ -7,21 +7,22 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 alloy = { workspace = true }
-async-stream = { workspace = true }
 anyhow = { workspace = true }
-futures = { workspace = true }
-tracing = { workspace = true }
-ethrpc = { workspace = true }
-observe = { workspace = true }
-tokio = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
+contracts = { workspace = true }
+ethrpc = { workspace = true }
+futures = { workspace = true }
+observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-tracing-subscriber = { workspace = true }
-mockall = { workspace = true }
 contracts = { workspace = true }
+mockall = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true
