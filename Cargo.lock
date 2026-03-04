@@ -2916,6 +2916,7 @@ dependencies = [
  "axum 0.8.8",
  "balance-overrides",
  "bigdecimal",
+ "bytes",
  "bytes-hex",
  "chain",
  "chrono",
