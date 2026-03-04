@@ -16,7 +16,7 @@ const USER_AGENT: &str = "cowprotocol-services/2.0.0";
 /// different APIs.
 #[derive(Clone, Debug)]
 pub struct HttpClientFactory {
-    timeout: Duration,
+    pub timeout: Duration,
 }
 
 impl HttpClientFactory {

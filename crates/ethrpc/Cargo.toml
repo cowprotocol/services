@@ -11,14 +11,30 @@ name = "ethrpc"
 path = "src/lib.rs"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "rpc-types-trace", "transports", "transport-ws", "provider-ws", "provider-debug-api", "reqwest", "signers", "signer-aws", "signer-local", "eips", "reqwest-default-tls", "pubsub", "contract"] }
+alloy = { workspace = true, default-features = false, features = [
+  "reqwest-default-tls",
+  "contract",
+  "eips",
+  "json-rpc",
+  "provider-debug-api",
+  "provider-ws",
+  "providers",
+  "pubsub",
+  "reqwest",
+  "rpc-client",
+  "rpc-types",
+  "rpc-types-trace",
+  "signer-aws",
+  "signer-local",
+  "signers",
+  "transport-ws",
+  "transports"
+] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 const-hex = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
-jsonrpc-core.workspace = true
-mockall = { workspace = true, optional = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
@@ -33,11 +49,8 @@ tower = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 
-[dev-dependencies]
-mockall = { workspace = true }
-
 [features]
-test-util = ["dep:mockall"]
+test-util = []
 
 [lints]
 workspace = true

@@ -5,7 +5,6 @@ use {
     shared::{
         arguments::{display_option, display_secret_option},
         http_client,
-        price_estimation::{self},
     },
     std::{net::SocketAddr, num::NonZeroUsize, path::PathBuf, str::FromStr, time::Duration},
     url::Url,

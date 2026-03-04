@@ -1,12 +1,8 @@
 use {
+    price_estimation::NativePriceEstimators,
     serde::{Deserialize, Serialize},
-    shared::price_estimation::NativePriceEstimators,
-    std::{num::NonZeroUsize, time::Duration},
+    std::time::Duration,
 };
-
-const fn default_native_price_estimation_results_required() -> NonZeroUsize {
-    NonZeroUsize::new(2).expect("value should not be zero")
-}
 
 const fn default_native_price_cache_refresh() -> Duration {
     Duration::from_secs(1)
@@ -16,6 +12,8 @@ const fn default_native_price_prefetch_time() -> Duration {
     Duration::from_secs(80)
 }
 
+// Does not implement Default because `estimators` *cannot* be empty,
+// as such, we cannot provide a proper default value for this structure.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct NativePriceConfig {
@@ -28,13 +26,6 @@ pub struct NativePriceConfig {
     /// Estimators for the API endpoint. Falls back to
     /// `--native-price-estimators` if unset.
     pub api_estimators: Option<NativePriceEstimators>,
-
-    /// How many successful price estimates for each order will cause a native
-    /// price estimation to return its result early. It's possible to pass
-    /// values greater than the total number of enabled estimators but that
-    /// will not have any further effect.
-    #[serde(default = "default_native_price_estimation_results_required")]
-    pub results_required: NonZeroUsize,
 
     /// How often the native price estimator should check for prices that need
     /// to be udpated.
@@ -52,16 +43,29 @@ pub struct NativePriceConfig {
         default = "default_native_price_prefetch_time"
     )]
     pub prefetch_time: Duration,
+
+    #[serde(flatten)]
+    pub shared: price_estimation::config::native_price::NativePriceConfig,
 }
 
-impl Default for NativePriceConfig {
-    fn default() -> Self {
+#[cfg(any(test, feature = "test-util"))]
+impl NativePriceConfig {
+    /// Test configuration for [`NativePriceConfig`], must always be able to do
+    /// a serialization/deserialization roundtrip, as otherwise it may not
+    /// be loadable in end-to-end tests.
+    pub fn test_default() -> Self {
         Self {
-            estimators: Default::default(),
+            estimators: NativePriceEstimators::test_default(),
             api_estimators: Default::default(),
-            results_required: default_native_price_estimation_results_required(),
             cache_refresh_interval: default_native_price_cache_refresh(),
-            prefetch_time: default_native_price_prefetch_time(),
+            prefetch_time: Duration::from_millis(500),
+            shared: price_estimation::config::native_price::NativePriceConfig {
+                cache: price_estimation::config::native_price::CacheConfig {
+                    max_age: Duration::from_secs(2),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 }
@@ -71,31 +75,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deserialize_defaults() {
-        let toml = r#"
-        estimators = []
-        "#;
-        let config: NativePriceConfig = toml::from_str(toml).unwrap();
-        assert!(config.estimators.as_slice().is_empty());
-        assert!(config.api_estimators.is_none());
-        assert_eq!(config.results_required.get(), 2);
-        assert_eq!(config.cache_refresh_interval, Duration::from_secs(1));
-        assert_eq!(config.prefetch_time, Duration::from_secs(80));
-    }
-
-    #[test]
     fn deserialize_full() {
         let toml = r#"
         estimators = [[{type = "CoinGecko"}]]
         api-estimators = [[{type = "OneInchSpotPriceApi"}]]
-        results-required = 3
         cache-refresh-interval = "30s"
         prefetch-time = "2m"
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.estimators.as_slice().len(), 1);
         assert!(config.api_estimators.is_some());
-        assert_eq!(config.results_required.get(), 3);
         assert_eq!(config.cache_refresh_interval, Duration::from_secs(30));
         assert_eq!(config.prefetch_time, Duration::from_secs(120));
     }
@@ -106,13 +95,11 @@ mod tests {
         assert!(toml::from_str::<NativePriceConfig>(toml).is_err());
     }
 
+    // This test keeps the sanity of `test_default` upon which other tests rely!
     #[test]
-    fn default_impl() {
-        let config = NativePriceConfig::default();
-        assert!(config.estimators.as_slice().is_empty());
-        assert!(config.api_estimators.is_none());
-        assert_eq!(config.results_required.get(), 2);
-        assert_eq!(config.cache_refresh_interval, Duration::from_secs(1));
-        assert_eq!(config.prefetch_time, Duration::from_secs(80));
+    fn test_default_roundtrip() {
+        let config = NativePriceConfig::test_default();
+        let serialized = toml::to_string(&config).unwrap();
+        let _: NativePriceConfig = toml::from_str(&serialized).unwrap();
     }
 }

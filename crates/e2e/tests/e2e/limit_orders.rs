@@ -354,15 +354,16 @@ async fn two_limit_orders_test(web3: Web3) {
             "http://localhost:11089/test_solver".parse().unwrap(),
             Account::Address(solver.address()),
         )],
-        ..Default::default()
+        ..Configuration::test_no_drivers()
     };
-    let (_config_file, config_arg) = config.to_cli_args();
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![config_arg, "--compress-solve-request=true".to_string()],
+                autopilot: vec!["--compress-solve-request=true".to_string()],
                 ..Default::default()
             },
+            config,
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -499,15 +500,24 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     );
 
     let services = Services::new(&onchain).await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimators=Driver|test_quoter|http://localhost:11088/test_solver"
-                .to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            ],
+            orderbook::config::Configuration {
+                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
+                        price_estimation::NativePriceEstimator::driver(
+                            "test_quoter".to_string(),
+                            "http://localhost:11088/test_solver".parse().unwrap(),
+                        ),
+                    ]]),
+                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                },
+                ..orderbook::config::Configuration::test_default()
+            },
+        )
         .await;
 
     // Place Orders
@@ -545,27 +555,24 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // Start autopilot only once all the orders are created.
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![
-            Solver::new(
-                "solver1".to_string(),
-                Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                Account::Address(solver_a.address()),
-            ),
-            Solver::test("solver2", solver_b.address()),
-        ],
-        ..Default::default()
-    }
-    .to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
                 "--max-winners-per-auction=2".to_string(),
             ],
+            Configuration {
+                drivers: vec![
+                    Solver::new(
+                        "solver1".to_string(),
+                        Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                        Account::Address(solver_a.address()),
+                    ),
+                    Solver::test("solver2", solver_b.address()),
+                ],
+                ..Configuration::test_no_drivers()
+            },
         )
         .await;
 
@@ -729,32 +736,30 @@ async fn too_many_limit_orders_test(web3: Web3) {
         false,
     );
 
-    let (_config_file, config_arg) =
-        Configuration::test("test_solver", solver_address).to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
+            Configuration::test("test_solver", solver_address),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
-        order_validation: OrderValidationConfig {
-            max_limit_orders_per_user: 1,
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration {
+                order_validation: OrderValidationConfig {
+                    max_limit_orders_per_user: 1,
+                    ..Default::default()
+                },
+                ..orderbook::config::Configuration::test_default()
+            },
+        )
         .await;
 
     let order = OrderCreation {
@@ -834,32 +839,30 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         false,
     );
 
-    let (_config_file, config_arg) =
-        Configuration::test("test_solver", solver_address).to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
+            Configuration::test("test_solver", solver_address),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
-        order_validation: OrderValidationConfig {
-            max_limit_orders_per_user: 1,
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration {
+                order_validation: OrderValidationConfig {
+                    max_limit_orders_per_user: 1,
+                    ..Default::default()
+                },
+                ..orderbook::config::Configuration::test_default()
+            },
+        )
         .await;
 
     let quote_request = OrderQuoteRequest {
@@ -1159,42 +1162,37 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // Setup services
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![
-                FeePolicy {
-                    kind: FeePolicyKind::Surplus {
-                        factor: 0.5.try_into().unwrap(),
-                        max_volume_factor: 0.01.try_into().unwrap(),
-                    },
-                    order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Limit,
-                },
-                FeePolicy {
-                    kind: FeePolicyKind::PriceImprovement {
-                        factor: 0.5.try_into().unwrap(),
-                        max_volume_factor: 0.01.try_into().unwrap(),
-                    },
-                    order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Market,
-                },
-            ],
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
-
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: [
-                    config_arg,
-                    format!("--unsupported-tokens={:#x}", unsupported.address()),
-                ]
-                .to_vec(),
+                autopilot: vec![format!("--unsupported-tokens={:#x}", unsupported.address())],
                 ..Default::default()
             },
+            Configuration {
+                drivers: vec![Solver::test("test_solver", solver.address())],
+                fee_policies: FeePoliciesConfig {
+                    policies: vec![
+                        FeePolicy {
+                            kind: FeePolicyKind::Surplus {
+                                factor: 0.5.try_into().unwrap(),
+                                max_volume_factor: 0.01.try_into().unwrap(),
+                            },
+                            order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Limit,
+                        },
+                        FeePolicy {
+                            kind: FeePolicyKind::PriceImprovement {
+                                factor: 0.5.try_into().unwrap(),
+                                max_volume_factor: 0.01.try_into().unwrap(),
+                            },
+                            order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Market,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                ..Configuration::test_no_drivers()
+            },
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -1360,15 +1358,12 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     // Place Orders
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) =
-        Configuration::test("test_solver", solver.address()).to_cli_args();
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(
-            ExtraServiceArgs {
-                api: vec![],
-                autopilot: vec![config_arg],
-            },
+            Default::default(),
+            Configuration::test("test_solver", solver.address()),
+            orderbook::config::Configuration::test_default(),
             solver,
             500,
         )
@@ -1564,15 +1559,12 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     // Start protocol with 500 bps (5%) haircut
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) =
-        Configuration::test("test_solver", solver.address()).to_cli_args();
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(
-            ExtraServiceArgs {
-                api: vec![],
-                autopilot: vec![config_arg],
-            },
+            Default::default(),
+            Configuration::test("test_solver", solver.address()),
+            orderbook::config::Configuration::test_default(),
             solver,
             500,
         )

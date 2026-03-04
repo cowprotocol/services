@@ -4,9 +4,9 @@ use {
         infra::contracts,
     },
     chain::Chain,
+    price_estimation::gas::SETTLEMENT_OVERHEAD,
     reqwest::Url,
     serde::Deserialize,
-    shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::{fmt::Debug, path::Path},
     tokio::fs,
 };

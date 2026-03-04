@@ -190,8 +190,6 @@ async fn zero_ex_liquidity(web3: Web3) {
         },
         false,
     );
-    let (_config_file, config_arg) =
-        Configuration::test("test_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(
@@ -199,17 +197,18 @@ async fn zero_ex_liquidity(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                config_arg,
             ],
+            Configuration::test("test_solver", solver.address()),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Drive solution

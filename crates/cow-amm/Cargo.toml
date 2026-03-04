@@ -4,14 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = { workspace = true }
 alloy = { workspace = true }
+anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
-event-indexing = { workspace = true }
 ethrpc = { workspace = true }
+event-indexing = { workspace = true }
 futures = { workspace = true }
 model = { workspace = true }
 observe = { workspace = true }
@@ -21,7 +22,6 @@ shared = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
-const-hex = { workspace = true }
 
 [lints]
 workspace = true

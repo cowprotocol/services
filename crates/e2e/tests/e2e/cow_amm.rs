@@ -183,26 +183,24 @@ async fn cow_amm_jit(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) =
-        Configuration::test("mock_solver", solver.address()).to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
+            Configuration::test("mock_solver", solver.address()),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Derive the order's valid_to from the blockchain because the cow amm enforces
@@ -560,34 +558,32 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     );
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![
-            Solver::test("test_solver", solver.address()),
-            Solver::test("mock_solver", solver.address()),
-        ],
-        ..Default::default()
-    }
-    .to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 // it uses an older helper contract that was deployed before the desired cow amm
                 "--cow-amm-configs=0xf76c421bAb7df8548604E60deCCcE50477C10462|0x3FF0041A614A9E6Bf392cbB961C97DA214E9CB31|20476672".to_string()
             ],
+            Configuration {
+                drivers: vec![
+                    Solver::test("test_solver", solver.address()),
+                    Solver::test("mock_solver", solver.address()),
+                ],
+                ..Configuration::test_no_drivers()
+            }
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     onchain.mint_block().await;
@@ -836,26 +832,24 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
 
-    let (_config_file, config_arg) =
-        Configuration::test("mock_solver", solver.address()).to_cli_args();
-
     services
         .start_autopilot(
             None,
             vec![
-                config_arg,
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
             ],
+            Configuration::test("mock_solver", solver.address()),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Get the current block timestamp

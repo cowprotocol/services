@@ -15,31 +15,31 @@ clap = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
+futures = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
-futures = { workspace = true }
-model = { workspace = true }
 mockall = { workspace = true, optional = true }
+model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-regex = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
-serde_with = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-mockall = { workspace = true }
 maplit = { workspace = true }
+mockall = { workspace = true }
+regex = { workspace = true }
 testlib = { workspace = true }
 token-info = { workspace = true, features = ["test-util"] }
 
