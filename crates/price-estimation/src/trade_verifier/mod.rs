@@ -9,7 +9,7 @@ use {
             map_interactions_data,
         },
         trade_verifier::{code_fetching::CodeFetching, tenderly_api::TenderlyCodeSimulator},
-        utils::{EncodedInteraction, EncodedSettlement, EncodedTrade, encode_trade},
+        utils::encoding::{EncodedInteraction, EncodedSettlement, EncodedTrade, encode_trade},
     },
     ::alloy::sol_types::SolCall,
     alloy::{

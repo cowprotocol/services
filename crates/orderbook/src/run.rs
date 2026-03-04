@@ -227,7 +227,9 @@ pub async fn run(args: Arguments, config: Configuration) {
             block_stream: current_block_stream.clone(),
         },
         factory::Components {
-            http_factory: price_estimation::utils::HttpClientFactory::new(http_factory.timeout),
+            http_factory: price_estimation::utils::http_client_factory::HttpClientFactory::new(
+                http_factory.timeout,
+            ),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),

@@ -1,7 +1,7 @@
 //! Module containing Tenderly API implementation.
 
 use {
-    crate::utils::{HttpClientFactory, display_option, display_secret_option},
+    crate::utils::{display_option, display_secret_option, http_client_factory::HttpClientFactory},
     alloy::{
         primitives::{Address, B256, TxKind, U256, map::B256Map},
         rpc::types::{TransactionRequest, state::StateOverride as AlloyStateOverride},

@@ -16,7 +16,7 @@ use {
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
         trade_verifier::{code_fetching::CachedCodeFetcher, tenderly_api::TenderlyCodeSimulator},
-        utils::HttpClientFactory,
+        utils::http_client_factory::HttpClientFactory,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
