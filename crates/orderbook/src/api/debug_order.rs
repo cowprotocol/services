@@ -97,12 +97,8 @@ fn authenticate<'a>(headers: &HeaderMap, tokens: &'a HashMap<String, String>) ->
     tokens.get(header_value).map(String::as_str)
 }
 
-fn format_address(addr: &ByteArray<20>) -> String {
-    format!("0x{}", const_hex::encode(addr.0))
-}
-
 fn format_bytes(bytes: &[u8]) -> String {
-    format!("0x{}", const_hex::encode(bytes))
+    const_hex::encode_prefixed(bytes)
 }
 
 // --- Response types ---
@@ -146,9 +142,9 @@ pub struct DebugOrderDetails {
 impl From<&DbOrder> for DebugOrderDetails {
     fn from(o: &DbOrder) -> Self {
         Self {
-            owner: format_address(&o.owner),
-            sell_token: format_address(&o.sell_token),
-            buy_token: format_address(&o.buy_token),
+            owner: o.owner.to_string(),
+            sell_token: o.sell_token.to_string(),
+            buy_token: o.buy_token.to_string(),
             sell_amount: o.sell_amount.to_string(),
             buy_amount: o.buy_amount.to_string(),
             valid_to: o.valid_to,
@@ -159,7 +155,7 @@ impl From<&DbOrder> for DebugOrderDetails {
             cancellation_timestamp: o.cancellation_timestamp.map(|t| t.to_rfc3339()),
             signing_scheme: format!("{:?}", o.signing_scheme),
             app_data: format_bytes(&o.app_data.0),
-            receiver: o.receiver.as_ref().map(format_address),
+            receiver: o.receiver.as_ref().map(|a| a.to_string()),
         }
     }
 }
@@ -184,7 +180,7 @@ impl From<&DbQuote> for DebugQuote {
             sell_token_price: q.sell_token_price,
             sell_amount: q.sell_amount.to_string(),
             buy_amount: q.buy_amount.to_string(),
-            solver: format_address(&q.solver),
+            solver: q.solver.to_string(),
             verified: q.verified,
         }
     }
@@ -220,7 +216,7 @@ impl DebugAuction {
         let mut native_prices = HashMap::new();
         for (token, price) in a.price_tokens.iter().zip(a.price_values.iter()) {
             if *token == sell_token || *token == buy_token {
-                native_prices.insert(format_address(token), price.to_string());
+                native_prices.insert(token.to_string(), price.to_string());
             }
         }
         Self {
@@ -252,7 +248,7 @@ impl From<&OrderProposedSolution> for DebugProposedSolution {
             auction_id: s.auction_id,
             solution_uid: s.solution_uid,
             ranking: s.ranking,
-            solver: format_address(&s.solver),
+            solver: s.solver.to_string(),
             is_winner: s.is_winner,
             filtered_out: s.filtered_out,
             score: s.score.to_string(),
@@ -279,14 +275,14 @@ impl From<&OrderExecutionRow> for DebugExecution {
             .iter()
             .zip(e.protocol_fee_amounts.iter())
             .map(|(token, amount)| DebugProtocolFee {
-                token: format_address(token),
+                token: token.to_string(),
                 amount: amount.to_string(),
             })
             .collect();
         Self {
             auction_id: e.auction_id,
             executed_fee: e.executed_fee.to_string(),
-            executed_fee_token: format_address(&e.executed_fee_token),
+            executed_fee_token: e.executed_fee_token.to_string(),
             block_number: e.block_number,
             protocol_fees,
         }
@@ -349,7 +345,7 @@ impl From<&SettlementExecutionRow> for DebugSettlementAttempt {
     fn from(s: &SettlementExecutionRow) -> Self {
         Self {
             auction_id: s.auction_id,
-            solver: format_address(&s.solver),
+            solver: s.solver.to_string(),
             solution_uid: s.solution_uid,
             start_timestamp: s.start_timestamp.to_rfc3339(),
             end_timestamp: s.end_timestamp.map(|t| t.to_rfc3339()),
