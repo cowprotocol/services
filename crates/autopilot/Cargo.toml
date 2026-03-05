@@ -29,6 +29,7 @@ bytes-hex = { workspace = true }  # may get marked as unused but it's used with 
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+configs = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 cow-amm = { workspace = true }
@@ -77,6 +78,7 @@ url = { workspace = true, features = ["serde"] }
 winner-selection = { workspace = true }
 
 [dev-dependencies]
+configs = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
@@ -89,7 +91,7 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
-test-util = ["dep:tempfile", "price-estimation/test-util"]
+test-util = ["configs/test-util", "dep:tempfile", "price-estimation/test-util"]
 tokio-console = ["observe/tokio-console"]
 
 [lints]

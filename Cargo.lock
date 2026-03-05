@@ -1217,6 +1217,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "contracts",
  "cow-amm",
@@ -2365,6 +2366,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "configs"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "console-api"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3027,6 +3039,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "contracts",
  "cow-amm",
@@ -5077,6 +5090,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "contracts",
  "database",

@@ -1,5 +1,6 @@
 use {
     autopilot::{config::Configuration, shutdown_controller::ShutdownController},
+    configs::test_util::TestDefault,
     e2e::setup::{
         OnchainComponents,
         Services,
