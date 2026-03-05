@@ -60,7 +60,7 @@ impl Inner {
                         U256::ZERO
                     }
                 })
-                .map_err(Into::into);
+                .map_err(anyhow::Error::from);
         }
 
         let token = ERC20Instance::new(query.token, &self.provider);
