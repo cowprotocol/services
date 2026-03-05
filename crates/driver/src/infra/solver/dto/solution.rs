@@ -18,7 +18,7 @@ use {
 };
 
 #[derive(derive_more::From)]
-pub struct Solutions(solvers_dto::solution::Solutions);
+pub struct Solutions(Vec<solvers_dto::solution::Solution>);
 
 impl Solutions {
     const MAX_BASE_POINT: u32 = 10000;
@@ -33,7 +33,7 @@ impl Solutions {
     ) -> Result<Vec<competition::Solution>, super::Error> {
         let haircut_bps = solver.haircut_bps();
 
-        self.0.solutions
+        self.0
             .into_iter()
             .map(|solution| {
                 competition::Solution::new(

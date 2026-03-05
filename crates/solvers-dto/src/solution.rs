@@ -7,48 +7,45 @@ use {
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum SolverError {
+#[serde(rename_all = "camelCase")]
+pub struct SolverError {
+    pub code: SolverErrorCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SolverErrorCode {
     /// Token can only be traded during specific time windows (e.g., RWA tokens)
-    #[serde(rename_all = "camelCase")]
-    TradingOutsideAllowedWindow {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-    },
+    TradingOutsideAllowedWindow,
     /// Token is temporarily suspended from trading
-    #[serde(rename_all = "camelCase")]
-    TokenTemporarilySuspended {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-    },
+    TokenTemporarilySuspended,
     /// Insufficient liquidity for the requested trade size
-    #[serde(rename_all = "camelCase")]
-    InsufficientLiquidity {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-    },
+    InsufficientLiquidity,
     /// Token requires special permissions or whitelisting
-    #[serde(rename_all = "camelCase")]
-    UnauthorizedTrader {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-    },
+    UnauthorizedTrader,
     /// Generic solver error with custom message
-    #[serde(rename_all = "camelCase")]
-    Other {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
+    Other,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SolverResponse {
+    Solutions {
+        solutions: Vec<Solution>,
+    },
+    Error {
+        error: SolverError,
     },
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Solutions {
-    pub solutions: Vec<Solution>,
-    /// Optional custom error that explains why no solutions could be computed.
-    /// When multiple solvers return errors, the system will pick one to return.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<SolverError>,
+impl Default for SolverResponse {
+    fn default() -> Self {
+        Self::Solutions {
+            solutions: Vec::new(),
+        }
+    }
 }
 
 #[serde_as]

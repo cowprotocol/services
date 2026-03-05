@@ -18,15 +18,13 @@ impl Signature {
         Ok(match self.scheme {
             Scheme::Eip712 => model::signature::Signature::Eip712(EcdsaSignature::from_bytes(
                 self.data
-                    .get(..65)
-                    .and_then(|a| a.try_into().ok())
+                    .as_array()
                     .ok_or_else(|| anyhow::anyhow!("ECDSA signature must be 65 bytes"))?,
             )?),
             Scheme::EthSign => model::signature::Signature::EthSign(EcdsaSignature::from_bytes(
                 self.data
                     .0
-                    .get(..65)
-                    .and_then(|a| a.try_into().ok())
+                    .as_array()
                     .ok_or_else(|| anyhow::anyhow!("ECDSA signature must be 65 bytes"))?,
             )?),
             Scheme::Eip1271 => model::signature::Signature::Eip1271(self.data.clone().into()),
