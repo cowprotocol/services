@@ -82,8 +82,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
 impl From<quote::Error> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: quote::Error) -> Self {
         // Check if this is a custom solver error
-        if let quote::Error::Solver(ref solver_err) = value {
-            if let Some(custom_err) = solver_err.custom_error() {
+        if let quote::Error::Solver(ref solver_err) = value && let Some(custom_err) = solver_err.custom_error() {
                 let (kind, description) = match custom_err {
                     solvers_dto::solution::SolverError::TradingOutsideAllowedWindow { message } => {
                         (
