@@ -59,21 +59,28 @@ impl From<anyhow::Error> for TransferSimulationError {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
-    // Returns the balance available to the allowance manager for the given owner
-    // and token taking both balance as well as "allowance" into account.
-    // Results are streamed so call sites can throttle consumption to limit
-    // concurrent RPC requests.
+    /// Returns the balance available to the allowance manager for the given
+    /// owner and token taking both balance as well as "allowance" into
+    /// account. Results are streamed so call sites can throttle consumption
+    /// to limit concurrent RPC requests with:
+    /// ```
+    /// balance_fetcher
+    ///     .get_balances(queries)
+    ///     .buffered(10)
+    ///     .collect()
+    ///     .await;
+    /// ```
     fn get_balances(
         &self,
         queries: Vec<Query>,
     ) -> BoxStream<'_, BoxFuture<'static, (Query, anyhow::Result<U256>)>>;
 
-    // Check that the settlement contract can make use of this user's token balance.
-    // This check could fail if the user does not have enough balance, has not
-    // given the allowance to the allowance manager or if the token does not
-    // allow freely transferring amounts around for example if it is paused
-    // or takes a fee on transfer. If the node supports the trace_callMany we
-    // can perform more extensive tests.
+    /// Check that the settlement contract can make use of this user's token
+    /// balance. This check could fail if the user does not have enough
+    /// balance, has not given the allowance to the allowance manager or if
+    /// the token does not allow freely transferring amounts around for
+    /// example if it is paused or takes a fee on transfer. If the node
+    /// supports the trace_callMany we can perform more extensive tests.
     async fn can_transfer(
         &self,
         query: &Query,
