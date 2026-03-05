@@ -1,7 +1,6 @@
 use {
     price_estimation,
-    reqwest::Url,
-    shared::{arguments::display_secret_option, http_client},
+    shared::http_client,
     std::{net::SocketAddr, path::PathBuf},
 };
 
@@ -25,16 +24,6 @@ pub struct Arguments {
 
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
-
-    /// Url of the Postgres database. By default connects to locally running
-    /// postgres.
-    #[clap(long, env, default_value = "postgresql://")]
-    pub db_write_url: Url,
-
-    /// Url of the Postgres database replica. By default it's the same as
-    /// db_write_url
-    #[clap(long, env)]
-    pub db_read_url: Option<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -46,8 +35,6 @@ impl std::fmt::Display for Arguments {
             price_estimation,
             config,
             bind_address,
-            db_write_url: db_url,
-            db_read_url,
         } = self;
 
         write!(f, "{shared}")?;
@@ -56,9 +43,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{price_estimation}")?;
         writeln!(f, "config: {}", config.display())?;
         writeln!(f, "bind_address: {bind_address}")?;
-        let _intentionally_ignored = db_url;
-        writeln!(f, "db_url: SECRET")?;
-        display_secret_option(f, "db_read_url", db_read_url.as_ref())?;
 
         Ok(())
     }
