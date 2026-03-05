@@ -89,7 +89,7 @@ async fn solve(
         let solution_generator = state.solution.lock().unwrap().clone();
         solution_generator().await.into_iter().collect()
     };
-    let solutions = Solutions { solutions };
+    let solutions = Solutions { solutions, error: None };
     tracing::trace!(?auction_id, ?solutions, "/solve");
     (axum::http::StatusCode::OK, Json(solutions))
 }

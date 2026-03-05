@@ -130,6 +130,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                     .collect(),
             })
             .collect(),
+        error: None,
     }
 }
 
