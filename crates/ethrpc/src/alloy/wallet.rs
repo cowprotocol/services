@@ -1,11 +1,9 @@
 use {
-    alloy::{
-        consensus::{TxEnvelope, TypedTransaction},
-        network::{Ethereum, EthereumWallet, Network, NetworkWallet, TxSigner},
-        primitives::Address,
-        signers::Signature,
-        transports::impl_future,
-    },
+    alloy_consensus::{TxEnvelope, TypedTransaction},
+    alloy_network::{Ethereum, EthereumWallet, Network, NetworkWallet, TxSigner},
+    alloy_primitives::Address,
+    alloy_signer::Signature,
+    alloy_transport::impl_future,
     std::{sync::Arc, thread},
     tokio::sync::RwLock,
 };
@@ -126,7 +124,7 @@ where
         &self,
         sender: Address,
         tx: N::UnsignedTx,
-    ) -> impl_future!(<Output = alloy::signers::Result<N::TxEnvelope>>) {
+    ) -> impl_future!(<Output = alloy_signer::Result<N::TxEnvelope>>) {
         async move {
             let r_lock = self.0.read().await;
             <EthereumWallet as NetworkWallet<N>>::sign_transaction_from(&r_lock, sender, tx).await

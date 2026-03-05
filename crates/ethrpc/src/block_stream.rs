@@ -1,12 +1,10 @@
 use {
     crate::AlloyProvider,
-    alloy::{
-        eips::{BlockId, BlockNumberOrTag},
-        primitives::{B256, U256},
-        providers::{Provider, ProviderBuilder},
-        rpc::types::Block,
-        transports::ws::WsConnect,
-    },
+    alloy_eips::{BlockId, BlockNumberOrTag},
+    alloy_primitives::{B256, U256},
+    alloy_provider::{Provider, ProviderBuilder},
+    alloy_rpc_types::Block,
+    alloy_transport_ws::WsConnect,
     anyhow::{Context as _, Result, anyhow},
     futures::StreamExt,
     std::{
@@ -69,10 +67,10 @@ impl TryFrom<Block> for BlockInfo {
     }
 }
 
-impl TryFrom<alloy::rpc::types::Header> for BlockInfo {
+impl TryFrom<alloy_rpc_types::Header> for BlockInfo {
     type Error = anyhow::Error;
 
-    fn try_from(value: alloy::rpc::types::Header) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: alloy_rpc_types::Header) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             number: value.number,
             hash: value.hash,

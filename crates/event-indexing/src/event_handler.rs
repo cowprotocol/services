@@ -3,12 +3,10 @@ use {
         block_retriever::{BlockRetrieving, RangeInclusive},
         maintenance::Maintaining,
     },
-    alloy::{
-        primitives::{Address, B256},
-        providers::{DynProvider, Provider},
-        rpc::types::{Filter, Log},
-        sol_types::SolEventInterface,
-    },
+    alloy_primitives::{Address, B256},
+    alloy_provider::{DynProvider, Provider},
+    alloy_rpc_types::{Filter, Log},
+    alloy_sol_types::SolEventInterface,
     anyhow::{Context, Result},
     ethrpc::block_stream::BlockNumberHash,
     futures::{Stream, StreamExt},
@@ -684,7 +682,8 @@ fn track_block_range(range: &str) {
 mod tests {
     use {
         super::*,
-        alloy::{eips::BlockNumberOrTag, primitives::b256},
+        alloy_eips::BlockNumberOrTag,
+        alloy_primitives::b256,
         contracts::alloy::GPv2Settlement,
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     };
@@ -692,28 +691,28 @@ mod tests {
     impl AlloyEventRetrieving for GPv2Settlement::Instance {
         type Event = GPv2Settlement::GPv2Settlement::GPv2SettlementEvents;
 
-        fn filter(&self) -> alloy::rpc::types::Filter {
+        fn filter(&self) -> alloy_rpc_types::Filter {
             Filter::new().address(*self.address())
         }
 
-        fn provider(&self) -> &alloy::providers::DynProvider {
+        fn provider(&self) -> &alloy_provider::DynProvider {
             self.provider()
         }
     }
 
     /// Simple event storage for testing purposes of EventHandler
     struct EventStorage<T> {
-        pub events: Vec<(T, alloy::rpc::types::Log)>,
+        pub events: Vec<(T, alloy_rpc_types::Log)>,
     }
 
     #[async_trait::async_trait]
-    impl<T> EventStoring<(T, alloy::rpc::types::Log)> for EventStorage<T>
+    impl<T> EventStoring<(T, alloy_rpc_types::Log)> for EventStorage<T>
     where
         T: Send + Sync,
     {
         async fn replace_events(
             &mut self,
-            events: Vec<(T, alloy::rpc::types::Log)>,
+            events: Vec<(T, alloy_rpc_types::Log)>,
             range: RangeInclusive<u64>,
         ) -> Result<()> {
             self.events
@@ -722,7 +721,7 @@ mod tests {
             Ok(())
         }
 
-        async fn append_events(&mut self, events: Vec<(T, alloy::rpc::types::Log)>) -> Result<()> {
+        async fn append_events(&mut self, events: Vec<(T, alloy_rpc_types::Log)>) -> Result<()> {
             self.events.extend(events);
             Ok(())
         }
@@ -957,7 +956,7 @@ mod tests {
         // disregard them.
         let remove_events_after_test_start = |v: Vec<(
             GPv2Settlement::GPv2Settlement::GPv2SettlementEvents,
-            alloy::rpc::types::Log,
+            alloy_rpc_types::Log,
         )>| {
             v.into_iter()
                 .filter(|(_, log)| {

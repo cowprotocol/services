@@ -1,10 +1,8 @@
 use {
-    alloy::{
-        primitives::Address,
-        providers::DynProvider,
-        rpc::types::{Filter, FilterSet},
-        sol_types::SolEvent,
-    },
+    alloy_primitives::Address,
+    alloy_provider::DynProvider,
+    alloy_rpc_types::{Filter, FilterSet},
+    alloy_sol_types::SolEvent,
     contracts::alloy::cow_amm::CowAmmLegacyHelper::CowAmmLegacyHelper::{
         self,
         CowAmmLegacyHelperEvents as CowAmmEvent,

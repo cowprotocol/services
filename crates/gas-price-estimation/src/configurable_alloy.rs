@@ -7,10 +7,8 @@
 
 use {
     crate::GasPriceEstimating,
-    alloy::{
-        eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
-        providers::{Provider, utils::eip1559_default_estimator},
-    },
+    alloy_eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
+    alloy_provider::{Provider, utils::eip1559_default_estimator},
     anyhow::{Context, Result},
     ethrpc::AlloyProvider,
     tracing::instrument,

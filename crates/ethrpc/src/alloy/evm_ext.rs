@@ -1,10 +1,10 @@
 //! This module contains extensions specific to `evm_` RPC calls that alloy does
 //! not provide (even though `anvil_` versions may exist).
 
-use alloy::{
-    primitives::BlockTimestamp,
-    providers::Provider,
-    transports::{RpcError, TransportErrorKind},
+use {
+    alloy_primitives::BlockTimestamp,
+    alloy_provider::Provider,
+    alloy_transport::{RpcError, TransportErrorKind},
 };
 
 /// Transport extensions based on the `evm_` namespace.

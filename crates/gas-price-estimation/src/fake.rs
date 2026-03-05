@@ -1,4 +1,4 @@
-use {crate::GasPriceEstimating, alloy::eips::eip1559::Eip1559Estimation, anyhow::Result};
+use {crate::GasPriceEstimating, alloy_eips::eip1559::Eip1559Estimation, anyhow::Result};
 
 pub struct FakeGasPriceEstimator(pub Eip1559Estimation);
 

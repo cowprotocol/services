@@ -5,10 +5,8 @@
 
 use {
     crate::GasPriceEstimating,
-    alloy::{
-        eips::{BlockId, eip1559::Eip1559Estimation},
-        providers::Provider,
-    },
+    alloy_eips::{BlockId, eip1559::Eip1559Estimation},
+    alloy_provider::Provider,
     anyhow::{Context, Result, anyhow},
     ethrpc::AlloyProvider,
 };

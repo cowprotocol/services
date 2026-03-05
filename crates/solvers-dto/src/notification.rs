@@ -1,8 +1,6 @@
 use {
-    alloy::{
-        primitives::{Address, B256, U256},
-        rpc::types::AccessList,
-    },
+    alloy_primitives::{Address, B256, U256},
+    alloy_rpc_types::AccessList,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},

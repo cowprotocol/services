@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     std::{collections::HashSet, sync::Arc},
 };
 
