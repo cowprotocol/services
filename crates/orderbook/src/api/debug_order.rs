@@ -68,9 +68,9 @@ pub async fn debug_order_handler(
     let response = DebugOrderResponse {
         order_uid: uid.to_string(),
         order: report.order,
-        events: report.events.iter().map(DebugEvent::from).collect(),
+        events: report.events.iter().map(EventDto::from).collect(),
         auctions,
-        trades: report.trades.iter().map(DebugTrade::from).collect(),
+        trades: report.trades.iter().map(TradeDto::from).collect(),
     };
     (StatusCode::OK, Json(response)).into_response()
 }
@@ -86,36 +86,36 @@ fn build_auctions(
     let buy = ByteArray(buy_token.0.0);
 
     // Index all per-auction data by auction_id.
-    let mut solutions_by_auction: HashMap<i64, Vec<DebugProposedSolution>> = HashMap::new();
+    let mut solutions_by_auction: HashMap<i64, Vec<ProposedSolutionDto>> = HashMap::new();
     for s in &report.proposed_solutions {
         solutions_by_auction
             .entry(s.auction_id)
             .or_default()
-            .push(DebugProposedSolution::from(s));
+            .push(ProposedSolutionDto::from(s));
     }
 
-    let mut executions_by_auction: HashMap<i64, Vec<DebugExecution>> = HashMap::new();
+    let mut executions_by_auction: HashMap<i64, Vec<ExecutionDto>> = HashMap::new();
     for e in &report.executions {
         executions_by_auction
             .entry(e.auction_id)
             .or_default()
-            .push(DebugExecution::from(e));
+            .push(ExecutionDto::from(e));
     }
 
-    let mut settlements_by_auction: HashMap<i64, Vec<DebugSettlementAttempt>> = HashMap::new();
+    let mut settlements_by_auction: HashMap<i64, Vec<SettlementAttemptDto>> = HashMap::new();
     for s in &report.settlement_executions {
         settlements_by_auction
             .entry(s.auction_id)
             .or_default()
-            .push(DebugSettlementAttempt::from(s));
+            .push(SettlementAttemptDto::from(s));
     }
 
-    let mut fees_by_auction: HashMap<i64, Vec<DebugFeePolicy>> = HashMap::new();
+    let mut fees_by_auction: HashMap<i64, Vec<FeePolicyDto>> = HashMap::new();
     for f in &report.fee_policies {
         fees_by_auction
             .entry(f.auction_id)
             .or_default()
-            .push(DebugFeePolicy::from(f));
+            .push(FeePolicyDto::from(f));
     }
 
     let mut auctions: Vec<DebugAuction> = report
@@ -162,19 +162,19 @@ fn format_bytes(bytes: &[u8]) -> String {
 pub struct DebugOrderResponse {
     pub order_uid: String,
     pub order: Order,
-    pub events: Vec<DebugEvent>,
+    pub events: Vec<EventDto>,
     pub auctions: Vec<DebugAuction>,
-    pub trades: Vec<DebugTrade>,
+    pub trades: Vec<TradeDto>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugEvent {
+pub(crate) struct EventDto {
     pub label: String,
     pub timestamp: String,
 }
 
-impl From<&OrderEvent> for DebugEvent {
+impl From<&OrderEvent> for EventDto {
     fn from(e: &OrderEvent) -> Self {
         Self {
             label: format!("{:?}", e.label).to_lowercase(),
@@ -185,20 +185,20 @@ impl From<&OrderEvent> for DebugEvent {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugAuction {
+pub(crate) struct DebugAuction {
     pub id: i64,
     pub block: i64,
     pub deadline: i64,
     pub native_prices: HashMap<String, String>,
-    pub proposed_solutions: Vec<DebugProposedSolution>,
-    pub executions: Vec<DebugExecution>,
-    pub settlement_attempts: Vec<DebugSettlementAttempt>,
-    pub fee_policies: Vec<DebugFeePolicy>,
+    pub proposed_solutions: Vec<ProposedSolutionDto>,
+    pub executions: Vec<ExecutionDto>,
+    pub settlement_attempts: Vec<SettlementAttemptDto>,
+    pub fee_policies: Vec<FeePolicyDto>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugProposedSolution {
+pub(crate) struct ProposedSolutionDto {
     pub solution_uid: i64,
     pub ranking: i64,
     pub solver: String,
@@ -209,7 +209,7 @@ pub struct DebugProposedSolution {
     pub executed_buy: String,
 }
 
-impl From<&OrderProposedSolution> for DebugProposedSolution {
+impl From<&OrderProposedSolution> for ProposedSolutionDto {
     fn from(s: &OrderProposedSolution) -> Self {
         Self {
             solution_uid: s.solution_uid,
@@ -226,20 +226,20 @@ impl From<&OrderProposedSolution> for DebugProposedSolution {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugExecution {
+pub(crate) struct ExecutionDto {
     pub executed_fee: String,
     pub executed_fee_token: String,
     pub block_number: i64,
-    pub protocol_fees: Vec<DebugProtocolFee>,
+    pub protocol_fees: Vec<ProtocolFeeDto>,
 }
 
-impl From<&OrderExecutionRow> for DebugExecution {
+impl From<&OrderExecutionRow> for ExecutionDto {
     fn from(e: &OrderExecutionRow) -> Self {
         let protocol_fees = e
             .protocol_fee_tokens
             .iter()
             .zip(e.protocol_fee_amounts.iter())
-            .map(|(token, amount)| DebugProtocolFee {
+            .map(|(token, amount)| ProtocolFeeDto {
                 token: token.to_string(),
                 amount: amount.to_string(),
             })
@@ -255,14 +255,14 @@ impl From<&OrderExecutionRow> for DebugExecution {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugProtocolFee {
+pub(crate) struct ProtocolFeeDto {
     pub token: String,
     pub amount: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugTrade {
+pub(crate) struct TradeDto {
     pub block_number: i64,
     pub log_index: i64,
     pub buy_amount: String,
@@ -274,7 +274,7 @@ pub struct DebugTrade {
     pub auction_id: Option<i64>,
 }
 
-impl From<&TradesQueryRow> for DebugTrade {
+impl From<&TradesQueryRow> for TradeDto {
     fn from(t: &TradesQueryRow) -> Self {
         Self {
             block_number: t.block_number,
@@ -290,7 +290,7 @@ impl From<&TradesQueryRow> for DebugTrade {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugSettlementAttempt {
+pub(crate) struct SettlementAttemptDto {
     pub solver: String,
     pub solution_uid: i64,
     pub start_timestamp: String,
@@ -304,7 +304,7 @@ pub struct DebugSettlementAttempt {
     pub outcome: Option<String>,
 }
 
-impl From<&SettlementExecutionRow> for DebugSettlementAttempt {
+impl From<&SettlementExecutionRow> for SettlementAttemptDto {
     fn from(s: &SettlementExecutionRow) -> Self {
         Self {
             solver: s.solver.to_string(),
@@ -321,7 +321,7 @@ impl From<&SettlementExecutionRow> for DebugSettlementAttempt {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DebugFeePolicy {
+pub(crate) struct FeePolicyDto {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub surplus_factor: Option<f64>,
@@ -335,7 +335,7 @@ pub struct DebugFeePolicy {
     pub price_improvement_max_volume_factor: Option<f64>,
 }
 
-impl From<&FeePolicy> for DebugFeePolicy {
+impl From<&FeePolicy> for FeePolicyDto {
     fn from(f: &FeePolicy) -> Self {
         Self {
             kind: match f.kind {
