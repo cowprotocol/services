@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{Address, B256, U256},
+    alloy_primitives::{Address, B256, U256},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,

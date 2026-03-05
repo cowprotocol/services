@@ -16,10 +16,8 @@ use {
         eth_node::NodeGasPriceEstimator,
         priority::PriorityGasPriceEstimating,
     },
-    ::alloy::{
-        eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
-        providers::Provider,
-    },
+    alloy_eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
+    alloy_provider::Provider,
     anyhow::Result,
     ethrpc::Web3,
     std::str::FromStr,

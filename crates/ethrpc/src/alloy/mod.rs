@@ -6,10 +6,8 @@ mod wallet;
 
 use {
     crate::{AlloyProvider, Config},
-    alloy::{
-        providers::{Provider, ProviderBuilder},
-        rpc::client::{ClientBuilder, RpcClient},
-    },
+    alloy_provider::{Provider, ProviderBuilder},
+    alloy_rpc_client::{ClientBuilder, RpcClient},
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
 };
@@ -122,12 +120,10 @@ impl ProviderSignerExt for AlloyProvider {
 mod test_util {
     use {
         super::*,
-        alloy::{
-            contract::{CallBuilder, CallDecoder},
-            primitives::TxHash,
-            providers::Network,
-            rpc::types::TransactionRequest,
-        },
+        alloy_contract::{CallBuilder, CallDecoder},
+        alloy_primitives::TxHash,
+        alloy_provider::Network,
+        alloy_rpc_types::TransactionRequest,
         std::time::Duration,
         tokio::time::timeout,
     };
@@ -171,6 +167,6 @@ mod test_util {
     }
 }
 
-use alloy::{rpc::client::RpcClientInner, transports::IntoBoxTransport};
 #[cfg(feature = "test-util")]
 pub use test_util::{CallBuilderExt, ProviderExt};
+use {alloy_rpc_client::RpcClientInner, alloy_transport::IntoBoxTransport};

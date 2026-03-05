@@ -5,7 +5,7 @@
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::BalanceSimulator,
-    alloy::primitives::{Address, U256},
+    alloy_primitives::{Address, U256},
     anyhow::Result,
     contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
     ethrpc::{Web3, alloy::ProviderLabelingExt},
@@ -90,7 +90,7 @@ impl Balances {
                 )?;
                 match approved {
                     true => std::cmp::min(balance, allowance),
-                    false => alloy::primitives::U256::ZERO,
+                    false => U256::ZERO,
                 }
             }
             SellTokenSource::Internal => {
@@ -103,7 +103,7 @@ impl Balances {
                 )?;
                 match approved {
                     true => balance[0], // internal approvals are always U256::MAX
-                    false => alloy::primitives::U256::ZERO,
+                    false => U256::ZERO,
                 }
             }
         };
@@ -167,7 +167,7 @@ impl BalanceFetching for Balances {
 mod tests {
     use {
         super::*,
-        alloy::primitives::address,
+        alloy_primitives::address,
         balance_overrides::DummyOverrider,
         contracts::alloy::GPv2Settlement,
         ethrpc::Web3,
@@ -180,7 +180,7 @@ mod tests {
     async fn test_for_user() {
         let web3 = Web3::new_from_env();
         let settlement = GPv2Settlement::GPv2Settlement::new(
-            alloy::primitives::address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
             web3.provider.clone(),
         );
         let balances = contracts::alloy::support::Balances::Instance::new(

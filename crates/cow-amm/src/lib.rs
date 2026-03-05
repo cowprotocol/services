@@ -32,10 +32,8 @@ impl Metrics {
 /// See: <https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/libraries/GPv2Order.sol#L26-L48>
 pub mod gpv2_order {
     use {
-        alloy::{
-            primitives::{B256, Keccak256},
-            sol_types::{SolStruct, SolValue},
-        },
+        alloy_primitives::{Address, B256, Keccak256},
+        alloy_sol_types::{SolStruct, SolValue},
         contracts::alloy::cow_amm::CowAmm,
         model::{DomainSeparator, interaction::InteractionData, signature::hashed_eip712_message},
     };
@@ -51,7 +49,7 @@ pub mod gpv2_order {
     /// Note the use of `string` for kind, sellTokenBalance, and buyTokenBalance
     /// instead of `bytes32`.
     const TYPE_HASH: [u8; 32] =
-        alloy::hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
+        alloy_primitives::hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
 
     /// Computes the correct EIP-712 hash for a GPv2Order.
     fn eip712_hash_struct(order: &CowAmm::GPv2Order::Data) -> B256 {
@@ -73,7 +71,7 @@ pub mod gpv2_order {
     pub fn generate_eip1271_signature(
         order: &CowAmm::GPv2Order::Data,
         trading_params: &CowAmm::ConstantProduct::TradingParams,
-        amm_address: alloy::primitives::Address,
+        amm_address: Address,
     ) -> Vec<u8> {
         // Encode the order and trading params
         let signature_data = (order.clone(), trading_params.clone()).abi_encode_sequence();

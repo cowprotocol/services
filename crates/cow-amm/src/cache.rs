@@ -1,6 +1,7 @@
 use {
     crate::{Amm, Metrics},
-    alloy::{primitives::Address, rpc::types::Log},
+    alloy_primitives::Address,
+    alloy_rpc_types::Log,
     anyhow::Context,
     contracts::alloy::cow_amm::{
         CowAmmLegacyHelper,
@@ -60,7 +61,7 @@ impl Storage {
         }
 
         let amm_process_tasks = db_amms.into_iter().map(|db_amm| async move {
-            let amm_address = alloy::primitives::Address::from_slice(&db_amm.address.0);
+            let amm_address = Address::from_slice(&db_amm.address.0);
             let amm = Amm::new(amm_address, &self.0.helper).await?;
             let block_number = u64::try_from(db_amm.block_number).context(format!(
                 "db stored cow amm {:?} block number is not u64",
@@ -97,7 +98,7 @@ impl Storage {
             .collect()
     }
 
-    pub(crate) async fn remove_amms(&self, amm_addresses: &[alloy::primitives::Address]) {
+    pub(crate) async fn remove_amms(&self, amm_addresses: &[Address]) {
         let mut lock = self.0.cache.write().await;
         for (_, amms) in lock.iter_mut() {
             amms.retain(|amm| !amm_addresses.contains(amm.address()))
@@ -168,7 +169,7 @@ impl EventStoring<(CowAmmEvent, Log)> for Storage {
             let cow_amm = cow_amm.amm;
             match Amm::new(cow_amm, &self.0.helper).await {
                 Ok(amm) => processed_events.push((block_number, tx_hash, Arc::new(amm))),
-                Err(err) if matches!(&err, alloy::contract::Error::TransportError(_)) => {
+                Err(err) if matches!(&err, alloy_contract::Error::TransportError(_)) => {
                     // Abort completely to later try the entire block range again.
                     // That keeps the cache in a consistent state and avoids indexing
                     // the same event multiple times which would result in duplicate amms.
