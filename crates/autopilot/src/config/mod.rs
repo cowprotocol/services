@@ -1,9 +1,12 @@
 use {
     crate::config::{
         banned_users::BannedUsersConfig,
+        cow_amm::CowAmmGroupConfig,
+        ethflow::EthflowConfig,
         fee_policy::FeePoliciesConfig,
         native_price::NativePriceConfig,
         order_events_cleanup::OrderEventsCleanupConfig,
+        run_loop_config::RunLoopConfig,
         s3::S3Config,
         solver::Solver,
         trusted_tokens::TrustedTokensConfig,
@@ -11,16 +14,40 @@ use {
     anyhow::{anyhow, ensure},
     configs::database::DatabasePoolConfig,
     serde::Deserialize,
-    std::path::Path,
+    std::{net::SocketAddr, num::NonZeroUsize, path::Path, time::Duration},
+    url::Url,
 };
 
 pub mod banned_users;
+pub mod cow_amm;
+pub mod ethflow;
 pub mod fee_policy;
 pub mod native_price;
 pub mod order_events_cleanup;
+pub mod run_loop_config;
 pub mod s3;
 pub mod solver;
 pub mod trusted_tokens;
+
+fn default_metrics_address() -> SocketAddr {
+    "0.0.0.0:9589".parse().unwrap()
+}
+
+fn default_api_address() -> SocketAddr {
+    "0.0.0.0:12088".parse().unwrap()
+}
+
+fn default_max_winners_per_auction() -> NonZeroUsize {
+    NonZeroUsize::new(20).unwrap()
+}
+
+fn default_max_solutions_per_solver() -> NonZeroUsize {
+    NonZeroUsize::new(3).unwrap()
+}
+
+fn default_max_maintenance_timeout() -> Duration {
+    Duration::from_secs(5)
+}
 
 // Does not implement Default because `native_price_estimation` *cannot* have
 // empty `estimators`, as such, we cannot provide a proper default value for
@@ -57,6 +84,57 @@ pub struct Configuration {
 
     #[serde(default)]
     pub database: DatabasePoolConfig,
+
+    #[serde(default)]
+    pub ethflow: EthflowConfig,
+
+    /// Run the autopilot in shadow mode by specifying an upstream CoW protocol
+    /// deployment to pull auctions from. The autopilot performs solver
+    /// competition and logs the winner without executing settlements.
+    #[serde(default)]
+    pub shadow: Option<Url>,
+
+    /// Address to bind the metrics server.
+    #[serde(default = "default_metrics_address")]
+    pub metrics_address: SocketAddr,
+
+    /// Address to bind the HTTP API server.
+    #[serde(default = "default_api_address")]
+    pub api_address: SocketAddr,
+
+    #[serde(default)]
+    pub cow_amm: CowAmmGroupConfig,
+
+    #[serde(default)]
+    pub run_loop: RunLoopConfig,
+
+    /// Maximum number of winners per auction. Each winner settles their
+    /// winning orders concurrently.
+    #[serde(default = "default_max_winners_per_auction")]
+    pub max_winners_per_auction: NonZeroUsize,
+
+    /// Maximum number of solutions a single solver may propose per auction.
+    #[serde(default = "default_max_solutions_per_solver")]
+    pub max_solutions_per_solver: NonZeroUsize,
+
+    /// Whether to skip filtering out orders with insufficient balances.
+    #[serde(default)]
+    pub disable_order_balance_filter: bool,
+
+    /// Enable leader lock in the database; the follower instance will not
+    /// cut auctions.
+    #[serde(default)]
+    pub enable_leader_lock: bool,
+
+    /// Enable brotli compression of `/solve` request bodies sent to drivers.
+    #[serde(default)]
+    pub compress_solve_request: bool,
+
+    /// Maximum time the autopilot may spend on maintenance logic between
+    /// two auctions. When exceeded, a not-fully-updated auction runs instead
+    /// of stalling.
+    #[serde(with = "humantime_serde", default = "default_max_maintenance_timeout")]
+    pub max_maintenance_timeout: Duration,
 }
 
 impl Configuration {
@@ -104,6 +182,18 @@ impl Configuration {
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
+            ethflow: TestDefault::test_default(),
+            shadow: Default::default(),
+            metrics_address: default_metrics_address(),
+            api_address: default_api_address(),
+            cow_amm: Default::default(),
+            run_loop: TestDefault::test_default(),
+            max_winners_per_auction: default_max_winners_per_auction(),
+            max_solutions_per_solver: default_max_solutions_per_solver(),
+            disable_order_balance_filter: false,
+            enable_leader_lock: false,
+            compress_solve_request: false,
+            max_maintenance_timeout: default_max_maintenance_timeout(),
         }
     }
 
@@ -119,6 +209,18 @@ impl Configuration {
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
+            ethflow: TestDefault::test_default(),
+            shadow: Default::default(),
+            metrics_address: default_metrics_address(),
+            api_address: default_api_address(),
+            cow_amm: Default::default(),
+            run_loop: TestDefault::test_default(),
+            max_winners_per_auction: default_max_winners_per_auction(),
+            max_solutions_per_solver: default_max_solutions_per_solver(),
+            disable_order_balance_filter: false,
+            enable_leader_lock: false,
+            compress_solve_request: false,
+            max_maintenance_timeout: default_max_maintenance_timeout(),
         }
     }
 

@@ -410,13 +410,13 @@ async fn store_filtered_solutions(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
-                "--max-winners-per-auction=10".to_string(),
             ],
             Configuration {
                 drivers: vec![
                     Solver::test("good_solver", good_solver_account.address()),
                     Solver::test("bad_solver", bad_solver_account.address()),
                 ],
+                max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
                 ..Configuration::test_no_drivers()
             },
         )
