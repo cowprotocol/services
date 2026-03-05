@@ -6,7 +6,7 @@
 
 use {
     crate::GasPriceEstimating,
-    alloy::eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
+    alloy_eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
     anyhow::Result,
 };
 

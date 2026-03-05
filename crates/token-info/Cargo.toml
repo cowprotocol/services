@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true }
+alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 contracts = { workspace = true }
@@ -14,12 +14,11 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-mockall = { workspace = true }
 maplit = { workspace = true }
+mockall = { workspace = true }
 tokio = { workspace = true }
 
 [features]

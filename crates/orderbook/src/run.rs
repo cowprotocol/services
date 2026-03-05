@@ -41,7 +41,6 @@ use {
         http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
-        signature_validator,
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -65,6 +64,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     let config = Configuration::from_path(&args.config)
         .await
         .expect("failed to load configuration file");
+    tracing::info!("file configuration:\n{:#?}", config);
     run(args, config).await;
 }
 
@@ -161,13 +161,13 @@ pub async fn run(args: Arguments, config: Configuration) {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let db_config = crate::database::Config {
-        max_pool_size: args.database_pool.db_max_connections.get(),
+        max_pool_size: config.database.max_connections.get(),
     };
-    let postgres_write = Postgres::try_new(args.db_write_url.as_str(), db_config.clone())
+    let postgres_write = Postgres::try_new(config.database.write_url.as_str(), db_config.clone())
         .expect("failed to create database");
 
-    let postgres_read = if let Some(db_read_url) = args.db_read_url
-        && args.db_write_url != db_read_url
+    let postgres_read = if let Some(db_read_url) = config.database.read_url
+        && config.database.write_url != db_read_url
     {
         Postgres::try_new(db_read_url.as_str(), db_config)
             .expect("failed to create read replica database")
@@ -213,6 +213,7 @@ pub async fn run(args: Arguments, config: Configuration) {
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
+        &config.native_price_estimation.shared,
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
@@ -240,24 +241,24 @@ pub async fn run(args: Arguments, config: Configuration) {
 
     let prices = postgres_write.fetch_latest_prices().await.unwrap();
     let cache = price_estimation::native_price_cache::Cache::new(
-        args.price_estimation.native_price_cache_max_age,
+        config.native_price_estimation.shared.cache.max_age,
         prices,
     );
     let primary = price_estimator_factory
         .native_price_estimator(
-            args.native_price_estimators.as_slice(),
-            args.fast_price_estimation_results_required,
+            config.native_price_estimation.estimators.as_slice(),
+            config.native_price_estimation.shared.results_required,
             &native_token,
         )
         .await
         .expect("failed to build primary native price estimator");
 
     let inner: Box<dyn NativePriceEstimating> =
-        if let Some(ref fallback_config) = args.native_price_estimators_fallback {
+        if let Some(ref fallback_config) = config.native_price_estimation.fallback_estimators {
             let fallback = price_estimator_factory
                 .native_price_estimator(
                     fallback_config.as_slice(),
-                    args.fast_price_estimation_results_required,
+                    config.native_price_estimation.shared.results_required,
                     &native_token,
                 )
                 .await
@@ -299,7 +300,7 @@ pub async fn run(args: Arguments, config: Configuration) {
                     url: price_estimator_driver.url.clone(),
                 })
                 .collect::<Vec<_>>(),
-            args.fast_price_estimation_results_required,
+            config.native_price_estimation.shared.results_required,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )

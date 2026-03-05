@@ -8,6 +8,7 @@ use {
     },
     autopilot::config::Configuration,
     chrono::{NaiveDateTime, Utc},
+    configs::test_util::TestDefault,
     contracts::alloy::{ERC20, IZeroex},
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
@@ -23,6 +24,7 @@ use {
         },
     },
     ethrpc::{Web3, alloy::CallBuilderExt},
+    liquidity_sources::zeroex,
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -190,8 +192,6 @@ async fn zero_ex_liquidity(web3: Web3) {
         },
         false,
     );
-    let (_config_file, config_arg) =
-        Configuration::test("test_solver", solver.address()).to_cli_args();
 
     services
         .start_autopilot(
@@ -199,17 +199,18 @@ async fn zero_ex_liquidity(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                config_arg,
             ],
+            Configuration::test("test_solver", solver.address()),
         )
         .await;
-    let (_ob_config_file, ob_config_arg) =
-        orderbook::config::Configuration::default().to_cli_args();
     services
-        .start_api(vec![
-            ob_config_arg,
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_api(
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+            orderbook::config::Configuration::test_default(),
+        )
         .await;
 
     // Drive solution
@@ -296,7 +297,7 @@ fn create_zeroex_liquidity_orders(
     zeroex_addr: Address,
     chain_id: u64,
     weth_address: Address,
-) -> [shared::zeroex_api::OrderRecord; 3] {
+) -> [zeroex::OrderRecord; 3] {
     let typed_order = Eip712TypedZeroExOrder {
         maker_token: order_creation.buy_token,
         taker_token: order_creation.sell_token,
@@ -366,7 +367,7 @@ struct ZeroExOrderAmounts {
 
 async fn get_zeroex_order_amounts(
     zeroex: &IZeroex::Instance,
-    zeroex_order: &shared::zeroex_api::OrderRecord,
+    zeroex_order: &zeroex::OrderRecord,
 ) -> anyhow::Result<ZeroExOrderAmounts> {
     Ok(zeroex
         .getLimitOrderRelevantState(
@@ -401,7 +402,7 @@ async fn get_zeroex_order_amounts(
 
 async fn fill_or_kill_zeroex_limit_order(
     zeroex: &IZeroex::Instance,
-    zeroex_order: &shared::zeroex_api::OrderRecord,
+    zeroex_order: &zeroex::OrderRecord,
     from: Address,
 ) -> anyhow::Result<B256> {
     let order = zeroex_order.order();

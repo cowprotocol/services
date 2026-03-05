@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{Address, TxHash, U256},
+    alloy_primitives::{Address, TxHash, U256},
     anyhow::{Context, Result},
     app_data::AppDataHash,
     contracts::alloy::cow_amm::{
@@ -13,7 +13,7 @@ use {
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, hashed_eip712_message},
     },
-    shared::signature_validator::{SignatureCheck, SignatureValidating},
+    signature_validator::{SignatureCheck, SignatureValidating},
 };
 
 #[derive(Clone, Debug)]
@@ -27,7 +27,7 @@ impl Amm {
     pub async fn new(
         address: Address,
         helper: &CowAmmLegacyHelper::Instance,
-    ) -> alloy::contract::Result<Self> {
+    ) -> alloy_contract::Result<Self> {
         let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {

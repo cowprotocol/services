@@ -39,7 +39,6 @@ use {
             u256_to_big_rational,
         },
         nonzero::NonZeroU256,
-        units::EthUnit,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -422,7 +421,10 @@ impl TradeVerifier {
         let solver_override = AccountOverride {
             code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone()),
             // Allow solver simulations to proceed even if the real account holds no ETH.
-            balance: Some(1u64.eth()),
+            // The number is obscenely large, but not max to avoid potential overflows.
+            // We had this set to eth(1), but some simulations require more than that on non-ETH
+            // netowrks e.g. polygon so it led to reverts.
+            balance: Some(U256::MAX / U256::from(2)),
             ..Default::default()
         };
 

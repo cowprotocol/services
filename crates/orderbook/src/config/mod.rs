@@ -2,11 +2,13 @@ use {
     crate::config::{
         banned_users::BannedUsersConfig,
         ipfs::IpfsConfig,
+        native_price::NativePriceConfig,
         order_validation::OrderValidationConfig,
     },
     alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
+    configs::database::DatabasePoolConfig,
     serde::{Deserialize, Serialize},
     shared::fee_factor::FeeFactor,
     std::path::Path,
@@ -14,6 +16,7 @@ use {
 
 pub mod banned_users;
 pub mod ipfs;
+pub mod native_price;
 pub mod order_validation;
 
 const fn default_app_data_size_limit() -> usize {
@@ -32,8 +35,9 @@ pub struct VolumeFeeConfig {
 }
 
 // NOTE: cannot add deny_unknown_fields during the config migration
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case" /* deny_unknown_fields */)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 pub struct Configuration {
     /// Configuration for the order validation system.
     #[serde(default)]
@@ -64,21 +68,12 @@ pub struct Configuration {
     /// Whether to skip EIP-1271 signature validation.
     #[serde(default)]
     pub eip1271_skip_creation_validation: bool,
-}
 
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            order_validation: Default::default(),
-            ipfs: Default::default(),
-            app_data_size_limit: default_app_data_size_limit(),
-            active_order_competition_threshold: default_active_order_competition_threshold(),
-            volume_fee: None,
-            unsupported_tokens: Default::default(),
-            banned_users: Default::default(),
-            eip1271_skip_creation_validation: false,
-        }
-    }
+    /// Configuration for the native price estimation mechanism.
+    pub native_price_estimation: NativePriceConfig,
+
+    #[serde(default)]
+    pub database: DatabasePoolConfig,
 }
 
 impl Configuration {
@@ -96,36 +91,77 @@ impl Configuration {
             )),
         }
     }
-
-    pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
-        Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
-    }
 }
 
 #[cfg(any(test, feature = "test-util"))]
-impl Configuration {
-    pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
-        use std::io::Write;
-        let mut file = tempfile::NamedTempFile::new().expect("temp file creation should not fail");
-        file.write_all(
-            toml::to_string_pretty(self)
-                .expect("serialization should not fail")
-                .as_bytes(),
-        )
-        .expect("writing to temp file should not fail");
-        file
+pub mod test_util {
+    use {
+        crate::config::{
+            Configuration,
+            default_active_order_competition_threshold,
+            default_app_data_size_limit,
+            native_price::NativePriceConfig,
+        },
+        configs::test_util::TestDefault,
+        std::path::Path,
+    };
+
+    impl Configuration {
+        pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+            Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
+        }
+
+        pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
+            use std::io::Write;
+            let mut file =
+                tempfile::NamedTempFile::new().expect("temp file creation should not fail");
+            file.write_all(
+                toml::to_string_pretty(self)
+                    .expect("serialization should not fail")
+                    .as_bytes(),
+            )
+            .expect("writing to temp file should not fail");
+            file
+        }
+
+        pub fn to_cli_args(&self) -> (tempfile::NamedTempFile, String) {
+            let named_temp_file = self.to_temp_path();
+            let cli_arg = format!("--config={}", named_temp_file.path().display());
+            (named_temp_file, cli_arg)
+        }
     }
 
-    pub fn to_cli_args(&self) -> (tempfile::NamedTempFile, String) {
-        let named_temp_file = self.to_temp_path();
-        let cli_arg = format!("--config={}", named_temp_file.path().display());
-        (named_temp_file, cli_arg)
+    impl TestDefault for Configuration {
+        fn test_default() -> Self {
+            use configs::test_util::TestDefault;
+
+            Self {
+                order_validation: Default::default(),
+                banned_users: Default::default(),
+                ipfs: Default::default(),
+                volume_fee: Default::default(),
+                app_data_size_limit: default_app_data_size_limit(),
+                active_order_competition_threshold: default_active_order_competition_threshold(),
+                unsupported_tokens: Default::default(),
+                eip1271_skip_creation_validation: Default::default(),
+                // NOTE: NativePriceConfig needs to be moved to the config crate and then it can
+                // have the test_default trait impl
+                native_price_estimation: NativePriceConfig::test_default(),
+                database: TestDefault::test_default(),
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, shared::order_validation::SameTokensPolicy, std::time::Duration};
+    use {
+        super::*,
+        configs::test_util::TestDefault,
+        price_estimation::{NativePriceEstimator, NativePriceEstimators},
+        shared::order_validation::SameTokensPolicy,
+        std::time::Duration,
+    };
 
     #[test]
     fn deserialize_full_configuration() {
@@ -153,6 +189,9 @@ mod tests {
         [volume-fee]
         factor = 0.0002
         effective-from-timestamp = "2025-06-01T00:00:00Z"
+
+        [native-price-estimation]
+        estimators = [[{type = "CoinGecko"}]]
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -193,7 +232,11 @@ mod tests {
 
     #[test]
     fn deserialize_configuration_defaults() {
-        let config: Configuration = toml::from_str("").unwrap();
+        let toml = r#"
+        [native-price-estimation]
+        estimators = [[{type = "CoinGecko"}]]
+        "#;
+        let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 8192);
         assert_eq!(config.active_order_competition_threshold, 5);
@@ -246,6 +289,12 @@ mod tests {
             ],
             banned_users: Default::default(),
             eip1271_skip_creation_validation: true,
+            native_price_estimation: NativePriceConfig {
+                estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),
+                fallback_estimators: None,
+                ..NativePriceConfig::test_default()
+            },
+            database: TestDefault::test_default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

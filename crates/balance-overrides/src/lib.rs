@@ -2,10 +2,8 @@ pub mod detector;
 
 use {
     self::detector::{DetectionError, Detector},
-    alloy::{
-        primitives::{Address, B256, U256, keccak256, map::AddressMap},
-        rpc::types::state::AccountOverride,
-    },
+    alloy_primitives::{Address, B256, U256, keccak256, map::AddressMap},
+    alloy_rpc_types::state::AccountOverride,
     anyhow::Context as _,
     cached::{Cached, SizedCache},
     std::{
@@ -378,7 +376,7 @@ impl BalanceOverriding for DummyOverrider {
 mod tests {
     use {
         super::*,
-        alloy::primitives::{address, b256},
+        alloy_primitives::{address, b256},
         ethrpc::mock,
         maplit::hashmap,
     };

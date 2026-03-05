@@ -1,6 +1,6 @@
 use {
     crate::{BalanceFetching, Query, TransferSimulationError},
-    alloy::primitives::U256,
+    alloy_primitives::U256,
     anyhow::Result,
     dashmap::DashMap,
     ethrpc::block_stream::{CurrentBlockWatcher, into_stream},
@@ -182,7 +182,7 @@ mod tests {
     use {
         super::*,
         crate::MockBalanceFetching,
-        alloy::primitives::Address,
+        alloy_primitives::Address,
         ethrpc::block_stream::BlockInfo,
         futures::stream,
         model::order::SellTokenSource,

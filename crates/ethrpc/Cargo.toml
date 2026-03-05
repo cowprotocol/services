@@ -11,7 +11,18 @@ name = "ethrpc"
 path = "src/lib.rs"
 
 [dependencies]
-alloy = { workspace = true, default-features = false, features = ["json-rpc", "providers", "rpc-client", "rpc-types", "rpc-types-trace", "transports", "transport-ws", "provider-ws", "provider-debug-api", "reqwest", "signers", "signer-aws", "signer-local", "eips", "reqwest-default-tls", "pubsub", "contract"] }
+alloy-consensus = { workspace = true }
+alloy-contract = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-json-rpc = { workspace = true }
+alloy-network = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true, features = ["ws"] }
+alloy-rpc-client = { workspace = true, features = ["reqwest"] }
+alloy-rpc-types = { workspace = true }
+alloy-signer = { workspace = true }
+alloy-transport = { workspace = true }
+alloy-transport-ws = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 const-hex = { workspace = true }

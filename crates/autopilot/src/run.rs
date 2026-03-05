@@ -147,6 +147,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");
 
     tracing::info!(%commit_hash, "running autopilot with validated arguments:\n{}", args);
+    tracing::info!("file configuration:\n{:#?}", config);
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
@@ -165,10 +166,10 @@ pub async fn run(
 ) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
-        args.db_write_url.as_str(),
+        config.database.write_url.as_str(),
         crate::database::Config {
-            insert_batch_size: args.insert_batch_size,
-            max_pool_size: args.database_pool.db_max_connections,
+            insert_batch_size: config.database.insert_batch_size,
+            max_pool_size: config.database.max_connections,
         },
     )
     .await
@@ -283,6 +284,7 @@ pub async fn run(
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
+        &config.native_price_estimation.shared,
         factory::Network {
             web3: web3.clone(),
             simulation_web3,
@@ -314,7 +316,7 @@ pub async fn run(
     let weth = eth.contracts().weth().clone();
     let prices = db_write.fetch_latest_prices().await.unwrap();
     let shared_cache = price_estimation::native_price_cache::Cache::new(
-        args.price_estimation.native_price_cache_max_age,
+        config.native_price_estimation.shared.cache.max_age,
         prices,
     );
     let api_sources = config
@@ -326,7 +328,7 @@ pub async fn run(
         price_estimator_factory
             .caching_native_price_estimator(
                 api_sources.as_slice(),
-                config.native_price_estimation.results_required,
+                config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
             )
@@ -338,7 +340,7 @@ pub async fn run(
         let caching = price_estimator_factory
             .caching_native_price_estimator(
                 config.native_price_estimation.estimators.as_slice(),
-                config.native_price_estimation.results_required,
+                config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
             )

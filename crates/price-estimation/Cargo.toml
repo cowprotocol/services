@@ -7,25 +7,26 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 alloy = { workspace = true }
-app-data = { workspace = true }
 anyhow = { workspace = true }
+app-data = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes-hex = { workspace = true }
-const-hex = { workspace = true }
-contracts = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+const-hex = { workspace = true }
+contracts = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 humantime = { workspace = true }
+humantime-serde = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }
@@ -37,8 +38,8 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
-reqwest = { workspace = true }
 request-sharing = { workspace = true }
+reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -6,26 +6,26 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [lib]
+doctest = false
 name = "solver"
 path = "src/lib.rs"
-doctest = false
 
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-observe = { workspace = true }
-liquidity-sources = { workspace = true }
-const-hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
+liquidity-sources = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
+observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 serde_json = { workspace = true }
@@ -35,13 +35,13 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
+ethrpc = { workspace = true, features = ["test-util"] }
+liquidity-sources = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
-testlib = { workspace = true }
 mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
-ethrpc = {workspace = true, features = ["test-util"]}
-liquidity-sources = { workspace = true, features = [ "test-util" ] }
+testlib = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

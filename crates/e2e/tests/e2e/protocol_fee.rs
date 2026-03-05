@@ -11,6 +11,7 @@ use {
         },
         solver::Solver,
     },
+    configs::test_util::TestDefault,
     driver::domain::eth::NonZeroU256,
     e2e::{assert_approximately_eq, setup::*},
     ethrpc::alloy::CallBuilderExt,
@@ -160,24 +161,20 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap();
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![limit_surplus_policy, market_price_improvement_policy],
-            max_partner_fee: 0.02.try_into().unwrap(),
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
-
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![config_arg],
-                ..Default::default()
+            Default::default(),
+            Configuration {
+                drivers: vec![Solver::test("test_solver", solver.address())],
+                fee_policies: FeePoliciesConfig {
+                    policies: vec![limit_surplus_policy, market_price_improvement_policy],
+                    max_partner_fee: 0.02.try_into().unwrap(),
+                    ..Default::default()
+                },
+                ..Configuration::test_no_drivers()
             },
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -516,23 +513,19 @@ async fn surplus_partner_fee(web3: Web3) {
         .await
         .unwrap();
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            max_partner_fee: MAX_PARTNER_VOLUME_FEE.try_into().unwrap(),
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
-
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![config_arg],
-                ..Default::default()
+            Default::default(),
+            Configuration {
+                drivers: vec![Solver::test("test_solver", solver.address())],
+                fee_policies: FeePoliciesConfig {
+                    max_partner_fee: MAX_PARTNER_VOLUME_FEE.try_into().unwrap(),
+                    ..Default::default()
+                },
+                ..Configuration::test_no_drivers()
             },
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -759,29 +752,27 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Place Orders
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
-            upcoming_policies: UpcomingFeePolicies {
-                policies: vec![fee_policy.clone(), fee_policy],
-                // Set the effective time to 10 minutes ago to make sure the new policy
-                // is applied
-                effective_from_timestamp: Some(chrono::Utc::now() - chrono::Duration::minutes(10)),
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
-
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![config_arg],
-                ..Default::default()
+            Default::default(),
+            Configuration {
+                drivers: vec![Solver::test("test_solver", solver.address())],
+                fee_policies: FeePoliciesConfig {
+                    policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
+                    upcoming_policies: UpcomingFeePolicies {
+                        policies: vec![fee_policy.clone(), fee_policy],
+                        // Set the effective time to 10 minutes ago to make sure the new policy
+                        // is applied
+                        effective_from_timestamp: Some(
+                            chrono::Utc::now() - chrono::Duration::minutes(10),
+                        ),
+                    },
+                    ..Default::default()
+                },
+                ..Configuration::test_no_drivers()
             },
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -924,29 +915,27 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
     // Place Orders
     // Protocol fee set twice to test that only one policy will apply if the
     // autopilot is not configured to support multiple fees
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![fee_policy.clone(), fee_policy],
-            upcoming_policies: UpcomingFeePolicies {
-                policies: vec![future_fee_policy.clone(), future_fee_policy],
-                // Set the effective time to far in the future to make sure the new policy
-                // is NOT applied
-                effective_from_timestamp: Some(chrono::Utc::now() + chrono::Duration::days(1)),
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
-
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![config_arg],
-                ..Default::default()
+            Default::default(),
+            Configuration {
+                drivers: vec![Solver::test("test_solver", solver.address())],
+                fee_policies: FeePoliciesConfig {
+                    policies: vec![fee_policy.clone(), fee_policy],
+                    upcoming_policies: UpcomingFeePolicies {
+                        policies: vec![future_fee_policy.clone(), future_fee_policy],
+                        // Set the effective time to far in the future to make sure the new policy
+                        // is NOT applied
+                        effective_from_timestamp: Some(
+                            chrono::Utc::now() + chrono::Duration::days(1),
+                        ),
+                    },
+                    ..Default::default()
+                },
+                ..Configuration::test_no_drivers()
             },
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -1095,34 +1084,27 @@ async fn volume_fee_overrides(web3: Web3) {
         token_usdt.address()
     );
 
-    let (_config_file, config_arg) = Configuration {
-        drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![default_volume_fee],
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-    .to_cli_args();
-
-    // Orderbook (API) also needs the same bucket overrides for accurate quote
-    // generation
-    let (_ob_config_file, ob_config_arg) = orderbook::config::Configuration {
-        volume_fee: Some(orderbook::config::VolumeFeeConfig {
-            factor: Some(FeeFactor::new(0.01)), // Default 1% volume fee
-            effective_from_timestamp: None,
-        }),
-        ..Default::default()
-    }
-    .to_cli_args();
-    let api_config = vec![ob_config_arg, volume_fee_bucket_config.clone()];
-
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
-                autopilot: vec![config_arg, volume_fee_bucket_config],
-                api: api_config,
+                autopilot: vec![volume_fee_bucket_config.clone()],
+                api: vec![volume_fee_bucket_config],
+            },
+            Configuration {
+                drivers: vec![Solver::test("test_solver", solver.address())],
+                fee_policies: FeePoliciesConfig {
+                    policies: vec![default_volume_fee],
+                    ..Default::default()
+                },
+                ..Configuration::test_no_drivers()
+            },
+            orderbook::config::Configuration {
+                volume_fee: Some(orderbook::config::VolumeFeeConfig {
+                    factor: Some(FeeFactor::new(0.01)), // Default 1% volume fee
+                    effective_from_timestamp: None,
+                }),
+                ..orderbook::config::Configuration::test_default()
             },
             solver,
         )

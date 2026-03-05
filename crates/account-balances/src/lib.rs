@@ -1,9 +1,7 @@
 use {
-    alloy::{
-        primitives::{Address, U256},
-        rpc::types::state::StateOverride,
-        sol_types::{SolCall, SolType, sol_data},
-    },
+    alloy_primitives::{Address, U256},
+    alloy_rpc_types::state::StateOverride,
+    alloy_sol_types::{SolCall, SolType, sol_data},
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     contracts::alloy::{GPv2Settlement, support::Balances},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
@@ -16,7 +14,6 @@ use {
         num::{NonZeroU64, NonZeroUsize},
         sync::{Arc, LazyLock},
     },
-    thiserror::Error,
 };
 
 mod cached;
@@ -199,7 +196,7 @@ impl BalanceSimulator {
             )>::abi_decode(&response.0)
             .map_err(|err| {
                 tracing::error!(?err, "failed to decode balance response");
-                alloy::contract::Error::AbiError(alloy::dyn_abi::Error::SolTypes(err))
+                alloy_contract::Error::AbiError(alloy_dyn_abi::Error::SolTypes(err))
             })?;
 
         let simulation = Simulation {
@@ -230,10 +227,25 @@ pub struct Simulation {
     pub can_transfer: bool,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum SimulationError {
-    #[error("method error: {0:?}")]
-    Method(#[from] alloy::contract::Error),
+    Method(alloy_contract::Error),
+}
+
+impl std::fmt::Display for SimulationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Method(err) => write!(f, "method error: {err:?}"),
+        }
+    }
+}
+
+impl std::error::Error for SimulationError {}
+
+impl From<alloy_contract::Error> for SimulationError {
+    fn from(err: alloy_contract::Error) -> Self {
+        Self::Method(err)
+    }
 }
 
 // ZKSync-based chains don't use the default 0x0 account when `tx.from` is not

@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{Address, FixedBytes},
+    alloy_primitives::{Address, FixedBytes},
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     contracts::alloy::GPv2Settlement,
     ethrpc::Web3,

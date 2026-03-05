@@ -7,9 +7,9 @@ license = "GPL-3.0-or-later"
 build = "build.rs"
 
 [lib]
+doctest = false
 name = "orderbook"
 path = "src/lib.rs"
-doctest = false
 
 [[bin]]
 name = "orderbook"
@@ -22,29 +22,29 @@ anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
-bigdecimal = { workspace = true }
 bad-tokens = { workspace = true }
+bigdecimal = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
+configs = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-const-hex = { workspace = true }
-hex-literal = { workspace = true }
 gas-price-estimation = { workspace = true }
+hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 mimalloc = { workspace = true, optional = true }
-tikv-jemallocator = { workspace = true }
 model = { workspace = true }
 multibase = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
-order-validation = { workspace = true }
 observe = { workspace = true }
+order-validation = { workspace = true }
 price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
@@ -53,10 +53,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 shared = { workspace = true }
-strum = { workspace = true }
+signature-validator = { workspace = true }
 sqlx = { workspace = true }
-thiserror = { workspace = true }
+strum = { workspace = true }
 tempfile = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tikv-jemallocator = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 toml = { workspace = true }
@@ -66,20 +68,21 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+configs = { workspace = true, features = ["test-util"] }
 mockall = { workspace = true }
+shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-shared = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
 vergen = { workspace = true, features = ["git", "gitcl"] }
 
-[lints]
-workspace = true
-
 [features]
 e2e = []
 mimalloc-allocator = ["dep:mimalloc"]
-test-util = ["dep:tempfile"]
+test-util = ["dep:tempfile", "shared/test-util"]
 tokio-console = ["observe/tokio-console"]
+
+[lints]
+workspace = true

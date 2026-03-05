@@ -6,9 +6,9 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [lib]
+doctest = false
 name = "autopilot"
 path = "src/lib.rs"
-doctest = false
 
 [[bin]]
 name = "autopilot"
@@ -16,18 +16,21 @@ path = "src/main.rs"
 
 [dependencies]
 account-balances = { workspace = true }
-alloy = { workspace = true, features = ["rand", "provider-debug-api", "provider-trace-api"] }
-app-data = { workspace = true }
-axum = { workspace = true }
-bytes-hex = { workspace = true } # may get marked as unused but it's used with serde
-bytes = { workspace = true }
+alloy = { workspace = true, features = ["provider-debug-api", "provider-trace-api", "rand", "signer-aws"] }
 anyhow = { workspace = true }
+app-data = { workspace = true }
 async-trait = { workspace = true }
-bigdecimal = { workspace = true }
+axum = { workspace = true }
 bad-tokens = { workspace = true }
+bigdecimal = { workspace = true }
+brotli = { workspace = true }
+bytes = { workspace = true }
+bytes-hex = { workspace = true }  # may get marked as unused but it's used with serde
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+configs = { workspace = true }
+const-hex = { workspace = true }
 contracts = { workspace = true }
 cow-amm = { workspace = true }
 dashmap = { workspace = true }
@@ -35,11 +38,8 @@ database = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
-gas-price-estimation = { workspace = true }
-brotli = { workspace = true }
 futures = { workspace = true }
-observe = { workspace = true }
-const-hex = { workspace = true }
+gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
@@ -49,6 +49,7 @@ mimalloc = { workspace = true, optional = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
+observe = { workspace = true }
 order-validation = { workspace = true }
 price-estimation = { workspace = true }
 prometheus = { workspace = true }
@@ -63,34 +64,35 @@ serde_with = { workspace = true }
 shared = { workspace = true }
 sqlx = { workspace = true }
 strum = { workspace = true }
-tikv-jemallocator = { workspace = true }
+tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
+tikv-jemallocator = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { workspace = true }
+toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["trace"] }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 winner-selection = { workspace = true }
-toml = { workspace = true }
-tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
+configs = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
 vergen = { workspace = true, features = ["git", "gitcl"] }
 
-[lints]
-workspace = true
-
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
+test-util = ["configs/test-util", "dep:tempfile", "price-estimation/test-util"]
 tokio-console = ["observe/tokio-console"]
-test-util = ["dep:tempfile"]
+
+[lints]
+workspace = true

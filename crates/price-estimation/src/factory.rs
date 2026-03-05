@@ -15,6 +15,7 @@ use {
         ExternalSolver,
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
+        config::native_price::NativePriceConfig,
         trade_verifier::{code_fetching::CachedCodeFetcher, tenderly_api::TenderlyCodeSimulator},
         utils::http_client_factory::HttpClientFactory,
     },
@@ -30,15 +31,6 @@ use {
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
     token_info::TokenInfoFetching,
 };
-
-/// A factory for initializing shared price estimators.
-pub struct PriceEstimatorFactory<'a> {
-    args: &'a Arguments,
-    network: Network,
-    components: Components,
-    trade_verifier: Option<Arc<dyn TradeVerifying>>,
-    estimators: HashMap<String, EstimatorEntry>,
-}
 
 #[derive(Clone)]
 struct EstimatorEntry {
@@ -66,15 +58,27 @@ pub struct Components {
     pub code_fetcher: Arc<CachedCodeFetcher>,
 }
 
+/// A factory for initializing shared price estimators.
+pub struct PriceEstimatorFactory<'a> {
+    args: &'a Arguments,
+    config: &'a NativePriceConfig,
+    network: Network,
+    components: Components,
+    trade_verifier: Option<Arc<dyn TradeVerifying>>,
+    estimators: HashMap<String, EstimatorEntry>,
+}
+
 impl<'a> PriceEstimatorFactory<'a> {
     pub async fn new(
         args: &'a Arguments,
+        config: &'a NativePriceConfig,
         network: Network,
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
             trade_verifier: Self::trade_verifier(args, &network, &components).await?,
             args,
+            config,
             network,
             components,
             estimators: HashMap::new(),
@@ -405,7 +409,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         native_price_cache::CachingNativePriceEstimator::new(
             inner,
             cache,
-            self.args.native_price_cache_concurrent_requests,
+            self.config.cache.concurrent_requests.get(),
             approximation_tokens,
             self.args.quote_timeout,
         )
@@ -414,7 +418,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     /// Builds the approximation tokens mapping with normalization factors based
     /// on decimal differences between token pairs.
     async fn build_approximation_tokens(&self) -> Result<HashMap<Address, ApproximationToken>> {
-        let pairs = &self.args.native_price_approximation_tokens;
+        let pairs = &self.config.approximation_tokens;
         if pairs.is_empty() {
             return Ok(HashMap::new());
         }

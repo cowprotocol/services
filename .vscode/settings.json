@@ -1,0 +1,6 @@
+{
+    "[toml]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "tombi-toml.tombi"
+    }
+}
