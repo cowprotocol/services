@@ -50,6 +50,8 @@ mod post_quote;
 mod put_app_data;
 mod version;
 
+pub use debug_order::DebugOrderResponse;
+
 const ALLOWED_METHODS: &[axum::http::Method] = &[
     axum::http::Method::GET,
     axum::http::Method::POST,

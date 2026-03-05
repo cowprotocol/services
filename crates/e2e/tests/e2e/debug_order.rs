@@ -6,7 +6,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    orderbook::api::debug_order::DebugOrderResponse,
+    orderbook::api::DebugOrderResponse,
     reqwest::StatusCode,
     shared::web3::Web3,
 };
@@ -116,7 +116,7 @@ async fn debug_order(web3: Web3) {
     let report = fetch_debug_report().await;
 
     assert_eq!(report.order_uid, uid.to_string());
-    assert_eq!(report.order.kind, "buy");
+    assert_eq!(report.order.data.kind, OrderKind::Buy);
 
     assert!(
         report.events.len() >= 2,

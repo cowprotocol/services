@@ -1,22 +1,21 @@
 use {
     super::Postgres,
+    crate::database::orders::OrderStoring,
     anyhow::{Context, Result},
     database::{
         auction::{self, Auction as DbAuction, AuctionId},
         order_events::{self, OrderEvent},
         order_execution::{self, ExecutionRow as OrderExecutionRow},
-        orders::{self, Order as DbOrder, Quote as DbQuote},
         settlement_executions::{self, ExecutionRow as SettlementExecutionRow},
         solver_competition_v2::{self, OrderProposedSolution},
         trades::{self, TradesQueryRow},
     },
     futures::TryStreamExt,
-    model::order::OrderUid,
+    model::order::{Order, OrderUid},
 };
 
 pub struct DebugReport {
-    pub order: DbOrder,
-    pub quote: Option<DbQuote>,
+    pub order: Order,
     pub events: Vec<OrderEvent>,
     pub proposed_solutions: Vec<OrderProposedSolution>,
     pub auctions: Vec<DbAuction>,
@@ -28,14 +27,13 @@ pub struct DebugReport {
 impl Postgres {
     pub async fn fetch_debug_report(&self, uid: &OrderUid) -> Result<Option<DebugReport>> {
         let db_uid = database::byte_array::ByteArray(uid.0);
-        let mut conn = self.pool.acquire().await?;
 
-        let order = match orders::read_order(&mut conn, &db_uid).await? {
+        let order = match self.single_order(uid).await? {
             Some(order) => order,
             None => return Ok(None),
         };
 
-        let quote = orders::read_quote(&mut conn, &db_uid).await?;
+        let mut conn = self.pool.acquire().await?;
 
         let events = order_events::get_all(&mut conn, &db_uid).await?;
 
@@ -73,7 +71,6 @@ impl Postgres {
 
         Ok(Some(DebugReport {
             order,
-            quote,
             events,
             proposed_solutions,
             auctions,
