@@ -2,6 +2,7 @@
 //! responses are preserved.
 
 use {
+    configs::test_util::TestDefault,
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
     model::order::{ORDER_UID_LIMIT, OrderUid},
     orderbook::api::Error,

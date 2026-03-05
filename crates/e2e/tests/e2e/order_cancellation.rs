@@ -1,6 +1,7 @@
 use {
     ::alloy::primitives::U256,
     autopilot::config::Configuration,
+    configs::test_util::TestDefault,
     database::order_events::OrderEventLabel,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,

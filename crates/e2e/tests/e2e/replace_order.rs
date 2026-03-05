@@ -1,5 +1,6 @@
 use {
     ::alloy::primitives::U256,
+    configs::test_util::TestDefault,
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{

@@ -1,6 +1,7 @@
 use {
     ::alloy::primitives::U256,
     autopilot::config::Configuration,
+    configs::test_util::TestDefault,
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
