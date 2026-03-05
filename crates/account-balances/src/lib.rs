@@ -63,13 +63,13 @@ pub trait BalanceFetching: Send + Sync {
     /// owner and token taking both balance as well as "allowance" into
     /// account. Results are streamed so call sites can throttle consumption
     /// to limit concurrent RPC requests with:
-    /// ```
+    /// `
     /// balance_fetcher
     ///     .get_balances(queries)
     ///     .buffered(10)
     ///     .collect()
     ///     .await;
-    /// ```
+    /// `
     fn get_balances(
         &self,
         queries: Vec<Query>,
