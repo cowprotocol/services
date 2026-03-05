@@ -153,10 +153,6 @@ fn authenticate<'a>(headers: &HeaderMap, tokens: &'a HashMap<String, String>) ->
     tokens.get(header_value).map(String::as_str)
 }
 
-fn format_bytes(bytes: &[u8]) -> String {
-    const_hex::encode_prefixed(bytes)
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DebugOrderResponse {
@@ -282,7 +278,7 @@ impl From<&TradesQueryRow> for TradeDto {
             buy_amount: t.buy_amount.to_string(),
             sell_amount: t.sell_amount.to_string(),
             sell_amount_before_fees: t.sell_amount_before_fees.to_string(),
-            tx_hash: t.tx_hash.as_ref().map(|h| format_bytes(&h.0)),
+            tx_hash: t.tx_hash.as_ref().map(|h| h.to_string()),
             auction_id: t.auction_id,
         }
     }
