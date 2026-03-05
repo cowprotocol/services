@@ -2324,9 +2324,7 @@ components:
           description: The UID of the order being debugged.
           $ref: "#/components/schemas/UID"
         order:
-          $ref: "#/components/schemas/DebugOrderDetails"
-        quote:
-          $ref: "#/components/schemas/DebugQuote"
+          $ref: "#/components/schemas/Order"
         events:
           type: array
           items:
@@ -2351,81 +2349,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DebugSettlementAttempt"
-    DebugOrderDetails:
-      type: object
-      required:
-        - owner
-        - sellToken
-        - buyToken
-        - sellAmount
-        - buyAmount
-        - validTo
-        - kind
-        - class
-        - partiallyFillable
-        - creationTimestamp
-        - signingScheme
-        - appData
-      properties:
-        owner:
-          $ref: "#/components/schemas/Address"
-        sellToken:
-          $ref: "#/components/schemas/Address"
-        buyToken:
-          $ref: "#/components/schemas/Address"
-        sellAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        buyAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        validTo:
-          type: integer
-          description: Unix timestamp until which the order is valid.
-        kind:
-          type: string
-          enum: [buy, sell]
-        class:
-          type: string
-          enum: [market, limit, liquidity]
-        partiallyFillable:
-          type: boolean
-        creationTimestamp:
-          type: string
-          format: date-time
-        cancellationTimestamp:
-          type: string
-          format: date-time
-        signingScheme:
-          type: string
-        appData:
-          type: string
-          description: Hex-encoded app data hash.
-        receiver:
-          $ref: "#/components/schemas/Address"
-    DebugQuote:
-      type: object
-      required:
-        - gasAmount
-        - gasPrice
-        - sellTokenPrice
-        - sellAmount
-        - buyAmount
-        - solver
-        - verified
-      properties:
-        gasAmount:
-          type: number
-        gasPrice:
-          type: number
-        sellTokenPrice:
-          type: number
-        sellAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        buyAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        solver:
-          $ref: "#/components/schemas/Address"
-        verified:
-          type: boolean
     DebugEvent:
       type: object
       required:
