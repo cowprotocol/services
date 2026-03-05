@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 alloy = { workspace = true }
 axum = { workspace = true }
+base64 = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chain = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["serde"] }
@@ -23,19 +24,26 @@ const-hex = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+humantime-serde = { workspace = true }
 itertools = { workspace = true }
 liquidity-sources = { workspace = true }
 mimalloc = { workspace = true, optional = true }
+moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
 price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rate-limit = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+sha2 = { workspace = true }
 solvers-dto = { workspace = true }
+thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = { workspace = true }
@@ -54,8 +62,10 @@ solver = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+glob = "0.3"
 maplit = { workspace = true }
 tempfile = { workspace = true }
+testlib = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

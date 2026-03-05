@@ -7,7 +7,7 @@ use {
     price_estimation::gas::SETTLEMENT_OVERHEAD,
     reqwest::Url,
     serde::Deserialize,
-    std::{fmt::Debug, path::Path},
+    std::path::Path,
     tokio::fs,
 };
 
@@ -60,7 +60,7 @@ pub async fn load(path: &Path) -> solver::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     // Not printing detailed error because it could potentially leak secrets.
-    let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
+    let config = super::unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
     let weth = match (config.chain_id, config.weth) {
         (Some(chain_id), None) => contracts::Contracts::for_chain(chain_id).weth,
         (None, Some(weth)) => eth::WethAddress(weth),
@@ -86,24 +86,6 @@ pub async fn load(path: &Path) -> solver::Config {
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
         uni_v3_node_url: config.uni_v3_node_url,
     }
-}
-
-/// Unwraps result or logs a `TOML` parsing error.
-fn unwrap_or_log<T, E, P>(result: Result<T, E>, path: &P) -> T
-where
-    E: Debug,
-    P: Debug,
-{
-    result.unwrap_or_else(|err| {
-        if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
-            panic!("failed to parse TOML config at {path:?}: {err:#?}")
-        } else {
-            panic!(
-                "failed to parse TOML config at: {path:?}. Set TOML_TRACE_ERROR=1 to print \
-                 parsing error but this may leak secrets."
-            )
-        }
-    })
 }
 
 /// Returns minimum gas used for settling a single order.

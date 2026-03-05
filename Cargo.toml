@@ -34,6 +34,7 @@ aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
 bad-tokens = { path = "crates/bad-tokens" }
 balance-overrides = { path = "crates/balance-overrides" }
+base64 = "0.22.1"
 bigdecimal = "0.4"
 brotli = "8"
 bytes = "1.11.1"
@@ -57,9 +58,11 @@ event-indexing = { path = "crates/event-indexing" }
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-price-estimation = { path = "crates/gas-price-estimation" }
+hex = "0.4.3"
 hex-literal = "0.4.1"
 http-body = "1"
 http-body-util = "0.1"
+hmac = "0.12.1"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
 indexmap = "2.2.6"
@@ -102,6 +105,7 @@ rust_decimal = { version = "1.35.0", default-features = false }
 s3 = { path = "crates/s3" }
 scopeguard = "1.2.0"
 serde = { version = "1.0.203", features = ["derive"] }
+sha2 = "0.10"
 serde-ext = { path = "crates/serde-ext" }
 serde_json = "1.0.117"
 serde_with = "3.8.1"

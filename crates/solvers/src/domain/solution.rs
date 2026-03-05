@@ -367,7 +367,7 @@ pub struct CustomInteraction {
 }
 
 /// Approval required to make some `[CustomInteraction]` possible.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,
