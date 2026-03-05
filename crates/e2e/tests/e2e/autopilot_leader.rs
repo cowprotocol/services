@@ -86,6 +86,11 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         ],
     );
 
+    let mut leader_config = Configuration::test("test_solver", solver1.address());
+    leader_config.metrics_address = "0.0.0.0:9590".parse().unwrap();
+    leader_config.api_address = "0.0.0.0:12088".parse().unwrap();
+    leader_config.enable_leader_lock = true;
+
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
             None,
@@ -93,15 +98,16 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-                "--metrics-address=0.0.0.0:9590".to_string(),
-                "--api-address=0.0.0.0:12088".to_string(),
-                "--enable-leader-lock=true".to_string(),
             ],
-            // Configure autopilot-leader only with test_solver
-            Configuration::test("test_solver", solver1.address()),
+            leader_config,
             control,
         )
         .await;
+
+    let mut follower_config = Configuration::test("test_solver2", solver2.address());
+    follower_config.metrics_address = "0.0.0.0:9591".parse().unwrap();
+    follower_config.api_address = "0.0.0.0:12089".parse().unwrap();
+    follower_config.enable_leader_lock = true;
 
     let _autopilot_follower = services
         .start_autopilot(
@@ -110,12 +116,8 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-                "--metrics-address=0.0.0.0:9591".to_string(),
-                "--api-address=0.0.0.0:12089".to_string(),
-                "--enable-leader-lock=true".to_string(),
             ],
-            // Configure autopilot-backup only with test_solver2
-            Configuration::test("test_solver2", solver2.address()),
+            follower_config,
         )
         .await;
 
