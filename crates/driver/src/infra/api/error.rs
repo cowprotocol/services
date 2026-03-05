@@ -4,6 +4,7 @@ use {
         infra::{api, blockchain},
     },
     serde::Serialize,
+    solvers_dto,
 };
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -23,13 +24,18 @@ enum Kind {
     FailedToSubmit,
     NoValidOrders,
     MalformedRequest,
+    TradingOutsideAllowedWindow,
+    TokenTemporarilySuspended,
+    InsufficientLiquidity,
+    UnauthorizedTrader,
+    CustomSolverError,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Error {
     kind: Kind,
-    description: &'static str,
+    description: String,
 }
 
 impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
@@ -57,12 +63,17 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::TooManyPendingSettlements => "Settlement queue is full",
             Kind::NoValidOrders => "No valid orders found in the auction",
             Kind::MalformedRequest => "Could not parse the request",
+            Kind::TradingOutsideAllowedWindow => "Token can only be traded during specific time windows",
+            Kind::TokenTemporarilySuspended => "Token is temporarily suspended from trading",
+            Kind::InsufficientLiquidity => "Insufficient liquidity for the requested trade size",
+            Kind::UnauthorizedTrader => "Token requires special permissions or whitelisting",
+            Kind::CustomSolverError => "Solver returned a custom error",
         };
         (
             axum::http::StatusCode::BAD_REQUEST,
             axum::Json(Error {
                 kind: value,
-                description,
+                description: description.to_string(),
             }),
         )
     }
@@ -70,6 +81,58 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
 
 impl From<quote::Error> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: quote::Error) -> Self {
+        // Check if this is a custom solver error
+        if let quote::Error::Solver(ref solver_err) = value {
+            if let Some(custom_err) = solver_err.custom_error() {
+                let (kind, description) = match custom_err {
+                    solvers_dto::solution::SolverError::TradingOutsideAllowedWindow { message } => {
+                        (
+                            Kind::TradingOutsideAllowedWindow,
+                            message.clone().unwrap_or_else(|| 
+                                "Token can only be traded during specific time windows".to_string()
+                            ),
+                        )
+                    }
+                    solvers_dto::solution::SolverError::TokenTemporarilySuspended { message } => {
+                        (
+                            Kind::TokenTemporarilySuspended,
+                            message.clone().unwrap_or_else(|| 
+                                "Token is temporarily suspended from trading".to_string()
+                            ),
+                        )
+                    }
+                    solvers_dto::solution::SolverError::InsufficientLiquidity { message } => {
+                        (
+                            Kind::InsufficientLiquidity,
+                            message.clone().unwrap_or_else(|| 
+                                "Insufficient liquidity for the requested trade size".to_string()
+                            ),
+                        )
+                    }
+                    solvers_dto::solution::SolverError::UnauthorizedTrader { message } => {
+                        (
+                            Kind::UnauthorizedTrader,
+                            message.clone().unwrap_or_else(|| 
+                                "Token requires special permissions or whitelisting".to_string()
+                            ),
+                        )
+                    }
+                    solvers_dto::solution::SolverError::Other { message } => {
+                        (
+                            Kind::CustomSolverError,
+                            message.clone().unwrap_or_else(|| 
+                                "Solver returned a custom error".to_string()
+                            ),
+                        )
+                    }
+                };
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    axum::Json(Error { kind, description }),
+                );
+            }
+        }
+
         let error = match value {
             quote::Error::QuotingFailed(_) => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,

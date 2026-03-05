@@ -412,6 +412,12 @@ impl Solver {
                     notify::Kind::DeserializationError(format!("Request format invalid: {err}")),
                 );
             })?;
+        
+        if let Some(custom_error) = res.error.clone() {
+            tracing::debug!(?custom_error, "solver returned custom error");
+            return Err(Error::CustomError(custom_error));
+        }
+        
         let solutions = dto::Solutions::from(res).into_domain(
             auction,
             liquidity,
@@ -517,6 +523,8 @@ pub enum Error {
     Deserialize(#[from] serde_json::Error),
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
+    #[error("solver returned custom error: {0:?}")]
+    CustomError(solvers_dto::solution::SolverError),
 }
 
 impl Error {
@@ -524,6 +532,13 @@ impl Error {
         match self {
             Self::Http(util::http::Error::Response(err)) => err.is_timeout(),
             _ => false,
+        }
+    }
+
+    pub fn custom_error(&self) -> Option<&solvers_dto::solution::SolverError> {
+        match self {
+            Self::CustomError(err) => Some(err),
+            _ => None,
         }
     }
 }

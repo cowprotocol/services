@@ -6,10 +6,49 @@ use {
     std::collections::HashMap,
 };
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum SolverError {
+    /// Token can only be traded during specific time windows (e.g., RWA tokens)
+    #[serde(rename_all = "camelCase")]
+    TradingOutsideAllowedWindow {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    /// Token is temporarily suspended from trading
+    #[serde(rename_all = "camelCase")]
+    TokenTemporarilySuspended {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    /// Insufficient liquidity for the requested trade size
+    #[serde(rename_all = "camelCase")]
+    InsufficientLiquidity {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    /// Token requires special permissions or whitelisting
+    #[serde(rename_all = "camelCase")]
+    UnauthorizedTrader {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    /// Generic solver error with custom message
+    #[serde(rename_all = "camelCase")]
+    Other {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+}
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Solutions {
     pub solutions: Vec<Solution>,
+    /// Optional custom error that explains why no solutions could be computed.
+    /// When multiple solvers return errors, the system will pick one to return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<SolverError>,
 }
 
 #[serde_as]
