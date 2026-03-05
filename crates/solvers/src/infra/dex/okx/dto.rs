@@ -12,6 +12,7 @@ use {
     },
     alloy::primitives::U256,
     bigdecimal::BigDecimal,
+    number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -31,7 +32,7 @@ pub struct SwapRequest {
 
     /// Input amount of a token to be sold or bought set in minimal divisible
     /// units.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 
     /// Contract address of a token to be sent
@@ -103,7 +104,7 @@ pub struct SwapRequestV5 {
 
     /// Input amount of a token to be sold or bought set in minimal divisible
     /// units.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 
     /// Contract address of a token to be sent
@@ -178,11 +179,11 @@ pub struct SwapResponseRouterResult {
     pub to_token: SwapResponseFromToToken,
 
     /// The input amount of a token to be sold.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub from_token_amount: U256,
 
     /// The resulting amount of a token to be bought.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub to_token_amount: U256,
 }
 
@@ -207,7 +208,7 @@ pub struct SwapResponseFromToToken {
 #[serde(rename_all = "camelCase")]
 pub struct SwapResponseTx {
     /// Estimated amount of the gas limit.
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub gas: U256,
 
     /// The contract address of OKX DEX router.
@@ -235,7 +236,7 @@ pub struct ApproveTransactionRequest {
 
     /// The amount of token that needs to be permitted (in minimal divisible
     /// units).
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub approve_amount: U256,
 }
 
@@ -263,7 +264,7 @@ pub struct ApproveTransactionRequestV5 {
 
     /// The amount of token that needs to be permitted (in minimal divisible
     /// units).
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub approve_amount: U256,
 }
 

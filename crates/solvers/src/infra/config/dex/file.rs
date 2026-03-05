@@ -7,9 +7,9 @@ use {
             eth,
         },
         infra::{blockchain, config::unwrap_or_log, contracts},
-        util::serialize,
     },
     bigdecimal::{BigDecimal, Zero},
+    number::serialization::HexOrDecimalU256,
     serde::{Deserialize, de::DeserializeOwned},
     serde_with::serde_as,
     std::{num::NonZeroUsize, path::Path, time::Duration},
@@ -34,7 +34,7 @@ struct Config {
     relative_slippage: BigDecimal,
 
     /// The absolute slippage allowed by the solver.
-    #[serde_as(as = "Option<serialize::U256>")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
     absolute_slippage: Option<eth::U256>,
 
     /// The relative minimum surplus required by the solver.
@@ -43,7 +43,7 @@ struct Config {
     relative_minimum_surplus: BigDecimal,
 
     /// The absolute minimum surplus required by the solver.
-    #[serde_as(as = "Option<serialize::U256>")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
     absolute_minimum_surplus: Option<eth::U256>,
 
     /// The number of concurrent requests to make to the DEX aggregator API.
@@ -53,7 +53,7 @@ struct Config {
     /// The amount of Ether a partially fillable order should be filled for at
     /// least.
     #[serde(default = "default_smallest_partial_fill")]
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     smallest_partial_fill: eth::U256,
 
     /// Back-off growth factor for rate limiting.
@@ -74,7 +74,7 @@ struct Config {
     /// Amount of gas that gets added to each swap to adjust the cost coverage
     /// of the solver.
     #[serde(default = "default_gas_offset")]
-    #[serde_as(as = "serialize::U256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     gas_offset: eth::U256,
 
     /// How often the solver should poll the current block. If this value
