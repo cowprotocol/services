@@ -12,5 +12,8 @@ url = { workspace = true, features = ["serde"] }
 [features]
 test-util = []
 
+[dev-dependencies]
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

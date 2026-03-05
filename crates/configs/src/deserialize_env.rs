@@ -76,3 +76,94 @@ where
         Url::from_str(raw_url.as_str()).map_err(invalid_value_unable_to_parse_url)?,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use {serde::Deserialize, url::Url};
+
+    #[derive(Deserialize)]
+    struct Required {
+        #[serde(deserialize_with = "super::deserialize_url_from_env")]
+        url: Url,
+    }
+
+    #[derive(Deserialize)]
+    struct Optional {
+        #[serde(default, deserialize_with = "super::deserialize_optional_url_from_env")]
+        url: Option<Url>,
+    }
+
+    #[test]
+    fn required_direct_url() {
+        let json = r#"{"url": "http://localhost:8080"}"#;
+        let parsed: Required = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.url.as_str(), "http://localhost:8080/");
+    }
+
+    #[test]
+    fn required_from_env_var() {
+        let var = "TEST_DESER_REQ_FROM_ENV";
+        // Safety: test-only, using unique env var names to avoid conflicts
+        unsafe { std::env::set_var(var, "http://example.com") };
+        let json = format!(r#"{{"url": "%{var}"}}"#);
+        let parsed: Required = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.url.as_str(), "http://example.com/");
+        unsafe { std::env::remove_var(var) };
+    }
+
+    #[test]
+    fn required_missing_env_var_is_error() {
+        let json = r#"{"url": "%NONEXISTENT_TEST_VAR_12345"}"#;
+        assert!(serde_json::from_str::<Required>(json).is_err());
+    }
+
+    #[test]
+    fn required_invalid_url_is_error() {
+        let json = r#"{"url": "not a url"}"#;
+        assert!(serde_json::from_str::<Required>(json).is_err());
+    }
+
+    #[test]
+    fn optional_none_when_absent() {
+        let json = r#"{}"#;
+        let parsed: Optional = serde_json::from_str(json).unwrap();
+        assert!(parsed.url.is_none());
+    }
+
+    #[test]
+    fn optional_none_when_null() {
+        let json = r#"{"url": null}"#;
+        let parsed: Optional = serde_json::from_str(json).unwrap();
+        assert!(parsed.url.is_none());
+    }
+
+    #[test]
+    fn optional_direct_url() {
+        let json = r#"{"url": "http://localhost:9090"}"#;
+        let parsed: Optional = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.url.unwrap().as_str(), "http://localhost:9090/");
+    }
+
+    #[test]
+    fn optional_from_env_var() {
+        let var = "TEST_DESER_OPT_FROM_ENV";
+        unsafe { std::env::set_var(var, "http://opt.example.com") };
+        let json = format!(r#"{{"url": "%{var}"}}"#);
+        let parsed: Optional = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.url.unwrap().as_str(), "http://opt.example.com/");
+        unsafe { std::env::remove_var(var) };
+    }
+
+    #[test]
+    fn optional_missing_env_var_returns_none() {
+        let json = r#"{"url": "%NONEXISTENT_OPT_TEST_VAR_12345"}"#;
+        let parsed: Optional = serde_json::from_str(json).unwrap();
+        assert!(parsed.url.is_none());
+    }
+
+    #[test]
+    fn optional_invalid_url_is_error() {
+        let json = r#"{"url": "not a url"}"#;
+        assert!(serde_json::from_str::<Optional>(json).is_err());
+    }
+}
