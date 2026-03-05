@@ -3,7 +3,7 @@ pub mod block_stream;
 #[cfg(any(test, feature = "test-util"))]
 pub mod mock;
 
-use {crate::alloy::MutWallet, ::alloy::providers::DynProvider, reqwest::Url, std::time::Duration};
+use {crate::alloy::MutWallet, alloy_provider::DynProvider, reqwest::Url, std::time::Duration};
 
 pub const MAX_BATCH_SIZE: usize = 100;
 

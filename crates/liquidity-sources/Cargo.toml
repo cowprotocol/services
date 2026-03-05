@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["contract"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes-hex = { workspace = true }

@@ -1,10 +1,8 @@
 use {
-    alloy::{
-        eips::{BlockId, BlockNumberOrTag},
-        primitives::B256,
-        providers::Provider,
-        rpc::types::Block,
-    },
+    alloy_eips::{BlockId, BlockNumberOrTag},
+    alloy_primitives::B256,
+    alloy_provider::Provider,
+    alloy_rpc_types::Block,
     anyhow::{Context, Result, anyhow, ensure},
     ethrpc::{
         AlloyProvider,

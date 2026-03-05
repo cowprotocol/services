@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 account-balances = { workspace = true }
-alloy = { workspace = true, features = ["provider-debug-api", "provider-trace-api", "rand"] }
+alloy = { workspace = true, features = ["provider-debug-api", "provider-trace-api", "rand", "signer-aws"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }

@@ -1,17 +1,15 @@
 use {
     super::Strategy,
-    alloy::{
-        eips::BlockId,
-        primitives::{Address, B256, TxKind, U256},
-        providers::ext::DebugApi,
-        rpc::types::{
-            TransactionInput,
-            TransactionRequest,
-            trace::geth::{GethDebugTracingCallOptions, GethTrace},
-        },
-        sol_types::SolCall,
-        transports::{RpcError, TransportErrorKind},
+    alloy_eips::BlockId,
+    alloy_primitives::{Address, B256, TxKind, U256, keccak256},
+    alloy_provider::ext::DebugApi,
+    alloy_rpc_types::{
+        TransactionInput,
+        TransactionRequest,
+        trace::geth::{GethDebugTracingCallOptions, GethTrace},
     },
+    alloy_sol_types::SolCall,
+    alloy_transport::{RpcError, TransportErrorKind},
     contracts::alloy::ERC20,
     std::{
         collections::HashMap,
@@ -75,13 +73,13 @@ fn create_strategies_from_slots(
     buf[12..32].copy_from_slice(holder.as_slice());
     for i in 0..heuristic_depth {
         buf[32..64].copy_from_slice(&U256::from(i).to_be_bytes::<32>());
-        let slot_hash = alloy::primitives::keccak256(buf);
+        let slot_hash = keccak256(buf);
         solidity_mapping_slot_to_index.insert(slot_hash, i);
     }
 
     buf[0..20].copy_from_slice(holder.as_slice());
     buf[20..32].copy_from_slice(SOLADY_MAGIC_BYTES);
-    let solady_slot = alloy::primitives::keccak256(&buf[0..32]);
+    let solady_slot = keccak256(&buf[0..32]);
 
     // We separate heuristic and non-heuristic in a single pass,
     // iterating in reverse so "most recently accessed" come first.
@@ -295,7 +293,7 @@ impl Detector {
         strategy: &Strategy,
     ) -> Result<(), DetectionError<TransportErrorKind>> {
         // Use a unique test value to verify this strategy works
-        let test_balance = alloy::primitives::U256::from(0x1337_1337_1337_1337_u64);
+        let test_balance = U256::from(0x1337_1337_1337_1337_u64);
 
         // Create state override using the strategy
         let overrides = strategy.state_override(&holder, &test_balance);
@@ -345,7 +343,7 @@ pub enum DetectionError<E> {
 mod tests {
     use {
         super::*,
-        alloy::primitives::{B256, address, b256},
+        alloy_primitives::{B256, U256, address, b256},
         ethrpc::Web3,
     };
 
@@ -487,12 +485,12 @@ mod tests {
         let mut buf = [0u8; 64];
         buf[12..32].copy_from_slice(holder.as_slice());
         buf[32..64].copy_from_slice(&U256::ZERO.to_be_bytes::<32>());
-        let heuristic_slot1 = alloy::primitives::keccak256(buf);
+        let heuristic_slot1 = keccak256(buf);
         buf[32..64].copy_from_slice(&U256::from(5).to_be_bytes::<32>());
-        let heuristic_slot2 = alloy::primitives::keccak256(buf);
+        let heuristic_slot2 = keccak256(buf);
         buf[0..20].copy_from_slice(holder.as_slice());
         buf[20..32].copy_from_slice(SOLADY_MAGIC_BYTES);
-        let heuristic_slot3 = alloy::primitives::keccak256(&buf[0..32]);
+        let heuristic_slot3 = keccak256(&buf[0..32]);
 
         // Create non-heuristic slots
         let slot1 = B256::with_last_byte(0xe7);
@@ -556,7 +554,7 @@ mod tests {
         let mut buf = [0u8; 64];
         buf[12..32].copy_from_slice(holder.as_slice());
         buf[32..64].copy_from_slice(&U256::ZERO.to_be_bytes::<32>());
-        let heuristic_slot = alloy::primitives::keccak256(buf);
+        let heuristic_slot = keccak256(buf);
 
         let slots = vec![
             (contract, slot1),
