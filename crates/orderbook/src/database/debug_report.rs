@@ -4,6 +4,7 @@ use {
     anyhow::{Context, Result},
     database::{
         auction::{self, Auction as DbAuction, AuctionId},
+        fee_policies::{self, FeePolicy},
         order_events::{self, OrderEvent},
         order_execution::{self, ExecutionRow as OrderExecutionRow},
         settlement_executions::{self, ExecutionRow as SettlementExecutionRow},
@@ -22,6 +23,7 @@ pub struct DebugReport {
     pub executions: Vec<OrderExecutionRow>,
     pub trades: Vec<TradesQueryRow>,
     pub settlement_executions: Vec<SettlementExecutionRow>,
+    pub fee_policies: Vec<FeePolicy>,
 }
 
 impl Postgres {
@@ -69,6 +71,8 @@ impl Postgres {
             settlement_executions::read_by_auction_ids(&mut conn, &auction_ids).await?
         };
 
+        let fee_policies = fee_policies::fetch_by_order_uid(&mut conn, &db_uid).await?;
+
         Ok(Some(DebugReport {
             order,
             events,
@@ -77,6 +81,7 @@ impl Postgres {
             executions,
             trades,
             settlement_executions,
+            fee_policies,
         }))
     }
 }

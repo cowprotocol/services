@@ -2315,10 +2315,7 @@ components:
         - order
         - events
         - auctions
-        - proposedSolutions
-        - executions
         - trades
-        - settlementAttempts
       properties:
         orderUid:
           description: The UID of the order being debugged.
@@ -2330,25 +2327,17 @@ components:
           items:
             $ref: "#/components/schemas/DebugEvent"
         auctions:
+          description: >
+            Auctions this order participated in, sorted by ID. Each auction
+            groups all related data: native prices, proposed solutions,
+            executions, settlement attempts, and fee policies.
           type: array
           items:
             $ref: "#/components/schemas/DebugAuction"
-        proposedSolutions:
-          type: array
-          items:
-            $ref: "#/components/schemas/DebugProposedSolution"
-        executions:
-          type: array
-          items:
-            $ref: "#/components/schemas/DebugExecution"
         trades:
           type: array
           items:
             $ref: "#/components/schemas/DebugTrade"
-        settlementAttempts:
-          type: array
-          items:
-            $ref: "#/components/schemas/DebugSettlementAttempt"
     DebugEvent:
       type: object
       required:
@@ -2368,6 +2357,10 @@ components:
         - block
         - deadline
         - nativePrices
+        - proposedSolutions
+        - executions
+        - settlementAttempts
+        - feePolicies
       properties:
         id:
           type: integer
@@ -2386,10 +2379,25 @@ components:
             Native prices for the order's sell and buy tokens in this auction.
             Keys are hex-encoded token addresses, values are decimal price
             strings.
+        proposedSolutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugProposedSolution"
+        executions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugExecution"
+        settlementAttempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugSettlementAttempt"
+        feePolicies:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugFeePolicy"
     DebugProposedSolution:
       type: object
       required:
-        - auctionId
         - solutionUid
         - ranking
         - solver
@@ -2399,8 +2407,6 @@ components:
         - executedSell
         - executedBuy
       properties:
-        auctionId:
-          type: integer
         solutionUid:
           type: integer
         ranking:
@@ -2421,14 +2427,11 @@ components:
     DebugExecution:
       type: object
       required:
-        - auctionId
         - executedFee
         - executedFeeToken
         - blockNumber
         - protocolFees
       properties:
-        auctionId:
-          type: integer
         executedFee:
           $ref: "#/components/schemas/TokenAmount"
         executedFeeToken:
@@ -2475,15 +2478,12 @@ components:
     DebugSettlementAttempt:
       type: object
       required:
-        - auctionId
         - solver
         - solutionUid
         - startTimestamp
         - startBlock
         - deadlineBlock
       properties:
-        auctionId:
-          type: integer
         solver:
           $ref: "#/components/schemas/Address"
         solutionUid:
@@ -2503,3 +2503,22 @@ components:
         outcome:
           type: string
           description: Settlement outcome (e.g. "success", "revert").
+    DebugFeePolicy:
+      type: object
+      description: Fee policy applied to this order in this auction.
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          enum: [surplus, volume, priceImprovement]
+        surplusFactor:
+          type: number
+        surplusMaxVolumeFactor:
+          type: number
+        volumeFactor:
+          type: number
+        priceImprovementFactor:
+          type: number
+        priceImprovementMaxVolumeFactor:
+          type: number

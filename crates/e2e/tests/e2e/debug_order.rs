@@ -127,22 +127,28 @@ async fn debug_order(web3: Web3) {
     assert_eq!(report.events.last().unwrap().label, "traded");
 
     assert!(!report.trades.is_empty(), "expected at least one trade");
-    assert!(
-        !report.executions.is_empty(),
-        "expected at least one execution"
-    );
-    assert!(
-        !report.proposed_solutions.is_empty(),
-        "expected at least one proposed solution"
-    );
     assert!(!report.auctions.is_empty(), "expected at least one auction");
+
+    let auction = &report.auctions[0];
     assert!(
-        !report.auctions[0].native_prices.is_empty(),
+        !auction.native_prices.is_empty(),
         "expected native prices for sell/buy tokens"
     );
     assert!(
-        !report.settlement_attempts.is_empty(),
+        !auction.proposed_solutions.is_empty(),
+        "expected at least one proposed solution"
+    );
+    assert!(
+        !auction.executions.is_empty(),
+        "expected at least one execution"
+    );
+    assert!(
+        !auction.settlement_attempts.is_empty(),
         "expected at least one settlement attempt"
+    );
+    assert!(
+        !auction.fee_policies.is_empty(),
+        "expected at least one fee policy"
     );
 
     // --- auth error cases ---
