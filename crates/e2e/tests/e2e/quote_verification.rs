@@ -6,7 +6,6 @@ use {
     autopilot::config::Configuration,
     balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
     bigdecimal::{BigDecimal, Zero},
-    configs::test_util::TestDefault,
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{

@@ -28,7 +28,6 @@ cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
-configs = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
@@ -68,7 +67,6 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
-configs = { workspace = true, features = ["test-util"] }
 mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }

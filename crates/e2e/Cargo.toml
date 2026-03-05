@@ -33,7 +33,6 @@ balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-configs = { workspace = true, features = ["test-util"] }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 cow-amm = { workspace = true }

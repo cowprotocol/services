@@ -4,7 +4,6 @@ use {
         Configuration,
         solver::{Account, Solver},
     },
-    configs::test_util::TestDefault,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     model::{

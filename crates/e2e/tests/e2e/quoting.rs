@@ -1,6 +1,5 @@
 use {
     autopilot::config::Configuration,
-    configs::test_util::TestDefault,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,

@@ -2,7 +2,6 @@
 //! headers.
 
 use {
-    configs::test_util::TestDefault,
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
     reqwest::{Method, StatusCode},
     shared::web3::Web3,

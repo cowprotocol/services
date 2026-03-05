@@ -9,8 +9,7 @@ use {
         trusted_tokens::TrustedTokensConfig,
     },
     anyhow::{anyhow, ensure},
-    configs::database::DatabasePoolConfig,
-    serde::Deserialize,
+    serde::{Deserialize, Serialize},
     std::path::Path,
 };
 
@@ -25,8 +24,7 @@ pub mod trusted_tokens;
 // Does not implement Default because `native_price_estimation` *cannot* have
 // empty `estimators`, as such, we cannot provide a proper default value for
 // this structure.
-#[derive(Debug, Deserialize)]
-#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[derive(Debug, Deserialize, Serialize)]
 // NOTE: cannot add deny_unknown_fields during the config migration
 // as new ones get added in the config will fail parsing if extra fields are present
 #[serde(rename_all = "kebab-case", /* deny_unknown_fields */)]
@@ -54,9 +52,6 @@ pub struct Configuration {
     pub s3: Option<S3Config>,
 
     pub native_price_estimation: NativePriceConfig,
-
-    #[serde(default)]
-    pub database: DatabasePoolConfig,
 }
 
 impl Configuration {
@@ -73,6 +68,10 @@ impl Configuration {
                 path.as_ref().display()
             )),
         }
+    }
+
+    pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+        Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
     }
 
     // Note for reviewers: if this and other validations are always applied,
@@ -93,8 +92,6 @@ impl Configuration {
     /// It is rather useful for tests where drivers are setup separately or not
     /// actually used (like the `order_cancellation` test).
     pub fn test_no_drivers() -> Self {
-        use configs::test_util::TestDefault;
-
         Self {
             drivers: vec![],
             fee_policies: Default::default(),
@@ -103,13 +100,10 @@ impl Configuration {
             banned_users: Default::default(),
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
-            database: DatabasePoolConfig::test_default(),
         }
     }
 
     pub fn test(name: &str, solver_address: alloy::primitives::Address) -> Self {
-        use configs::test_util::TestDefault;
-
         Self {
             drivers: vec![Solver::test(name, solver_address)],
             fee_policies: Default::default(),
@@ -118,13 +112,11 @@ impl Configuration {
             banned_users: Default::default(),
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
-            database: DatabasePoolConfig::test_default(),
         }
     }
 
     pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
         use std::io::Write;
-
         let mut file = tempfile::NamedTempFile::new().expect("temp file creation should not fail");
         file.write_all(
             toml::to_string_pretty(self)

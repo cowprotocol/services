@@ -8,7 +8,6 @@ use {
     },
     autopilot::config::Configuration,
     chrono::{NaiveDateTime, Utc},
-    configs::test_util::TestDefault,
     contracts::alloy::{ERC20, IZeroex},
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
