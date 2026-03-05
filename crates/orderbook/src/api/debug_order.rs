@@ -157,8 +157,6 @@ fn format_bytes(bytes: &[u8]) -> String {
     const_hex::encode_prefixed(bytes)
 }
 
-// --- Response types ---
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DebugOrderResponse {
