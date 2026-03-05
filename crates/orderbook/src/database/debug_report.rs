@@ -1,0 +1,85 @@
+use {
+    super::Postgres,
+    anyhow::{Context, Result},
+    database::{
+        auction::{self, Auction as DbAuction, AuctionId},
+        order_events::{self, OrderEvent},
+        order_execution::{self, ExecutionRow as OrderExecutionRow},
+        orders::{self, Order as DbOrder, Quote as DbQuote},
+        settlement_executions::{self, ExecutionRow as SettlementExecutionRow},
+        solver_competition_v2::{self, OrderProposedSolution},
+        trades::{self, TradesQueryRow},
+    },
+    futures::TryStreamExt,
+    model::order::OrderUid,
+};
+
+pub struct DebugReport {
+    pub order: DbOrder,
+    pub quote: Option<DbQuote>,
+    pub events: Vec<OrderEvent>,
+    pub proposed_solutions: Vec<OrderProposedSolution>,
+    pub auctions: Vec<DbAuction>,
+    pub executions: Vec<OrderExecutionRow>,
+    pub trades: Vec<TradesQueryRow>,
+    pub settlement_executions: Vec<SettlementExecutionRow>,
+}
+
+impl Postgres {
+    pub async fn fetch_debug_report(&self, uid: &OrderUid) -> Result<Option<DebugReport>> {
+        let db_uid = database::byte_array::ByteArray(uid.0);
+        let mut conn = self.pool.acquire().await?;
+
+        let order = match orders::read_order(&mut conn, &db_uid).await? {
+            Some(order) => order,
+            None => return Ok(None),
+        };
+
+        let quote = orders::read_quote(&mut conn, &db_uid).await?;
+
+        let events = order_events::get_all(&mut conn, &db_uid).await?;
+
+        let proposed_solutions =
+            solver_competition_v2::find_solutions_for_order(&mut conn, &db_uid).await?;
+
+        let executions = order_execution::read_by_order_uid(&mut conn, &db_uid).await?;
+
+        let trades: Vec<TradesQueryRow> = trades::trades(&mut conn, None, Some(&db_uid), 0, 100)
+            .into_inner()
+            .try_collect()
+            .await
+            .context("failed to fetch trades")?;
+
+        // Derive auction IDs from proposed solutions and executions
+        let mut auction_ids: Vec<AuctionId> = proposed_solutions
+            .iter()
+            .map(|s| s.auction_id)
+            .chain(executions.iter().map(|e| e.auction_id))
+            .collect();
+        auction_ids.sort_unstable();
+        auction_ids.dedup();
+
+        let auctions = if auction_ids.is_empty() {
+            vec![]
+        } else {
+            auction::fetch_multiple(&mut conn, &auction_ids).await?
+        };
+
+        let settlement_executions = if auction_ids.is_empty() {
+            vec![]
+        } else {
+            settlement_executions::read_by_auction_ids(&mut conn, &auction_ids).await?
+        };
+
+        Ok(Some(DebugReport {
+            order,
+            quote,
+            events,
+            proposed_solutions,
+            auctions,
+            executions,
+            trades,
+            settlement_executions,
+        }))
+    }
+}

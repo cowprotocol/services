@@ -80,6 +80,14 @@ pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auctio
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+pub async fn fetch_multiple(
+    ex: &mut PgConnection,
+    ids: &[AuctionId],
+) -> Result<Vec<Auction>, sqlx::Error> {
+    const QUERY: &str = r#"SELECT * FROM competition_auctions WHERE id = ANY($1) ORDER BY id"#;
+    sqlx::query_as(QUERY).bind(ids).fetch_all(ex).await
+}
+
 pub async fn get_order_uids(
     ex: &mut PgConnection,
     auction_id: AuctionId,

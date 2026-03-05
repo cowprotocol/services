@@ -118,6 +118,18 @@ pub async fn get_latest(
         .await
 }
 
+#[instrument(skip_all)]
+pub async fn get_all(
+    ex: &mut PgConnection,
+    order: &OrderUid,
+) -> Result<Vec<OrderEvent>, sqlx::Error> {
+    const QUERY: &str = r#"SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp ASC"#;
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(order.0))
+        .fetch_all(ex)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use {

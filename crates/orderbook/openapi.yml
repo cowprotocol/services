@@ -769,6 +769,43 @@ paths:
                 $ref: "#/components/schemas/TotalSurplus"
         "400":
           description: Invalid address.
+  "/api/v1/debug/order/{uid}":
+    get:
+      operationId: debugOrder
+      summary: Debug an order's lifecycle.
+      description: >
+        Returns a comprehensive debug report for the given order, including
+        order details, quote, lifecycle events, auction participation,
+        proposed solutions, executions, trades, and settlement attempts. This
+        endpoint is disabled by default and returns 404 unless
+        `debug-route-auth-tokens` is configured on the server. Requires a
+        valid `x-auth-token` header.
+      parameters:
+        - in: path
+          name: uid
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: true
+        - in: header
+          name: x-auth-token
+          schema:
+            type: string
+          required: true
+          description: Authentication token configured on the server.
+      responses:
+        "200":
+          description: Debug report returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebugOrderResponse"
+        "401":
+          description: Invalid or missing authentication token.
+        "404":
+          description: >
+            Endpoint is not enabled (no tokens configured) or order not found.
+        "500":
+          description: Internal error.
 components:
   schemas:
     TransactionHash:
@@ -2271,3 +2308,275 @@ components:
           allOf:
             - description: The token in which the fee is taken
             - $ref: "#/components/schemas/Address"
+    DebugOrderResponse:
+      type: object
+      required:
+        - orderUid
+        - order
+        - events
+        - auctions
+        - proposedSolutions
+        - executions
+        - trades
+        - settlementAttempts
+      properties:
+        orderUid:
+          description: The UID of the order being debugged.
+          $ref: "#/components/schemas/UID"
+        order:
+          $ref: "#/components/schemas/DebugOrderDetails"
+        quote:
+          $ref: "#/components/schemas/DebugQuote"
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugEvent"
+        auctions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugAuction"
+        proposedSolutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugProposedSolution"
+        executions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugExecution"
+        trades:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugTrade"
+        settlementAttempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugSettlementAttempt"
+    DebugOrderDetails:
+      type: object
+      required:
+        - owner
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - validTo
+        - kind
+        - class
+        - partiallyFillable
+        - creationTimestamp
+        - signingScheme
+        - appData
+      properties:
+        owner:
+          $ref: "#/components/schemas/Address"
+        sellToken:
+          $ref: "#/components/schemas/Address"
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          type: integer
+          description: Unix timestamp until which the order is valid.
+        kind:
+          type: string
+          enum: [buy, sell]
+        class:
+          type: string
+          enum: [market, limit, liquidity]
+        partiallyFillable:
+          type: boolean
+        creationTimestamp:
+          type: string
+          format: date-time
+        cancellationTimestamp:
+          type: string
+          format: date-time
+        signingScheme:
+          type: string
+        appData:
+          type: string
+          description: Hex-encoded app data hash.
+        receiver:
+          $ref: "#/components/schemas/Address"
+    DebugQuote:
+      type: object
+      required:
+        - gasAmount
+        - gasPrice
+        - sellTokenPrice
+        - sellAmount
+        - buyAmount
+        - solver
+        - verified
+      properties:
+        gasAmount:
+          type: number
+        gasPrice:
+          type: number
+        sellTokenPrice:
+          type: number
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        solver:
+          $ref: "#/components/schemas/Address"
+        verified:
+          type: boolean
+    DebugEvent:
+      type: object
+      required:
+        - label
+        - timestamp
+      properties:
+        label:
+          type: string
+          description: Event type (e.g. created, ready, filtered, traded).
+        timestamp:
+          type: string
+          format: date-time
+    DebugAuction:
+      type: object
+      required:
+        - id
+        - block
+        - deadline
+        - nativePrices
+      properties:
+        id:
+          type: integer
+          description: Auction ID.
+        block:
+          type: integer
+          description: Block number of the auction.
+        deadline:
+          type: integer
+          description: Deadline block for the auction.
+        nativePrices:
+          type: object
+          additionalProperties:
+            type: string
+          description: >
+            Native prices for the order's sell and buy tokens in this auction.
+            Keys are hex-encoded token addresses, values are decimal price
+            strings.
+    DebugProposedSolution:
+      type: object
+      required:
+        - auctionId
+        - solutionUid
+        - ranking
+        - solver
+        - isWinner
+        - filteredOut
+        - score
+        - executedSell
+        - executedBuy
+      properties:
+        auctionId:
+          type: integer
+        solutionUid:
+          type: integer
+        ranking:
+          type: integer
+        solver:
+          $ref: "#/components/schemas/Address"
+        isWinner:
+          type: boolean
+        filteredOut:
+          type: boolean
+        score:
+          type: string
+          description: Decimal-encoded score.
+        executedSell:
+          $ref: "#/components/schemas/TokenAmount"
+        executedBuy:
+          $ref: "#/components/schemas/TokenAmount"
+    DebugExecution:
+      type: object
+      required:
+        - auctionId
+        - executedFee
+        - executedFeeToken
+        - blockNumber
+        - protocolFees
+      properties:
+        auctionId:
+          type: integer
+        executedFee:
+          $ref: "#/components/schemas/TokenAmount"
+        executedFeeToken:
+          $ref: "#/components/schemas/Address"
+        blockNumber:
+          type: integer
+        protocolFees:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugProtocolFee"
+    DebugProtocolFee:
+      type: object
+      required:
+        - token
+        - amount
+      properties:
+        token:
+          $ref: "#/components/schemas/Address"
+        amount:
+          $ref: "#/components/schemas/TokenAmount"
+    DebugTrade:
+      type: object
+      required:
+        - blockNumber
+        - logIndex
+        - buyAmount
+        - sellAmount
+        - sellAmountBeforeFees
+      properties:
+        blockNumber:
+          type: integer
+        logIndex:
+          type: integer
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        sellAmountBeforeFees:
+          $ref: "#/components/schemas/TokenAmount"
+        txHash:
+          $ref: "#/components/schemas/TransactionHash"
+        auctionId:
+          type: integer
+    DebugSettlementAttempt:
+      type: object
+      required:
+        - auctionId
+        - solver
+        - solutionUid
+        - startTimestamp
+        - startBlock
+        - deadlineBlock
+      properties:
+        auctionId:
+          type: integer
+        solver:
+          $ref: "#/components/schemas/Address"
+        solutionUid:
+          type: integer
+        startTimestamp:
+          type: string
+          format: date-time
+        endTimestamp:
+          type: string
+          format: date-time
+        startBlock:
+          type: integer
+        endBlock:
+          type: integer
+        deadlineBlock:
+          type: integer
+        outcome:
+          type: string
+          description: Settlement outcome (e.g. "success", "revert").

@@ -5,6 +5,19 @@ use {
     tracing::instrument,
 };
 
+#[derive(Clone, Debug, Eq, PartialEq, sqlx::FromRow)]
+pub struct ExecutionRow {
+    pub auction_id: AuctionId,
+    pub solver: Address,
+    pub solution_uid: i64,
+    pub start_timestamp: DateTime<Utc>,
+    pub end_timestamp: Option<DateTime<Utc>>,
+    pub start_block: i64,
+    pub end_block: Option<i64>,
+    pub deadline_block: i64,
+    pub outcome: Option<String>,
+}
+
 #[instrument(skip_all)]
 pub async fn insert(
     ex: &mut PgConnection,
@@ -60,6 +73,21 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
         .await?;
 
     Ok(())
+}
+
+#[instrument(skip_all)]
+pub async fn read_by_auction_ids(
+    ex: &mut PgConnection,
+    auction_ids: &[AuctionId],
+) -> Result<Vec<ExecutionRow>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT auction_id, solver, solution_uid, start_timestamp, end_timestamp,
+       start_block, end_block, deadline_block, outcome
+FROM settlement_executions
+WHERE auction_id = ANY($1)
+ORDER BY auction_id, start_timestamp
+    "#;
+    sqlx::query_as(QUERY).bind(auction_ids).fetch_all(ex).await
 }
 
 #[cfg(test)]
@@ -240,23 +268,10 @@ mod tests {
         assert!(output.contains(&expected_c));
     }
 
-    #[derive(Debug, Clone, Eq, PartialEq, sqlx::FromRow)]
-    struct ExecutionRow {
-        pub auction_id: AuctionId,
-        pub solver: Address,
-        pub solution_uid: i64,
-        pub start_timestamp: DateTime<Utc>,
-        pub end_timestamp: Option<DateTime<Utc>>,
-        pub start_block: i64,
-        pub end_block: Option<i64>,
-        pub deadline_block: i64,
-        pub outcome: Option<String>,
-    }
-
     async fn fetch(
         ex: &mut PgConnection,
         auction_id: AuctionId,
-    ) -> Result<Vec<ExecutionRow>, sqlx::Error> {
+    ) -> Result<Vec<super::ExecutionRow>, sqlx::Error> {
         const QUERY: &str = r#"SELECT * FROM settlement_executions WHERE auction_id = $1;"#;
 
         sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
