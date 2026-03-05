@@ -1,6 +1,6 @@
 use {
     crate::api::AppState,
-    alloy_primitives::Address,
+    alloy::primitives::Address,
     axum::{
         extract::{Path, State},
         http::{HeaderMap, StatusCode},
