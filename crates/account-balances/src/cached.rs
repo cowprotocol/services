@@ -30,13 +30,19 @@ struct BalanceEntry {
     balance: U256,
 }
 
-pub struct Inner {
+struct Inner {
     fetcher: Arc<dyn BalanceFetching>,
     cache: DashMap<Query, BalanceEntry>,
     last_seen_block: AtomicU64,
 }
 
 pub struct Balances(Arc<Inner>);
+
+struct CacheResponse {
+    cached: Vec<(Query, Result<U256>)>,
+    missing: Vec<Query>,
+    requested_at: BlockNumber,
+}
 
 impl Balances {
     pub fn new(inner: Arc<dyn BalanceFetching>) -> Self {
@@ -46,15 +52,7 @@ impl Balances {
             last_seen_block: AtomicU64::new(0),
         }))
     }
-}
 
-struct CacheResponse {
-    cached: Vec<(Query, Result<U256>)>,
-    missing: Vec<Query>,
-    requested_at: BlockNumber,
-}
-
-impl Balances {
     fn get_cached_balances(&self, queries: Vec<Query>) -> CacheResponse {
         let requested_at = self.0.last_seen_block.load(Ordering::Relaxed);
         let (cached, missing) =
