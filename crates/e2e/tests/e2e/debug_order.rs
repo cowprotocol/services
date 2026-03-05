@@ -151,8 +151,6 @@ async fn debug_order(web3: Web3) {
         "expected at least one fee policy"
     );
 
-    // --- auth error cases ---
-
     // Missing auth header -> 401.
     let response = client
         .get(format!("{API_HOST}/api/v1/debug/order/{uid}"))
