@@ -94,6 +94,15 @@ pub async fn fetch_all(
     Ok(result)
 }
 
+pub async fn fetch_by_order_uid(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+) -> Result<Vec<FeePolicy>, sqlx::Error> {
+    const QUERY: &str =
+        "SELECT * FROM fee_policies WHERE order_uid = $1 ORDER BY auction_id, application_order";
+    sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
