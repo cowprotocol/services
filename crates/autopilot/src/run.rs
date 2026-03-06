@@ -154,7 +154,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     );
     observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "jemalloc"))]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");

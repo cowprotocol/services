@@ -41,7 +41,6 @@ hex-literal = { workspace = true }
 http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 model = { workspace = true }
 multibase = { workspace = true }
 num = { workspace = true }
@@ -62,7 +61,7 @@ sqlx = { workspace = true }
 strum = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tikv-jemallocator = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 toml = { workspace = true }
@@ -84,9 +83,9 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 e2e = []
-mimalloc-allocator = ["dep:mimalloc"]
 test-util = ["dep:tempfile", "shared/test-util"]
 tokio-console = ["observe/tokio-console"]
+jemalloc = ["tikv-jemallocator", "observe/jemalloc"]
 
 [lints]
 workspace = true

@@ -39,7 +39,7 @@ pub mod metrics;
 pub fn init(obs_config: observe::Config) {
     observe::tracing::init::initialize_reentrant(&obs_config);
     metrics::init();
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "jemalloc"))]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 }
 

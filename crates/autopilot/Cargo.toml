@@ -47,7 +47,6 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
@@ -69,7 +68,7 @@ sqlx = { workspace = true }
 strum = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tikv-jemallocator = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { workspace = true }
@@ -93,9 +92,9 @@ anyhow = { workspace = true }
 vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
-mimalloc-allocator = ["dep:mimalloc"]
 test-util = ["configs/test-util", "dep:tempfile", "price-estimation/test-util"]
 tokio-console = ["observe/tokio-console"]
+jemalloc = ["tikv-jemallocator", "observe/jemalloc"]
 
 [lints]
 workspace = true

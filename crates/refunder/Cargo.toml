@@ -18,14 +18,13 @@ futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 http-client = { workspace = true }
 humantime = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 number = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 shared = { workspace = true }
 sqlx = { workspace = true }
-tikv-jemallocator = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 tracing = { workspace = true }
 url = { workspace = true }
@@ -36,8 +35,8 @@ rand = { workspace = true }
 rstest = { workspace = true }
 
 [features]
-mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
+jemalloc = ["tikv-jemallocator", "observe/jemalloc"]
 
 [lints]
 workspace = true
