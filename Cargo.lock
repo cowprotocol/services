@@ -1836,6 +1836,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types",
+ "alloy-rpc-types-trace",
  "alloy-sol-types",
  "alloy-transport",
  "anyhow",
@@ -6962,6 +6963,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "alloy-rpc-types",
+ "alloy-rpc-types-eth",
  "app-data",
  "bigdecimal",
  "bytes-hex",

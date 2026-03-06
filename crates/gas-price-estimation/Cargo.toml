@@ -15,7 +15,7 @@ futures = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
