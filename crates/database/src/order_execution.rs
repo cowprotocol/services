@@ -9,7 +9,7 @@ use {
 type Execution = (AuctionId, OrderUid);
 
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
-pub struct ExecutionRow {
+pub struct OrderExecution {
     pub order_uid: OrderUid,
     pub auction_id: AuctionId,
     pub reward: f64,
@@ -64,7 +64,7 @@ DO UPDATE SET reward = $3, executed_fee = $4, executed_fee_token = $5, block_num
 pub async fn read_by_order_uid(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
-) -> Result<Vec<ExecutionRow>, sqlx::Error> {
+) -> Result<Vec<OrderExecution>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT order_uid, auction_id, reward, executed_fee, executed_fee_token,
        block_number, protocol_fee_tokens, protocol_fee_amounts
