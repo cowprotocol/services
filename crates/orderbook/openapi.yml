@@ -1149,6 +1149,14 @@ components:
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
           nullable: true
+        fullBalanceCheck:
+          description: >
+            If set to true, full sell amount will be checked during allowance and balance checking.
+            This will ensure the account has correct allowance and available balance for the order
+            to be created.
+
+          type: boolean
+          default: false
       required:
         - sellToken
         - buyToken
