@@ -202,11 +202,30 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
 
-        let orders = db_solvable_orders
+        let mut orders: Vec<&Order> = db_solvable_orders
             .orders
             .values()
             .map(|order| order.as_ref())
-            .collect::<Vec<_>>();
+            .collect();
+
+        // Remove in-flight orders (already won a previous auction, being settled
+        // on-chain) so they don't get spuriously marked Invalid/Filtered.
+        let in_flight: HashSet<OrderUid> = self
+            .persistence
+            .fetch_in_flight_orders(block)
+            .await
+            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|uid| OrderUid(uid.0))
+            .collect();
+        if !in_flight.is_empty() {
+            orders.retain(|o| !in_flight.contains(&o.metadata.uid));
+            tracing::debug!(
+                orders = ?in_flight,
+                "filtered out in-flight orders"
+            );
+        }
 
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
@@ -292,25 +311,6 @@ impl SolvableOrdersCache {
         Metrics::track_orders_in_final_auction(&orders);
 
         if store_events {
-            // An in-flight order already won a previous auction and was
-            // submitted on-chain. It may still fail filters here (e.g.
-            // missing native price, missing funds), but inserting Invalid/Filtered for it
-            // would be misleading since it's about to become Traded.
-            let in_flight: HashSet<OrderUid> = self
-                .persistence
-                .fetch_in_flight_orders(block)
-                .await
-                .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
-                .unwrap_or_default()
-                .into_iter()
-                .map(|uid| OrderUid(uid.0))
-                .collect();
-
-            if !in_flight.is_empty() {
-                invalid_order_uids.retain(|uid| !in_flight.contains(uid));
-                filtered_order_events.retain(|uid| !in_flight.contains(uid));
-            }
-
             // spawning a background task since `order_events` table insert operation takes
             // a while and the result is ignored.
             self.persistence.store_order_events_owned(
@@ -325,7 +325,7 @@ impl SolvableOrdersCache {
             );
         }
 
-        let surplus_capturing_jit_order_owners = cow_amms
+        let mut surplus_capturing_jit_order_owners: Vec<_> = cow_amms
             .iter()
             .filter(|cow_amm| {
                 cow_amm.traded_tokens().iter().all(|token| {
@@ -341,7 +341,14 @@ impl SolvableOrdersCache {
                 })
             })
             .map(|cow_amm| *cow_amm.address())
-            .collect::<Vec<_>>();
+            .collect();
+        if !in_flight.is_empty() {
+            surplus_capturing_jit_order_owners.retain(|owner| {
+                !in_flight
+                    .iter()
+                    .any(|uid| domain::OrderUid(uid.0).owner() == *owner)
+            });
+        }
         let auction = domain::RawAuctionData {
             block,
             orders: tracing::info_span!("assemble_orders").in_scope(|| {
