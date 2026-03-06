@@ -47,7 +47,6 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 itertools = { workspace = true }
 liquidity-sources = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
@@ -64,7 +63,7 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
 thiserror = { workspace = true }
-tikv-jemallocator = { workspace = true }
+tikv-jemallocator = { workspace = true, optional = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = { workspace = true }
@@ -101,8 +100,8 @@ anyhow = { workspace = true }
 vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
-mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
+jemalloc = ["tikv-jemallocator", "observe/jemalloc"]
 
 [lints]
 workspace = true

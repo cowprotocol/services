@@ -33,7 +33,7 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
         tracing_config(&args.tracing, "solvers".into()),
     );
     observe::tracing::init::initialize_reentrant(&obs_config);
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "jemalloc"))]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 
     let commit_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("COMMIT_INFO_NOT_FOUND");

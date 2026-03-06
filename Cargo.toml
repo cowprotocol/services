@@ -70,7 +70,6 @@ jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
 jsonrpc-core = "18.0.0"
 liquidity-sources = { path = "crates/liquidity-sources" }
 maplit = "1.0.2"
-mimalloc = "0.1.43"
 mockall = "0.12.1"
 model = { path = "crates/model" }
 moka = "0.12.10"
