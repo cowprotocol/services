@@ -183,24 +183,24 @@ Use `$ETH_MAINNET_RPC` from `.env.claude` for mainnet. Use `cast` or whatever to
 
 ## Grafana Logs Access
 
-Use the `scripts/vlogs` wrapper to query Victoria Logs:
+Use the `scripts/vlogs` wrapper to query Victoria Logs.
+
+**IMPORTANT**: When running `scripts/vlogs`, do NOT use bash comments before the command (e.g., `# comment\nscripts/vlogs ...`) as this causes unnecessary permission prompts. Just run the command directly.
+
+**IMPORTANT**: Order UIDs and other structured fields (like `quote_id`, `auction_id`) live inside the `all` field in Victoria Logs. You MUST prefix them with `all:` to match. Plain text terms (like `order created`, `filtered`) match the log message directly and don't need the prefix.
 
 ```bash
-# Basic usage
 scripts/vlogs "<expr>" [--from <time>] [--to <time>] [--max <lines>] [--env <prod|staging>] [--raw]
 
-# Examples
-scripts/vlogs "NOT container:controller order created 0xabc..." --from now-24h
+scripts/vlogs "NOT container:controller order created all:0xabc..." --from now-24h
 scripts/vlogs "NOT container:controller network:mainnet settlement failed" --from now-6h --max 50
 scripts/vlogs "error" --env staging --from now-1h
-scripts/vlogs "NOT container:controller 0xabc..." --raw  # full JSON with labels
+scripts/vlogs "NOT container:controller all:0xabc..." --raw
 ```
 
 Defaults: `--from now-12h`, `--to now`, `--max 100`, `--env prod`
 
 Datasource UIDs (hardcoded in script): `vm-auth-prod` (production), `vm-auth-staging` (staging)
-
-With `--raw`, each log entry has an `all` field containing the full unparsed JSON log message (with timestamp, level, fields, spans, trace_id). Useful for extracting structured data like `order_uid`, `quote_id`, `request_id`, etc.
 
 ## Etherscan API (V2)
 
