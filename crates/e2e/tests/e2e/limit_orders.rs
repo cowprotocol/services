@@ -355,14 +355,12 @@ async fn two_limit_orders_test(web3: Web3) {
             "http://localhost:11089/test_solver".parse().unwrap(),
             Account::Address(solver.address()),
         )],
+        compress_solve_request: true,
         ..Configuration::test_no_drivers()
     };
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec!["--compress-solve-request=true".to_string()],
-                ..Default::default()
-            },
+            ExtraServiceArgs::default(),
             config,
             orderbook::config::Configuration::test_default(),
             solver,
@@ -561,7 +559,6 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             None,
             vec![
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-                "--max-winners-per-auction=2".to_string(),
             ],
             Configuration {
                 drivers: vec![
@@ -572,6 +569,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                     ),
                     Solver::test("solver2", solver_b.address()),
                 ],
+                max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
                 ..Configuration::test_no_drivers()
             },
         )

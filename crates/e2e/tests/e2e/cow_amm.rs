@@ -565,16 +565,22 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
             vec![
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
-                // it uses an older helper contract that was deployed before the desired cow amm
-                "--cow-amm-configs=0xf76c421bAb7df8548604E60deCCcE50477C10462|0x3FF0041A614A9E6Bf392cbB961C97DA214E9CB31|20476672".to_string()
             ],
             Configuration {
                 drivers: vec![
                     Solver::test("test_solver", solver.address()),
                     Solver::test("mock_solver", solver.address()),
                 ],
+                cow_amm: autopilot::config::cow_amm::CowAmmGroupConfig {
+                    configs: vec![autopilot::config::cow_amm::CowAmmConfig {
+                        factory: address!("f76c421bAb7df8548604E60deCCcE50477C10462"),
+                        helper: address!("3FF0041A614A9E6Bf392cbB961C97DA214E9CB31"),
+                        index_start: 20476672,
+                    }],
+                    ..Default::default()
+                },
                 ..Configuration::test_no_drivers()
-            }
+            },
         )
         .await;
     services
