@@ -292,6 +292,25 @@ impl SolvableOrdersCache {
         Metrics::track_orders_in_final_auction(&orders);
 
         if store_events {
+            // An in-flight order already won a previous auction and was
+            // submitted on-chain. It may still fail filters here (e.g.
+            // missing native price, missing funds), but inserting Invalid/Filtered for it
+            // would be misleading since it's about to become Traded.
+            let in_flight: HashSet<OrderUid> = self
+                .persistence
+                .fetch_in_flight_orders(block)
+                .await
+                .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|uid| OrderUid(uid.0))
+                .collect();
+
+            if !in_flight.is_empty() {
+                invalid_order_uids.retain(|uid| !in_flight.contains(uid));
+                filtered_order_events.retain(|uid| !in_flight.contains(uid));
+            }
+
             // spawning a background task since `order_events` table insert operation takes
             // a while and the result is ignored.
             self.persistence.store_order_events_owned(
