@@ -2319,7 +2319,8 @@ components:
       properties:
         orderUid:
           description: The UID of the order being debugged.
-          $ref: "#/components/schemas/UID"
+          allOf:
+            - $ref: "#/components/schemas/UID"
         order:
           $ref: "#/components/schemas/Order"
         events:
