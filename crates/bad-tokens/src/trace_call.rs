@@ -3,10 +3,8 @@ use {
     alloy_json_rpc::ErrorPayload,
     alloy_primitives::{Address, U256},
     alloy_provider::ext::TraceApi,
-    alloy_rpc_types::{
-        TransactionRequest,
-        trace::parity::{TraceOutput, TraceResults, TraceType},
-    },
+    alloy_rpc_types::TransactionRequest,
+    alloy_rpc_types_trace::parity::{TraceOutput, TraceResults, TraceType},
     alloy_sol_types::SolCall,
     alloy_transport::{RpcError, TransportErrorKind},
     anyhow::{Context, Result, bail, ensure},
@@ -344,7 +342,7 @@ mod tests {
     use {
         super::*,
         alloy_primitives::Bytes,
-        alloy_rpc_types::trace::parity::{
+        alloy_rpc_types_trace::parity::{
             Action,
             CallAction,
             CallOutput,

@@ -7,7 +7,7 @@ Debug why CoW Protocol orders fail to match. Requires DB access + Victoria Logs 
 Run through these in order:
 
 1. [ ] **Order status** — Check API status first (cancelled/expired/fulfilled/open)
-2. [ ] **User cancellation** — If cancelled, search logs for `order cancelled ORDER_UID` FIRST
+2. [ ] **User cancellation** — If cancelled, search logs for `order cancelled all:ORDER_UID` FIRST
 3. [ ] **Order in auction** — Was order in autopilot auction? When?
 4. [ ] **Solver bids** — Did any solver bid? What happened to their solution?
 5. [ ] **Settlement outcome** — Did settlement succeed/fail/timeout?
@@ -87,42 +87,37 @@ Logs are stored in Victoria Logs and accessible via Grafana API.
 
 **Query using `scripts/vlogs`:**
 ```bash
-# Basic: search by order UID (use full UID with 0x prefix)
-scripts/vlogs "NOT container:controller ORDER_UID"
+scripts/vlogs "NOT container:controller all:ORDER_UID"
 
-# Filter by network
-scripts/vlogs "NOT container:controller network:bnb ORDER_UID"
+scripts/vlogs "NOT container:controller network:bnb all:ORDER_UID"
 
-# Search by auction ID
-scripts/vlogs "NOT container:controller 22788649"
+scripts/vlogs "NOT container:controller all:22788649"
 
-# Search by solver name + auction
-scripts/vlogs "NOT container:controller baseline 22788649"
+scripts/vlogs "NOT container:controller baseline all:22788649"
 
-# Custom time range and max lines
-scripts/vlogs "NOT container:controller ORDER_UID" --from now-24h --max 200
+scripts/vlogs "NOT container:controller all:ORDER_UID" --from now-24h --max 200
 
-# Full JSON output (includes labels like network, pod, parsed fields)
-scripts/vlogs "NOT container:controller ORDER_UID" --raw
+scripts/vlogs "NOT container:controller all:ORDER_UID" --raw
 ```
 
 **Useful filters (part of the expr):**
 - `NOT container:controller` — excludes nginx access logs (REQUIRED for order UID searches)
 - `network:$NETWORK` — filter by chain (mainnet, bnb, arbitrum-one, base, etc)
+- `all:` — prefix for searching structured fields (order UIDs, auction IDs, quote IDs). Without a field prefix, Victoria Logs only searches the log message text, not structured fields. You can also use specific field names (e.g., `order_uid:0x...`) but `all:` works universally.
 
-**Note:** Victoria Logs uses simple text matching. Always use the **full order UID with 0x prefix** for reliable matching.
+**Note:** Always use the **full order UID with 0x prefix** and the `all:` field prefix for reliable matching.
 
 **IMPORTANT - Run targeted lifecycle queries in parallel** (use FULL order UID with 0x):
 
 ```bash
-scripts/vlogs "NOT container:controller order created ORDER_UID"
-scripts/vlogs "NOT container:controller order cancelled ORDER_UID"
-scripts/vlogs "NOT container:controller proposed solution ORDER_UID"
-scripts/vlogs "NOT container:controller settlement failed ORDER_UID"
-scripts/vlogs "NOT container:controller filtered ORDER_UID"
+scripts/vlogs "NOT container:controller order created all:ORDER_UID"
+scripts/vlogs "NOT container:controller order cancelled all:ORDER_UID"
+scripts/vlogs "NOT container:controller proposed solution all:ORDER_UID"
+scripts/vlogs "NOT container:controller settlement failed all:ORDER_UID"
+scripts/vlogs "NOT container:controller filtered all:ORDER_UID"
 
 # Find discarded solutions where order appears in calldata (use order UID bytes without 0x prefix)
-scripts/vlogs "discarded .*ORDER_UID_WITHOUT_0X.*"
+scripts/vlogs "discarded all:ORDER_UID_WITHOUT_0X"
 ```
 
 **What to look for:**
@@ -199,7 +194,7 @@ WHERE oq.order_uid = '\x$ORDER_UID_HEX';
 Find the quote_id from the "order created" log:
 
 ```bash
-"expr": "NOT container:controller order created ORDER_UID | sort by (_time) asc"
+scripts/vlogs "NOT container:controller order created all:ORDER_UID"
 ```
 
 **Example log line:**
@@ -209,7 +204,7 @@ orderbook::api::post_order: order created order_uid=0x... quote_id=Some(2720468)
 
 Then search for quote details by ID:
 ```bash
-"expr": "NOT container:controller $QUOTE_ID | sort by (_time) asc"
+scripts/vlogs "NOT container:controller all:$QUOTE_ID"
 ```
 
 ---
@@ -303,13 +298,12 @@ surplusFeeTimestamp is within last 10 minutes
 
 **If missing/stale, check surplus fee computation logs:**
 ```bash
-# Victoria Logs query
-"expr": "surplus_fee $ORDER_UID | sort by (_time) asc"
+scripts/vlogs "surplus_fee all:ORDER_UID"
 ```
 
 **Surplus fee error logs:**
 ```bash
-"expr": "surplus_fee error | sort by (_time) asc"
+scripts/vlogs "surplus_fee error"
 ```
 
 ### 9.2 Auction Filtering Check
@@ -321,8 +315,7 @@ curl -s "https://api.cow.fi/$NETWORK/api/v1/auction" | jq '.orders[] | select(.u
 
 If not present, order is filtered. Check filter logs:
 ```bash
-# Victoria Logs query
-"expr": "filtered $ORDER_UID | sort by (_time) asc"
+scripts/vlogs "filtered all:ORDER_UID"
 ```
 
 **Common filter reasons:**
@@ -411,13 +404,12 @@ Order is in auction but still not matching?
 
 **Auction orders log:**
 ```bash
-# Victoria Logs query (just the auction ID number)
-"expr": "$AUCTION_ID | sort by (_time) asc"
+scripts/vlogs "all:$AUCTION_ID"
 ```
 
 **Specific auction run:**
 ```bash
-"expr": "$RUN_ID | sort by (_time) asc"
+scripts/vlogs "all:$RUN_ID"
 ```
 
 ### JIT Orders & CoW AMMs
