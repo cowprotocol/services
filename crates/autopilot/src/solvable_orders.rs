@@ -292,10 +292,10 @@ impl SolvableOrdersCache {
         Metrics::track_orders_in_final_auction(&orders);
 
         if store_events {
-            // An in-flight order already won a previous auction and is being
-            // submitted on-chain. It may still fail filters here (e.g. expiry,
-            // missing native price), but emitting Invalid/Filtered for it would
-            // be misleading since it's about to become Traded.
+            // An in-flight order already won a previous auction and was
+            // submitted on-chain. It may still fail filters here (e.g.
+            // missing native price, missing funds), but emitting Invalid/Filtered for it
+            // would be misleading since it's about to become Traded.
             let in_flight: HashSet<OrderUid> = self
                 .persistence
                 .fetch_in_flight_orders(block)
