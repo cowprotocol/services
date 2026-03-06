@@ -118,7 +118,7 @@ async fn debug_order(web3: Web3) {
     let report = fetch_debug_report().await;
 
     assert_eq!(report.order_uid, uid.to_string());
-    assert_eq!(report.order.data.kind, OrderKind::Buy);
+    assert_eq!(report.order.kind, OrderKind::Buy);
 
     assert_eq!(
         report.events.len(),
@@ -191,13 +191,8 @@ struct DebugOrderResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct DebugOrder {
-    data: DebugOrderData,
-}
-
-#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DebugOrderData {
+struct DebugOrder {
     kind: OrderKind,
 }
 
