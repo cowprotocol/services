@@ -294,7 +294,7 @@ impl SolvableOrdersCache {
         if store_events {
             // An in-flight order already won a previous auction and was
             // submitted on-chain. It may still fail filters here (e.g.
-            // missing native price, missing funds), but emitting Invalid/Filtered for it
+            // missing native price, missing funds), but inserting Invalid/Filtered for it
             // would be misleading since it's about to become Traded.
             let in_flight: HashSet<OrderUid> = self
                 .persistence
