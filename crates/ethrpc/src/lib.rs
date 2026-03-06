@@ -83,12 +83,19 @@ mod test {
     use {super::*, alloy_eips::BlockId, alloy_provider::Provider};
 
     #[tokio::test]
-    async fn forked_node_mainnet_test_https() {
+    async fn test_https() {
         let provider = Web3::new_from_url("https://rpc.mevblocker.io");
-        provider
-            .provider
-            .get_block(BlockId::latest())
-            .await
-            .unwrap();
+        let response = provider.provider.get_block(BlockId::latest()).await;
+
+        if let Err(err) = response {
+            // only fail the CI if we are sure the error is due to missing
+            // `https` support
+            if err.to_string().contains("scheme is not http") {
+                eprintln!("{err:?}");
+                panic!("https support is not enabled");
+            } else {
+                eprintln!("mevblocker error unrelated to https support: {err:?}");
+            }
+        }
     }
 }
