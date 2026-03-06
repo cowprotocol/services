@@ -6,7 +6,6 @@
 //! module.
 
 use {
-    crate::util,
     reqwest::{Method, RequestBuilder, StatusCode, Url},
     serde::de::DeserializeOwned,
     std::str,
@@ -111,8 +110,8 @@ pub enum Error {
     Status(StatusCode, String),
 }
 
-impl From<RoundtripError<util::serialize::Never>> for Error {
-    fn from(value: RoundtripError<util::serialize::Never>) -> Self {
+impl From<RoundtripError<Never>> for Error {
+    fn from(value: RoundtripError<Never>) -> Self {
         let RoundtripError::Http(err) = value else {
             unreachable!();
         };
@@ -126,4 +125,28 @@ pub enum RoundtripError<E> {
     Http(#[from] Error),
     #[error("API error")]
     Api(E),
+}
+
+/// A type that never deserializes or serializes.
+///
+/// This can be used in situations where a generic type that implements `serde`
+/// traits is required, but you don't want it to actually represent any data.
+pub struct Never;
+
+impl<'de> serde::Deserialize<'de> for Never {
+    fn deserialize<D>(_: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Err(serde::de::Error::custom("neva eva eva"))
+    }
+}
+
+impl serde::Serialize for Never {
+    fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(serde::ser::Error::custom("neva eva eva"))
+    }
 }

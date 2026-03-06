@@ -92,3 +92,106 @@ impl<'de> Deserialize<'de> for ChainId {
 #[derive(Debug, thiserror::Error)]
 #[error("unsupported chain")]
 pub struct UnsupportedChain;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supported_chains_number() {
+        assert_eq!(
+            serde_json::from_value::<ChainId>(1.into()).unwrap(),
+            ChainId::Mainnet
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(5.into()).unwrap(),
+            ChainId::Goerli
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(100.into()).unwrap(),
+            ChainId::Gnosis
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(8453.into()).unwrap(),
+            ChainId::Base
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(42161.into()).unwrap(),
+            ChainId::ArbitrumOne
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(56.into()).unwrap(),
+            ChainId::Bnb
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(43114.into()).unwrap(),
+            ChainId::Avalanche
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(10.into()).unwrap(),
+            ChainId::Optimism
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(137.into()).unwrap(),
+            ChainId::Polygon
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(59144.into()).unwrap(),
+            ChainId::Linea
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(9745.into()).unwrap(),
+            ChainId::Plasma
+        );
+    }
+
+    #[test]
+    fn supported_chains_str() {
+        assert_eq!(
+            serde_json::from_str::<ChainId>("1").unwrap(),
+            ChainId::Mainnet
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("5").unwrap(),
+            ChainId::Goerli
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("100").unwrap(),
+            ChainId::Gnosis
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("8453").unwrap(),
+            ChainId::Base
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("42161").unwrap(),
+            ChainId::ArbitrumOne
+        );
+        assert_eq!(serde_json::from_str::<ChainId>("56").unwrap(), ChainId::Bnb);
+        assert_eq!(
+            serde_json::from_str::<ChainId>("43114").unwrap(),
+            ChainId::Avalanche
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("10").unwrap(),
+            ChainId::Optimism
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("137").unwrap(),
+            ChainId::Polygon
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("59144").unwrap(),
+            ChainId::Linea
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("9745").unwrap(),
+            ChainId::Plasma
+        );
+    }
+
+    #[test]
+    fn unsupported_chains() {
+        serde_json::from_str::<ChainId>("0").unwrap_err();
+    }
+}

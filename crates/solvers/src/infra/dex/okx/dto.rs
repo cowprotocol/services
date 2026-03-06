@@ -2,16 +2,14 @@
 //! [here](https://web3.okx.com/build/dev-docs/wallet-api/dex-swap).
 
 use {
-    crate::{
-        domain::{
-            dex,
-            eth::{self, TokenAddress},
-            order,
-        },
-        util::serialize,
+    crate::domain::{
+        dex,
+        eth::{self, TokenAddress},
+        order,
     },
     alloy::primitives::U256,
     bigdecimal::BigDecimal,
+    bytes_hex::BytesHex,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -215,7 +213,7 @@ pub struct SwapResponseTx {
     pub to: eth::Address,
 
     /// Call data.
-    #[serde_as(as = "serialize::Hex")]
+    #[serde_as(as = "BytesHex")]
     pub data: Vec<u8>,
 }
 
