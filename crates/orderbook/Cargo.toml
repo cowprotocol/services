@@ -35,7 +35,6 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 mimalloc = { workspace = true, optional = true }
-tikv-jemallocator = { workspace = true }
 model = { workspace = true }
 multibase = { workspace = true }
 num = { workspace = true }

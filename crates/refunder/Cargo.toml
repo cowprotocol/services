@@ -17,7 +17,6 @@ futures = { workspace = true }
 const-hex = { workspace = true }
 humantime = { workspace = true }
 mimalloc = { workspace = true, optional = true }
-tikv-jemallocator = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }

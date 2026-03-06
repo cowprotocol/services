@@ -57,7 +57,6 @@ serde_with = { workspace = true }
 shared = { workspace = true }
 sqlx = { workspace = true }
 strum = { workspace = true }
-tikv-jemallocator = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { workspace = true }

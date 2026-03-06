@@ -34,7 +34,6 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 itertools = { workspace = true }
 mimalloc = { workspace = true, optional = true }
-tikv-jemallocator = { workspace = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
