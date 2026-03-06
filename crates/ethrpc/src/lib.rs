@@ -77,3 +77,18 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
         wallet,
     }
 }
+
+#[cfg(test)]
+mod test {
+    use {super::*, alloy_eips::BlockId, alloy_provider::Provider};
+
+    #[tokio::test]
+    async fn forked_node_mainnet_test_https() {
+        let provider = Web3::new_from_url("https://rpc.mevblocker.io");
+        provider
+            .provider
+            .get_block(BlockId::latest())
+            .await
+            .unwrap();
+    }
+}
