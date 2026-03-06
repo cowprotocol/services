@@ -28,6 +28,10 @@ pub struct DebugReport {
 
 impl Postgres {
     pub async fn fetch_debug_report(&self, uid: &OrderUid) -> Result<Option<DebugReport>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["fetch_debug_report"])
+            .start_timer();
         let db_uid = database::byte_array::ByteArray(uid.0);
 
         let order = match self.single_order(uid).await? {
