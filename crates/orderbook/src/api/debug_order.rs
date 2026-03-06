@@ -165,7 +165,7 @@ pub struct DebugOrderResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct EventDto {
+pub struct EventDto {
     pub label: String,
     pub timestamp: String,
 }
@@ -181,7 +181,7 @@ impl From<&OrderEvent> for EventDto {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DebugAuction {
+pub struct DebugAuction {
     pub id: i64,
     pub block: i64,
     pub deadline: i64,
@@ -194,7 +194,7 @@ pub(crate) struct DebugAuction {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ProposedSolutionDto {
+pub struct ProposedSolutionDto {
     pub solution_uid: i64,
     pub ranking: i64,
     pub solver: String,
@@ -222,7 +222,7 @@ impl From<&OrderProposedSolution> for ProposedSolutionDto {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ExecutionDto {
+pub struct ExecutionDto {
     pub executed_fee: String,
     pub executed_fee_token: String,
     pub block_number: i64,
@@ -251,14 +251,14 @@ impl From<&OrderExecutionRow> for ExecutionDto {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ProtocolFeeDto {
+pub struct ProtocolFeeDto {
     pub token: String,
     pub amount: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TradeDto {
+pub struct TradeDto {
     pub block_number: i64,
     pub log_index: i64,
     pub buy_amount: String,
@@ -286,7 +286,7 @@ impl From<&TradesQueryRow> for TradeDto {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SettlementAttemptDto {
+pub struct SettlementAttemptDto {
     pub solver: String,
     pub solution_uid: i64,
     pub start_timestamp: String,
@@ -317,7 +317,7 @@ impl From<&SettlementExecutionRow> for SettlementAttemptDto {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FeePolicyDto {
+pub struct FeePolicyDto {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub surplus_factor: Option<f64>,

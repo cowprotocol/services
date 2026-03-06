@@ -155,6 +155,7 @@ pub mod test_util {
                 // have the test_default trait impl
                 native_price_estimation: NativePriceConfig::test_default(),
                 database: TestDefault::test_default(),
+                debug_route_auth_tokens: Default::default(),
             }
         }
     }
