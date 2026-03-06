@@ -874,16 +874,36 @@ impl Module {
         std::fs::create_dir_all(&output_folder)?;
 
         let mut mod_file = String::from(MOD_HEADER);
-        for submodule in self.submodules {
+        for submodule in &self.submodules {
             write_mod_name(&mut mod_file, &submodule.name)?;
-            submodule.write_formatted(bindings_folder.as_ref(), all_derives, &output_folder)?;
+        }
+        for contract in &self.contracts {
+            write_mod_name(&mut mod_file, &contract.name).context(contract.name.clone())?;
         }
 
-        for contract in self.contracts {
-            let name = contract.name.clone();
-            contract.write_formatted(bindings_folder.as_ref(), all_derives, &output_folder)?;
-            write_mod_name(&mut mod_file, &name).context(name)?;
-        }
+        std::thread::scope(|s| -> anyhow::Result<()> {
+            let mut handles = Vec::new();
+            for submodule in self.submodules {
+                let bindings_folder = bindings_folder.as_ref();
+                let output_folder = output_folder.as_ref();
+                handles.push(s.spawn(move || {
+                    submodule.write_formatted(bindings_folder, all_derives, output_folder)
+                }));
+            }
+            for contract in self.contracts {
+                let bindings_folder = bindings_folder.as_ref();
+                let output_folder = output_folder.as_ref();
+                handles.push(s.spawn(move || {
+                    contract.write_formatted(bindings_folder, all_derives, output_folder)
+                }));
+            }
+            for handle in handles {
+                handle
+                    .join()
+                    .map_err(|_| anyhow::anyhow!("thread panicked"))??;
+            }
+            Ok(())
+        })?;
 
         let file: syn::File = syn::parse_file(&mod_file)?;
         let formatted = prettyplease::unparse(&file);
@@ -932,16 +952,35 @@ impl Submodule {
         std::fs::create_dir_all(&output_folder)?;
 
         let mut mod_file = String::from(MOD_HEADER);
-        for submodule in self.submodules {
+        for submodule in &self.submodules {
             write_mod_name(&mut mod_file, &submodule.name)?;
-            submodule.write_formatted(bindings_folder.as_ref(), all_derives, &output_folder)?;
+        }
+        for contract in &self.contracts {
+            write_mod_name(&mut mod_file, &contract.name)?;
         }
 
-        for contract in self.contracts {
-            let name = contract.name.clone();
-            contract.write_formatted(bindings_folder.as_ref(), all_derives, &output_folder)?;
-            write_mod_name(&mut mod_file, &name)?;
-        }
+        std::thread::scope(|s| -> anyhow::Result<()> {
+            let bindings_folder = bindings_folder.as_ref();
+            let output_folder = &output_folder;
+
+            let mut handles = Vec::new();
+            for submodule in self.submodules {
+                handles.push(s.spawn(move || {
+                    submodule.write_formatted(bindings_folder, all_derives, output_folder)
+                }));
+            }
+            for contract in self.contracts {
+                handles.push(s.spawn(move || {
+                    contract.write_formatted(bindings_folder, all_derives, output_folder)
+                }));
+            }
+            for handle in handles {
+                handle
+                    .join()
+                    .map_err(|_| anyhow::anyhow!("thread panicked"))??;
+            }
+            Ok(())
+        })?;
 
         let file: syn::File = syn::parse_file(&mod_file)?;
         let formatted = prettyplease::unparse(&file);
