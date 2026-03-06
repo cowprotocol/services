@@ -80,7 +80,7 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
 
 #[cfg(test)]
 mod test {
-    use {super::*, alloy_eips::BlockId, alloy_provider::Provider};
+    use {crate::Web3, alloy_eips::BlockId, alloy_provider::Provider};
 
     #[tokio::test]
     async fn test_https() {

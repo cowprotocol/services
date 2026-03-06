@@ -29,6 +29,9 @@ tracing-opentelemetry = { workspace = true }
 tracing-serde = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
 [features]
 default = []
 tokio-console = ["dep:console-subscriber"]
