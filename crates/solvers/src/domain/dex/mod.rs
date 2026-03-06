@@ -129,20 +129,6 @@ impl Swap {
             self.gas
         };
 
-        // Compute the fee externally, as cow/services Single::into_solution
-        // expects a pre-computed fee.
-        let fee = {
-            let gas_cost = (gas + gas_offset).0.saturating_mul(gas_price.0.0);
-            let fee = match sell_token {
-                Some(sell_price) if !sell_price.0.0.is_zero() => gas_cost
-                    .checked_mul(eth::U256::from(10).pow(eth::U256::from(18)))
-                    .and_then(|v| v.checked_div(sell_price.0.0))
-                    .unwrap_or(gas_cost),
-                _ => gas_cost,
-            };
-            eth::SellTokenAmount(fee)
-        };
-
         let allowance = self.allowance();
         let interactions = self
             .calls
@@ -165,10 +151,10 @@ impl Swap {
             input: self.input,
             output: self.output,
             interactions,
-            gas: gas + gas_offset,
+            gas,
             wrappers: vec![],
         }
-        .into_solution(fee)
+        .into_dex_solution(gas_price, sell_token, gas_offset)
     }
 
     pub fn satisfies(&self, order: &domain::order::Order) -> bool {
