@@ -7,9 +7,10 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    orderbook::api::DebugOrderResponse,
     reqwest::StatusCode,
+    serde::Deserialize,
     shared::web3::Web3,
+    std::collections::HashMap,
 };
 
 #[tokio::test]
@@ -177,4 +178,40 @@ async fn debug_order(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DebugOrderResponse {
+    order_uid: String,
+    order: DebugOrder,
+    events: Vec<DebugEvent>,
+    auctions: Vec<DebugAuction>,
+    trades: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DebugOrder {
+    data: DebugOrderData,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DebugOrderData {
+    kind: OrderKind,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DebugEvent {
+    label: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DebugAuction {
+    native_prices: HashMap<String, String>,
+    proposed_solutions: Vec<serde_json::Value>,
+    executions: Vec<serde_json::Value>,
+    settlement_attempts: Vec<serde_json::Value>,
 }
