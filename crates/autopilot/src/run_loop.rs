@@ -266,7 +266,6 @@ impl RunLoop {
             tracing::debug!("no current auction");
             return None;
         };
-        let auction = self.remove_in_flight_orders(auction).await;
         let id = self
             .persistence
             .get_next_auction_id()
@@ -870,36 +869,6 @@ impl RunLoop {
             }
         }
         Err(SettleError::Timeout)
-    }
-
-    /// Removes orders that are currently being settled to avoid solver
-    /// solutions conflicting with each other.
-    #[instrument(skip_all)]
-    async fn remove_in_flight_orders(
-        &self,
-        mut auction: domain::RawAuctionData,
-    ) -> domain::RawAuctionData {
-        let in_flight = self
-            .persistence
-            .fetch_in_flight_orders(auction.block)
-            .await
-            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
-            .unwrap_or_default();
-
-        if in_flight.is_empty() {
-            return auction;
-        };
-
-        auction.orders.retain(|o| !in_flight.contains(&o.uid));
-        auction
-            .surplus_capturing_jit_order_owners
-            .retain(|owner| !in_flight.iter().any(|i| i.owner() == *owner));
-        tracing::debug!(
-            orders = ?in_flight,
-            "filtered out in-flight orders and surplus_capturing_jit_order_owners"
-        );
-
-        auction
     }
 }
 
