@@ -3,24 +3,21 @@
 //! from a node in a single round-trip, while accounting for pre-interactions.
 
 use {
-    super::{BalanceFetching, Query, TransferSimulationError},
-    crate::BalanceSimulator,
-    alloy_primitives::{Address, U256},
+    crate::{BalanceFetching, BalanceSimulator, Query, TransferSimulationError},
+    alloy_primitives::U256,
     anyhow::Result,
-    contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
-    ethrpc::{Web3, alloy::ProviderLabelingExt},
-    futures::future,
+    contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20::ERC20::ERC20Instance},
+    ethrpc::{AlloyProvider, Web3, alloy::ProviderLabelingExt},
+    futures::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream},
     model::order::SellTokenSource,
+    std::sync::Arc,
     tracing::instrument,
 };
 
-pub struct Balances {
-    web3: Web3,
-    balance_simulator: BalanceSimulator,
-}
+pub struct Balances(Arc<Inner>);
 
 impl Balances {
-    pub fn new(web3: &Web3, balance_simulator: BalanceSimulator) -> Self {
+    pub fn new(web3: &Web3, simulator: BalanceSimulator) -> Self {
         // Note that the balances simulation **will fail** if the `vault`
         // address is not a contract and the `source` is set to one of
         // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
@@ -30,48 +27,47 @@ impl Balances {
         // work without additional code paths :tada:!
         let web3 = web3.labeled("balanceFetching");
 
-        Self {
-            web3,
-            balance_simulator,
+        Self(Arc::new(Inner {
+            provider: web3.provider,
+            simulator,
+        }))
+    }
+}
+
+struct Inner {
+    provider: AlloyProvider,
+    simulator: BalanceSimulator,
+}
+
+impl Inner {
+    async fn tradable_balance(&self, query: &Query) -> Result<U256> {
+        if !query.interactions.is_empty() {
+            return self
+                .simulator
+                .simulate(
+                    query.owner,
+                    query.token,
+                    query.source,
+                    &query.interactions,
+                    None,
+                    query.balance_override.clone(),
+                )
+                .await
+                .map(|sim| {
+                    if sim.can_transfer {
+                        sim.effective_balance
+                    } else {
+                        U256::ZERO
+                    }
+                })
+                .map_err(anyhow::Error::from);
         }
-    }
 
-    fn vault_relayer(&self) -> Address {
-        self.balance_simulator.vault_relayer
-    }
-
-    fn vault(&self) -> Address {
-        self.balance_simulator.vault
-    }
-
-    async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
-        let simulation = self
-            .balance_simulator
-            .simulate(
-                query.owner,
-                query.token,
-                query.source,
-                &query.interactions,
-                None,
-                query.balance_override.clone(),
-            )
-            .await?;
-        Ok(if simulation.can_transfer {
-            simulation.effective_balance
-        } else {
-            U256::ZERO
-        })
-    }
-
-    async fn tradable_balance_simple(
-        &self,
-        query: &Query,
-        token: &ERC20::Instance,
-    ) -> Result<U256> {
+        let token = ERC20Instance::new(query.token, &self.provider);
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
                 let balance = token.balanceOf(query.owner);
-                let allowance = token.allowance(query.owner, self.vault_relayer());
+                let allowance = token.allowance(query.owner, self.simulator.vault_relayer());
                 let (balance, allowance) = futures::try_join!(
                     balance.call().into_future(),
                     allowance.call().into_future()
@@ -79,10 +75,11 @@ impl Balances {
                 std::cmp::min(balance, allowance)
             }
             SellTokenSource::External => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
+                let vault = BalancerV2Vault::new(self.simulator.vault(), &self.provider);
                 let balance = token.balanceOf(query.owner);
-                let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
-                let allowance = token.allowance(query.owner, self.vault());
+                let approved =
+                    vault.hasApprovedRelayer(query.owner, self.simulator.vault_relayer());
+                let allowance = token.allowance(query.owner, self.simulator.vault());
                 let (balance, approved, allowance) = futures::try_join!(
                     balance.call().into_future(),
                     approved.call().into_future(),
@@ -94,9 +91,10 @@ impl Balances {
                 }
             }
             SellTokenSource::Internal => {
-                let vault = BalancerV2Vault::new(self.vault(), &self.web3.provider);
+                let vault = BalancerV2Vault::new(self.simulator.vault(), &self.provider);
                 let balance = vault.getInternalBalance(query.owner, vec![query.token]);
-                let approved = vault.hasApprovedRelayer(query.owner, self.vault_relayer());
+                let approved =
+                    vault.hasApprovedRelayer(query.owner, self.simulator.vault_relayer());
                 let (balance, approved) = futures::try_join!(
                     balance.call().into_future(),
                     approved.call().into_future()
@@ -114,21 +112,20 @@ impl Balances {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     #[instrument(skip_all)]
-    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
+    fn get_balances(
+        &self,
+        queries: Vec<Query>,
+    ) -> BoxStream<'_, BoxFuture<'static, (Query, anyhow::Result<U256>)>> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
-        let futures = queries
-            .iter()
-            .map(|query| async {
-                if query.interactions.is_empty() {
-                    let token = ERC20::Instance::new(query.token, self.web3.provider.clone());
-                    self.tradable_balance_simple(query, &token).await
-                } else {
-                    self.tradable_balance_simulated(query).await
-                }
-            })
-            .collect::<Vec<_>>();
-
-        future::join_all(futures).await
+        let futs = queries.into_iter().map(move |query| {
+            let inner = self.0.clone();
+            async move {
+                let res = inner.tradable_balance(&query).await;
+                (query, res)
+            }
+            .boxed()
+        });
+        futures::stream::iter(futs).boxed()
     }
 
     async fn can_transfer(
@@ -137,7 +134,8 @@ impl BalanceFetching for Balances {
         amount: U256,
     ) -> Result<(), TransferSimulationError> {
         let simulation = self
-            .balance_simulator
+            .0
+            .simulator
             .simulate(
                 query.owner,
                 query.token,

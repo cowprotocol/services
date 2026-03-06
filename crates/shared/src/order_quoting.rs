@@ -9,7 +9,7 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
-    futures::TryFutureExt,
+    futures::{StreamExt, TryFutureExt},
     gas_price_estimation::GasPriceEstimating,
     model::{
         interaction::InteractionData,
@@ -582,8 +582,14 @@ impl OrderQuoter {
             // quote verification already tries to auto-fake missing balances
             balance_override: None,
         };
-        let mut balances = self.balance_fetcher.get_balances(&[query]).await;
-        balances.pop().context("missing balance result")?
+        let (_query, result) = self
+            .balance_fetcher
+            .get_balances(vec![query])
+            .next()
+            .await
+            .context("missing balance result")?
+            .await;
+        result
     }
 }
 
@@ -805,8 +811,14 @@ mod tests {
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
-        mock.expect_get_balances()
-            .returning(|addresses| addresses.iter().map(|_| Ok(U256::MAX)).collect());
+        mock.expect_get_balances().returning(|queries| {
+            futures::stream::iter(
+                queries
+                    .into_iter()
+                    .map(|query| async move { (query, Ok(U256::MAX)) }.boxed()),
+            )
+            .boxed()
+        });
         Arc::new(mock)
     }
 

@@ -11,7 +11,10 @@ use {
             solver,
         },
     },
-    std::time::Duration,
+    std::{
+        num::{NonZeroU64, NonZeroUsize},
+        time::Duration,
+    },
 };
 
 pub mod file;
@@ -32,4 +35,11 @@ pub struct Config {
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
     pub tx_gas_limit: eth::U256,
+    pub balances_cache: BalancesCacheConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct BalancesCacheConfig {
+    pub max_age: NonZeroU64,
+    pub max_concurrent_updates: NonZeroUsize,
 }

@@ -9,7 +9,7 @@ use {
     anyhow::{Context, Result},
     bad_tokens::list_based::DenyListedTokens,
     database::order_events::OrderEventLabel,
-    futures::FutureExt,
+    futures::{FutureExt, StreamExt},
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -361,34 +361,36 @@ impl SolvableOrdersCache {
 
     #[instrument(skip_all)]
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
-        let fetched_balances = self
-            .timed_future(
-                "balance_filtering",
-                self.balance_fetcher.get_balances(&queries),
-            )
-            .await;
         if self.disable_order_balance_filter {
             return Default::default();
         }
 
-        tracing::trace!("fetched balances for solvable orders");
-        queries
-            .into_iter()
-            .zip(fetched_balances)
-            .filter_map(|(query, balance)| match balance {
-                Ok(balance) => Some((query, balance)),
-                Err(err) => {
-                    tracing::warn!(
-                        owner = ?query.owner,
-                        token = ?query.token,
-                        source = ?query.source,
-                        error = ?err,
-                        "failed to get balance"
-                    );
-                    None
+        let stream = self
+            .balance_fetcher
+            .get_balances(queries)
+            .buffer_unordered(10)
+            .filter_map(|(query, res)| async move {
+                match res {
+                    Ok(balance) => Some((query, balance)),
+                    Err(err) => {
+                        tracing::warn!(
+                            owner = ?query.owner,
+                            token = ?query.token,
+                            source = ?query.source,
+                            error = ?err,
+                            "failed to get balance"
+                        );
+                        None
+                    }
                 }
-            })
-            .collect()
+            });
+
+        let fetched_balances = self
+            .timed_future("balance_filtering", stream.collect::<HashMap<_, _>>())
+            .await;
+
+        tracing::trace!("fetched balances for solvable orders");
+        fetched_balances
     }
 
     /// Returns currently solvable orders.

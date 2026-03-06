@@ -4,7 +4,7 @@ use {
         infra::{
             self,
             blockchain,
-            config::file,
+            config::{BalancesCacheConfig, file},
             liquidity,
             mempool,
             notify,
@@ -381,6 +381,10 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
+        balances_cache: BalancesCacheConfig {
+            max_age: config.balances_cache.max_request_age,
+            max_concurrent_updates: config.balances_cache.max_concurrent_updates,
+        },
     }
 }
 

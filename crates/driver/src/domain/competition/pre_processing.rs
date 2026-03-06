@@ -325,27 +325,25 @@ impl Utilities {
             })
             .collect::<Vec<_>>();
 
-        let balances = self.balance_fetcher.get_balances(&queries).await;
-
-        let result: HashMap<_, _> = queries
-            .into_iter()
-            .zip(balances)
-            .filter_map(|(query, balance)| {
-                let balance = balance.ok()?;
-                Some((
-                    (
-                        order::Trader(query.owner),
-                        query.token.into(),
-                        match query.source {
-                            SellTokenSource::Erc20 => SellTokenBalance::Erc20,
-                            SellTokenSource::Internal => SellTokenBalance::Internal,
-                            SellTokenSource::External => SellTokenBalance::External,
-                        },
-                    ),
-                    order::SellAmount(balance),
-                ))
+        let result: HashMap<_, _> = self
+            .balance_fetcher
+            .get_balances(queries)
+            .buffer_unordered(10)
+            .filter_map(|(query, res)| async move {
+                let balance = res.ok()?;
+                let key = (
+                    order::Trader(query.owner),
+                    query.token.into(),
+                    match query.source {
+                        SellTokenSource::Erc20 => SellTokenBalance::Erc20,
+                        SellTokenSource::Internal => SellTokenBalance::Internal,
+                        SellTokenSource::External => SellTokenBalance::External,
+                    },
+                );
+                Some((key, order::SellAmount(balance)))
             })
-            .collect();
+            .collect()
+            .await;
 
         Arc::new(result)
     }

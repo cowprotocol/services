@@ -15,6 +15,7 @@ dependencies = [
  "async-trait",
  "balance-overrides",
  "contracts",
+ "dashmap",
  "ethrpc",
  "futures",
  "itertools 0.14.0",

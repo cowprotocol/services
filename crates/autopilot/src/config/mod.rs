@@ -1,5 +1,6 @@
 use {
     crate::config::{
+        balance_cache::BalancesCacheConfig,
         banned_users::BannedUsersConfig,
         fee_policy::FeePoliciesConfig,
         native_price::NativePriceConfig,
@@ -14,6 +15,7 @@ use {
     std::path::Path,
 };
 
+pub mod balance_cache;
 pub mod banned_users;
 pub mod fee_policy;
 pub mod native_price;
@@ -54,6 +56,11 @@ pub struct Configuration {
     pub s3: Option<S3Config>,
 
     pub native_price_estimation: NativePriceConfig,
+
+    /// Settings for the cache storing user balances that's maintained by a
+    /// background task.
+    #[serde(default)]
+    pub balances_cache: BalancesCacheConfig,
 
     #[serde(default)]
     pub database: DatabasePoolConfig,
@@ -104,6 +111,7 @@ impl Configuration {
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
+            balances_cache: BalancesCacheConfig::default(),
         }
     }
 
@@ -119,6 +127,7 @@ impl Configuration {
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
+            balances_cache: BalancesCacheConfig::default(),
         }
     }
 
@@ -210,6 +219,10 @@ mod tests {
             [{type = "Driver", name = "solver1", url = "http://localhost:8080"}],
             [{type = "Forwarder", url = "http://localhost:12088"}],
         ]
+
+        [balances-cache]
+        max-request-age = 1
+        max-concurrent-updates = 1
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -290,6 +303,9 @@ mod tests {
                 }],
             ]
         );
+
+        assert_eq!(config.balances_cache.max_concurrent_updates.get(), 1);
+        assert_eq!(config.balances_cache.max_request_age.get(), 1);
     }
 
     #[test]

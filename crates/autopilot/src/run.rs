@@ -256,6 +256,8 @@ pub async fn run(
             balance_overrider,
         ),
         eth.current_block().clone(),
+        config.balances_cache.max_request_age,
+        config.balances_cache.max_concurrent_updates,
     );
 
     let gas_price_estimator = Arc::new(
