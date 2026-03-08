@@ -10,11 +10,6 @@ interface BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory {
     constructor(address vault);
 
     function create(string memory name, string memory symbol, address[] memory tokens, uint256[] memory weights, uint256 swapFeePercentage, address owner, bool swapEnabledOnStart) external returns (address);
-    function getCreationCode() external view returns (bytes memory);
-    function getCreationCodeContracts() external view returns (address contractA, address contractB);
-    function getPauseConfiguration() external view returns (uint256 pauseWindowDuration, uint256 bufferPeriodDuration);
-    function getVault() external view returns (address);
-    function isPoolFromFactory(address pool) external view returns (bool);
 }
 ```
 
@@ -80,87 +75,6 @@ interface BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory {
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getCreationCode",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getCreationCodeContracts",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "contractA",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "contractB",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getPauseConfiguration",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "pauseWindowDuration",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "bufferPeriodDuration",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getVault",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IVault"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isPoolFromFactory",
-    "inputs": [
-      {
-        "name": "pool",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "event",
@@ -584,798 +498,12 @@ function create(string memory name, string memory symbol, address[] memory token
             }
         }
     };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getCreationCode()` and selector `0x00c194db`.
-```solidity
-function getCreationCode() external view returns (bytes memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCreationCodeCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getCreationCode()`](getCreationCodeCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCreationCodeReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCreationCodeCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getCreationCodeCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getCreationCodeCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCreationCodeReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getCreationCodeReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getCreationCodeReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getCreationCodeCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getCreationCode()";
-            const SELECTOR: [u8; 4] = [0u8, 193u8, 148u8, 219u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: getCreationCodeReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getCreationCodeReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getCreationCodeContracts()` and selector `0x174481fa`.
-```solidity
-function getCreationCodeContracts() external view returns (address contractA, address contractB);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCreationCodeContractsCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getCreationCodeContracts()`](getCreationCodeContractsCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCreationCodeContractsReturn {
-        #[allow(missing_docs)]
-        pub contractA: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub contractB: alloy_sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCreationCodeContractsCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getCreationCodeContractsCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getCreationCodeContractsCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Address,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::Address,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCreationCodeContractsReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getCreationCodeContractsReturn) -> Self {
-                    (value.contractA, value.contractB)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getCreationCodeContractsReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        contractA: tuple.0,
-                        contractB: tuple.1,
-                    }
-                }
-            }
-        }
-        impl getCreationCodeContractsReturn {
-            fn _tokenize(
-                &self,
-            ) -> <getCreationCodeContractsCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.contractA,
-                    ),
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.contractB,
-                    ),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getCreationCodeContractsCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getCreationCodeContractsReturn;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Address,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getCreationCodeContracts()";
-            const SELECTOR: [u8; 4] = [23u8, 68u8, 129u8, 250u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                getCreationCodeContractsReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getPauseConfiguration()` and selector `0x2da47c40`.
-```solidity
-function getPauseConfiguration() external view returns (uint256 pauseWindowDuration, uint256 bufferPeriodDuration);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getPauseConfigurationCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getPauseConfiguration()`](getPauseConfigurationCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getPauseConfigurationReturn {
-        #[allow(missing_docs)]
-        pub pauseWindowDuration: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub bufferPeriodDuration: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getPauseConfigurationCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getPauseConfigurationCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getPauseConfigurationCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getPauseConfigurationReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getPauseConfigurationReturn) -> Self {
-                    (value.pauseWindowDuration, value.bufferPeriodDuration)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getPauseConfigurationReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pauseWindowDuration: tuple.0,
-                        bufferPeriodDuration: tuple.1,
-                    }
-                }
-            }
-        }
-        impl getPauseConfigurationReturn {
-            fn _tokenize(
-                &self,
-            ) -> <getPauseConfigurationCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pauseWindowDuration),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.bufferPeriodDuration),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getPauseConfigurationCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getPauseConfigurationReturn;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getPauseConfiguration()";
-            const SELECTOR: [u8; 4] = [45u8, 164u8, 124u8, 64u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                getPauseConfigurationReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getVault()` and selector `0x8d928af8`.
-```solidity
-function getVault() external view returns (address);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getVaultCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getVault()`](getVaultCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getVaultReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getVaultCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getVaultCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVaultCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getVaultReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getVaultReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVaultReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getVaultCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Address;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getVault()";
-            const SELECTOR: [u8; 4] = [141u8, 146u8, 138u8, 248u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: getVaultReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getVaultReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isPoolFromFactory(address)` and selector `0x6634b753`.
-```solidity
-function isPoolFromFactory(address pool) external view returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isPoolFromFactoryCall {
-        #[allow(missing_docs)]
-        pub pool: alloy_sol_types::private::Address,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isPoolFromFactory(address)`](isPoolFromFactoryCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isPoolFromFactoryReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isPoolFromFactoryCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isPoolFromFactoryCall) -> Self {
-                    (value.pool,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isPoolFromFactoryCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { pool: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isPoolFromFactoryReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isPoolFromFactoryReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isPoolFromFactoryReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isPoolFromFactoryCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isPoolFromFactory(address)";
-            const SELECTOR: [u8; 4] = [102u8, 52u8, 183u8, 83u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.pool,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isPoolFromFactoryReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isPoolFromFactoryReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
     ///Container for all the [`BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory`](self) function calls.
     #[derive(Clone)]
     #[derive()]
     pub enum BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls {
         #[allow(missing_docs)]
         create(createCall),
-        #[allow(missing_docs)]
-        getCreationCode(getCreationCodeCall),
-        #[allow(missing_docs)]
-        getCreationCodeContracts(getCreationCodeContractsCall),
-        #[allow(missing_docs)]
-        getPauseConfiguration(getPauseConfigurationCall),
-        #[allow(missing_docs)]
-        getVault(getVaultCall),
-        #[allow(missing_docs)]
-        isPoolFromFactory(isPoolFromFactoryCall),
     }
     impl BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls {
         /// All the selectors of this enum.
@@ -1384,31 +512,12 @@ function isPoolFromFactory(address pool) external view returns (bool);
         /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [0u8, 193u8, 148u8, 219u8],
-            [23u8, 68u8, 129u8, 250u8],
-            [35u8, 103u8, 151u8, 25u8],
-            [45u8, 164u8, 124u8, 64u8],
-            [102u8, 52u8, 183u8, 83u8],
-            [141u8, 146u8, 138u8, 248u8],
-        ];
+        pub const SELECTORS: &'static [[u8; 4usize]] = &[[35u8, 103u8, 151u8, 25u8]];
         /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(getCreationCode),
-            ::core::stringify!(getCreationCodeContracts),
-            ::core::stringify!(create),
-            ::core::stringify!(getPauseConfiguration),
-            ::core::stringify!(isPoolFromFactory),
-            ::core::stringify!(getVault),
-        ];
+        pub const VARIANT_NAMES: &'static [&'static str] = &[::core::stringify!(create)];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
-            <getCreationCodeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getCreationCodeContractsCall as alloy_sol_types::SolCall>::SIGNATURE,
             <createCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getPauseConfigurationCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isPoolFromFactoryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getVaultCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -1435,25 +544,12 @@ function isPoolFromFactory(address pool) external view returns (bool);
     impl alloy_sol_types::SolInterface
     for BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls {
         const NAME: &'static str = "BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls";
-        const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 6usize;
+        const MIN_DATA_LENGTH: usize = 352usize;
+        const COUNT: usize = 1usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::create(_) => <createCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::getCreationCode(_) => {
-                    <getCreationCodeCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getCreationCodeContracts(_) => {
-                    <getCreationCodeContractsCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getPauseConfiguration(_) => {
-                    <getPauseConfigurationCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getVault(_) => <getVaultCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::isPoolFromFactory(_) => {
-                    <isPoolFromFactoryCall as alloy_sol_types::SolCall>::SELECTOR
-                }
             }
         }
         #[inline]
@@ -1476,36 +572,6 @@ function isPoolFromFactory(address pool) external view returns (bool);
                 BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
             >] = &[
                 {
-                    fn getCreationCode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getCreationCodeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getCreationCode,
-                            )
-                    }
-                    getCreationCode
-                },
-                {
-                    fn getCreationCodeContracts(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getCreationCodeContracts,
-                            )
-                    }
-                    getCreationCodeContracts
-                },
-                {
                     fn create(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<
@@ -1517,49 +583,6 @@ function isPoolFromFactory(address pool) external view returns (bool);
                             )
                     }
                     create
-                },
-                {
-                    fn getPauseConfiguration(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getPauseConfiguration,
-                            )
-                    }
-                    getPauseConfiguration
-                },
-                {
-                    fn isPoolFromFactory(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::isPoolFromFactory,
-                            )
-                    }
-                    isPoolFromFactory
-                },
-                {
-                    fn getVault(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getVaultCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getVault,
-                            )
-                    }
-                    getVault
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -1584,36 +607,6 @@ function isPoolFromFactory(address pool) external view returns (bool);
                 BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
             >] = &[
                 {
-                    fn getCreationCode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getCreationCodeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getCreationCode,
-                            )
-                    }
-                    getCreationCode
-                },
-                {
-                    fn getCreationCodeContracts(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getCreationCodeContracts,
-                            )
-                    }
-                    getCreationCodeContracts
-                },
-                {
                     fn create(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<
@@ -1627,51 +620,6 @@ function isPoolFromFactory(address pool) external view returns (bool);
                             )
                     }
                     create
-                },
-                {
-                    fn getPauseConfiguration(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getPauseConfiguration,
-                            )
-                    }
-                    getPauseConfiguration
-                },
-                {
-                    fn isPoolFromFactory(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::isPoolFromFactory,
-                            )
-                    }
-                    isPoolFromFactory
-                },
-                {
-                    fn getVault(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<
-                        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls,
-                    > {
-                        <getVaultCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls::getVault,
-                            )
-                    }
-                    getVault
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -1690,29 +638,6 @@ function isPoolFromFactory(address pool) external view returns (bool);
                 Self::create(inner) => {
                     <createCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::getCreationCode(inner) => {
-                    <getCreationCodeCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getCreationCodeContracts(inner) => {
-                    <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getPauseConfiguration(inner) => {
-                    <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getVault(inner) => {
-                    <getVaultCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::isPoolFromFactory(inner) => {
-                    <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
             }
         }
         #[inline]
@@ -1720,36 +645,6 @@ function isPoolFromFactory(address pool) external view returns (bool);
             match self {
                 Self::create(inner) => {
                     <createCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::getCreationCode(inner) => {
-                    <getCreationCodeCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getCreationCodeContracts(inner) => {
-                    <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getPauseConfiguration(inner) => {
-                    <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getVault(inner) => {
-                    <getVaultCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::isPoolFromFactory(inner) => {
-                    <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
             }
         }
@@ -1999,35 +894,6 @@ See the [wrapper's documentation](`BalancerV2NoProtocolFeeLiquidityBootstrapping
                 },
             )
         }
-        ///Creates a new call builder for the [`getCreationCode`] function.
-        pub fn getCreationCode(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getCreationCodeCall, N> {
-            self.call_builder(&getCreationCodeCall)
-        }
-        ///Creates a new call builder for the [`getCreationCodeContracts`] function.
-        pub fn getCreationCodeContracts(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getCreationCodeContractsCall, N> {
-            self.call_builder(&getCreationCodeContractsCall)
-        }
-        ///Creates a new call builder for the [`getPauseConfiguration`] function.
-        pub fn getPauseConfiguration(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getPauseConfigurationCall, N> {
-            self.call_builder(&getPauseConfigurationCall)
-        }
-        ///Creates a new call builder for the [`getVault`] function.
-        pub fn getVault(&self) -> alloy_contract::SolCallBuilder<&P, getVaultCall, N> {
-            self.call_builder(&getVaultCall)
-        }
-        ///Creates a new call builder for the [`isPoolFromFactory`] function.
-        pub fn isPoolFromFactory(
-            &self,
-            pool: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isPoolFromFactoryCall, N> {
-            self.call_builder(&isPoolFromFactoryCall { pool })
-        }
     }
     /// Event filters.
     impl<
@@ -2060,20 +926,12 @@ use {
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        8453u64 => {
+        1u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0x0c6052254551EAe3ECac77B01DFcf1025418828f"
+                    "0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e"
                 ),
-                Some(1206531u64),
-            ))
-        }
-        10u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xf302f9F50958c5593770FDf4d4812309fF77414f"
-                ),
-                Some(7005915u64),
+                Some(13730248u64),
             ))
         }
         43114u64 => {
@@ -2084,6 +942,22 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 Some(26386552u64),
             ))
         }
+        10u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xf302f9F50958c5593770FDf4d4812309fF77414f"
+                ),
+                Some(7005915u64),
+            ))
+        }
+        8453u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x0c6052254551EAe3ECac77B01DFcf1025418828f"
+                ),
+                Some(1206531u64),
+            ))
+        }
         100u64 => {
             Some((
                 ::alloy_primitives::address!(
@@ -2092,12 +966,12 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 Some(25415236u64),
             ))
         }
-        1u64 => {
+        56u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e"
+                    "0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"
                 ),
-                Some(13730248u64),
+                Some(22691243u64),
             ))
         }
         137u64 => {
@@ -2114,14 +988,6 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                     "0x1802953277FD955f9a254B80Aa0582f193cF1d77"
                 ),
                 Some(4859669u64),
-            ))
-        }
-        56u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"
-                ),
-                Some(22691243u64),
             ))
         }
         11155111u64 => {

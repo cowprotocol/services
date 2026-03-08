@@ -19,27 +19,17 @@ interface UniswapV3Pool {
 
     function burn(int24 tickLower, int24 tickUpper, uint128 amount) external returns (uint256 amount0, uint256 amount1);
     function collect(address recipient, int24 tickLower, int24 tickUpper, uint128 amount0Requested, uint128 amount1Requested) external returns (uint128 amount0, uint128 amount1);
-    function collectProtocol(address recipient, uint128 amount0Requested, uint128 amount1Requested) external returns (uint128 amount0, uint128 amount1);
     function factory() external view returns (address);
     function fee() external view returns (uint24);
-    function feeGrowthGlobal0X128() external view returns (uint256);
-    function feeGrowthGlobal1X128() external view returns (uint256);
     function flash(address recipient, uint256 amount0, uint256 amount1, bytes memory data) external;
-    function increaseObservationCardinalityNext(uint16 observationCardinalityNext) external;
     function initialize(uint160 sqrtPriceX96) external;
     function liquidity() external view returns (uint128);
-    function maxLiquidityPerTick() external view returns (uint128);
     function mint(address recipient, int24 tickLower, int24 tickUpper, uint128 amount, bytes memory data) external returns (uint256 amount0, uint256 amount1);
     function observations(uint256) external view returns (uint32 blockTimestamp, int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128, bool initialized);
     function observe(uint32[] memory secondsAgos) external view returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s);
     function positions(bytes32) external view returns (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1);
     function protocolFees() external view returns (uint128 token0, uint128 token1);
-    function setFeeProtocol(uint8 feeProtocol0, uint8 feeProtocol1) external;
-    function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked);
-    function snapshotCumulativesInside(int24 tickLower, int24 tickUpper) external view returns (int56 tickCumulativeInside, uint160 secondsPerLiquidityInsideX128, uint32 secondsInside);
     function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160 sqrtPriceLimitX96, bytes memory data) external returns (int256 amount0, int256 amount1);
-    function tickBitmap(int16) external view returns (uint256);
-    function tickSpacing() external view returns (int24);
     function ticks(int24) external view returns (uint128 liquidityGross, int128 liquidityNet, uint256 feeGrowthOutside0X128, uint256 feeGrowthOutside1X128, int56 tickCumulativeOutside, uint160 secondsPerLiquidityOutsideX128, uint32 secondsOutside, bool initialized);
     function token0() external view returns (address);
     function token1() external view returns (address);
@@ -134,40 +124,6 @@ interface UniswapV3Pool {
   },
   {
     "type": "function",
-    "name": "collectProtocol",
-    "inputs": [
-      {
-        "name": "recipient",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "amount0Requested",
-        "type": "uint128",
-        "internalType": "uint128"
-      },
-      {
-        "name": "amount1Requested",
-        "type": "uint128",
-        "internalType": "uint128"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "amount0",
-        "type": "uint128",
-        "internalType": "uint128"
-      },
-      {
-        "name": "amount1",
-        "type": "uint128",
-        "internalType": "uint128"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "factory",
     "inputs": [],
     "outputs": [
@@ -188,32 +144,6 @@ interface UniswapV3Pool {
         "name": "",
         "type": "uint24",
         "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "feeGrowthGlobal0X128",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "feeGrowthGlobal1X128",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -248,19 +178,6 @@ interface UniswapV3Pool {
   },
   {
     "type": "function",
-    "name": "increaseObservationCardinalityNext",
-    "inputs": [
-      {
-        "name": "observationCardinalityNext",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -275,19 +192,6 @@ interface UniswapV3Pool {
   {
     "type": "function",
     "name": "liquidity",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint128",
-        "internalType": "uint128"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "maxLiquidityPerTick",
     "inputs": [],
     "outputs": [
       {
@@ -459,101 +363,6 @@ interface UniswapV3Pool {
   },
   {
     "type": "function",
-    "name": "setFeeProtocol",
-    "inputs": [
-      {
-        "name": "feeProtocol0",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "feeProtocol1",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "slot0",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "sqrtPriceX96",
-        "type": "uint160",
-        "internalType": "uint160"
-      },
-      {
-        "name": "tick",
-        "type": "int24",
-        "internalType": "int24"
-      },
-      {
-        "name": "observationIndex",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "observationCardinality",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "observationCardinalityNext",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "feeProtocol",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "unlocked",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "snapshotCumulativesInside",
-    "inputs": [
-      {
-        "name": "tickLower",
-        "type": "int24",
-        "internalType": "int24"
-      },
-      {
-        "name": "tickUpper",
-        "type": "int24",
-        "internalType": "int24"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "tickCumulativeInside",
-        "type": "int56",
-        "internalType": "int56"
-      },
-      {
-        "name": "secondsPerLiquidityInsideX128",
-        "type": "uint160",
-        "internalType": "uint160"
-      },
-      {
-        "name": "secondsInside",
-        "type": "uint32",
-        "internalType": "uint32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "swap",
     "inputs": [
       {
@@ -595,38 +404,6 @@ interface UniswapV3Pool {
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "tickBitmap",
-    "inputs": [
-      {
-        "name": "",
-        "type": "int16",
-        "internalType": "int16"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "tickSpacing",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "int24",
-        "internalType": "int24"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -2780,199 +2557,6 @@ function collect(address recipient, int24 tickLower, int24 tickUpper, uint128 am
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `collectProtocol(address,uint128,uint128)` and selector `0x85b66729`.
-```solidity
-function collectProtocol(address recipient, uint128 amount0Requested, uint128 amount1Requested) external returns (uint128 amount0, uint128 amount1);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct collectProtocolCall {
-        #[allow(missing_docs)]
-        pub recipient: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub amount0Requested: u128,
-        #[allow(missing_docs)]
-        pub amount1Requested: u128,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`collectProtocol(address,uint128,uint128)`](collectProtocolCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct collectProtocolReturn {
-        #[allow(missing_docs)]
-        pub amount0: u128,
-        #[allow(missing_docs)]
-        pub amount1: u128,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Uint<128>,
-                alloy_sol_types::sol_data::Uint<128>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Address,
-                u128,
-                u128,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<collectProtocolCall> for UnderlyingRustTuple<'_> {
-                fn from(value: collectProtocolCall) -> Self {
-                    (value.recipient, value.amount0Requested, value.amount1Requested)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for collectProtocolCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        recipient: tuple.0,
-                        amount0Requested: tuple.1,
-                        amount1Requested: tuple.2,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<128>,
-                alloy_sol_types::sol_data::Uint<128>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (u128, u128);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<collectProtocolReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: collectProtocolReturn) -> Self {
-                    (value.amount0, value.amount1)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for collectProtocolReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        amount0: tuple.0,
-                        amount1: tuple.1,
-                    }
-                }
-            }
-        }
-        impl collectProtocolReturn {
-            fn _tokenize(
-                &self,
-            ) -> <collectProtocolCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        128,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amount0),
-                    <alloy_sol_types::sol_data::Uint<
-                        128,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amount1),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for collectProtocolCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Uint<128>,
-                alloy_sol_types::sol_data::Uint<128>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = collectProtocolReturn;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<128>,
-                alloy_sol_types::sol_data::Uint<128>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "collectProtocol(address,uint128,uint128)";
-            const SELECTOR: [u8; 4] = [133u8, 182u8, 103u8, 41u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.recipient,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<
-                        128,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amount0Requested),
-                    <alloy_sol_types::sol_data::Uint<
-                        128,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amount1Requested),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                collectProtocolReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `factory()` and selector `0xc45a0155`.
 ```solidity
 function factory() external view returns (address);
@@ -3261,304 +2845,6 @@ function fee() external view returns (uint24);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `feeGrowthGlobal0X128()` and selector `0xf3058399`.
-```solidity
-function feeGrowthGlobal0X128() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct feeGrowthGlobal0X128Call;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`feeGrowthGlobal0X128()`](feeGrowthGlobal0X128Call) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct feeGrowthGlobal0X128Return {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<feeGrowthGlobal0X128Call>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: feeGrowthGlobal0X128Call) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for feeGrowthGlobal0X128Call {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<feeGrowthGlobal0X128Return>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: feeGrowthGlobal0X128Return) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for feeGrowthGlobal0X128Return {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for feeGrowthGlobal0X128Call {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "feeGrowthGlobal0X128()";
-            const SELECTOR: [u8; 4] = [243u8, 5u8, 131u8, 153u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: feeGrowthGlobal0X128Return = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: feeGrowthGlobal0X128Return = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `feeGrowthGlobal1X128()` and selector `0x46141319`.
-```solidity
-function feeGrowthGlobal1X128() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct feeGrowthGlobal1X128Call;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`feeGrowthGlobal1X128()`](feeGrowthGlobal1X128Call) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct feeGrowthGlobal1X128Return {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<feeGrowthGlobal1X128Call>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: feeGrowthGlobal1X128Call) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for feeGrowthGlobal1X128Call {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<feeGrowthGlobal1X128Return>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: feeGrowthGlobal1X128Return) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for feeGrowthGlobal1X128Return {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for feeGrowthGlobal1X128Call {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "feeGrowthGlobal1X128()";
-            const SELECTOR: [u8; 4] = [70u8, 20u8, 19u8, 25u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: feeGrowthGlobal1X128Return = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: feeGrowthGlobal1X128Return = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `flash(address,uint256,uint256,bytes)` and selector `0x490e6cbc`.
 ```solidity
 function flash(address recipient, uint256 amount0, uint256 amount1, bytes memory data) external;
@@ -3717,159 +3003,6 @@ function flash(address recipient, uint256 amount0, uint256 amount1, bytes memory
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 flashReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `increaseObservationCardinalityNext(uint16)` and selector `0x32148f67`.
-```solidity
-function increaseObservationCardinalityNext(uint16 observationCardinalityNext) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct increaseObservationCardinalityNextCall {
-        #[allow(missing_docs)]
-        pub observationCardinalityNext: u16,
-    }
-    ///Container type for the return parameters of the [`increaseObservationCardinalityNext(uint16)`](increaseObservationCardinalityNextCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct increaseObservationCardinalityNextReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<16>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (u16,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<increaseObservationCardinalityNextCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: increaseObservationCardinalityNextCall) -> Self {
-                    (value.observationCardinalityNext,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for increaseObservationCardinalityNextCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        observationCardinalityNext: tuple.0,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<increaseObservationCardinalityNextReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: increaseObservationCardinalityNextReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for increaseObservationCardinalityNextReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl increaseObservationCardinalityNextReturn {
-            fn _tokenize(
-                &self,
-            ) -> <increaseObservationCardinalityNextCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for increaseObservationCardinalityNextCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Uint<16>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = increaseObservationCardinalityNextReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "increaseObservationCardinalityNext(uint16)";
-            const SELECTOR: [u8; 4] = [50u8, 20u8, 143u8, 103u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        16,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.observationCardinalityNext,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                increaseObservationCardinalityNextReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -4172,153 +3305,6 @@ function liquidity() external view returns (uint128);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: liquidityReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `maxLiquidityPerTick()` and selector `0x70cf754a`.
-```solidity
-function maxLiquidityPerTick() external view returns (uint128);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct maxLiquidityPerTickCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`maxLiquidityPerTick()`](maxLiquidityPerTickCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct maxLiquidityPerTickReturn {
-        #[allow(missing_docs)]
-        pub _0: u128,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<maxLiquidityPerTickCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: maxLiquidityPerTickCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for maxLiquidityPerTickCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<128>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (u128,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<maxLiquidityPerTickReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: maxLiquidityPerTickReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for maxLiquidityPerTickReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for maxLiquidityPerTickCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = u128;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<128>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "maxLiquidityPerTick()";
-            const SELECTOR: [u8; 4] = [112u8, 207u8, 117u8, 74u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        128,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: maxLiquidityPerTickReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: maxLiquidityPerTickReturn = r.into();
                         r._0
                     })
             }
@@ -5277,589 +4263,6 @@ function protocolFees() external view returns (uint128 token0, uint128 token1);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `setFeeProtocol(uint8,uint8)` and selector `0x8206a4d1`.
-```solidity
-function setFeeProtocol(uint8 feeProtocol0, uint8 feeProtocol1) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setFeeProtocolCall {
-        #[allow(missing_docs)]
-        pub feeProtocol0: u8,
-        #[allow(missing_docs)]
-        pub feeProtocol1: u8,
-    }
-    ///Container type for the return parameters of the [`setFeeProtocol(uint8,uint8)`](setFeeProtocolCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setFeeProtocolReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<8>,
-                alloy_sol_types::sol_data::Uint<8>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (u8, u8);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setFeeProtocolCall> for UnderlyingRustTuple<'_> {
-                fn from(value: setFeeProtocolCall) -> Self {
-                    (value.feeProtocol0, value.feeProtocol1)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setFeeProtocolCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        feeProtocol0: tuple.0,
-                        feeProtocol1: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setFeeProtocolReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: setFeeProtocolReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setFeeProtocolReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl setFeeProtocolReturn {
-            fn _tokenize(
-                &self,
-            ) -> <setFeeProtocolCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for setFeeProtocolCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Uint<8>,
-                alloy_sol_types::sol_data::Uint<8>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = setFeeProtocolReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "setFeeProtocol(uint8,uint8)";
-            const SELECTOR: [u8; 4] = [130u8, 6u8, 164u8, 209u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(&self.feeProtocol0),
-                    <alloy_sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(&self.feeProtocol1),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                setFeeProtocolReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `slot0()` and selector `0x3850c7bd`.
-```solidity
-function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct slot0Call;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`slot0()`](slot0Call) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct slot0Return {
-        #[allow(missing_docs)]
-        pub sqrtPriceX96: alloy_sol_types::private::primitives::aliases::U160,
-        #[allow(missing_docs)]
-        pub tick: alloy_sol_types::private::primitives::aliases::I24,
-        #[allow(missing_docs)]
-        pub observationIndex: u16,
-        #[allow(missing_docs)]
-        pub observationCardinality: u16,
-        #[allow(missing_docs)]
-        pub observationCardinalityNext: u16,
-        #[allow(missing_docs)]
-        pub feeProtocol: u8,
-        #[allow(missing_docs)]
-        pub unlocked: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<slot0Call> for UnderlyingRustTuple<'_> {
-                fn from(value: slot0Call) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for slot0Call {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<160>,
-                alloy_sol_types::sol_data::Int<24>,
-                alloy_sol_types::sol_data::Uint<16>,
-                alloy_sol_types::sol_data::Uint<16>,
-                alloy_sol_types::sol_data::Uint<16>,
-                alloy_sol_types::sol_data::Uint<8>,
-                alloy_sol_types::sol_data::Bool,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U160,
-                alloy_sol_types::private::primitives::aliases::I24,
-                u16,
-                u16,
-                u16,
-                u8,
-                bool,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<slot0Return> for UnderlyingRustTuple<'_> {
-                fn from(value: slot0Return) -> Self {
-                    (
-                        value.sqrtPriceX96,
-                        value.tick,
-                        value.observationIndex,
-                        value.observationCardinality,
-                        value.observationCardinalityNext,
-                        value.feeProtocol,
-                        value.unlocked,
-                    )
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for slot0Return {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        sqrtPriceX96: tuple.0,
-                        tick: tuple.1,
-                        observationIndex: tuple.2,
-                        observationCardinality: tuple.3,
-                        observationCardinalityNext: tuple.4,
-                        feeProtocol: tuple.5,
-                        unlocked: tuple.6,
-                    }
-                }
-            }
-        }
-        impl slot0Return {
-            fn _tokenize(
-                &self,
-            ) -> <slot0Call as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        160,
-                    > as alloy_sol_types::SolType>::tokenize(&self.sqrtPriceX96),
-                    <alloy_sol_types::sol_data::Int<
-                        24,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tick),
-                    <alloy_sol_types::sol_data::Uint<
-                        16,
-                    > as alloy_sol_types::SolType>::tokenize(&self.observationIndex),
-                    <alloy_sol_types::sol_data::Uint<
-                        16,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.observationCardinality,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<
-                        16,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.observationCardinalityNext,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(&self.feeProtocol),
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.unlocked,
-                    ),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for slot0Call {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = slot0Return;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<160>,
-                alloy_sol_types::sol_data::Int<24>,
-                alloy_sol_types::sol_data::Uint<16>,
-                alloy_sol_types::sol_data::Uint<16>,
-                alloy_sol_types::sol_data::Uint<16>,
-                alloy_sol_types::sol_data::Uint<8>,
-                alloy_sol_types::sol_data::Bool,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "slot0()";
-            const SELECTOR: [u8; 4] = [56u8, 80u8, 199u8, 189u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                slot0Return::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `snapshotCumulativesInside(int24,int24)` and selector `0xa38807f2`.
-```solidity
-function snapshotCumulativesInside(int24 tickLower, int24 tickUpper) external view returns (int56 tickCumulativeInside, uint160 secondsPerLiquidityInsideX128, uint32 secondsInside);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct snapshotCumulativesInsideCall {
-        #[allow(missing_docs)]
-        pub tickLower: alloy_sol_types::private::primitives::aliases::I24,
-        #[allow(missing_docs)]
-        pub tickUpper: alloy_sol_types::private::primitives::aliases::I24,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`snapshotCumulativesInside(int24,int24)`](snapshotCumulativesInsideCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct snapshotCumulativesInsideReturn {
-        #[allow(missing_docs)]
-        pub tickCumulativeInside: alloy_sol_types::private::primitives::aliases::I56,
-        #[allow(missing_docs)]
-        pub secondsPerLiquidityInsideX128: alloy_sol_types::private::primitives::aliases::U160,
-        #[allow(missing_docs)]
-        pub secondsInside: u32,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Int<24>,
-                alloy_sol_types::sol_data::Int<24>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::I24,
-                alloy_sol_types::private::primitives::aliases::I24,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<snapshotCumulativesInsideCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: snapshotCumulativesInsideCall) -> Self {
-                    (value.tickLower, value.tickUpper)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for snapshotCumulativesInsideCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        tickLower: tuple.0,
-                        tickUpper: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Int<56>,
-                alloy_sol_types::sol_data::Uint<160>,
-                alloy_sol_types::sol_data::Uint<32>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::I56,
-                alloy_sol_types::private::primitives::aliases::U160,
-                u32,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<snapshotCumulativesInsideReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: snapshotCumulativesInsideReturn) -> Self {
-                    (
-                        value.tickCumulativeInside,
-                        value.secondsPerLiquidityInsideX128,
-                        value.secondsInside,
-                    )
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for snapshotCumulativesInsideReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        tickCumulativeInside: tuple.0,
-                        secondsPerLiquidityInsideX128: tuple.1,
-                        secondsInside: tuple.2,
-                    }
-                }
-            }
-        }
-        impl snapshotCumulativesInsideReturn {
-            fn _tokenize(
-                &self,
-            ) -> <snapshotCumulativesInsideCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                (
-                    <alloy_sol_types::sol_data::Int<
-                        56,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tickCumulativeInside),
-                    <alloy_sol_types::sol_data::Uint<
-                        160,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.secondsPerLiquidityInsideX128,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.secondsInside),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for snapshotCumulativesInsideCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Int<24>,
-                alloy_sol_types::sol_data::Int<24>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = snapshotCumulativesInsideReturn;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Int<56>,
-                alloy_sol_types::sol_data::Uint<160>,
-                alloy_sol_types::sol_data::Uint<32>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "snapshotCumulativesInside(int24,int24)";
-            const SELECTOR: [u8; 4] = [163u8, 136u8, 7u8, 242u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Int<
-                        24,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tickLower),
-                    <alloy_sol_types::sol_data::Int<
-                        24,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tickUpper),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                snapshotCumulativesInsideReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `swap(address,bool,int256,uint160,bytes)` and selector `0x128acb08`.
 ```solidity
 function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160 sqrtPriceLimitX96, bytes memory data) external returns (int256 amount0, int256 amount1);
@@ -6074,300 +4477,6 @@ function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint16
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `tickBitmap(int16)` and selector `0x5339c296`.
-```solidity
-function tickBitmap(int16) external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct tickBitmapCall(pub i16);
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`tickBitmap(int16)`](tickBitmapCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct tickBitmapReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Int<16>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (i16,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<tickBitmapCall> for UnderlyingRustTuple<'_> {
-                fn from(value: tickBitmapCall) -> Self {
-                    (value.0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for tickBitmapCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self(tuple.0)
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<tickBitmapReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: tickBitmapReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for tickBitmapReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for tickBitmapCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Int<16>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "tickBitmap(int16)";
-            const SELECTOR: [u8; 4] = [83u8, 57u8, 194u8, 150u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Int<
-                        16,
-                    > as alloy_sol_types::SolType>::tokenize(&self.0),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: tickBitmapReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: tickBitmapReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `tickSpacing()` and selector `0xd0c93a7c`.
-```solidity
-function tickSpacing() external view returns (int24);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct tickSpacingCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`tickSpacing()`](tickSpacingCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct tickSpacingReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::I24,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<tickSpacingCall> for UnderlyingRustTuple<'_> {
-                fn from(value: tickSpacingCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for tickSpacingCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Int<24>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::I24,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<tickSpacingReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: tickSpacingReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for tickSpacingReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for tickSpacingCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::I24;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Int<24>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "tickSpacing()";
-            const SELECTOR: [u8; 4] = [208u8, 201u8, 58u8, 124u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Int<
-                        24,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: tickSpacingReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: tickSpacingReturn = r.into();
-                        r._0
-                    })
             }
         }
     };
@@ -6904,25 +5013,15 @@ function token1() external view returns (address);
         #[allow(missing_docs)]
         collect(collectCall),
         #[allow(missing_docs)]
-        collectProtocol(collectProtocolCall),
-        #[allow(missing_docs)]
         factory(factoryCall),
         #[allow(missing_docs)]
         fee(feeCall),
         #[allow(missing_docs)]
-        feeGrowthGlobal0X128(feeGrowthGlobal0X128Call),
-        #[allow(missing_docs)]
-        feeGrowthGlobal1X128(feeGrowthGlobal1X128Call),
-        #[allow(missing_docs)]
         flash(flashCall),
-        #[allow(missing_docs)]
-        increaseObservationCardinalityNext(increaseObservationCardinalityNextCall),
         #[allow(missing_docs)]
         initialize(initializeCall),
         #[allow(missing_docs)]
         liquidity(liquidityCall),
-        #[allow(missing_docs)]
-        maxLiquidityPerTick(maxLiquidityPerTickCall),
         #[allow(missing_docs)]
         mint(mintCall),
         #[allow(missing_docs)]
@@ -6934,17 +5033,7 @@ function token1() external view returns (address);
         #[allow(missing_docs)]
         protocolFees(protocolFeesCall),
         #[allow(missing_docs)]
-        setFeeProtocol(setFeeProtocolCall),
-        #[allow(missing_docs)]
-        slot0(slot0Call),
-        #[allow(missing_docs)]
-        snapshotCumulativesInside(snapshotCumulativesInsideCall),
-        #[allow(missing_docs)]
         swap(swapCall),
-        #[allow(missing_docs)]
-        tickBitmap(tickBitmapCall),
-        #[allow(missing_docs)]
-        tickSpacing(tickSpacingCall),
         #[allow(missing_docs)]
         ticks(ticksCall),
         #[allow(missing_docs)]
@@ -6965,25 +5054,15 @@ function token1() external view returns (address);
             [26u8, 104u8, 101u8, 2u8],
             [26u8, 216u8, 176u8, 59u8],
             [37u8, 44u8, 9u8, 215u8],
-            [50u8, 20u8, 143u8, 103u8],
-            [56u8, 80u8, 199u8, 189u8],
             [60u8, 138u8, 125u8, 141u8],
-            [70u8, 20u8, 19u8, 25u8],
             [73u8, 14u8, 108u8, 188u8],
             [79u8, 30u8, 179u8, 216u8],
             [81u8, 78u8, 164u8, 191u8],
-            [83u8, 57u8, 194u8, 150u8],
-            [112u8, 207u8, 117u8, 74u8],
-            [130u8, 6u8, 164u8, 209u8],
-            [133u8, 182u8, 103u8, 41u8],
             [136u8, 59u8, 219u8, 253u8],
             [163u8, 65u8, 35u8, 167u8],
-            [163u8, 136u8, 7u8, 242u8],
             [196u8, 90u8, 1u8, 85u8],
-            [208u8, 201u8, 58u8, 124u8],
             [210u8, 18u8, 32u8, 167u8],
             [221u8, 202u8, 63u8, 67u8],
-            [243u8, 5u8, 131u8, 153u8],
             [243u8, 13u8, 186u8, 147u8],
             [246u8, 55u8, 115u8, 29u8],
         ];
@@ -6994,25 +5073,15 @@ function token1() external view returns (address);
             ::core::stringify!(liquidity),
             ::core::stringify!(protocolFees),
             ::core::stringify!(observations),
-            ::core::stringify!(increaseObservationCardinalityNext),
-            ::core::stringify!(slot0),
             ::core::stringify!(mint),
-            ::core::stringify!(feeGrowthGlobal1X128),
             ::core::stringify!(flash),
             ::core::stringify!(collect),
             ::core::stringify!(positions),
-            ::core::stringify!(tickBitmap),
-            ::core::stringify!(maxLiquidityPerTick),
-            ::core::stringify!(setFeeProtocol),
-            ::core::stringify!(collectProtocol),
             ::core::stringify!(observe),
             ::core::stringify!(burn),
-            ::core::stringify!(snapshotCumulativesInside),
             ::core::stringify!(factory),
-            ::core::stringify!(tickSpacing),
             ::core::stringify!(token1),
             ::core::stringify!(fee),
-            ::core::stringify!(feeGrowthGlobal0X128),
             ::core::stringify!(ticks),
             ::core::stringify!(initialize),
         ];
@@ -7023,25 +5092,15 @@ function token1() external view returns (address);
             <liquidityCall as alloy_sol_types::SolCall>::SIGNATURE,
             <protocolFeesCall as alloy_sol_types::SolCall>::SIGNATURE,
             <observationsCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <increaseObservationCardinalityNextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <slot0Call as alloy_sol_types::SolCall>::SIGNATURE,
             <mintCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <feeGrowthGlobal1X128Call as alloy_sol_types::SolCall>::SIGNATURE,
             <flashCall as alloy_sol_types::SolCall>::SIGNATURE,
             <collectCall as alloy_sol_types::SolCall>::SIGNATURE,
             <positionsCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <tickBitmapCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <maxLiquidityPerTickCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setFeeProtocolCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <collectProtocolCall as alloy_sol_types::SolCall>::SIGNATURE,
             <observeCall as alloy_sol_types::SolCall>::SIGNATURE,
             <burnCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <snapshotCumulativesInsideCall as alloy_sol_types::SolCall>::SIGNATURE,
             <factoryCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <tickSpacingCall as alloy_sol_types::SolCall>::SIGNATURE,
             <token1Call as alloy_sol_types::SolCall>::SIGNATURE,
             <feeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <feeGrowthGlobal0X128Call as alloy_sol_types::SolCall>::SIGNATURE,
             <ticksCall as alloy_sol_types::SolCall>::SIGNATURE,
             <initializeCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
@@ -7070,35 +5129,20 @@ function token1() external view returns (address);
     impl alloy_sol_types::SolInterface for UniswapV3PoolCalls {
         const NAME: &'static str = "UniswapV3PoolCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 26usize;
+        const COUNT: usize = 16usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::burn(_) => <burnCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::collect(_) => <collectCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::collectProtocol(_) => {
-                    <collectProtocolCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::factory(_) => <factoryCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::fee(_) => <feeCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::feeGrowthGlobal0X128(_) => {
-                    <feeGrowthGlobal0X128Call as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::feeGrowthGlobal1X128(_) => {
-                    <feeGrowthGlobal1X128Call as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::flash(_) => <flashCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::increaseObservationCardinalityNext(_) => {
-                    <increaseObservationCardinalityNextCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::initialize(_) => {
                     <initializeCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::liquidity(_) => {
                     <liquidityCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::maxLiquidityPerTick(_) => {
-                    <maxLiquidityPerTickCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::mint(_) => <mintCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::observations(_) => {
@@ -7111,20 +5155,7 @@ function token1() external view returns (address);
                 Self::protocolFees(_) => {
                     <protocolFeesCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::setFeeProtocol(_) => {
-                    <setFeeProtocolCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::slot0(_) => <slot0Call as alloy_sol_types::SolCall>::SELECTOR,
-                Self::snapshotCumulativesInside(_) => {
-                    <snapshotCumulativesInsideCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::swap(_) => <swapCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::tickBitmap(_) => {
-                    <tickBitmapCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::tickSpacing(_) => {
-                    <tickSpacingCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::ticks(_) => <ticksCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::token0(_) => <token0Call as alloy_sol_types::SolCall>::SELECTOR,
                 Self::token1(_) => <token1Call as alloy_sol_types::SolCall>::SELECTOR,
@@ -7195,42 +5226,11 @@ function token1() external view returns (address);
                     observations
                 },
                 {
-                    fn increaseObservationCardinalityNext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <increaseObservationCardinalityNextCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::increaseObservationCardinalityNext)
-                    }
-                    increaseObservationCardinalityNext
-                },
-                {
-                    fn slot0(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <slot0Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(UniswapV3PoolCalls::slot0)
-                    }
-                    slot0
-                },
-                {
                     fn mint(data: &[u8]) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
                         <mintCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(UniswapV3PoolCalls::mint)
                     }
                     mint
-                },
-                {
-                    fn feeGrowthGlobal1X128(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <feeGrowthGlobal1X128Call as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::feeGrowthGlobal1X128)
-                    }
-                    feeGrowthGlobal1X128
                 },
                 {
                     fn flash(
@@ -7260,50 +5260,6 @@ function token1() external view returns (address);
                     positions
                 },
                 {
-                    fn tickBitmap(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <tickBitmapCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::tickBitmap)
-                    }
-                    tickBitmap
-                },
-                {
-                    fn maxLiquidityPerTick(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <maxLiquidityPerTickCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::maxLiquidityPerTick)
-                    }
-                    maxLiquidityPerTick
-                },
-                {
-                    fn setFeeProtocol(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <setFeeProtocolCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::setFeeProtocol)
-                    }
-                    setFeeProtocol
-                },
-                {
-                    fn collectProtocol(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <collectProtocolCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::collectProtocol)
-                    }
-                    collectProtocol
-                },
-                {
                     fn observe(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
@@ -7320,17 +5276,6 @@ function token1() external view returns (address);
                     burn
                 },
                 {
-                    fn snapshotCumulativesInside(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <snapshotCumulativesInsideCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::snapshotCumulativesInside)
-                    }
-                    snapshotCumulativesInside
-                },
-                {
                     fn factory(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
@@ -7338,17 +5283,6 @@ function token1() external view returns (address);
                             .map(UniswapV3PoolCalls::factory)
                     }
                     factory
-                },
-                {
-                    fn tickSpacing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <tickSpacingCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::tickSpacing)
-                    }
-                    tickSpacing
                 },
                 {
                     fn token1(
@@ -7365,17 +5299,6 @@ function token1() external view returns (address);
                             .map(UniswapV3PoolCalls::fee)
                     }
                     fee
-                },
-                {
-                    fn feeGrowthGlobal0X128(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <feeGrowthGlobal0X128Call as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::feeGrowthGlobal0X128)
-                    }
-                    feeGrowthGlobal0X128
                 },
                 {
                     fn ticks(
@@ -7471,28 +5394,6 @@ function token1() external view returns (address);
                     observations
                 },
                 {
-                    fn increaseObservationCardinalityNext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <increaseObservationCardinalityNextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::increaseObservationCardinalityNext)
-                    }
-                    increaseObservationCardinalityNext
-                },
-                {
-                    fn slot0(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <slot0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::slot0)
-                    }
-                    slot0
-                },
-                {
                     fn mint(data: &[u8]) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
                         <mintCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
@@ -7500,17 +5401,6 @@ function token1() external view returns (address);
                             .map(UniswapV3PoolCalls::mint)
                     }
                     mint
-                },
-                {
-                    fn feeGrowthGlobal1X128(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <feeGrowthGlobal1X128Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::feeGrowthGlobal1X128)
-                    }
-                    feeGrowthGlobal1X128
                 },
                 {
                     fn flash(
@@ -7546,50 +5436,6 @@ function token1() external view returns (address);
                     positions
                 },
                 {
-                    fn tickBitmap(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <tickBitmapCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::tickBitmap)
-                    }
-                    tickBitmap
-                },
-                {
-                    fn maxLiquidityPerTick(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <maxLiquidityPerTickCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::maxLiquidityPerTick)
-                    }
-                    maxLiquidityPerTick
-                },
-                {
-                    fn setFeeProtocol(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <setFeeProtocolCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::setFeeProtocol)
-                    }
-                    setFeeProtocol
-                },
-                {
-                    fn collectProtocol(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <collectProtocolCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::collectProtocol)
-                    }
-                    collectProtocol
-                },
-                {
                     fn observe(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
@@ -7610,17 +5456,6 @@ function token1() external view returns (address);
                     burn
                 },
                 {
-                    fn snapshotCumulativesInside(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <snapshotCumulativesInsideCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::snapshotCumulativesInside)
-                    }
-                    snapshotCumulativesInside
-                },
-                {
                     fn factory(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
@@ -7630,17 +5465,6 @@ function token1() external view returns (address);
                             .map(UniswapV3PoolCalls::factory)
                     }
                     factory
-                },
-                {
-                    fn tickSpacing(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <tickSpacingCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::tickSpacing)
-                    }
-                    tickSpacing
                 },
                 {
                     fn token1(
@@ -7661,17 +5485,6 @@ function token1() external view returns (address);
                             .map(UniswapV3PoolCalls::fee)
                     }
                     fee
-                },
-                {
-                    fn feeGrowthGlobal0X128(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
-                        <feeGrowthGlobal0X128Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3PoolCalls::feeGrowthGlobal0X128)
-                    }
-                    feeGrowthGlobal0X128
                 },
                 {
                     fn ticks(
@@ -7715,45 +5528,20 @@ function token1() external view returns (address);
                 Self::collect(inner) => {
                     <collectCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::collectProtocol(inner) => {
-                    <collectProtocolCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::fee(inner) => {
                     <feeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::feeGrowthGlobal0X128(inner) => {
-                    <feeGrowthGlobal0X128Call as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::feeGrowthGlobal1X128(inner) => {
-                    <feeGrowthGlobal1X128Call as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::flash(inner) => {
                     <flashCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::increaseObservationCardinalityNext(inner) => {
-                    <increaseObservationCardinalityNextCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
                 }
                 Self::initialize(inner) => {
                     <initializeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::liquidity(inner) => {
                     <liquidityCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::maxLiquidityPerTick(inner) => {
-                    <maxLiquidityPerTickCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
                 }
                 Self::mint(inner) => {
                     <mintCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -7774,29 +5562,8 @@ function token1() external view returns (address);
                         inner,
                     )
                 }
-                Self::setFeeProtocol(inner) => {
-                    <setFeeProtocolCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::slot0(inner) => {
-                    <slot0Call as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::snapshotCumulativesInside(inner) => {
-                    <snapshotCumulativesInsideCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::swap(inner) => {
                     <swapCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::tickBitmap(inner) => {
-                    <tickBitmapCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::tickSpacing(inner) => {
-                    <tickSpacingCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
                 }
                 Self::ticks(inner) => {
                     <ticksCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -7818,38 +5585,14 @@ function token1() external view returns (address);
                 Self::collect(inner) => {
                     <collectCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
-                Self::collectProtocol(inner) => {
-                    <collectProtocolCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::fee(inner) => {
                     <feeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
-                Self::feeGrowthGlobal0X128(inner) => {
-                    <feeGrowthGlobal0X128Call as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::feeGrowthGlobal1X128(inner) => {
-                    <feeGrowthGlobal1X128Call as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::flash(inner) => {
                     <flashCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::increaseObservationCardinalityNext(inner) => {
-                    <increaseObservationCardinalityNextCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
                 Self::initialize(inner) => {
                     <initializeCall as alloy_sol_types::SolCall>::abi_encode_raw(
@@ -7859,12 +5602,6 @@ function token1() external view returns (address);
                 }
                 Self::liquidity(inner) => {
                     <liquidityCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::maxLiquidityPerTick(inner) => {
-                    <maxLiquidityPerTickCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -7893,35 +5630,8 @@ function token1() external view returns (address);
                         out,
                     )
                 }
-                Self::setFeeProtocol(inner) => {
-                    <setFeeProtocolCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::slot0(inner) => {
-                    <slot0Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::snapshotCumulativesInside(inner) => {
-                    <snapshotCumulativesInsideCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::swap(inner) => {
                     <swapCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::tickBitmap(inner) => {
-                    <tickBitmapCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::tickSpacing(inner) => {
-                    <tickSpacingCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
                 Self::ticks(inner) => {
                     <ticksCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -8333,21 +6043,6 @@ See the [wrapper's documentation](`UniswapV3PoolInstance`) for more details.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`collectProtocol`] function.
-        pub fn collectProtocol(
-            &self,
-            recipient: alloy_sol_types::private::Address,
-            amount0Requested: u128,
-            amount1Requested: u128,
-        ) -> alloy_contract::SolCallBuilder<&P, collectProtocolCall, N> {
-            self.call_builder(
-                &collectProtocolCall {
-                    recipient,
-                    amount0Requested,
-                    amount1Requested,
-                },
-            )
-        }
         ///Creates a new call builder for the [`factory`] function.
         pub fn factory(&self) -> alloy_contract::SolCallBuilder<&P, factoryCall, N> {
             self.call_builder(&factoryCall)
@@ -8355,18 +6050,6 @@ See the [wrapper's documentation](`UniswapV3PoolInstance`) for more details.*/
         ///Creates a new call builder for the [`fee`] function.
         pub fn fee(&self) -> alloy_contract::SolCallBuilder<&P, feeCall, N> {
             self.call_builder(&feeCall)
-        }
-        ///Creates a new call builder for the [`feeGrowthGlobal0X128`] function.
-        pub fn feeGrowthGlobal0X128(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, feeGrowthGlobal0X128Call, N> {
-            self.call_builder(&feeGrowthGlobal0X128Call)
-        }
-        ///Creates a new call builder for the [`feeGrowthGlobal1X128`] function.
-        pub fn feeGrowthGlobal1X128(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, feeGrowthGlobal1X128Call, N> {
-            self.call_builder(&feeGrowthGlobal1X128Call)
         }
         ///Creates a new call builder for the [`flash`] function.
         pub fn flash(
@@ -8385,21 +6068,6 @@ See the [wrapper's documentation](`UniswapV3PoolInstance`) for more details.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`increaseObservationCardinalityNext`] function.
-        pub fn increaseObservationCardinalityNext(
-            &self,
-            observationCardinalityNext: u16,
-        ) -> alloy_contract::SolCallBuilder<
-            &P,
-            increaseObservationCardinalityNextCall,
-            N,
-        > {
-            self.call_builder(
-                &increaseObservationCardinalityNextCall {
-                    observationCardinalityNext,
-                },
-            )
-        }
         ///Creates a new call builder for the [`initialize`] function.
         pub fn initialize(
             &self,
@@ -8410,12 +6078,6 @@ See the [wrapper's documentation](`UniswapV3PoolInstance`) for more details.*/
         ///Creates a new call builder for the [`liquidity`] function.
         pub fn liquidity(&self) -> alloy_contract::SolCallBuilder<&P, liquidityCall, N> {
             self.call_builder(&liquidityCall)
-        }
-        ///Creates a new call builder for the [`maxLiquidityPerTick`] function.
-        pub fn maxLiquidityPerTick(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, maxLiquidityPerTickCall, N> {
-            self.call_builder(&maxLiquidityPerTickCall)
         }
         ///Creates a new call builder for the [`mint`] function.
         pub fn mint(
@@ -8463,36 +6125,6 @@ See the [wrapper's documentation](`UniswapV3PoolInstance`) for more details.*/
         ) -> alloy_contract::SolCallBuilder<&P, protocolFeesCall, N> {
             self.call_builder(&protocolFeesCall)
         }
-        ///Creates a new call builder for the [`setFeeProtocol`] function.
-        pub fn setFeeProtocol(
-            &self,
-            feeProtocol0: u8,
-            feeProtocol1: u8,
-        ) -> alloy_contract::SolCallBuilder<&P, setFeeProtocolCall, N> {
-            self.call_builder(
-                &setFeeProtocolCall {
-                    feeProtocol0,
-                    feeProtocol1,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`slot0`] function.
-        pub fn slot0(&self) -> alloy_contract::SolCallBuilder<&P, slot0Call, N> {
-            self.call_builder(&slot0Call)
-        }
-        ///Creates a new call builder for the [`snapshotCumulativesInside`] function.
-        pub fn snapshotCumulativesInside(
-            &self,
-            tickLower: alloy_sol_types::private::primitives::aliases::I24,
-            tickUpper: alloy_sol_types::private::primitives::aliases::I24,
-        ) -> alloy_contract::SolCallBuilder<&P, snapshotCumulativesInsideCall, N> {
-            self.call_builder(
-                &snapshotCumulativesInsideCall {
-                    tickLower,
-                    tickUpper,
-                },
-            )
-        }
         ///Creates a new call builder for the [`swap`] function.
         pub fn swap(
             &self,
@@ -8511,19 +6143,6 @@ See the [wrapper's documentation](`UniswapV3PoolInstance`) for more details.*/
                     data,
                 },
             )
-        }
-        ///Creates a new call builder for the [`tickBitmap`] function.
-        pub fn tickBitmap(
-            &self,
-            _0: i16,
-        ) -> alloy_contract::SolCallBuilder<&P, tickBitmapCall, N> {
-            self.call_builder(&tickBitmapCall(_0))
-        }
-        ///Creates a new call builder for the [`tickSpacing`] function.
-        pub fn tickSpacing(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, tickSpacingCall, N> {
-            self.call_builder(&tickSpacingCall)
         }
         ///Creates a new call builder for the [`ticks`] function.
         pub fn ticks(

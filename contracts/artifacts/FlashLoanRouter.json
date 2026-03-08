@@ -13,19 +13,6 @@
     },
     {
       "type": "function",
-      "name": "borrowerCallback",
-      "inputs": [
-        {
-          "name": "encodedLoansWithSettlement",
-          "type": "bytes",
-          "internalType": "bytes"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "flashLoanAndSettle",
       "inputs": [
         {
@@ -63,19 +50,6 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "settlementAuthentication",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "contract ICowAuthentication"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -291,5 +265,33 @@
     },
     "version": 1
   },
-  "id": 27
+  "id": 27,
+  "_disabled": [
+    {
+      "type": "function",
+      "name": "borrowerCallback",
+      "inputs": [
+        {
+          "name": "encodedLoansWithSettlement",
+          "type": "bytes",
+          "internalType": "bytes"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "settlementAuthentication",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "contract ICowAuthentication"
+        }
+      ],
+      "stateMutability": "view"
+    }
+  ]
 }

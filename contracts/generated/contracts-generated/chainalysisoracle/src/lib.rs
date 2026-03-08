@@ -13,14 +13,9 @@ interface ChainalysisOracle {
 
     constructor();
 
-    function addToSanctionsList(address[] memory newSanctions) external;
     function isSanctioned(address addr) external view returns (bool);
-    function isSanctionedVerbose(address addr) external returns (bool);
     function name() external pure returns (string memory);
     function owner() external view returns (address);
-    function removeFromSanctionsList(address[] memory removeSanctions) external;
-    function renounceOwnership() external;
-    function transferOwnership(address newOwner) external;
 }
 ```
 
@@ -30,19 +25,6 @@ interface ChainalysisOracle {
   {
     "type": "constructor",
     "inputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addToSanctionsList",
-    "inputs": [
-      {
-        "name": "newSanctions",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -63,25 +45,6 @@ interface ChainalysisOracle {
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isSanctionedVerbose",
-    "inputs": [
-      {
-        "name": "addr",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -108,39 +71,6 @@ interface ChainalysisOracle {
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "removeFromSanctionsList",
-    "inputs": [
-      {
-        "name": "removeSanctions",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "transferOwnership",
-    "inputs": [
-      {
-        "name": "newOwner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
@@ -832,161 +762,6 @@ constructor();
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `addToSanctionsList(address[])` and selector `0xb972dfcc`.
-```solidity
-function addToSanctionsList(address[] memory newSanctions) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct addToSanctionsListCall {
-        #[allow(missing_docs)]
-        pub newSanctions: alloy_sol_types::private::Vec<
-            alloy_sol_types::private::Address,
-        >,
-    }
-    ///Container type for the return parameters of the [`addToSanctionsList(address[])`](addToSanctionsListCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct addToSanctionsListReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<addToSanctionsListCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: addToSanctionsListCall) -> Self {
-                    (value.newSanctions,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addToSanctionsListCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { newSanctions: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<addToSanctionsListReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: addToSanctionsListReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addToSanctionsListReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl addToSanctionsListReturn {
-            fn _tokenize(
-                &self,
-            ) -> <addToSanctionsListCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for addToSanctionsListCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = addToSanctionsListReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addToSanctionsList(address[])";
-            const SELECTOR: [u8; 4] = [185u8, 114u8, 223u8, 204u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.newSanctions),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                addToSanctionsListReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isSanctioned(address)` and selector `0xdf592f7d`.
 ```solidity
 function isSanctioned(address addr) external view returns (bool);
@@ -1131,160 +906,6 @@ function isSanctioned(address addr) external view returns (bool);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: isSanctionedReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isSanctionedVerbose(address)` and selector `0xa2a6bbd8`.
-```solidity
-function isSanctionedVerbose(address addr) external returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isSanctionedVerboseCall {
-        #[allow(missing_docs)]
-        pub addr: alloy_sol_types::private::Address,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isSanctionedVerbose(address)`](isSanctionedVerboseCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isSanctionedVerboseReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isSanctionedVerboseCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isSanctionedVerboseCall) -> Self {
-                    (value.addr,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isSanctionedVerboseCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { addr: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isSanctionedVerboseReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isSanctionedVerboseReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isSanctionedVerboseReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isSanctionedVerboseCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isSanctionedVerbose(address)";
-            const SELECTOR: [u8; 4] = [162u8, 166u8, 187u8, 216u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.addr,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isSanctionedVerboseReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isSanctionedVerboseReturn = r.into();
                         r._0
                     })
             }
@@ -1576,470 +1197,16 @@ function owner() external view returns (address);
             }
         }
     };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `removeFromSanctionsList(address[])` and selector `0xef782431`.
-```solidity
-function removeFromSanctionsList(address[] memory removeSanctions) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct removeFromSanctionsListCall {
-        #[allow(missing_docs)]
-        pub removeSanctions: alloy_sol_types::private::Vec<
-            alloy_sol_types::private::Address,
-        >,
-    }
-    ///Container type for the return parameters of the [`removeFromSanctionsList(address[])`](removeFromSanctionsListCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct removeFromSanctionsListReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<removeFromSanctionsListCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeFromSanctionsListCall) -> Self {
-                    (value.removeSanctions,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromSanctionsListCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { removeSanctions: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<removeFromSanctionsListReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeFromSanctionsListReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromSanctionsListReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl removeFromSanctionsListReturn {
-            fn _tokenize(
-                &self,
-            ) -> <removeFromSanctionsListCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for removeFromSanctionsListCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = removeFromSanctionsListReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "removeFromSanctionsList(address[])";
-            const SELECTOR: [u8; 4] = [239u8, 120u8, 36u8, 49u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.removeSanctions),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                removeFromSanctionsListReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `renounceOwnership()` and selector `0x715018a6`.
-```solidity
-function renounceOwnership() external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct renounceOwnershipCall;
-    ///Container type for the return parameters of the [`renounceOwnership()`](renounceOwnershipCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct renounceOwnershipReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<renounceOwnershipCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: renounceOwnershipCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for renounceOwnershipCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<renounceOwnershipReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: renounceOwnershipReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for renounceOwnershipReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl renounceOwnershipReturn {
-            fn _tokenize(
-                &self,
-            ) -> <renounceOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for renounceOwnershipCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = renounceOwnershipReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "renounceOwnership()";
-            const SELECTOR: [u8; 4] = [113u8, 80u8, 24u8, 166u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                renounceOwnershipReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `transferOwnership(address)` and selector `0xf2fde38b`.
-```solidity
-function transferOwnership(address newOwner) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct transferOwnershipCall {
-        #[allow(missing_docs)]
-        pub newOwner: alloy_sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`transferOwnership(address)`](transferOwnershipCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct transferOwnershipReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<transferOwnershipCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: transferOwnershipCall) -> Self {
-                    (value.newOwner,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for transferOwnershipCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { newOwner: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<transferOwnershipReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: transferOwnershipReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for transferOwnershipReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl transferOwnershipReturn {
-            fn _tokenize(
-                &self,
-            ) -> <transferOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for transferOwnershipCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = transferOwnershipReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "transferOwnership(address)";
-            const SELECTOR: [u8; 4] = [242u8, 253u8, 227u8, 139u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.newOwner,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                transferOwnershipReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
     ///Container for all the [`ChainalysisOracle`](self) function calls.
     #[derive(Clone)]
     #[derive()]
     pub enum ChainalysisOracleCalls {
         #[allow(missing_docs)]
-        addToSanctionsList(addToSanctionsListCall),
-        #[allow(missing_docs)]
         isSanctioned(isSanctionedCall),
-        #[allow(missing_docs)]
-        isSanctionedVerbose(isSanctionedVerboseCall),
         #[allow(missing_docs)]
         name(nameCall),
         #[allow(missing_docs)]
         owner(ownerCall),
-        #[allow(missing_docs)]
-        removeFromSanctionsList(removeFromSanctionsListCall),
-        #[allow(missing_docs)]
-        renounceOwnership(renounceOwnershipCall),
-        #[allow(missing_docs)]
-        transferOwnership(transferOwnershipCall),
     }
     impl ChainalysisOracleCalls {
         /// All the selectors of this enum.
@@ -2050,35 +1217,20 @@ function transferOwnership(address newOwner) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 253u8, 222u8, 3u8],
-            [113u8, 80u8, 24u8, 166u8],
             [141u8, 165u8, 203u8, 91u8],
-            [162u8, 166u8, 187u8, 216u8],
-            [185u8, 114u8, 223u8, 204u8],
             [223u8, 89u8, 47u8, 125u8],
-            [239u8, 120u8, 36u8, 49u8],
-            [242u8, 253u8, 227u8, 139u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(name),
-            ::core::stringify!(renounceOwnership),
             ::core::stringify!(owner),
-            ::core::stringify!(isSanctionedVerbose),
-            ::core::stringify!(addToSanctionsList),
             ::core::stringify!(isSanctioned),
-            ::core::stringify!(removeFromSanctionsList),
-            ::core::stringify!(transferOwnership),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <nameCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <renounceOwnershipCall as alloy_sol_types::SolCall>::SIGNATURE,
             <ownerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isSanctionedVerboseCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <addToSanctionsListCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isSanctionedCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <removeFromSanctionsListCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <transferOwnershipCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -2105,30 +1257,15 @@ function transferOwnership(address newOwner) external;
     impl alloy_sol_types::SolInterface for ChainalysisOracleCalls {
         const NAME: &'static str = "ChainalysisOracleCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 8usize;
+        const COUNT: usize = 3usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::addToSanctionsList(_) => {
-                    <addToSanctionsListCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::isSanctioned(_) => {
                     <isSanctionedCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::isSanctionedVerbose(_) => {
-                    <isSanctionedVerboseCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::name(_) => <nameCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::owner(_) => <ownerCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::removeFromSanctionsList(_) => {
-                    <removeFromSanctionsListCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::renounceOwnership(_) => {
-                    <renounceOwnershipCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::transferOwnership(_) => {
-                    <transferOwnershipCall as alloy_sol_types::SolCall>::SELECTOR
-                }
             }
         }
         #[inline]
@@ -2158,17 +1295,6 @@ function transferOwnership(address newOwner) external;
                     name
                 },
                 {
-                    fn renounceOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::renounceOwnership)
-                    }
-                    renounceOwnership
-                },
-                {
                     fn owner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
@@ -2176,28 +1302,6 @@ function transferOwnership(address newOwner) external;
                             .map(ChainalysisOracleCalls::owner)
                     }
                     owner
-                },
-                {
-                    fn isSanctionedVerbose(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <isSanctionedVerboseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::isSanctionedVerbose)
-                    }
-                    isSanctionedVerbose
-                },
-                {
-                    fn addToSanctionsList(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <addToSanctionsListCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::addToSanctionsList)
-                    }
-                    addToSanctionsList
                 },
                 {
                     fn isSanctioned(
@@ -2209,28 +1313,6 @@ function transferOwnership(address newOwner) external;
                             .map(ChainalysisOracleCalls::isSanctioned)
                     }
                     isSanctioned
-                },
-                {
-                    fn removeFromSanctionsList(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <removeFromSanctionsListCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::removeFromSanctionsList)
-                    }
-                    removeFromSanctionsList
-                },
-                {
-                    fn transferOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::transferOwnership)
-                    }
-                    transferOwnership
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -2264,17 +1346,6 @@ function transferOwnership(address newOwner) external;
                     name
                 },
                 {
-                    fn renounceOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::renounceOwnership)
-                    }
-                    renounceOwnership
-                },
-                {
                     fn owner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
@@ -2286,28 +1357,6 @@ function transferOwnership(address newOwner) external;
                     owner
                 },
                 {
-                    fn isSanctionedVerbose(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <isSanctionedVerboseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::isSanctionedVerbose)
-                    }
-                    isSanctionedVerbose
-                },
-                {
-                    fn addToSanctionsList(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <addToSanctionsListCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::addToSanctionsList)
-                    }
-                    addToSanctionsList
-                },
-                {
                     fn isSanctioned(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
@@ -2317,28 +1366,6 @@ function transferOwnership(address newOwner) external;
                             .map(ChainalysisOracleCalls::isSanctioned)
                     }
                     isSanctioned
-                },
-                {
-                    fn removeFromSanctionsList(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <removeFromSanctionsListCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::removeFromSanctionsList)
-                    }
-                    removeFromSanctionsList
-                },
-                {
-                    fn transferOwnership(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ChainalysisOracleCalls> {
-                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ChainalysisOracleCalls::transferOwnership)
-                    }
-                    transferOwnership
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -2354,18 +1381,8 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::addToSanctionsList(inner) => {
-                    <addToSanctionsListCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::isSanctioned(inner) => {
                     <isSanctionedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::isSanctionedVerbose(inner) => {
-                    <isSanctionedVerboseCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -2375,40 +1392,13 @@ function transferOwnership(address newOwner) external;
                 Self::owner(inner) => {
                     <ownerCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::removeFromSanctionsList(inner) => {
-                    <removeFromSanctionsListCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::renounceOwnership(inner) => {
-                    <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::transferOwnership(inner) => {
-                    <transferOwnershipCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
             }
         }
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::addToSanctionsList(inner) => {
-                    <addToSanctionsListCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::isSanctioned(inner) => {
                     <isSanctionedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::isSanctionedVerbose(inner) => {
-                    <isSanctionedVerboseCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -2418,24 +1408,6 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::owner(inner) => {
                     <ownerCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::removeFromSanctionsList(inner) => {
-                    <removeFromSanctionsListCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::renounceOwnership(inner) => {
-                    <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::transferOwnership(inner) => {
-                    <transferOwnershipCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
             }
         }
@@ -2739,32 +1711,12 @@ See the [wrapper's documentation](`ChainalysisOracleInstance`) for more details.
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-        ///Creates a new call builder for the [`addToSanctionsList`] function.
-        pub fn addToSanctionsList(
-            &self,
-            newSanctions: alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Address,
-            >,
-        ) -> alloy_contract::SolCallBuilder<&P, addToSanctionsListCall, N> {
-            self.call_builder(
-                &addToSanctionsListCall {
-                    newSanctions,
-                },
-            )
-        }
         ///Creates a new call builder for the [`isSanctioned`] function.
         pub fn isSanctioned(
             &self,
             addr: alloy_sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, isSanctionedCall, N> {
             self.call_builder(&isSanctionedCall { addr })
-        }
-        ///Creates a new call builder for the [`isSanctionedVerbose`] function.
-        pub fn isSanctionedVerbose(
-            &self,
-            addr: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isSanctionedVerboseCall, N> {
-            self.call_builder(&isSanctionedVerboseCall { addr })
         }
         ///Creates a new call builder for the [`name`] function.
         pub fn name(&self) -> alloy_contract::SolCallBuilder<&P, nameCall, N> {
@@ -2773,32 +1725,6 @@ See the [wrapper's documentation](`ChainalysisOracleInstance`) for more details.
         ///Creates a new call builder for the [`owner`] function.
         pub fn owner(&self) -> alloy_contract::SolCallBuilder<&P, ownerCall, N> {
             self.call_builder(&ownerCall)
-        }
-        ///Creates a new call builder for the [`removeFromSanctionsList`] function.
-        pub fn removeFromSanctionsList(
-            &self,
-            removeSanctions: alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Address,
-            >,
-        ) -> alloy_contract::SolCallBuilder<&P, removeFromSanctionsListCall, N> {
-            self.call_builder(
-                &removeFromSanctionsListCall {
-                    removeSanctions,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`renounceOwnership`] function.
-        pub fn renounceOwnership(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, renounceOwnershipCall, N> {
-            self.call_builder(&renounceOwnershipCall)
-        }
-        ///Creates a new call builder for the [`transferOwnership`] function.
-        pub fn transferOwnership(
-            &self,
-            newOwner: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, transferOwnershipCall, N> {
-            self.call_builder(&transferOwnershipCall { newOwner })
         }
     }
     /// Event filters.
@@ -2858,38 +1784,6 @@ use {
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        8453u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B"
-                ),
-                None,
-            ))
-        }
-        137u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
-                ),
-                None,
-            ))
-        }
-        42161u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
-                ),
-                None,
-            ))
-        }
-        1u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
-                ),
-                None,
-            ))
-        }
         43114u64 => {
             Some((
                 ::alloy_primitives::address!(
@@ -2906,10 +1800,42 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 None,
             ))
         }
+        42161u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
+                ),
+                None,
+            ))
+        }
         10u64 => {
             Some((
                 ::alloy_primitives::address!(
                     "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
+                ),
+                None,
+            ))
+        }
+        137u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
+                ),
+                None,
+            ))
+        }
+        1u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x40C57923924B5c5c5455c48D93317139ADDaC8fb"
+                ),
+                None,
+            ))
+        }
+        8453u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B"
                 ),
                 None,
             ))

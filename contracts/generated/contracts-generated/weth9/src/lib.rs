@@ -19,7 +19,6 @@ interface WETH9 {
     function deposit() external payable;
     function name() external view returns (string memory);
     function symbol() external view returns (string memory);
-    function totalSupply() external view returns (uint256);
     function transfer(address dst, uint256 wad) external returns (bool);
     function transferFrom(address src, address dst, uint256 wad) external returns (bool);
     function withdraw(uint256 wad) external;
@@ -131,18 +130,6 @@ interface WETH9 {
       {
         "name": "",
         "type": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "totalSupply",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1818,151 +1805,6 @@ function symbol() external view returns (string memory);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `totalSupply()` and selector `0x18160ddd`.
-```solidity
-function totalSupply() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct totalSupplyCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`totalSupply()`](totalSupplyCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct totalSupplyReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<totalSupplyCall> for UnderlyingRustTuple<'_> {
-                fn from(value: totalSupplyCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for totalSupplyCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<totalSupplyReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: totalSupplyReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for totalSupplyReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for totalSupplyCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "totalSupply()";
-            const SELECTOR: [u8; 4] = [24u8, 22u8, 13u8, 221u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: totalSupplyReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: totalSupplyReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `transfer(address,uint256)` and selector `0xa9059cbb`.
 ```solidity
 function transfer(address dst, uint256 wad) external returns (bool);
@@ -2466,8 +2308,6 @@ function withdraw(uint256 wad) external;
         #[allow(missing_docs)]
         symbol(symbolCall),
         #[allow(missing_docs)]
-        totalSupply(totalSupplyCall),
-        #[allow(missing_docs)]
         transfer(transferCall),
         #[allow(missing_docs)]
         transferFrom(transferFromCall),
@@ -2484,7 +2324,6 @@ function withdraw(uint256 wad) external;
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 253u8, 222u8, 3u8],
             [9u8, 94u8, 167u8, 179u8],
-            [24u8, 22u8, 13u8, 221u8],
             [35u8, 184u8, 114u8, 221u8],
             [46u8, 26u8, 125u8, 77u8],
             [49u8, 60u8, 229u8, 103u8],
@@ -2498,7 +2337,6 @@ function withdraw(uint256 wad) external;
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(name),
             ::core::stringify!(approve),
-            ::core::stringify!(totalSupply),
             ::core::stringify!(transferFrom),
             ::core::stringify!(withdraw),
             ::core::stringify!(decimals),
@@ -2512,7 +2350,6 @@ function withdraw(uint256 wad) external;
         pub const SIGNATURES: &'static [&'static str] = &[
             <nameCall as alloy_sol_types::SolCall>::SIGNATURE,
             <approveCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <totalSupplyCall as alloy_sol_types::SolCall>::SIGNATURE,
             <transferFromCall as alloy_sol_types::SolCall>::SIGNATURE,
             <withdrawCall as alloy_sol_types::SolCall>::SIGNATURE,
             <decimalsCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -2547,7 +2384,7 @@ function withdraw(uint256 wad) external;
     impl alloy_sol_types::SolInterface for WETH9Calls {
         const NAME: &'static str = "WETH9Calls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 11usize;
+        const COUNT: usize = 10usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2562,9 +2399,6 @@ function withdraw(uint256 wad) external;
                 Self::deposit(_) => <depositCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::name(_) => <nameCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::symbol(_) => <symbolCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::totalSupply(_) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::transfer(_) => <transferCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::transferFrom(_) => {
                     <transferFromCall as alloy_sol_types::SolCall>::SELECTOR
@@ -2600,15 +2434,6 @@ function withdraw(uint256 wad) external;
                             .map(WETH9Calls::approve)
                     }
                     approve
-                },
-                {
-                    fn totalSupply(data: &[u8]) -> alloy_sol_types::Result<WETH9Calls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(WETH9Calls::totalSupply)
-                    }
-                    totalSupply
                 },
                 {
                     fn transferFrom(data: &[u8]) -> alloy_sol_types::Result<WETH9Calls> {
@@ -2705,15 +2530,6 @@ function withdraw(uint256 wad) external;
                             .map(WETH9Calls::approve)
                     }
                     approve
-                },
-                {
-                    fn totalSupply(data: &[u8]) -> alloy_sol_types::Result<WETH9Calls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(WETH9Calls::totalSupply)
-                    }
-                    totalSupply
                 },
                 {
                     fn transferFrom(data: &[u8]) -> alloy_sol_types::Result<WETH9Calls> {
@@ -2822,11 +2638,6 @@ function withdraw(uint256 wad) external;
                 Self::symbol(inner) => {
                     <symbolCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::totalSupply(inner) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::transfer(inner) => {
                     <transferCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -2872,12 +2683,6 @@ function withdraw(uint256 wad) external;
                 }
                 Self::symbol(inner) => {
                     <symbolCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::totalSupply(inner) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
                 Self::transfer(inner) => {
                     <transferCall as alloy_sol_types::SolCall>::abi_encode_raw(
@@ -3247,12 +3052,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn symbol(&self) -> alloy_contract::SolCallBuilder<&P, symbolCall, N> {
             self.call_builder(&symbolCall)
         }
-        ///Creates a new call builder for the [`totalSupply`] function.
-        pub fn totalSupply(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, totalSupplyCall, N> {
-            self.call_builder(&totalSupplyCall)
-        }
         ///Creates a new call builder for the [`transfer`] function.
         pub fn transfer(
             &self,
@@ -3319,26 +3118,10 @@ use {
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        100u64 => {
+        9745u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"
-                ),
-                None,
-            ))
-        }
-        42161u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
-                ),
-                None,
-            ))
-        }
-        57073u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x4200000000000000000000000000000000000006"
+                    "0x6100E367285b01F48D07953803A2d8dCA5D19873"
                 ),
                 None,
             ))
@@ -3351,10 +3134,10 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 None,
             ))
         }
-        56u64 => {
+        8453u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+                    "0x4200000000000000000000000000000000000006"
                 ),
                 None,
             ))
@@ -3367,10 +3150,10 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 None,
             ))
         }
-        10u64 => {
+        56u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0x4200000000000000000000000000000000000006"
+                    "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
                 ),
                 None,
             ))
@@ -3383,18 +3166,18 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 None,
             ))
         }
-        8453u64 => {
+        100u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0x4200000000000000000000000000000000000006"
+                    "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"
                 ),
                 None,
             ))
         }
-        232u64 => {
+        42161u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F"
+                    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
                 ),
                 None,
             ))
@@ -3415,10 +3198,26 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 None,
             ))
         }
-        9745u64 => {
+        232u64 => {
             Some((
                 ::alloy_primitives::address!(
-                    "0x6100E367285b01F48D07953803A2d8dCA5D19873"
+                    "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F"
+                ),
+                None,
+            ))
+        }
+        57073u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x4200000000000000000000000000000000000006"
+                ),
+                None,
+            ))
+        }
+        10u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x4200000000000000000000000000000000000006"
                 ),
                 None,
             ))

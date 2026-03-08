@@ -417,9 +417,7 @@ library LoanRequest {
 interface FlashLoanRouter {
     constructor(address _settlementContract);
 
-    function borrowerCallback(bytes memory encodedLoansWithSettlement) external;
     function flashLoanAndSettle(LoanRequest.Data[] memory loans, bytes memory settlement) external;
-    function settlementAuthentication() external view returns (address);
     function settlementContract() external view returns (address);
 }
 ```
@@ -436,19 +434,6 @@ interface FlashLoanRouter {
         "internalType": "contract ICowSettlement"
       }
     ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "borrowerCallback",
-    "inputs": [
-      {
-        "name": "encodedLoansWithSettlement",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -490,19 +475,6 @@ interface FlashLoanRouter {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "settlementAuthentication",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract ICowAuthentication"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -614,155 +586,6 @@ constructor(address _settlementContract);
                         &self._settlementContract,
                     ),
                 )
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `borrowerCallback(bytes)` and selector `0x0efb1fb6`.
-```solidity
-function borrowerCallback(bytes memory encodedLoansWithSettlement) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct borrowerCallbackCall {
-        #[allow(missing_docs)]
-        pub encodedLoansWithSettlement: alloy_sol_types::private::Bytes,
-    }
-    ///Container type for the return parameters of the [`borrowerCallback(bytes)`](borrowerCallbackCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct borrowerCallbackReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<borrowerCallbackCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: borrowerCallbackCall) -> Self {
-                    (value.encodedLoansWithSettlement,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for borrowerCallbackCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        encodedLoansWithSettlement: tuple.0,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<borrowerCallbackReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: borrowerCallbackReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for borrowerCallbackReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl borrowerCallbackReturn {
-            fn _tokenize(
-                &self,
-            ) -> <borrowerCallbackCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for borrowerCallbackCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = borrowerCallbackReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "borrowerCallback(bytes)";
-            const SELECTOR: [u8; 4] = [14u8, 251u8, 31u8, 182u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.encodedLoansWithSettlement,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                borrowerCallbackReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
             }
         }
     };
@@ -935,153 +758,6 @@ function flashLoanAndSettle(LoanRequest.Data[] memory loans, bytes memory settle
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `settlementAuthentication()` and selector `0x02ebcbea`.
-```solidity
-function settlementAuthentication() external view returns (address);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct settlementAuthenticationCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`settlementAuthentication()`](settlementAuthenticationCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct settlementAuthenticationReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<settlementAuthenticationCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: settlementAuthenticationCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for settlementAuthenticationCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<settlementAuthenticationReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: settlementAuthenticationReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for settlementAuthenticationReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for settlementAuthenticationCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Address;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "settlementAuthentication()";
-            const SELECTOR: [u8; 4] = [2u8, 235u8, 203u8, 234u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: settlementAuthenticationReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: settlementAuthenticationReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `settlementContract()` and selector `0xea42418b`.
 ```solidity
 function settlementContract() external view returns (address);
@@ -1233,11 +909,7 @@ function settlementContract() external view returns (address);
     #[derive()]
     pub enum FlashLoanRouterCalls {
         #[allow(missing_docs)]
-        borrowerCallback(borrowerCallbackCall),
-        #[allow(missing_docs)]
         flashLoanAndSettle(flashLoanAndSettleCall),
-        #[allow(missing_docs)]
-        settlementAuthentication(settlementAuthenticationCall),
         #[allow(missing_docs)]
         settlementContract(settlementContractCall),
     }
@@ -1249,22 +921,16 @@ function settlementContract() external view returns (address);
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [2u8, 235u8, 203u8, 234u8],
-            [14u8, 251u8, 31u8, 182u8],
             [231u8, 196u8, 56u8, 201u8],
             [234u8, 66u8, 65u8, 139u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(settlementAuthentication),
-            ::core::stringify!(borrowerCallback),
             ::core::stringify!(flashLoanAndSettle),
             ::core::stringify!(settlementContract),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
-            <settlementAuthenticationCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <borrowerCallbackCall as alloy_sol_types::SolCall>::SIGNATURE,
             <flashLoanAndSettleCall as alloy_sol_types::SolCall>::SIGNATURE,
             <settlementContractCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
@@ -1293,18 +959,12 @@ function settlementContract() external view returns (address);
     impl alloy_sol_types::SolInterface for FlashLoanRouterCalls {
         const NAME: &'static str = "FlashLoanRouterCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 4usize;
+        const COUNT: usize = 2usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::borrowerCallback(_) => {
-                    <borrowerCallbackCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::flashLoanAndSettle(_) => {
                     <flashLoanAndSettleCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::settlementAuthentication(_) => {
-                    <settlementAuthenticationCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::settlementContract(_) => {
                     <settlementContractCall as alloy_sol_types::SolCall>::SELECTOR
@@ -1328,28 +988,6 @@ function settlementContract() external view returns (address);
             static DECODE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<FlashLoanRouterCalls>] = &[
-                {
-                    fn settlementAuthentication(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
-                        <settlementAuthenticationCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FlashLoanRouterCalls::settlementAuthentication)
-                    }
-                    settlementAuthentication
-                },
-                {
-                    fn borrowerCallback(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
-                        <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(FlashLoanRouterCalls::borrowerCallback)
-                    }
-                    borrowerCallback
-                },
                 {
                     fn flashLoanAndSettle(
                         data: &[u8],
@@ -1393,28 +1031,6 @@ function settlementContract() external view returns (address);
                 &[u8],
             ) -> alloy_sol_types::Result<FlashLoanRouterCalls>] = &[
                 {
-                    fn settlementAuthentication(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
-                        <settlementAuthenticationCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FlashLoanRouterCalls::settlementAuthentication)
-                    }
-                    settlementAuthentication
-                },
-                {
-                    fn borrowerCallback(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
-                        <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(FlashLoanRouterCalls::borrowerCallback)
-                    }
-                    borrowerCallback
-                },
-                {
                     fn flashLoanAndSettle(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
@@ -1450,18 +1066,8 @@ function settlementContract() external view returns (address);
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::borrowerCallback(inner) => {
-                    <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::flashLoanAndSettle(inner) => {
                     <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::settlementAuthentication(inner) => {
-                    <settlementAuthenticationCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -1475,20 +1081,8 @@ function settlementContract() external view returns (address);
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::borrowerCallback(inner) => {
-                    <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::flashLoanAndSettle(inner) => {
                     <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::settlementAuthentication(inner) => {
-                    <settlementAuthenticationCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -1676,17 +1270,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-        ///Creates a new call builder for the [`borrowerCallback`] function.
-        pub fn borrowerCallback(
-            &self,
-            encodedLoansWithSettlement: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, borrowerCallbackCall, N> {
-            self.call_builder(
-                &borrowerCallbackCall {
-                    encodedLoansWithSettlement,
-                },
-            )
-        }
         ///Creates a new call builder for the [`flashLoanAndSettle`] function.
         pub fn flashLoanAndSettle(
             &self,
@@ -1701,12 +1284,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     settlement,
                 },
             )
-        }
-        ///Creates a new call builder for the [`settlementAuthentication`] function.
-        pub fn settlementAuthentication(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, settlementAuthenticationCall, N> {
-            self.call_builder(&settlementAuthenticationCall)
         }
         ///Creates a new call builder for the [`settlementContract`] function.
         pub fn settlementContract(
@@ -1742,14 +1319,6 @@ use {
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        137u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
-                ),
-                None,
-            ))
-        }
         1u64 => {
             Some((
                 ::alloy_primitives::address!(
@@ -1758,7 +1327,23 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 None,
             ))
         }
-        100u64 => {
+        8453u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        137u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        43114u64 => {
             Some((
                 ::alloy_primitives::address!(
                     "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
@@ -1782,15 +1367,7 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
                 None,
             ))
         }
-        8453u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
-                ),
-                None,
-            ))
-        }
-        43114u64 => {
+        100u64 => {
             Some((
                 ::alloy_primitives::address!(
                     "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"

@@ -15,25 +15,16 @@ interface CowProtocolToken {
     constructor(address initialTokenHolder, address cowDao, uint256 totalSupply);
 
     function DOMAIN_SEPARATOR() external view returns (bytes32);
-    function MAX_YEARLY_INFLATION() external view returns (uint256);
-    function TIME_BETWEEN_MINTINGS() external view returns (uint256);
     function allowance(address owner, address spender) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
-    function cowDao() external view returns (address);
     function decimals() external view returns (uint8);
-    function decreaseAllowance(address spender, uint256 subtractedValue) external returns (bool);
-    function getStorageAt(uint256 offset, uint256 length) external view returns (bytes memory);
-    function increaseAllowance(address spender, uint256 addedValue) external returns (bool);
     function mint(address target, uint256 amount) external;
     function name() external view returns (string memory);
     function nonces(address owner) external view returns (uint256);
     function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
     function simulateDelegatecall(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-    function simulateDelegatecallInternal(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
     function symbol() external view returns (string memory);
-    function timestampLastMinting() external view returns (uint256);
-    function totalSupply() external view returns (uint256);
     function transfer(address recipient, uint256 amount) external returns (bool);
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
 }
@@ -72,32 +63,6 @@ interface CowProtocolToken {
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_YEARLY_INFLATION",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "TIME_BETWEEN_MINTINGS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -171,19 +136,6 @@ interface CowProtocolToken {
   },
   {
     "type": "function",
-    "name": "cowDao",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "decimals",
     "inputs": [],
     "outputs": [
@@ -194,78 +146,6 @@ interface CowProtocolToken {
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "decreaseAllowance",
-    "inputs": [
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "subtractedValue",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getStorageAt",
-    "inputs": [
-      {
-        "name": "offset",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "increaseAllowance",
-    "inputs": [
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "addedValue",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -386,30 +266,6 @@ interface CowProtocolToken {
   },
   {
     "type": "function",
-    "name": "simulateDelegatecallInternal",
-    "inputs": [
-      {
-        "name": "targetContract",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "calldataPayload",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "response",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "symbol",
     "inputs": [],
     "outputs": [
@@ -417,32 +273,6 @@ interface CowProtocolToken {
         "name": "",
         "type": "string",
         "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "timestampLastMinting",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "totalSupply",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1290,304 +1120,6 @@ function DOMAIN_SEPARATOR() external view returns (bytes32);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `MAX_YEARLY_INFLATION()` and selector `0x5862bf3d`.
-```solidity
-function MAX_YEARLY_INFLATION() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct MAX_YEARLY_INFLATIONCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`MAX_YEARLY_INFLATION()`](MAX_YEARLY_INFLATIONCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct MAX_YEARLY_INFLATIONReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<MAX_YEARLY_INFLATIONCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: MAX_YEARLY_INFLATIONCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for MAX_YEARLY_INFLATIONCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<MAX_YEARLY_INFLATIONReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: MAX_YEARLY_INFLATIONReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for MAX_YEARLY_INFLATIONReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for MAX_YEARLY_INFLATIONCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "MAX_YEARLY_INFLATION()";
-            const SELECTOR: [u8; 4] = [88u8, 98u8, 191u8, 61u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: MAX_YEARLY_INFLATIONReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: MAX_YEARLY_INFLATIONReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `TIME_BETWEEN_MINTINGS()` and selector `0xcd42dcbe`.
-```solidity
-function TIME_BETWEEN_MINTINGS() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct TIME_BETWEEN_MINTINGSCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`TIME_BETWEEN_MINTINGS()`](TIME_BETWEEN_MINTINGSCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct TIME_BETWEEN_MINTINGSReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<TIME_BETWEEN_MINTINGSCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: TIME_BETWEEN_MINTINGSCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for TIME_BETWEEN_MINTINGSCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<TIME_BETWEEN_MINTINGSReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: TIME_BETWEEN_MINTINGSReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for TIME_BETWEEN_MINTINGSReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for TIME_BETWEEN_MINTINGSCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "TIME_BETWEEN_MINTINGS()";
-            const SELECTOR: [u8; 4] = [205u8, 66u8, 220u8, 190u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: TIME_BETWEEN_MINTINGSReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: TIME_BETWEEN_MINTINGSReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowance(address,address)` and selector `0xdd62ed3e`.
 ```solidity
 function allowance(address owner, address spender) external view returns (uint256);
@@ -2076,149 +1608,6 @@ function balanceOf(address account) external view returns (uint256);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `cowDao()` and selector `0xe2d51489`.
-```solidity
-function cowDao() external view returns (address);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct cowDaoCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`cowDao()`](cowDaoCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct cowDaoReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<cowDaoCall> for UnderlyingRustTuple<'_> {
-                fn from(value: cowDaoCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for cowDaoCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<cowDaoReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: cowDaoReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for cowDaoReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for cowDaoCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Address;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "cowDao()";
-            const SELECTOR: [u8; 4] = [226u8, 213u8, 20u8, 137u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: cowDaoReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: cowDaoReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `decimals()` and selector `0x313ce567`.
 ```solidity
 function decimals() external view returns (uint8);
@@ -2356,515 +1745,6 @@ function decimals() external view returns (uint8);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: decimalsReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `decreaseAllowance(address,uint256)` and selector `0xa457c2d7`.
-```solidity
-function decreaseAllowance(address spender, uint256 subtractedValue) external returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct decreaseAllowanceCall {
-        #[allow(missing_docs)]
-        pub spender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub subtractedValue: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`decreaseAllowance(address,uint256)`](decreaseAllowanceCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct decreaseAllowanceReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<decreaseAllowanceCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: decreaseAllowanceCall) -> Self {
-                    (value.spender, value.subtractedValue)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for decreaseAllowanceCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        spender: tuple.0,
-                        subtractedValue: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<decreaseAllowanceReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: decreaseAllowanceReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for decreaseAllowanceReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for decreaseAllowanceCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "decreaseAllowance(address,uint256)";
-            const SELECTOR: [u8; 4] = [164u8, 87u8, 194u8, 215u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.spender,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.subtractedValue),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: decreaseAllowanceReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: decreaseAllowanceReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getStorageAt(uint256,uint256)` and selector `0x5624b25b`.
-```solidity
-function getStorageAt(uint256 offset, uint256 length) external view returns (bytes memory);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getStorageAtCall {
-        #[allow(missing_docs)]
-        pub offset: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub length: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getStorageAt(uint256,uint256)`](getStorageAtCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getStorageAtReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getStorageAtCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getStorageAtCall) -> Self {
-                    (value.offset, value.length)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getStorageAtCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        offset: tuple.0,
-                        length: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getStorageAtReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getStorageAtReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getStorageAtReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getStorageAtCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getStorageAt(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [86u8, 36u8, 178u8, 91u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.offset),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.length),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: getStorageAtReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getStorageAtReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `increaseAllowance(address,uint256)` and selector `0x39509351`.
-```solidity
-function increaseAllowance(address spender, uint256 addedValue) external returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct increaseAllowanceCall {
-        #[allow(missing_docs)]
-        pub spender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub addedValue: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`increaseAllowance(address,uint256)`](increaseAllowanceCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct increaseAllowanceReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<increaseAllowanceCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: increaseAllowanceCall) -> Self {
-                    (value.spender, value.addedValue)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for increaseAllowanceCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        spender: tuple.0,
-                        addedValue: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<increaseAllowanceReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: increaseAllowanceReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for increaseAllowanceReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for increaseAllowanceCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "increaseAllowance(address,uint256)";
-            const SELECTOR: [u8; 4] = [57u8, 80u8, 147u8, 81u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.spender,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.addedValue),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: increaseAllowanceReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: increaseAllowanceReturn = r.into();
                         r._0
                     })
             }
@@ -3710,177 +2590,6 @@ function simulateDelegatecall(address targetContract, bytes memory calldataPaylo
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `simulateDelegatecallInternal(address,bytes)` and selector `0x43218e19`.
-```solidity
-function simulateDelegatecallInternal(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct simulateDelegatecallInternalCall {
-        #[allow(missing_docs)]
-        pub targetContract: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub calldataPayload: alloy_sol_types::private::Bytes,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`simulateDelegatecallInternal(address,bytes)`](simulateDelegatecallInternalCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct simulateDelegatecallInternalReturn {
-        #[allow(missing_docs)]
-        pub response: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallInternalCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: simulateDelegatecallInternalCall) -> Self {
-                    (value.targetContract, value.calldataPayload)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for simulateDelegatecallInternalCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        targetContract: tuple.0,
-                        calldataPayload: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallInternalReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: simulateDelegatecallInternalReturn) -> Self {
-                    (value.response,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for simulateDelegatecallInternalReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { response: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for simulateDelegatecallInternalCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "simulateDelegatecallInternal(address,bytes)";
-            const SELECTOR: [u8; 4] = [67u8, 33u8, 142u8, 25u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.targetContract,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.calldataPayload,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: simulateDelegatecallInternalReturn = r.into();
-                        r.response
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: simulateDelegatecallInternalReturn = r.into();
-                        r.response
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `symbol()` and selector `0x95d89b41`.
 ```solidity
 function symbol() external view returns (string memory);
@@ -4018,300 +2727,6 @@ function symbol() external view returns (string memory);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: symbolReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `timestampLastMinting()` and selector `0xfde9e07a`.
-```solidity
-function timestampLastMinting() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct timestampLastMintingCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`timestampLastMinting()`](timestampLastMintingCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct timestampLastMintingReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<timestampLastMintingCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: timestampLastMintingCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for timestampLastMintingCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<timestampLastMintingReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: timestampLastMintingReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for timestampLastMintingReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for timestampLastMintingCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "timestampLastMinting()";
-            const SELECTOR: [u8; 4] = [253u8, 233u8, 224u8, 122u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: timestampLastMintingReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: timestampLastMintingReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `totalSupply()` and selector `0x18160ddd`.
-```solidity
-function totalSupply() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct totalSupplyCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`totalSupply()`](totalSupplyCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct totalSupplyReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<totalSupplyCall> for UnderlyingRustTuple<'_> {
-                fn from(value: totalSupplyCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for totalSupplyCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<totalSupplyReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: totalSupplyReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for totalSupplyReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for totalSupplyCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "totalSupply()";
-            const SELECTOR: [u8; 4] = [24u8, 22u8, 13u8, 221u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: totalSupplyReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: totalSupplyReturn = r.into();
                         r._0
                     })
             }
@@ -4667,25 +3082,13 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
         #[allow(missing_docs)]
         DOMAIN_SEPARATOR(DOMAIN_SEPARATORCall),
         #[allow(missing_docs)]
-        MAX_YEARLY_INFLATION(MAX_YEARLY_INFLATIONCall),
-        #[allow(missing_docs)]
-        TIME_BETWEEN_MINTINGS(TIME_BETWEEN_MINTINGSCall),
-        #[allow(missing_docs)]
         allowance(allowanceCall),
         #[allow(missing_docs)]
         approve(approveCall),
         #[allow(missing_docs)]
         balanceOf(balanceOfCall),
         #[allow(missing_docs)]
-        cowDao(cowDaoCall),
-        #[allow(missing_docs)]
         decimals(decimalsCall),
-        #[allow(missing_docs)]
-        decreaseAllowance(decreaseAllowanceCall),
-        #[allow(missing_docs)]
-        getStorageAt(getStorageAtCall),
-        #[allow(missing_docs)]
-        increaseAllowance(increaseAllowanceCall),
         #[allow(missing_docs)]
         mint(mintCall),
         #[allow(missing_docs)]
@@ -4697,13 +3100,7 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
         #[allow(missing_docs)]
         simulateDelegatecall(simulateDelegatecallCall),
         #[allow(missing_docs)]
-        simulateDelegatecallInternal(simulateDelegatecallInternalCall),
-        #[allow(missing_docs)]
         symbol(symbolCall),
-        #[allow(missing_docs)]
-        timestampLastMinting(timestampLastMintingCall),
-        #[allow(missing_docs)]
-        totalSupply(totalSupplyCall),
         #[allow(missing_docs)]
         transfer(transferCall),
         #[allow(missing_docs)]
@@ -4719,76 +3116,49 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 253u8, 222u8, 3u8],
             [9u8, 94u8, 167u8, 179u8],
-            [24u8, 22u8, 13u8, 221u8],
             [35u8, 184u8, 114u8, 221u8],
             [49u8, 60u8, 229u8, 103u8],
             [54u8, 68u8, 229u8, 21u8],
-            [57u8, 80u8, 147u8, 81u8],
             [64u8, 193u8, 15u8, 25u8],
-            [67u8, 33u8, 142u8, 25u8],
-            [86u8, 36u8, 178u8, 91u8],
-            [88u8, 98u8, 191u8, 61u8],
             [112u8, 160u8, 130u8, 49u8],
             [126u8, 206u8, 190u8, 0u8],
             [149u8, 216u8, 155u8, 65u8],
-            [164u8, 87u8, 194u8, 215u8],
             [169u8, 5u8, 156u8, 187u8],
-            [205u8, 66u8, 220u8, 190u8],
             [213u8, 5u8, 172u8, 207u8],
             [221u8, 98u8, 237u8, 62u8],
-            [226u8, 213u8, 20u8, 137u8],
             [248u8, 68u8, 54u8, 189u8],
-            [253u8, 233u8, 224u8, 122u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(name),
             ::core::stringify!(approve),
-            ::core::stringify!(totalSupply),
             ::core::stringify!(transferFrom),
             ::core::stringify!(decimals),
             ::core::stringify!(DOMAIN_SEPARATOR),
-            ::core::stringify!(increaseAllowance),
             ::core::stringify!(mint),
-            ::core::stringify!(simulateDelegatecallInternal),
-            ::core::stringify!(getStorageAt),
-            ::core::stringify!(MAX_YEARLY_INFLATION),
             ::core::stringify!(balanceOf),
             ::core::stringify!(nonces),
             ::core::stringify!(symbol),
-            ::core::stringify!(decreaseAllowance),
             ::core::stringify!(transfer),
-            ::core::stringify!(TIME_BETWEEN_MINTINGS),
             ::core::stringify!(permit),
             ::core::stringify!(allowance),
-            ::core::stringify!(cowDao),
             ::core::stringify!(simulateDelegatecall),
-            ::core::stringify!(timestampLastMinting),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <nameCall as alloy_sol_types::SolCall>::SIGNATURE,
             <approveCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <totalSupplyCall as alloy_sol_types::SolCall>::SIGNATURE,
             <transferFromCall as alloy_sol_types::SolCall>::SIGNATURE,
             <decimalsCall as alloy_sol_types::SolCall>::SIGNATURE,
             <DOMAIN_SEPARATORCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <increaseAllowanceCall as alloy_sol_types::SolCall>::SIGNATURE,
             <mintCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getStorageAtCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <MAX_YEARLY_INFLATIONCall as alloy_sol_types::SolCall>::SIGNATURE,
             <balanceOfCall as alloy_sol_types::SolCall>::SIGNATURE,
             <noncesCall as alloy_sol_types::SolCall>::SIGNATURE,
             <symbolCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <decreaseAllowanceCall as alloy_sol_types::SolCall>::SIGNATURE,
             <transferCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <TIME_BETWEEN_MINTINGSCall as alloy_sol_types::SolCall>::SIGNATURE,
             <permitCall as alloy_sol_types::SolCall>::SIGNATURE,
             <allowanceCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <cowDaoCall as alloy_sol_types::SolCall>::SIGNATURE,
             <simulateDelegatecallCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <timestampLastMintingCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -4815,18 +3185,12 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
     impl alloy_sol_types::SolInterface for CowProtocolTokenCalls {
         const NAME: &'static str = "CowProtocolTokenCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 22usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::DOMAIN_SEPARATOR(_) => {
                     <DOMAIN_SEPARATORCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::MAX_YEARLY_INFLATION(_) => {
-                    <MAX_YEARLY_INFLATIONCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::TIME_BETWEEN_MINTINGS(_) => {
-                    <TIME_BETWEEN_MINTINGSCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::allowance(_) => {
                     <allowanceCall as alloy_sol_types::SolCall>::SELECTOR
@@ -4835,17 +3199,7 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                 Self::balanceOf(_) => {
                     <balanceOfCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::cowDao(_) => <cowDaoCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::decimals(_) => <decimalsCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::decreaseAllowance(_) => {
-                    <decreaseAllowanceCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getStorageAt(_) => {
-                    <getStorageAtCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::increaseAllowance(_) => {
-                    <increaseAllowanceCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::mint(_) => <mintCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::name(_) => <nameCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::nonces(_) => <noncesCall as alloy_sol_types::SolCall>::SELECTOR,
@@ -4853,16 +3207,7 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                 Self::simulateDelegatecall(_) => {
                     <simulateDelegatecallCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::simulateDelegatecallInternal(_) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::symbol(_) => <symbolCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::timestampLastMinting(_) => {
-                    <timestampLastMintingCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::totalSupply(_) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::transfer(_) => <transferCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::transferFrom(_) => {
                     <transferFromCall as alloy_sol_types::SolCall>::SELECTOR
@@ -4905,17 +3250,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     approve
                 },
                 {
-                    fn totalSupply(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::totalSupply)
-                    }
-                    totalSupply
-                },
-                {
                     fn transferFrom(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -4947,17 +3281,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     DOMAIN_SEPARATOR
                 },
                 {
-                    fn increaseAllowance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <increaseAllowanceCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::increaseAllowance)
-                    }
-                    increaseAllowance
-                },
-                {
                     fn mint(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -4965,39 +3288,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                             .map(CowProtocolTokenCalls::mint)
                     }
                     mint
-                },
-                {
-                    fn simulateDelegatecallInternal(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::simulateDelegatecallInternal)
-                    }
-                    simulateDelegatecallInternal
-                },
-                {
-                    fn getStorageAt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <getStorageAtCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::getStorageAt)
-                    }
-                    getStorageAt
-                },
-                {
-                    fn MAX_YEARLY_INFLATION(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <MAX_YEARLY_INFLATIONCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::MAX_YEARLY_INFLATION)
-                    }
-                    MAX_YEARLY_INFLATION
                 },
                 {
                     fn balanceOf(
@@ -5027,17 +3317,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     symbol
                 },
                 {
-                    fn decreaseAllowance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <decreaseAllowanceCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::decreaseAllowance)
-                    }
-                    decreaseAllowance
-                },
-                {
                     fn transfer(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -5045,17 +3324,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                             .map(CowProtocolTokenCalls::transfer)
                     }
                     transfer
-                },
-                {
-                    fn TIME_BETWEEN_MINTINGS(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <TIME_BETWEEN_MINTINGSCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::TIME_BETWEEN_MINTINGS)
-                    }
-                    TIME_BETWEEN_MINTINGS
                 },
                 {
                     fn permit(
@@ -5076,15 +3344,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     allowance
                 },
                 {
-                    fn cowDao(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <cowDaoCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(CowProtocolTokenCalls::cowDao)
-                    }
-                    cowDao
-                },
-                {
                     fn simulateDelegatecall(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -5094,17 +3353,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                             .map(CowProtocolTokenCalls::simulateDelegatecall)
                     }
                     simulateDelegatecall
-                },
-                {
-                    fn timestampLastMinting(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <timestampLastMintingCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::timestampLastMinting)
-                    }
-                    timestampLastMinting
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -5149,17 +3397,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     approve
                 },
                 {
-                    fn totalSupply(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::totalSupply)
-                    }
-                    totalSupply
-                },
-                {
                     fn transferFrom(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -5193,17 +3430,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     DOMAIN_SEPARATOR
                 },
                 {
-                    fn increaseAllowance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <increaseAllowanceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::increaseAllowance)
-                    }
-                    increaseAllowance
-                },
-                {
                     fn mint(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -5213,39 +3439,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                             .map(CowProtocolTokenCalls::mint)
                     }
                     mint
-                },
-                {
-                    fn simulateDelegatecallInternal(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::simulateDelegatecallInternal)
-                    }
-                    simulateDelegatecallInternal
-                },
-                {
-                    fn getStorageAt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <getStorageAtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::getStorageAt)
-                    }
-                    getStorageAt
-                },
-                {
-                    fn MAX_YEARLY_INFLATION(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <MAX_YEARLY_INFLATIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::MAX_YEARLY_INFLATION)
-                    }
-                    MAX_YEARLY_INFLATION
                 },
                 {
                     fn balanceOf(
@@ -5281,17 +3474,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     symbol
                 },
                 {
-                    fn decreaseAllowance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <decreaseAllowanceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::decreaseAllowance)
-                    }
-                    decreaseAllowance
-                },
-                {
                     fn transfer(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -5301,17 +3483,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                             .map(CowProtocolTokenCalls::transfer)
                     }
                     transfer
-                },
-                {
-                    fn TIME_BETWEEN_MINTINGS(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <TIME_BETWEEN_MINTINGSCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::TIME_BETWEEN_MINTINGS)
-                    }
-                    TIME_BETWEEN_MINTINGS
                 },
                 {
                     fn permit(
@@ -5336,17 +3507,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                     allowance
                 },
                 {
-                    fn cowDao(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <cowDaoCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::cowDao)
-                    }
-                    cowDao
-                },
-                {
                     fn simulateDelegatecall(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
@@ -5356,17 +3516,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                             .map(CowProtocolTokenCalls::simulateDelegatecall)
                     }
                     simulateDelegatecall
-                },
-                {
-                    fn timestampLastMinting(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowProtocolTokenCalls> {
-                        <timestampLastMintingCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(CowProtocolTokenCalls::timestampLastMinting)
-                    }
-                    timestampLastMinting
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -5387,16 +3536,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                         inner,
                     )
                 }
-                Self::MAX_YEARLY_INFLATION(inner) => {
-                    <MAX_YEARLY_INFLATIONCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::TIME_BETWEEN_MINTINGS(inner) => {
-                    <TIME_BETWEEN_MINTINGSCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::allowance(inner) => {
                     <allowanceCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -5406,26 +3545,8 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                 Self::balanceOf(inner) => {
                     <balanceOfCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::cowDao(inner) => {
-                    <cowDaoCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
                 Self::decimals(inner) => {
                     <decimalsCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::decreaseAllowance(inner) => {
-                    <decreaseAllowanceCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getStorageAt(inner) => {
-                    <getStorageAtCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::increaseAllowance(inner) => {
-                    <increaseAllowanceCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
                 }
                 Self::mint(inner) => {
                     <mintCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -5444,23 +3565,8 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                         inner,
                     )
                 }
-                Self::simulateDelegatecallInternal(inner) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::symbol(inner) => {
                     <symbolCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::timestampLastMinting(inner) => {
-                    <timestampLastMintingCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::totalSupply(inner) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
                 }
                 Self::transfer(inner) => {
                     <transferCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -5481,18 +3587,6 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                         out,
                     )
                 }
-                Self::MAX_YEARLY_INFLATION(inner) => {
-                    <MAX_YEARLY_INFLATIONCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::TIME_BETWEEN_MINTINGS(inner) => {
-                    <TIME_BETWEEN_MINTINGSCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::allowance(inner) => {
                     <allowanceCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -5508,29 +3602,8 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                         out,
                     )
                 }
-                Self::cowDao(inner) => {
-                    <cowDaoCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
                 Self::decimals(inner) => {
                     <decimalsCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::decreaseAllowance(inner) => {
-                    <decreaseAllowanceCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::getStorageAt(inner) => {
-                    <getStorageAtCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::increaseAllowance(inner) => {
-                    <increaseAllowanceCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -5553,26 +3626,8 @@ function transferFrom(address sender, address recipient, uint256 amount) externa
                         out,
                     )
                 }
-                Self::simulateDelegatecallInternal(inner) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::symbol(inner) => {
                     <symbolCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::timestampLastMinting(inner) => {
-                    <timestampLastMintingCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::totalSupply(inner) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
                 Self::transfer(inner) => {
                     <transferCall as alloy_sol_types::SolCall>::abi_encode_raw(
@@ -6129,18 +4184,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, DOMAIN_SEPARATORCall, N> {
             self.call_builder(&DOMAIN_SEPARATORCall)
         }
-        ///Creates a new call builder for the [`MAX_YEARLY_INFLATION`] function.
-        pub fn MAX_YEARLY_INFLATION(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, MAX_YEARLY_INFLATIONCall, N> {
-            self.call_builder(&MAX_YEARLY_INFLATIONCall)
-        }
-        ///Creates a new call builder for the [`TIME_BETWEEN_MINTINGS`] function.
-        pub fn TIME_BETWEEN_MINTINGS(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, TIME_BETWEEN_MINTINGSCall, N> {
-            self.call_builder(&TIME_BETWEEN_MINTINGSCall)
-        }
         ///Creates a new call builder for the [`allowance`] function.
         pub fn allowance(
             &self,
@@ -6164,47 +4207,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, balanceOfCall, N> {
             self.call_builder(&balanceOfCall { account })
         }
-        ///Creates a new call builder for the [`cowDao`] function.
-        pub fn cowDao(&self) -> alloy_contract::SolCallBuilder<&P, cowDaoCall, N> {
-            self.call_builder(&cowDaoCall)
-        }
         ///Creates a new call builder for the [`decimals`] function.
         pub fn decimals(&self) -> alloy_contract::SolCallBuilder<&P, decimalsCall, N> {
             self.call_builder(&decimalsCall)
-        }
-        ///Creates a new call builder for the [`decreaseAllowance`] function.
-        pub fn decreaseAllowance(
-            &self,
-            spender: alloy_sol_types::private::Address,
-            subtractedValue: alloy_sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, decreaseAllowanceCall, N> {
-            self.call_builder(
-                &decreaseAllowanceCall {
-                    spender,
-                    subtractedValue,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`getStorageAt`] function.
-        pub fn getStorageAt(
-            &self,
-            offset: alloy_sol_types::private::primitives::aliases::U256,
-            length: alloy_sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, getStorageAtCall, N> {
-            self.call_builder(&getStorageAtCall { offset, length })
-        }
-        ///Creates a new call builder for the [`increaseAllowance`] function.
-        pub fn increaseAllowance(
-            &self,
-            spender: alloy_sol_types::private::Address,
-            addedValue: alloy_sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, increaseAllowanceCall, N> {
-            self.call_builder(
-                &increaseAllowanceCall {
-                    spender,
-                    addedValue,
-                },
-            )
         }
         ///Creates a new call builder for the [`mint`] function.
         pub fn mint(
@@ -6261,34 +4266,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`simulateDelegatecallInternal`] function.
-        pub fn simulateDelegatecallInternal(
-            &self,
-            targetContract: alloy_sol_types::private::Address,
-            calldataPayload: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, simulateDelegatecallInternalCall, N> {
-            self.call_builder(
-                &simulateDelegatecallInternalCall {
-                    targetContract,
-                    calldataPayload,
-                },
-            )
-        }
         ///Creates a new call builder for the [`symbol`] function.
         pub fn symbol(&self) -> alloy_contract::SolCallBuilder<&P, symbolCall, N> {
             self.call_builder(&symbolCall)
-        }
-        ///Creates a new call builder for the [`timestampLastMinting`] function.
-        pub fn timestampLastMinting(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, timestampLastMintingCall, N> {
-            self.call_builder(&timestampLastMintingCall)
-        }
-        ///Creates a new call builder for the [`totalSupply`] function.
-        pub fn totalSupply(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, totalSupplyCall, N> {
-            self.call_builder(&totalSupplyCall)
         }
         ///Creates a new call builder for the [`transfer`] function.
         pub fn transfer(
@@ -6349,6 +4329,14 @@ use {
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
+        1u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"
+                ),
+                None,
+            ))
+        }
         100u64 => {
             Some((
                 ::alloy_primitives::address!(
@@ -6361,14 +4349,6 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
             Some((
                 ::alloy_primitives::address!(
                     "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59"
-                ),
-                None,
-            ))
-        }
-        1u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"
                 ),
                 None,
             ))

@@ -13,8 +13,6 @@ interface IUniswapLikePair {
     event Transfer(address indexed from, address indexed to, uint256 value);
 
     function DOMAIN_SEPARATOR() external view returns (bytes32);
-    function MINIMUM_LIQUIDITY() external pure returns (uint256);
-    function PERMIT_TYPEHASH() external pure returns (bytes32);
     function allowance(address owner, address spender) external view returns (uint256);
     function approve(address spender, uint256 value) external returns (bool);
     function balanceOf(address owner) external view returns (uint256);
@@ -23,20 +21,15 @@ interface IUniswapLikePair {
     function factory() external view returns (address);
     function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
     function initialize(address, address) external;
-    function kLast() external view returns (uint256);
     function mint(address to) external returns (uint256 liquidity);
     function name() external pure returns (string memory);
     function nonces(address owner) external view returns (uint256);
     function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
-    function price0CumulativeLast() external view returns (uint256);
-    function price1CumulativeLast() external view returns (uint256);
-    function skim(address to) external;
     function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes memory data) external;
     function symbol() external pure returns (string memory);
     function sync() external;
     function token0() external view returns (address);
     function token1() external view returns (address);
-    function totalSupply() external view returns (uint256);
     function transfer(address to, uint256 value) external returns (bool);
     function transferFrom(address from, address to, uint256 value) external returns (bool);
 }
@@ -57,32 +50,6 @@ interface IUniswapLikePair {
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MINIMUM_LIQUIDITY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "PERMIT_TYPEHASH",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -244,19 +211,6 @@ interface IUniswapLikePair {
   },
   {
     "type": "function",
-    "name": "kLast",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "mint",
     "inputs": [
       {
@@ -351,45 +305,6 @@ interface IUniswapLikePair {
   },
   {
     "type": "function",
-    "name": "price0CumulativeLast",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "price1CumulativeLast",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "skim",
-    "inputs": [
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "swap",
     "inputs": [
       {
@@ -458,19 +373,6 @@ interface IUniswapLikePair {
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "totalSupply",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1609,300 +1511,6 @@ function DOMAIN_SEPARATOR() external view returns (bytes32);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: DOMAIN_SEPARATORReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `MINIMUM_LIQUIDITY()` and selector `0xba9a7a56`.
-```solidity
-function MINIMUM_LIQUIDITY() external pure returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct MINIMUM_LIQUIDITYCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`MINIMUM_LIQUIDITY()`](MINIMUM_LIQUIDITYCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct MINIMUM_LIQUIDITYReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<MINIMUM_LIQUIDITYCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: MINIMUM_LIQUIDITYCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for MINIMUM_LIQUIDITYCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<MINIMUM_LIQUIDITYReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: MINIMUM_LIQUIDITYReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for MINIMUM_LIQUIDITYReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for MINIMUM_LIQUIDITYCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "MINIMUM_LIQUIDITY()";
-            const SELECTOR: [u8; 4] = [186u8, 154u8, 122u8, 86u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: MINIMUM_LIQUIDITYReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: MINIMUM_LIQUIDITYReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `PERMIT_TYPEHASH()` and selector `0x30adf81f`.
-```solidity
-function PERMIT_TYPEHASH() external pure returns (bytes32);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct PERMIT_TYPEHASHCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`PERMIT_TYPEHASH()`](PERMIT_TYPEHASHCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct PERMIT_TYPEHASHReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::FixedBytes<32>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<PERMIT_TYPEHASHCall> for UnderlyingRustTuple<'_> {
-                fn from(value: PERMIT_TYPEHASHCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for PERMIT_TYPEHASHCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<32>,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<PERMIT_TYPEHASHReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: PERMIT_TYPEHASHReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for PERMIT_TYPEHASHReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for PERMIT_TYPEHASHCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::FixedBytes<32>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "PERMIT_TYPEHASH()";
-            const SELECTOR: [u8; 4] = [48u8, 173u8, 248u8, 31u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::FixedBytes<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: PERMIT_TYPEHASHReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: PERMIT_TYPEHASHReturn = r.into();
                         r._0
                     })
             }
@@ -3178,151 +2786,6 @@ function initialize(address, address) external;
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `kLast()` and selector `0x7464fc3d`.
-```solidity
-function kLast() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct kLastCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`kLast()`](kLastCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct kLastReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<kLastCall> for UnderlyingRustTuple<'_> {
-                fn from(value: kLastCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for kLastCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<kLastReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: kLastReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for kLastReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for kLastCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "kLast()";
-            const SELECTOR: [u8; 4] = [116u8, 100u8, 252u8, 61u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: kLastReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: kLastReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `mint(address)` and selector `0x6a627842`.
 ```solidity
 function mint(address to) external returns (uint256 liquidity);
@@ -3963,447 +3426,6 @@ function permit(address owner, address spender, uint256 value, uint256 deadline,
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 permitReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `price0CumulativeLast()` and selector `0x5909c0d5`.
-```solidity
-function price0CumulativeLast() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct price0CumulativeLastCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`price0CumulativeLast()`](price0CumulativeLastCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct price0CumulativeLastReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<price0CumulativeLastCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: price0CumulativeLastCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for price0CumulativeLastCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<price0CumulativeLastReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: price0CumulativeLastReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for price0CumulativeLastReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for price0CumulativeLastCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "price0CumulativeLast()";
-            const SELECTOR: [u8; 4] = [89u8, 9u8, 192u8, 213u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: price0CumulativeLastReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: price0CumulativeLastReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `price1CumulativeLast()` and selector `0x5a3d5493`.
-```solidity
-function price1CumulativeLast() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct price1CumulativeLastCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`price1CumulativeLast()`](price1CumulativeLastCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct price1CumulativeLastReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<price1CumulativeLastCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: price1CumulativeLastCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for price1CumulativeLastCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<price1CumulativeLastReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: price1CumulativeLastReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for price1CumulativeLastReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for price1CumulativeLastCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "price1CumulativeLast()";
-            const SELECTOR: [u8; 4] = [90u8, 61u8, 84u8, 147u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: price1CumulativeLastReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: price1CumulativeLastReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `skim(address)` and selector `0xbc25cf77`.
-```solidity
-function skim(address to) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct skimCall {
-        #[allow(missing_docs)]
-        pub to: alloy_sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`skim(address)`](skimCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct skimReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<skimCall> for UnderlyingRustTuple<'_> {
-                fn from(value: skimCall) -> Self {
-                    (value.to,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for skimCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { to: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<skimReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: skimReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for skimReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl skimReturn {
-            fn _tokenize(
-                &self,
-            ) -> <skimCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for skimCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = skimReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "skim(address)";
-            const SELECTOR: [u8; 4] = [188u8, 37u8, 207u8, 119u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.to,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                skimReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -5167,151 +4189,6 @@ function token1() external view returns (address);
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `totalSupply()` and selector `0x18160ddd`.
-```solidity
-function totalSupply() external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct totalSupplyCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`totalSupply()`](totalSupplyCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct totalSupplyReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<totalSupplyCall> for UnderlyingRustTuple<'_> {
-                fn from(value: totalSupplyCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for totalSupplyCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<totalSupplyReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: totalSupplyReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for totalSupplyReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for totalSupplyCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "totalSupply()";
-            const SELECTOR: [u8; 4] = [24u8, 22u8, 13u8, 221u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: totalSupplyReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: totalSupplyReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `transfer(address,uint256)` and selector `0xa9059cbb`.
 ```solidity
 function transfer(address to, uint256 value) external returns (bool);
@@ -5661,10 +4538,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
         #[allow(missing_docs)]
         DOMAIN_SEPARATOR(DOMAIN_SEPARATORCall),
         #[allow(missing_docs)]
-        MINIMUM_LIQUIDITY(MINIMUM_LIQUIDITYCall),
-        #[allow(missing_docs)]
-        PERMIT_TYPEHASH(PERMIT_TYPEHASHCall),
-        #[allow(missing_docs)]
         allowance(allowanceCall),
         #[allow(missing_docs)]
         approve(approveCall),
@@ -5681,8 +4554,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
         #[allow(missing_docs)]
         initialize(initializeCall),
         #[allow(missing_docs)]
-        kLast(kLastCall),
-        #[allow(missing_docs)]
         mint(mintCall),
         #[allow(missing_docs)]
         name(nameCall),
@@ -5690,12 +4561,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
         nonces(noncesCall),
         #[allow(missing_docs)]
         permit(permitCall),
-        #[allow(missing_docs)]
-        price0CumulativeLast(price0CumulativeLastCall),
-        #[allow(missing_docs)]
-        price1CumulativeLast(price1CumulativeLastCall),
-        #[allow(missing_docs)]
-        skim(skimCall),
         #[allow(missing_docs)]
         swap(swapCall),
         #[allow(missing_docs)]
@@ -5706,8 +4571,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
         token0(token0Call),
         #[allow(missing_docs)]
         token1(token1Call),
-        #[allow(missing_docs)]
-        totalSupply(totalSupplyCall),
         #[allow(missing_docs)]
         transfer(transferCall),
         #[allow(missing_docs)]
@@ -5726,23 +4589,16 @@ function transferFrom(address from, address to, uint256 value) external returns 
             [9u8, 2u8, 241u8, 172u8],
             [9u8, 94u8, 167u8, 179u8],
             [13u8, 254u8, 22u8, 129u8],
-            [24u8, 22u8, 13u8, 221u8],
             [35u8, 184u8, 114u8, 221u8],
-            [48u8, 173u8, 248u8, 31u8],
             [49u8, 60u8, 229u8, 103u8],
             [54u8, 68u8, 229u8, 21u8],
             [72u8, 92u8, 201u8, 85u8],
-            [89u8, 9u8, 192u8, 213u8],
-            [90u8, 61u8, 84u8, 147u8],
             [106u8, 98u8, 120u8, 66u8],
             [112u8, 160u8, 130u8, 49u8],
-            [116u8, 100u8, 252u8, 61u8],
             [126u8, 206u8, 190u8, 0u8],
             [137u8, 175u8, 203u8, 68u8],
             [149u8, 216u8, 155u8, 65u8],
             [169u8, 5u8, 156u8, 187u8],
-            [186u8, 154u8, 122u8, 86u8],
-            [188u8, 37u8, 207u8, 119u8],
             [196u8, 90u8, 1u8, 85u8],
             [210u8, 18u8, 32u8, 167u8],
             [213u8, 5u8, 172u8, 207u8],
@@ -5756,23 +4612,16 @@ function transferFrom(address from, address to, uint256 value) external returns 
             ::core::stringify!(getReserves),
             ::core::stringify!(approve),
             ::core::stringify!(token0),
-            ::core::stringify!(totalSupply),
             ::core::stringify!(transferFrom),
-            ::core::stringify!(PERMIT_TYPEHASH),
             ::core::stringify!(decimals),
             ::core::stringify!(DOMAIN_SEPARATOR),
             ::core::stringify!(initialize),
-            ::core::stringify!(price0CumulativeLast),
-            ::core::stringify!(price1CumulativeLast),
             ::core::stringify!(mint),
             ::core::stringify!(balanceOf),
-            ::core::stringify!(kLast),
             ::core::stringify!(nonces),
             ::core::stringify!(burn),
             ::core::stringify!(symbol),
             ::core::stringify!(transfer),
-            ::core::stringify!(MINIMUM_LIQUIDITY),
-            ::core::stringify!(skim),
             ::core::stringify!(factory),
             ::core::stringify!(token1),
             ::core::stringify!(permit),
@@ -5786,23 +4635,16 @@ function transferFrom(address from, address to, uint256 value) external returns 
             <getReservesCall as alloy_sol_types::SolCall>::SIGNATURE,
             <approveCall as alloy_sol_types::SolCall>::SIGNATURE,
             <token0Call as alloy_sol_types::SolCall>::SIGNATURE,
-            <totalSupplyCall as alloy_sol_types::SolCall>::SIGNATURE,
             <transferFromCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <PERMIT_TYPEHASHCall as alloy_sol_types::SolCall>::SIGNATURE,
             <decimalsCall as alloy_sol_types::SolCall>::SIGNATURE,
             <DOMAIN_SEPARATORCall as alloy_sol_types::SolCall>::SIGNATURE,
             <initializeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <price0CumulativeLastCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <price1CumulativeLastCall as alloy_sol_types::SolCall>::SIGNATURE,
             <mintCall as alloy_sol_types::SolCall>::SIGNATURE,
             <balanceOfCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <kLastCall as alloy_sol_types::SolCall>::SIGNATURE,
             <noncesCall as alloy_sol_types::SolCall>::SIGNATURE,
             <burnCall as alloy_sol_types::SolCall>::SIGNATURE,
             <symbolCall as alloy_sol_types::SolCall>::SIGNATURE,
             <transferCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <MINIMUM_LIQUIDITYCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <skimCall as alloy_sol_types::SolCall>::SIGNATURE,
             <factoryCall as alloy_sol_types::SolCall>::SIGNATURE,
             <token1Call as alloy_sol_types::SolCall>::SIGNATURE,
             <permitCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -5834,18 +4676,12 @@ function transferFrom(address from, address to, uint256 value) external returns 
     impl alloy_sol_types::SolInterface for IUniswapLikePairCalls {
         const NAME: &'static str = "IUniswapLikePairCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 27usize;
+        const COUNT: usize = 20usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::DOMAIN_SEPARATOR(_) => {
                     <DOMAIN_SEPARATORCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::MINIMUM_LIQUIDITY(_) => {
-                    <MINIMUM_LIQUIDITYCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::PERMIT_TYPEHASH(_) => {
-                    <PERMIT_TYPEHASHCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::allowance(_) => {
                     <allowanceCall as alloy_sol_types::SolCall>::SELECTOR
@@ -5863,26 +4699,15 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 Self::initialize(_) => {
                     <initializeCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::kLast(_) => <kLastCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::mint(_) => <mintCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::name(_) => <nameCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::nonces(_) => <noncesCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::permit(_) => <permitCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::price0CumulativeLast(_) => {
-                    <price0CumulativeLastCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::price1CumulativeLast(_) => {
-                    <price1CumulativeLastCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::skim(_) => <skimCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::swap(_) => <swapCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::symbol(_) => <symbolCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::sync(_) => <syncCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::token0(_) => <token0Call as alloy_sol_types::SolCall>::SELECTOR,
                 Self::token1(_) => <token1Call as alloy_sol_types::SolCall>::SELECTOR,
-                Self::totalSupply(_) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::transfer(_) => <transferCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::transferFrom(_) => {
                     <transferFromCall as alloy_sol_types::SolCall>::SELECTOR
@@ -5954,17 +4779,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     token0
                 },
                 {
-                    fn totalSupply(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::totalSupply)
-                    }
-                    totalSupply
-                },
-                {
                     fn transferFrom(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
@@ -5974,17 +4788,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                             .map(IUniswapLikePairCalls::transferFrom)
                     }
                     transferFrom
-                },
-                {
-                    fn PERMIT_TYPEHASH(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <PERMIT_TYPEHASHCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::PERMIT_TYPEHASH)
-                    }
-                    PERMIT_TYPEHASH
                 },
                 {
                     fn decimals(
@@ -6018,28 +4821,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     initialize
                 },
                 {
-                    fn price0CumulativeLast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <price0CumulativeLastCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::price0CumulativeLast)
-                    }
-                    price0CumulativeLast
-                },
-                {
-                    fn price1CumulativeLast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <price1CumulativeLastCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::price1CumulativeLast)
-                    }
-                    price1CumulativeLast
-                },
-                {
                     fn mint(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
@@ -6056,15 +4837,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                             .map(IUniswapLikePairCalls::balanceOf)
                     }
                     balanceOf
-                },
-                {
-                    fn kLast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <kLastCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(IUniswapLikePairCalls::kLast)
-                    }
-                    kLast
                 },
                 {
                     fn nonces(
@@ -6101,26 +4873,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                             .map(IUniswapLikePairCalls::transfer)
                     }
                     transfer
-                },
-                {
-                    fn MINIMUM_LIQUIDITY(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <MINIMUM_LIQUIDITYCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::MINIMUM_LIQUIDITY)
-                    }
-                    MINIMUM_LIQUIDITY
-                },
-                {
-                    fn skim(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <skimCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(IUniswapLikePairCalls::skim)
-                    }
-                    skim
                 },
                 {
                     fn factory(
@@ -6243,17 +4995,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     token0
                 },
                 {
-                    fn totalSupply(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <totalSupplyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::totalSupply)
-                    }
-                    totalSupply
-                },
-                {
                     fn transferFrom(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
@@ -6263,17 +5004,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                             .map(IUniswapLikePairCalls::transferFrom)
                     }
                     transferFrom
-                },
-                {
-                    fn PERMIT_TYPEHASH(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <PERMIT_TYPEHASHCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::PERMIT_TYPEHASH)
-                    }
-                    PERMIT_TYPEHASH
                 },
                 {
                     fn decimals(
@@ -6309,28 +5039,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                     initialize
                 },
                 {
-                    fn price0CumulativeLast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <price0CumulativeLastCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::price0CumulativeLast)
-                    }
-                    price0CumulativeLast
-                },
-                {
-                    fn price1CumulativeLast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <price1CumulativeLastCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::price1CumulativeLast)
-                    }
-                    price1CumulativeLast
-                },
-                {
                     fn mint(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
@@ -6351,17 +5059,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                             .map(IUniswapLikePairCalls::balanceOf)
                     }
                     balanceOf
-                },
-                {
-                    fn kLast(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <kLastCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::kLast)
-                    }
-                    kLast
                 },
                 {
                     fn nonces(
@@ -6406,28 +5103,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                             .map(IUniswapLikePairCalls::transfer)
                     }
                     transfer
-                },
-                {
-                    fn MINIMUM_LIQUIDITY(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <MINIMUM_LIQUIDITYCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::MINIMUM_LIQUIDITY)
-                    }
-                    MINIMUM_LIQUIDITY
-                },
-                {
-                    fn skim(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IUniswapLikePairCalls> {
-                        <skimCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IUniswapLikePairCalls::skim)
-                    }
-                    skim
                 },
                 {
                     fn factory(
@@ -6503,16 +5178,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                         inner,
                     )
                 }
-                Self::MINIMUM_LIQUIDITY(inner) => {
-                    <MINIMUM_LIQUIDITYCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::PERMIT_TYPEHASH(inner) => {
-                    <PERMIT_TYPEHASHCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::allowance(inner) => {
                     <allowanceCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -6539,9 +5204,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 Self::initialize(inner) => {
                     <initializeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::kLast(inner) => {
-                    <kLastCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
                 Self::mint(inner) => {
                     <mintCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -6553,19 +5215,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 }
                 Self::permit(inner) => {
                     <permitCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::price0CumulativeLast(inner) => {
-                    <price0CumulativeLastCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::price1CumulativeLast(inner) => {
-                    <price1CumulativeLastCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::skim(inner) => {
-                    <skimCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::swap(inner) => {
                     <swapCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -6582,11 +5231,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 Self::token1(inner) => {
                     <token1Call as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::totalSupply(inner) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::transfer(inner) => {
                     <transferCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -6602,18 +5246,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
             match self {
                 Self::DOMAIN_SEPARATOR(inner) => {
                     <DOMAIN_SEPARATORCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::MINIMUM_LIQUIDITY(inner) => {
-                    <MINIMUM_LIQUIDITYCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::PERMIT_TYPEHASH(inner) => {
-                    <PERMIT_TYPEHASHCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6657,9 +5289,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                         out,
                     )
                 }
-                Self::kLast(inner) => {
-                    <kLastCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
                 Self::mint(inner) => {
                     <mintCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
@@ -6671,21 +5300,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 }
                 Self::permit(inner) => {
                     <permitCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::price0CumulativeLast(inner) => {
-                    <price0CumulativeLastCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::price1CumulativeLast(inner) => {
-                    <price1CumulativeLastCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::skim(inner) => {
-                    <skimCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::swap(inner) => {
                     <swapCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -6701,12 +5315,6 @@ function transferFrom(address from, address to, uint256 value) external returns 
                 }
                 Self::token1(inner) => {
                     <token1Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::totalSupply(inner) => {
-                    <totalSupplyCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
                 Self::transfer(inner) => {
                     <transferCall as alloy_sol_types::SolCall>::abi_encode_raw(
@@ -7022,18 +5630,6 @@ See the [wrapper's documentation](`IUniswapLikePairInstance`) for more details.*
         ) -> alloy_contract::SolCallBuilder<&P, DOMAIN_SEPARATORCall, N> {
             self.call_builder(&DOMAIN_SEPARATORCall)
         }
-        ///Creates a new call builder for the [`MINIMUM_LIQUIDITY`] function.
-        pub fn MINIMUM_LIQUIDITY(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, MINIMUM_LIQUIDITYCall, N> {
-            self.call_builder(&MINIMUM_LIQUIDITYCall)
-        }
-        ///Creates a new call builder for the [`PERMIT_TYPEHASH`] function.
-        pub fn PERMIT_TYPEHASH(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, PERMIT_TYPEHASHCall, N> {
-            self.call_builder(&PERMIT_TYPEHASHCall)
-        }
         ///Creates a new call builder for the [`allowance`] function.
         pub fn allowance(
             &self,
@@ -7086,10 +5682,6 @@ See the [wrapper's documentation](`IUniswapLikePairInstance`) for more details.*
         ) -> alloy_contract::SolCallBuilder<&P, initializeCall, N> {
             self.call_builder(&initializeCall { _0, _1 })
         }
-        ///Creates a new call builder for the [`kLast`] function.
-        pub fn kLast(&self) -> alloy_contract::SolCallBuilder<&P, kLastCall, N> {
-            self.call_builder(&kLastCall)
-        }
         ///Creates a new call builder for the [`mint`] function.
         pub fn mint(
             &self,
@@ -7131,25 +5723,6 @@ See the [wrapper's documentation](`IUniswapLikePairInstance`) for more details.*
                 },
             )
         }
-        ///Creates a new call builder for the [`price0CumulativeLast`] function.
-        pub fn price0CumulativeLast(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, price0CumulativeLastCall, N> {
-            self.call_builder(&price0CumulativeLastCall)
-        }
-        ///Creates a new call builder for the [`price1CumulativeLast`] function.
-        pub fn price1CumulativeLast(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, price1CumulativeLastCall, N> {
-            self.call_builder(&price1CumulativeLastCall)
-        }
-        ///Creates a new call builder for the [`skim`] function.
-        pub fn skim(
-            &self,
-            to: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, skimCall, N> {
-            self.call_builder(&skimCall { to })
-        }
         ///Creates a new call builder for the [`swap`] function.
         pub fn swap(
             &self,
@@ -7182,12 +5755,6 @@ See the [wrapper's documentation](`IUniswapLikePairInstance`) for more details.*
         ///Creates a new call builder for the [`token1`] function.
         pub fn token1(&self) -> alloy_contract::SolCallBuilder<&P, token1Call, N> {
             self.call_builder(&token1Call)
-        }
-        ///Creates a new call builder for the [`totalSupply`] function.
-        pub fn totalSupply(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, totalSupplyCall, N> {
-            self.call_builder(&totalSupplyCall)
         }
         ///Creates a new call builder for the [`transfer`] function.
         pub fn transfer(
