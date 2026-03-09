@@ -555,7 +555,58 @@ curl -s "https://api.cow.fi/$NETWORK/api/v1/app_data/$APP_DATA_HASH"
 
 ---
 
-## 15. Useful Links
+## 15. EIP-2612 Permit Pre-Interactions
+
+Aave, Uniswap, and similar interfaces often submit orders with an EIP-2612 **permit** as a pre-hook instead of requiring a prior `approve`. The permit grants the vault relayer allowance atomically inside the settlement, so the user never needs a separate approval transaction.
+
+### Recognition
+
+`interactions.pre` contains a call to the hook executor (`0x60bf78233f48ec42ee3f101b9a05ec7878728006`) whose calldata embeds the permit selector **`d505accf`**:
+
+```
+permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+```
+
+- `spender` = vault relayer `0xC92E8bdf79f0507f65a392b0ab4667716BFE0110`
+- `deadline` = typically equal to `order.validTo`
+- `value` = exactly `order.sellAmount`
+
+### Effect on autopilot filters
+
+Autopilot **skips** the `insufficient_allowance` check for orders with permit pre-hooks — it knows the hook sets it at settlement time. A raw on-chain allowance of 0 is therefore **expected and normal**. Balance is still checked as usual.
+
+### Effect on solver simulation
+
+Solvers simulate the full settlement calldata including pre-hooks. If the permit reverts, simulation fails and the solver silently drops the order — **there is no specific log entry** identifying this as the cause. The only symptom is: order in auction, no solver bids.
+
+### What can invalidate the permit
+
+| Cause | How to detect |
+|-------|---------------|
+| Another tx consumed the same nonce (e.g. `supplyWithPermit`, another CoW order) | Nonce at later block > nonce at creation block |
+| Permit deadline passed | `block.timestamp > deadline` (= `validTo`) |
+| Permit signed for the wrong nonce from the start | Nonce at creation block already wrong |
+
+**Classic pattern:** user places a CoW order with a permit pre-hook, then separately submits an Aave `supplyWithPermit` tx (selector `02c205f0`). Both consume the same permit nonce — whichever lands first wins, the other permanently fails.
+
+### Checking validity
+
+```bash
+# Nonce the permit was signed for (= nonce at creation block)
+cast call $SELL_TOKEN "nonces(address)(uint256)" $OWNER --block $CREATION_BLOCK --rpc-url $RPC
+
+# If this differs from creation block, permit is void
+cast call $SELL_TOKEN "nonces(address)(uint256)" $OWNER --block $LATER_BLOCK --rpc-url $RPC
+
+# Simulate the pre-hook directly — reverts if permit would fail
+cast call $HOOK_EXECUTOR $HOOK_CALLDATA --from $SETTLEMENT --block $BLOCK --rpc-url $RPC
+```
+
+`scripts/check-order-balance <order-uid> [rpc-url]` automates all of the above for every block in the order's validity window.
+
+---
+
+## 16. Useful Links
 
 | Resource | URL |
 |----------|-----|
@@ -568,7 +619,7 @@ curl -s "https://api.cow.fi/$NETWORK/api/v1/app_data/$APP_DATA_HASH"
 
 ---
 
-## 16. Decision Tree
+## 17. Decision Tree
 
 ```
 Order not matched?
@@ -599,7 +650,7 @@ Order not matched?
 
 ---
 
-## 17. Common Root Causes
+## 18. Common Root Causes
 
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
