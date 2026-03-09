@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["providers", "rpc", "rpc-types", "sol-types"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 arc-swap = { workspace = true }
@@ -39,8 +39,8 @@ prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
 request-sharing = { workspace = true }
-reqwest = { workspace = true }
-rust_decimal = { workspace = true }
+reqwest = { workspace = true, features = ["query"] }
+rust_decimal = { workspace = true, features = ["maths"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -55,6 +55,7 @@ hex-literal = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
 testlib = { workspace = true }
+token-info = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 
 [features]

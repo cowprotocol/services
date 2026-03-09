@@ -51,7 +51,7 @@ num = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
 order-validation = { workspace = true }
-price-estimation = { workspace = true }
+price-estimation = { workspace = true, features = ["test-util"] }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
