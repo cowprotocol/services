@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# Checks a user's sell-token balance and vault-relayer allowance at every block
+# during an order's validity window, accounting for permit-based pre-interactions.
+#
+# Usage: check-order-balance <order-uid> <rpc-url>
+#
+# Output per block:
+#   BLOCK  TIMESTAMP  BALANCE  EFF_ALLOWANCE  [notes]
+#   + cast commands to manually resimulate each check
+
+set -euo pipefail
+
+ORDER_UID="${1:?Usage: $0 <order-uid> [rpc-url]}"
+RPC_URL="${2:-${ETH_MAINNET_RPC:?rpc-url required (or set ETH_MAINNET_RPC in .env.claude)}}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$SCRIPT_DIR/.env.claude"
+
+VAULT_RELAYER="0xC92E8bdf79f0507f65a392b0ab4667716BFE0110"
+SETTLEMENT="0x9008D19f58AAbD9eD0d60971565AA8510560ab41"
+API="https://api.cow.fi/mainnet/api/v1"
+
+# ── Fetch order ───────────────────────────────────────────────────────────────
+echo "Fetching order..." >&2
+ORDER=$(curl -s "$API/orders/$ORDER_UID")
+if echo "$ORDER" | jq -e '.errorType' >/dev/null 2>&1; then
+    echo "Error fetching order: $(echo "$ORDER" | jq -r '.description')" >&2
+    exit 1
+fi
+
+SELL_TOKEN=$(echo  "$ORDER" | jq -r '.sellToken')
+OWNER=$(echo       "$ORDER" | jq -r '.owner')
+SELL_AMOUNT=$(echo "$ORDER" | jq -r '.sellAmount')
+VALID_TO=$(echo    "$ORDER" | jq -r '.validTo')
+CREATION_DATE=$(echo "$ORDER" | jq -r '.creationDate')
+
+# ── Fetch appdata ─────────────────────────────────────────────────────────────
+APP_DATA_HASH=$(echo "$ORDER" | jq -r '.appData')
+echo "Fetching appdata $APP_DATA_HASH..." >&2
+APP_DATA=$(curl -s "$API/app_data/$APP_DATA_HASH")
+
+# ── Parse permit from pre-interactions ───────────────────────────────────────
+# Orders using EIP-2612 permit carry the permit call (selector d505accf) inside
+# a hook-executor pre-interaction. We extract it to compute the effective
+# post-pre-interaction allowance.
+HOOK_TARGET=""
+HOOK_CALLDATA=""
+PERMIT_SPENDER=""
+PERMIT_AMOUNT=""
+PERMIT_DEADLINE=""
+
+while IFS= read -r ix; do
+    target=$(echo "$ix" | jq -r '.target')
+    calldata=$(echo "$ix" | jq -r '.callData')
+    HOOK_TARGET="$target"
+    HOOK_CALLDATA="$calldata"
+
+    if [[ "$calldata" == *"d505accf"* ]]; then
+        # permit(address owner, address spender, uint256 value,
+        #         uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        # Locate selector, then read 7 × 32-byte ABI words that follow it.
+        result=$(python3 - "$calldata" <<'PYEOF'
+import sys
+cd = sys.argv[1].lower().replace('0x', '')
+pos = cd.find('d505accf')
+if pos == -1:
+    sys.exit(1)
+p = cd[pos + 8:]  # skip 4-byte selector
+spender  = '0x' + p[1*64+24:2*64]
+value    = int(p[2*64:3*64], 16)
+deadline = int(p[3*64:4*64], 16)
+print(spender, value, deadline)
+PYEOF
+        ) || true
+        if [[ -n "$result" ]]; then
+            read -r PERMIT_SPENDER PERMIT_AMOUNT PERMIT_DEADLINE <<< "$result"
+        fi
+    fi
+done < <(echo "$ORDER" | jq -c '.interactions.pre[]' 2>/dev/null || true)
+
+# ── Binary search: find block closest to a unix timestamp ────────────────────
+block_at_ts() {
+    local target=$1
+    local hi lo mid t
+    hi=$(cast block-number --rpc-url "$RPC_URL")
+    lo=$(( hi - 200000 ))   # ~28 days of history
+    (( lo < 1 )) && lo=1
+    while (( hi - lo > 1 )); do
+        mid=$(( (lo + hi) / 2 ))
+        t=$(cast block "$mid" --rpc-url "$RPC_URL" --field timestamp)
+        (( t < target )) && lo=$mid || hi=$mid
+    done
+    echo $hi
+}
+
+CREATION_TS=$(python3 - "$CREATION_DATE" <<'PYEOF'
+import sys
+from datetime import datetime, timezone
+s = sys.argv[1].rstrip('Z').split('.')[0]
+print(int(datetime.fromisoformat(s).replace(tzinfo=timezone.utc).timestamp()))
+PYEOF
+)
+
+echo "Finding start block (ts=$CREATION_TS)..." >&2
+START_BLOCK=$(block_at_ts "$CREATION_TS")
+echo "Finding end block (ts=$VALID_TO)..." >&2
+END_BLOCK=$(block_at_ts "$VALID_TO")
+
+SYMBOL=$(cast call "$SELL_TOKEN" "symbol()(string)" --rpc-url "$RPC_URL" 2>/dev/null | tr -d '"' || echo "?")
+NUM_BLOCKS=$(( END_BLOCK - START_BLOCK + 1 ))
+
+# ── Print summary header ──────────────────────────────────────────────────────
+echo ""
+echo "Order:       $ORDER_UID"
+echo "Owner:       $OWNER"
+echo "Sell token:  $SELL_TOKEN  ($SYMBOL)"
+echo "Sell amount: $SELL_AMOUNT"
+echo "Blocks:      $START_BLOCK → $END_BLOCK  ($NUM_BLOCKS blocks)"
+if [[ -n "$PERMIT_SPENDER" ]]; then
+    echo "Pre-hook:    EIP-2612 permit  spender=$PERMIT_SPENDER  amount=$PERMIT_AMOUNT  deadline=$PERMIT_DEADLINE"
+fi
+echo ""
+printf "%-10s  %-11s  %-22s  %-22s  %s\n" \
+    "BLOCK" "TIMESTAMP" "BALANCE" "EFF_ALLOWANCE" "NOTES"
+printf "%-10s  %-11s  %-22s  %-22s  %s\n" \
+    "----------" "-----------" "----------------------" "----------------------" "-----"
+
+# ── Per-block loop ────────────────────────────────────────────────────────────
+# PERMIT_BASE_NONCE: the nonce that was current when the permit was signed.
+# We record it on the first block and flag any subsequent change.
+PERMIT_BASE_NONCE=""
+
+BLOCK=$START_BLOCK
+while (( BLOCK <= END_BLOCK )); do
+    TS=$(cast block "$BLOCK" --rpc-url "$RPC_URL" --field timestamp)
+
+    BALANCE=$(cast call "$SELL_TOKEN" \
+        "balanceOf(address)(uint256)" "$OWNER" \
+        --block "$BLOCK" --rpc-url "$RPC_URL")
+
+    RAW_ALLOW=$(cast call "$SELL_TOKEN" \
+        "allowance(address,address)(uint256)" "$OWNER" "$VAULT_RELAYER" \
+        --block "$BLOCK" --rpc-url "$RPC_URL")
+
+    EFF_ALLOW="$RAW_ALLOW"
+    NOTES=""
+
+    # ── Determine effective allowance after permit pre-interaction ────────────
+    if [[ -n "$PERMIT_SPENDER" ]]; then
+        NONCE=$(cast call "$SELL_TOKEN" "nonces(address)(uint256)" "$OWNER" \
+            --block "$BLOCK" --rpc-url "$RPC_URL" 2>/dev/null || echo "?")
+
+        # Capture nonce at start block as the one the permit was signed for.
+        [[ -z "$PERMIT_BASE_NONCE" ]] && PERMIT_BASE_NONCE="$NONCE"
+
+        if (( TS > PERMIT_DEADLINE )); then
+            NOTES="permit_deadline_expired"
+        elif [[ "$NONCE" != "$PERMIT_BASE_NONCE" ]]; then
+            NOTES="permit_void(nonce_changed:${PERMIT_BASE_NONCE}→${NONCE})"
+        else
+            EFF_ALLOW="$PERMIT_AMOUNT"
+            NOTES="permit_valid(nonce=$NONCE)"
+        fi
+    fi
+
+    printf "%-10s  %-11s  %-22s  %-22s  %s\n" \
+        "$BLOCK" "$TS" "$BALANCE" "$EFF_ALLOW" "$NOTES"
+
+    # Resimulation commands for this block
+    echo "  # balance:"
+    echo "  cast call $SELL_TOKEN 'balanceOf(address)(uint256)' $OWNER --block $BLOCK --rpc-url \$RPC"
+    echo "  # raw allowance:"
+    echo "  cast call $SELL_TOKEN 'allowance(address,address)(uint256)' $OWNER $VAULT_RELAYER --block $BLOCK --rpc-url \$RPC"
+    if [[ -n "$HOOK_TARGET" && -n "$HOOK_CALLDATA" ]]; then
+        echo "  # pre-interaction (reverts if permit would fail):"
+        echo "  cast call $HOOK_TARGET $HOOK_CALLDATA --from $SETTLEMENT --block $BLOCK --rpc-url \$RPC"
+    fi
+    echo ""
+    (( BLOCK++ ))
+done
