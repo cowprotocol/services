@@ -51,14 +51,8 @@ impl Postgres {
             .await
             .context("failed to fetch trades")?;
 
-        // Derive auction IDs from proposed solutions and executions
-        let mut auction_ids: Vec<AuctionId> = proposed_solutions
-            .iter()
-            .map(|s| s.auction_id)
-            .chain(executions.iter().map(|e| e.auction_id))
-            .collect();
-        auction_ids.sort_unstable();
-        auction_ids.dedup();
+        let auction_ids: Vec<AuctionId> =
+            auction::fetch_auction_ids_by_order_uid(&mut conn, &db_uid).await?;
 
         let auctions = if auction_ids.is_empty() {
             vec![]
