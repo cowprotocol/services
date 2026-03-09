@@ -315,9 +315,16 @@ impl SolvableOrdersCache {
             );
         }
 
-        let mut surplus_capturing_jit_order_owners: Vec<_> = cow_amms
+        let in_flight_owners: HashSet<_> = in_flight
+            .iter()
+            .map(|uid| domain::OrderUid(uid.0).owner())
+            .collect();
+        let surplus_capturing_jit_order_owners: Vec<_> = cow_amms
             .iter()
             .filter(|cow_amm| {
+                if in_flight_owners.contains(cow_amm.address()) {
+                    return false;
+                }
                 cow_amm.traded_tokens().iter().all(|token| {
                     let price_exist = prices.contains_key(token);
                     if !price_exist {
@@ -332,13 +339,6 @@ impl SolvableOrdersCache {
             })
             .map(|cow_amm| *cow_amm.address())
             .collect();
-        if !in_flight.is_empty() {
-            surplus_capturing_jit_order_owners.retain(|owner| {
-                !in_flight
-                    .iter()
-                    .any(|uid| domain::OrderUid(uid.0).owner() == *owner)
-            });
-        }
         let auction = domain::RawAuctionData {
             block,
             orders: tracing::info_span!("assemble_orders").in_scope(|| {
