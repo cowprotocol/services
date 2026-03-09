@@ -137,7 +137,6 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
-#[expect(clippy::too_many_arguments)]
 pub fn handle_all_routes(
     database_write: Postgres,
     database_read: Postgres,
