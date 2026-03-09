@@ -588,16 +588,7 @@ pub async fn run(
         maintenance.add_ethflow_indexing(onchain_order_indexer, refund_event_handler);
     }
 
-    let run_loop_config = run_loop::Config {
-        submission_deadline: config.run_loop.submission_deadline,
-        max_settlement_transaction_wait: config.run_loop.max_settlement_transaction_wait,
-        solve_deadline: config.run_loop.solve_deadline,
-        max_run_loop_delay: config.run_loop.max_delay,
-        max_winners_per_auction: config.run_loop.max_winners_per_auction,
-        max_solutions_per_solver: config.run_loop.max_solutions_per_solver,
-        enable_leader_lock: config.run_loop.enable_leader_lock,
-        compress_solve_request: config.run_loop.compress_solve_request,
-    };
+    let run_loop_config = run_loop::Config::from(config.run_loop);
 
     let drivers_futures = config
         .drivers
