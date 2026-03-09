@@ -1,9 +1,7 @@
 use {
-    alloy::{
-        primitives::{Address, U256},
-        rpc::types::state::StateOverride,
-        sol_types::{SolCall, SolType, sol_data},
-    },
+    alloy_primitives::{Address, U256},
+    alloy_rpc_types::state::StateOverride,
+    alloy_sol_types::{SolCall, SolType, sol_data},
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     contracts::alloy::{GPv2Settlement, support::Balances},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
@@ -187,7 +185,7 @@ impl BalanceSimulator {
             )>::abi_decode(&response.0)
             .map_err(|err| {
                 tracing::error!(?err, "failed to decode balance response");
-                alloy::contract::Error::AbiError(alloy::dyn_abi::Error::SolTypes(err))
+                alloy_contract::Error::AbiError(alloy_dyn_abi::Error::SolTypes(err))
             })?;
 
         let simulation = Simulation {
@@ -220,7 +218,7 @@ pub struct Simulation {
 
 #[derive(Debug)]
 pub enum SimulationError {
-    Method(alloy::contract::Error),
+    Method(alloy_contract::Error),
 }
 
 impl std::fmt::Display for SimulationError {
@@ -233,8 +231,8 @@ impl std::fmt::Display for SimulationError {
 
 impl std::error::Error for SimulationError {}
 
-impl From<alloy::contract::Error> for SimulationError {
-    fn from(err: alloy::contract::Error) -> Self {
+impl From<alloy_contract::Error> for SimulationError {
+    fn from(err: alloy_contract::Error) -> Self {
         Self::Method(err)
     }
 }

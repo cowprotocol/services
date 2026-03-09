@@ -3,7 +3,7 @@ pub mod block_stream;
 #[cfg(any(test, feature = "test-util"))]
 pub mod mock;
 
-use {crate::alloy::MutWallet, ::alloy::providers::DynProvider, reqwest::Url, std::time::Duration};
+use {crate::alloy::MutWallet, alloy_provider::DynProvider, reqwest::Url, std::time::Duration};
 
 pub const MAX_BATCH_SIZE: usize = 100;
 
@@ -75,5 +75,27 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
     Web3 {
         provider: alloy,
         wallet,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use {crate::Web3, alloy_eips::BlockId, alloy_provider::Provider};
+
+    #[tokio::test]
+    async fn test_https() {
+        let provider = Web3::new_from_url("https://rpc.mevblocker.io");
+        let response = provider.provider.get_block(BlockId::latest()).await;
+
+        if let Err(err) = response {
+            // only fail the CI if we are sure the error is due to missing
+            // `https` support
+            if err.to_string().contains("scheme is not http") {
+                eprintln!("{err:?}");
+                panic!("https support is not enabled");
+            } else {
+                eprintln!("mevblocker error unrelated to https support: {err:?}");
+            }
+        }
     }
 }

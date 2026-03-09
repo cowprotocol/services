@@ -11,6 +11,7 @@ use {
         },
         solver::Solver,
     },
+    configs::test_util::TestDefault,
     driver::domain::eth::NonZeroU256,
     e2e::{assert_approximately_eq, setup::*},
     ethrpc::alloy::CallBuilderExt,

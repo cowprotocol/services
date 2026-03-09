@@ -8,6 +8,7 @@ use {
     alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
+    configs::database::DatabasePoolConfig,
     serde::{Deserialize, Serialize},
     shared::fee_factor::FeeFactor,
     std::path::Path,
@@ -34,8 +35,9 @@ pub struct VolumeFeeConfig {
 }
 
 // NOTE: cannot add deny_unknown_fields during the config migration
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case" /* deny_unknown_fields */)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 pub struct Configuration {
     /// Configuration for the order validation system.
     #[serde(default)]
@@ -69,6 +71,9 @@ pub struct Configuration {
 
     /// Configuration for the native price estimation mechanism.
     pub native_price_estimation: NativePriceConfig,
+
+    #[serde(default)]
+    pub database: DatabasePoolConfig,
 }
 
 impl Configuration {
@@ -86,43 +91,64 @@ impl Configuration {
             )),
         }
     }
-
-    pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
-        Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
-    }
 }
 
 #[cfg(any(test, feature = "test-util"))]
-impl Configuration {
-    pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
-        use std::io::Write;
-        let mut file = tempfile::NamedTempFile::new().expect("temp file creation should not fail");
-        file.write_all(
-            toml::to_string_pretty(self)
-                .expect("serialization should not fail")
-                .as_bytes(),
-        )
-        .expect("writing to temp file should not fail");
-        file
+pub mod test_util {
+    use {
+        crate::config::{
+            Configuration,
+            default_active_order_competition_threshold,
+            default_app_data_size_limit,
+            native_price::NativePriceConfig,
+        },
+        configs::test_util::TestDefault,
+        std::path::Path,
+    };
+
+    impl Configuration {
+        pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+            Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
+        }
+
+        pub fn to_temp_path(&self) -> tempfile::NamedTempFile {
+            use std::io::Write;
+            let mut file =
+                tempfile::NamedTempFile::new().expect("temp file creation should not fail");
+            file.write_all(
+                toml::to_string_pretty(self)
+                    .expect("serialization should not fail")
+                    .as_bytes(),
+            )
+            .expect("writing to temp file should not fail");
+            file
+        }
+
+        pub fn to_cli_args(&self) -> (tempfile::NamedTempFile, String) {
+            let named_temp_file = self.to_temp_path();
+            let cli_arg = format!("--config={}", named_temp_file.path().display());
+            (named_temp_file, cli_arg)
+        }
     }
 
-    pub fn to_cli_args(&self) -> (tempfile::NamedTempFile, String) {
-        let named_temp_file = self.to_temp_path();
-        let cli_arg = format!("--config={}", named_temp_file.path().display());
-        (named_temp_file, cli_arg)
-    }
+    impl TestDefault for Configuration {
+        fn test_default() -> Self {
+            use configs::test_util::TestDefault;
 
-    pub fn test_default() -> Self {
-        Self {
-            order_validation: Default::default(),
-            banned_users: Default::default(),
-            ipfs: Default::default(),
-            volume_fee: Default::default(),
-            app_data_size_limit: default_app_data_size_limit(),
-            active_order_competition_threshold: default_active_order_competition_threshold(),
-            unsupported_tokens: Default::default(),
-            eip1271_skip_creation_validation: Default::default(),
-            native_price_estimation: NativePriceConfig::test_default(),
+            Self {
+                order_validation: Default::default(),
+                banned_users: Default::default(),
+                ipfs: Default::default(),
+                volume_fee: Default::default(),
+                app_data_size_limit: default_app_data_size_limit(),
+                active_order_competition_threshold: default_active_order_competition_threshold(),
+                unsupported_tokens: Default::default(),
+                eip1271_skip_creation_validation: Default::default(),
+                // NOTE: NativePriceConfig needs to be moved to the config crate and then it can
+                // have the test_default trait impl
+                native_price_estimation: NativePriceConfig::test_default(),
+                database: TestDefault::test_default(),
+            }
         }
     }
 }
@@ -131,6 +157,7 @@ impl Configuration {
 mod tests {
     use {
         super::*,
+        configs::test_util::TestDefault,
         price_estimation::{NativePriceEstimator, NativePriceEstimators},
         shared::order_validation::SameTokensPolicy,
         std::time::Duration,
@@ -267,6 +294,7 @@ mod tests {
                 fallback_estimators: None,
                 ..NativePriceConfig::test_default()
             },
+            database: TestDefault::test_default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

@@ -1,7 +1,8 @@
 use {
     alloy::{
-        primitives::{Address, B256, U256},
+        primitives::{Address, B256, U256, keccak256},
         providers::Provider,
+        sol_types::SolCall,
     },
     contracts::alloy::{
         BalancerV2Authorizer,
@@ -186,7 +187,7 @@ impl Contracts {
             .await
             .unwrap();
 
-        contracts::vault::grant_required_roles(
+        grant_required_roles(
             &balancer_authorizer,
             *balancer_vault.address(),
             gp_settlement
@@ -195,8 +196,7 @@ impl Contracts {
                 .await
                 .expect("failed to retrieve Vault relayer contract address"),
         )
-        .await
-        .expect("failed to authorize Vault relayer");
+        .await;
 
         let allowance = gp_settlement
             .vaultRelayer()
@@ -262,4 +262,37 @@ impl Contracts {
             _ => B256::new(liquidity_sources::uniswap_v2::UNISWAP_INIT),
         }
     }
+}
+
+fn role_id<Call: SolCall>(vault: Address) -> B256 {
+    let mut data = [0u8; 36];
+    data[12..32].copy_from_slice(vault.as_slice());
+    data[32..36].copy_from_slice(&Call::SELECTOR);
+    keccak256(data)
+}
+
+async fn grant_required_roles(
+    authorizer: &BalancerV2Authorizer::Instance,
+    vault: Address,
+    vault_relayer: Address,
+) {
+    use contracts::alloy::BalancerV2Vault::BalancerV2Vault::{
+        batchSwapCall,
+        manageUserBalanceCall,
+    };
+
+    authorizer
+        .grantRoles(
+            vec![
+                role_id::<manageUserBalanceCall>(vault).0.into(),
+                role_id::<batchSwapCall>(vault).0.into(),
+            ],
+            vault_relayer,
+        )
+        .send()
+        .await
+        .unwrap()
+        .watch()
+        .await
+        .unwrap();
 }

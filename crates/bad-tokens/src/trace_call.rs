@@ -1,19 +1,12 @@
 use {
     super::TokenQuality,
-    alloy::{
-        primitives::{Address, U256, keccak256},
-        providers::ext::TraceApi,
-        rpc::{
-            json_rpc::ErrorPayload,
-            types::{
-                TransactionRequest,
-                trace::parity::{TraceOutput, TraceResults, TraceType},
-            },
-        },
-        signers::local::PrivateKeySigner,
-        sol_types::SolCall,
-        transports::{RpcError, TransportErrorKind},
-    },
+    alloy_json_rpc::ErrorPayload,
+    alloy_primitives::{Address, U256},
+    alloy_provider::ext::TraceApi,
+    alloy_rpc_types::TransactionRequest,
+    alloy_rpc_types_trace::parity::{TraceOutput, TraceResults, TraceType},
+    alloy_sol_types::SolCall,
+    alloy_transport::{RpcError, TransportErrorKind},
     anyhow::{Context, Result, bail, ensure},
     contracts::alloy::ERC20,
     ethrpc::Web3,
@@ -93,9 +86,7 @@ impl TraceCallDetectorRaw {
     // tokens that usually apply fees but not if the the sender or receiver is
     // specifically exempt like their own uniswap pools.
     fn arbitrary_recipient() -> Address {
-        PrivateKeySigner::from_bytes(&keccak256(b"moo"))
-            .unwrap()
-            .address()
+        Address::random()
     }
 
     fn create_trace_request(
@@ -176,7 +167,7 @@ impl TraceCallDetectorRaw {
         // 7
         let calldata = ERC20::ERC20::approveCall {
             spender: recipient,
-            amount: alloy::primitives::U256::MAX,
+            amount: U256::MAX,
         }
         .abi_encode();
         requests.push(
@@ -350,15 +341,13 @@ async fn trace_many(
 mod tests {
     use {
         super::*,
-        alloy::{
-            primitives::Bytes,
-            rpc::types::trace::parity::{
-                Action,
-                CallAction,
-                CallOutput,
-                CallType,
-                TransactionTrace,
-            },
+        alloy_primitives::Bytes,
+        alloy_rpc_types_trace::parity::{
+            Action,
+            CallAction,
+            CallOutput,
+            CallType,
+            TransactionTrace,
         },
     };
 

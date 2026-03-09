@@ -10,6 +10,7 @@ use {
         solver::{Account, Solver},
     },
     bigdecimal::BigDecimal,
+    configs::test_util::TestDefault,
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,

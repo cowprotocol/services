@@ -1,6 +1,7 @@
 use {
     ::alloy::primitives::U256,
     autopilot::config::trusted_tokens::TrustedTokensConfig,
+    configs::test_util::TestDefault,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{

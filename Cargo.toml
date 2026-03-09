@@ -5,13 +5,26 @@ members = ["crates/*"]
 [workspace.dependencies]
 account-balances = { path = "crates/account-balances" }
 alloy = { version = "1.7.3", default-features = false }
+alloy-consensus = { version = "1.7.3", default-features = false }
 alloy-contract = { version = "1.7.3", default-features = false }
+alloy-dyn-abi = { version = "1.5.7", default-features = false }
+alloy-eips = { version = "1.7.3", default-features = false }
+alloy-json-abi = { version = "1.5.7", default-features = false }
+alloy-json-rpc = { version = "1.7.3", default-features = false }
+alloy-network = { version = "1.7.3", default-features = false }
 alloy-primitives = { version = "1.5.2", default-features = false }
+alloy-provider = { version = "1.7.3", default-features = false }
+alloy-rpc-client = { version = "1.7.3", default-features = false }
+alloy-rpc-types = { version = "1.7.3", default-features = false }
+alloy-rpc-types-eth = { version = "1.7.3", default-features = false }
+alloy-rpc-types-trace = { version = "1.7.3", default-features = false }
 alloy-signer = { version = "1.7.3", default-features = false }
 alloy-signer-local = { version = "1.7.3", default-features = false }
 alloy-sol-macro-expander = "1.4.1"
 alloy-sol-macro-input = "1.4.1"
 alloy-sol-types = { version = "1.5.2" }
+alloy-transport = { version = "1.7.3", default-features = false }
+alloy-transport-ws = { version = "1.7.3", default-features = false }
 anyhow = "1.0.100"
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
@@ -31,6 +44,7 @@ cached = { version = "0.49.3", default-features = false }
 chain = { path = "crates/chain" }
 chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.6", features = ["derive", "env"] }
+configs = { path = "crates/configs/" }
 console-subscriber = "0.3.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"

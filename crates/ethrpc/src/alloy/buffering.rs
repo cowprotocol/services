@@ -12,10 +12,8 @@
 //! another channel.
 use {
     crate::Config,
-    alloy::{
-        rpc::json_rpc::{RequestPacket, Response, ResponsePacket, SerializedRequest},
-        transports::{RpcError, TransportError, TransportErrorKind},
-    },
+    alloy_json_rpc::{RequestPacket, Response, ResponsePacket, SerializedRequest},
+    alloy_transport::{RpcError, TransportError, TransportErrorKind},
     futures::{
         channel::{mpsc, oneshot},
         stream::StreamExt as _,

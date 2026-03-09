@@ -9,7 +9,12 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-alloy = { workspace = true, features = ["provider-debug-api", "sol-types"] }
+alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true, features = ["rand"] }
+alloy-provider = { workspace = true, features = ["debug-api", "trace-api"] }
+alloy-rpc-types = { workspace = true, features = ["trace"] }
+alloy-sol-types = { workspace = true }
+alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 cached = { workspace = true, features = ["default"] }

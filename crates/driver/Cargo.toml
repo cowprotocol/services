@@ -22,6 +22,7 @@ alloy = { workspace = true, features = [
   "provider-txpool-api",
   "rand",
   "rpc-types",
+  "signer-aws",
   "sol-types"
 ] }
 app-data = { workspace = true }

@@ -1,6 +1,7 @@
 use {
     ::alloy::primitives::U256,
     autopilot::{config::Configuration, shutdown_controller::ShutdownController},
+    configs::test_util::TestDefault,
     driver::domain::eth::NonZeroU256,
     e2e::setup::{colocation, wait_for_condition, *},
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},

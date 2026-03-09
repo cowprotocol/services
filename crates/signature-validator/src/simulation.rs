@@ -5,13 +5,11 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    alloy::{
-        dyn_abi::SolType,
-        primitives::{Address, U256},
-        rpc::types::state::StateOverride,
-        sol_types::{SolCall, sol_data},
-        transports::RpcError,
-    },
+    alloy_dyn_abi::SolType,
+    alloy_primitives::{Address, U256},
+    alloy_rpc_types::state::StateOverride,
+    alloy_sol_types::{SolCall, sol_data},
+    alloy_transport::RpcError,
     anyhow::{Context, Result},
     balance_overrides::BalanceOverriding,
     contracts::alloy::{
@@ -70,7 +68,7 @@ impl Validator {
             .await
             .map(|value| const_hex::encode(value.0))
             .map_err(|err| match err {
-                alloy::contract::Error::TransportError(RpcError::ErrorResp(err)) => {
+                alloy_contract::Error::TransportError(RpcError::ErrorResp(err)) => {
                     tracing::error!(?err, "failed to call isValidSignature");
                     SignatureValidationError::Invalid
                 }

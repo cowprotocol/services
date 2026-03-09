@@ -6,7 +6,13 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true }
+alloy-json-rpc = { workspace = true }
+alloy-primitives = { workspace = true, features = ["rand"] }
+alloy-provider = { workspace = true, features = ["trace-api"] }
+alloy-rpc-types = { workspace = true }
+alloy-rpc-types-trace = { workspace = true }
+alloy-sol-types = { workspace = true }
+alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
