@@ -235,8 +235,8 @@ impl SolvableOrdersCache {
             )
         };
 
-        // Remove in-flight orders (already won a previous auction, being settled
-        // on-chain) so they don't get spuriously marked Invalid/Filtered.
+        // Remove in-flight orders - already won a previous auction, being settled
+        // on-chain.
         let (orders, removed) = filter_in_flight_orders(orders, &in_flight);
         Metrics::track_filtered_orders("in_flight", &removed);
         // It's possible that some orders got marked as in-flight due to missing balance
