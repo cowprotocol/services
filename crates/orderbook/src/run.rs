@@ -405,13 +405,6 @@ pub async fn run(args: Arguments, config: Configuration) {
     )
     .with_fast_quoter(fast_quoter);
 
-    // Flip the debug auth token map for O(1) lookup by secret at runtime.
-    let debug_route_auth_tokens: std::collections::HashMap<String, String> = config
-        .debug_route_auth_tokens
-        .iter()
-        .map(|(name, secret)| (secret.clone(), name.clone()))
-        .collect();
-
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         postgres_write,
@@ -425,7 +418,6 @@ pub async fn run(args: Arguments, config: Configuration) {
         },
         native_price_estimator,
         args.price_estimation.quote_timeout,
-        debug_route_auth_tokens,
     );
 
     let mut metrics_address = args.bind_address;
@@ -498,7 +490,6 @@ fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
-    debug_route_auth_tokens: std::collections::HashMap<String, String>,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -508,7 +499,6 @@ fn serve_api(
         app_data,
         native_price_estimator,
         quote_timeout,
-        debug_route_auth_tokens,
     );
     tracing::info!(%address, "serving order book");
 

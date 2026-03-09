@@ -19,7 +19,6 @@ use {
     serde::{Deserialize, Serialize},
     std::{
         borrow::Cow,
-        collections::HashMap,
         fmt::Debug,
         sync::Arc,
         time::{Duration, Instant},
@@ -69,7 +68,6 @@ pub struct AppState {
     pub app_data: Arc<app_data::Registry>,
     pub native_price_estimator: Arc<dyn NativePriceEstimating>,
     pub quote_timeout: Duration,
-    pub debug_route_auth_tokens: HashMap<String, String>,
 }
 
 async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Response {
@@ -148,7 +146,6 @@ pub fn handle_all_routes(
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
-    debug_route_auth_tokens: HashMap<String, String>,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -160,7 +157,6 @@ pub fn handle_all_routes(
         app_data,
         native_price_estimator,
         quote_timeout,
-        debug_route_auth_tokens,
     });
 
     let routes = [

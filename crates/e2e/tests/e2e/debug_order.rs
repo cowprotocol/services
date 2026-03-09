@@ -46,19 +46,12 @@ async fn debug_order(web3: Web3) {
         .await
         .unwrap();
 
-    let ob_config = orderbook::config::Configuration {
-        debug_route_auth_tokens: [("test".to_string(), "test-secret".to_string())]
-            .into_iter()
-            .collect(),
-        ..orderbook::config::Configuration::test_default()
-    };
-
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs::default(),
             autopilot::config::Configuration::test("test_solver", solver.address()),
-            ob_config,
+            orderbook::config::Configuration::test_default(),
             solver,
         )
         .await;
@@ -98,7 +91,6 @@ async fn debug_order(web3: Web3) {
     let fetch_debug_report = || async {
         let response = client
             .get(format!("{API_HOST}/api/v1/debug/order/{uid}"))
-            .header("x-auth-token", "test-secret")
             .send()
             .await
             .unwrap();
@@ -152,28 +144,10 @@ async fn debug_order(web3: Web3) {
         "expected at least one settlement attempt"
     );
 
-    // Missing auth header -> 401.
-    let response = client
-        .get(format!("{API_HOST}/api/v1/debug/order/{uid}"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-
-    // Wrong token -> 401.
-    let response = client
-        .get(format!("{API_HOST}/api/v1/debug/order/{uid}"))
-        .header("x-auth-token", "wrong-token")
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-
     // Non-existent order -> 404.
     let fake_uid = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
     let response = client
         .get(format!("{API_HOST}/api/v1/debug/order/{fake_uid}"))
-        .header("x-auth-token", "test-secret")
         .send()
         .await
         .unwrap();

@@ -11,7 +11,7 @@ use {
     configs::database::DatabasePoolConfig,
     serde::{Deserialize, Serialize},
     shared::fee_factor::FeeFactor,
-    std::{collections::HashMap, path::Path},
+    std::path::Path,
 };
 
 pub mod banned_users;
@@ -68,13 +68,6 @@ pub struct Configuration {
     /// Whether to skip EIP-1271 signature validation.
     #[serde(default)]
     pub eip1271_skip_creation_validation: bool,
-
-    /// Named authentication tokens for the debug API.
-    /// Map of token name to secret value in config (flipped to secret -> name
-    /// at runtime for O(1) lookup). The debug endpoint is disabled when
-    /// empty.
-    #[serde(default)]
-    pub debug_route_auth_tokens: HashMap<String, String>,
 
     /// Configuration for the native price estimation mechanism.
     pub native_price_estimation: NativePriceConfig,
@@ -155,7 +148,6 @@ pub mod test_util {
                 // have the test_default trait impl
                 native_price_estimation: NativePriceConfig::test_default(),
                 database: TestDefault::test_default(),
-                debug_route_auth_tokens: Default::default(),
             }
         }
     }
@@ -297,7 +289,6 @@ mod tests {
             ],
             banned_users: Default::default(),
             eip1271_skip_creation_validation: true,
-            debug_route_auth_tokens: Default::default(),
             native_price_estimation: NativePriceConfig {
                 estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),
                 fallback_estimators: None,
