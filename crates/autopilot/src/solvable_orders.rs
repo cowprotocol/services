@@ -202,30 +202,11 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
 
-        let mut orders: Vec<&Order> = db_solvable_orders
+        let orders: Vec<&Order> = db_solvable_orders
             .orders
             .values()
             .map(|order| order.as_ref())
             .collect();
-
-        // Remove in-flight orders (already won a previous auction, being settled
-        // on-chain) so they don't get spuriously marked Invalid/Filtered.
-        let in_flight: HashSet<OrderUid> = self
-            .persistence
-            .fetch_in_flight_orders(block)
-            .await
-            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
-            .unwrap_or_default()
-            .into_iter()
-            .map(|uid| OrderUid(uid.0))
-            .collect();
-        if !in_flight.is_empty() {
-            orders.retain(|o| !in_flight.contains(&o.metadata.uid));
-            tracing::debug!(
-                orders = ?in_flight,
-                "filtered out in-flight orders"
-            );
-        }
 
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
@@ -241,7 +222,7 @@ impl SolvableOrdersCache {
             .map(|order| order.metadata.uid)
             .collect();
 
-        let (balances, orders, cow_amms) = {
+        let (balances, orders, cow_amms, in_flight) = {
             let queries = orders
                 .iter()
                 .map(|o| Query::from_order(o))
@@ -250,8 +231,17 @@ impl SolvableOrdersCache {
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut invalid_order_uids),
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
+                self.fetch_in_flight_orders(block),
             )
         };
+
+        // Remove in-flight orders (already won a previous auction, being settled
+        // on-chain) so they don't get spuriously marked Invalid/Filtered.
+        let (orders, removed) = filter_in_flight_orders(orders, &in_flight);
+        Metrics::track_filtered_orders("in_flight", &removed);
+        // It's possible that some orders got marked as in-flight due to missing balance
+        // or so, but the order is perfectly fine if it's in-flight
+        invalid_order_uids.retain(|uid| !in_flight.contains(uid));
 
         let orders = if self.disable_order_balance_filter {
             orders
@@ -385,7 +375,17 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    #[instrument(skip_all)]
+    async fn fetch_in_flight_orders(&self, block: u64) -> HashSet<OrderUid> {
+        self.persistence
+            .fetch_in_flight_orders(block)
+            .await
+            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|uid| OrderUid(uid.0))
+            .collect()
+    }
+
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = self
             .timed_future(
@@ -708,6 +708,22 @@ fn find_unsupported_tokens(
                 .then_some(order.metadata.uid)
         })
         .collect()
+}
+
+fn filter_in_flight_orders<'a>(
+    mut orders: Vec<&'a Order>,
+    in_flight: &HashSet<OrderUid>,
+) -> (Vec<&'a Order>, Vec<OrderUid>) {
+    let mut removed = vec![];
+    orders.retain(|order| {
+        if in_flight.contains(&order.metadata.uid) {
+            removed.push(order.metadata.uid);
+            false
+        } else {
+            true
+        }
+    });
+    (orders, removed)
 }
 
 #[cfg(test)]
