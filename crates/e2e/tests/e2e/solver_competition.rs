@@ -2,6 +2,7 @@ use {
     ::alloy::primitives::{U256, address},
     autopilot::config::{
         Configuration,
+        run_loop::RunLoopConfig,
         solver::{Account, Solver},
     },
     configs::test_util::TestDefault,
@@ -404,6 +405,7 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
+    let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
             None,
@@ -416,8 +418,11 @@ async fn store_filtered_solutions(web3: Web3) {
                     Solver::test("good_solver", good_solver_account.address()),
                     Solver::test("bad_solver", bad_solver_account.address()),
                 ],
-                max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
-                ..Configuration::test_no_drivers()
+                run_loop: RunLoopConfig {
+                    max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
+                    ..config.run_loop
+                },
+                ..config
             },
         )
         .await;

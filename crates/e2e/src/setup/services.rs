@@ -16,7 +16,12 @@ use {
     },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::{
-        config::{Configuration, ethflow::EthflowConfig, native_price::NativePriceConfig},
+        config::{
+            Configuration,
+            ethflow::EthflowConfig,
+            native_price::NativePriceConfig,
+            run_loop::RunLoopConfig,
+        },
         infra::persistence::dto,
     },
     clap::Parser,
@@ -197,21 +202,21 @@ impl<'a> Services<'a> {
                 contracts: ethflow_contracts,
                 ..config.ethflow
             },
+            run_loop: RunLoopConfig {
+                solve_deadline,
+                ..config.run_loop
+            },
             ..config
         };
 
         let (_autopilot_config_file, autopilot_config_arg) = config.to_cli_args();
 
-        let args = [
-            "autopilot".to_string(),
-            format!("--solve-deadline={solve_deadline:?}"),
-            autopilot_config_arg,
-        ]
-        .into_iter()
-        .chain(self.api_autopilot_solver_arguments())
-        .chain(self.autopilot_arguments())
-        .chain(extra_args)
-        .collect();
+        let args = ["autopilot".to_string(), autopilot_config_arg]
+            .into_iter()
+            .chain(self.api_autopilot_solver_arguments())
+            .chain(self.autopilot_arguments())
+            .chain(extra_args)
+            .collect();
         let args = ignore_overwritten_cli_params(args);
 
         let args = autopilot::arguments::CliArguments::try_parse_from(args)

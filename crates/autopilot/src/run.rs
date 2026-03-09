@@ -268,7 +268,7 @@ pub async fn run(
         .expect("failed to create gas price estimator"),
     );
 
-    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
+    let deny_listed_tokens = DenyListedTokens::new(config.unsupported_tokens.clone());
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
@@ -420,7 +420,7 @@ pub async fn run(
         provider: archive_node_web3.provider,
         block_stream: eth.current_block().clone(),
     }));
-    for cow_amm_config in &config.cow_amm.configs {
+    for cow_amm_config in &config.cow_amm.contracts {
         cow_amm_registry
             .add_listener(
                 cow_amm_config.index_start,
@@ -456,7 +456,7 @@ pub async fn run(
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
-        args.min_order_validity_period,
+        config.min_order_validity_period,
         persistence.clone(),
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
@@ -473,12 +473,12 @@ pub async fn run(
             args.shared.enable_sell_equals_buy_volume_fee,
         ),
         cow_amm_registry.clone(),
-        config.run_loop.native_price_timeout,
+        config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
     );
 
-    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
 
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
@@ -589,14 +589,14 @@ pub async fn run(
     }
 
     let run_loop_config = run_loop::Config {
-        submission_deadline: args.submission_deadline as u64,
-        max_settlement_transaction_wait: args.max_settlement_transaction_wait,
-        solve_deadline: args.solve_deadline,
+        submission_deadline: config.run_loop.submission_deadline,
+        max_settlement_transaction_wait: config.run_loop.max_settlement_transaction_wait,
+        solve_deadline: config.run_loop.solve_deadline,
         max_run_loop_delay: config.run_loop.max_delay,
-        max_winners_per_auction: config.max_winners_per_auction,
-        max_solutions_per_solver: config.max_solutions_per_solver,
-        enable_leader_lock: config.enable_leader_lock,
-        compress_solve_request: config.compress_solve_request,
+        max_winners_per_auction: config.run_loop.max_winners_per_auction,
+        max_solutions_per_solver: config.run_loop.max_solutions_per_solver,
+        enable_leader_lock: config.run_loop.enable_leader_lock,
+        compress_solve_request: config.run_loop.compress_solve_request,
     };
 
     let drivers_futures = config
@@ -702,7 +702,7 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         .await
     };
 
-    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    let liveness = Arc::new(Liveness::new(config.max_auction_age));
     observe::metrics::serve_metrics(
         liveness.clone(),
         config.metrics_address,
@@ -721,11 +721,11 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         orderbook,
         drivers,
         trusted_tokens,
-        args.solve_deadline,
-        config.compress_solve_request,
+        config.run_loop.solve_deadline,
+        config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
-        config.max_winners_per_auction,
+        config.run_loop.max_winners_per_auction,
         (*weth.address()).into(),
     );
     shadow.run_forever().await;

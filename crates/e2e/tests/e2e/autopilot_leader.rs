@@ -1,5 +1,8 @@
 use {
-    autopilot::{config::Configuration, shutdown_controller::ShutdownController},
+    autopilot::{
+        config::{Configuration, run_loop::RunLoopConfig},
+        shutdown_controller::ShutdownController,
+    },
     configs::test_util::TestDefault,
     e2e::setup::{
         OnchainComponents,
@@ -86,10 +89,16 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         ],
     );
 
-    let mut leader_config = Configuration::test("test_solver", solver1.address());
-    leader_config.metrics_address = "0.0.0.0:9590".parse().unwrap();
-    leader_config.api_address = "0.0.0.0:12088".parse().unwrap();
-    leader_config.enable_leader_lock = true;
+    let leader_config = Configuration::test("test_solver", solver1.address());
+    let leader_config = Configuration {
+        metrics_address: "0.0.0.0:9590".parse().unwrap(),
+        api_address: "0.0.0.0:12088".parse().unwrap(),
+        run_loop: RunLoopConfig {
+            enable_leader_lock: true,
+            ..leader_config.run_loop
+        },
+        ..leader_config
+    };
 
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
@@ -104,10 +113,16 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         )
         .await;
 
-    let mut follower_config = Configuration::test("test_solver2", solver2.address());
-    follower_config.metrics_address = "0.0.0.0:9591".parse().unwrap();
-    follower_config.api_address = "0.0.0.0:12089".parse().unwrap();
-    follower_config.enable_leader_lock = true;
+    let follower_config = Configuration::test("test_solver2", solver2.address());
+    let follower_config = Configuration {
+        metrics_address: "0.0.0.0:9591".parse().unwrap(),
+        api_address: "0.0.0.0:12089".parse().unwrap(),
+        run_loop: RunLoopConfig {
+            enable_leader_lock: true,
+            ..follower_config.run_loop
+        },
+        ..follower_config
+    };
 
     let _autopilot_follower = services
         .start_autopilot(

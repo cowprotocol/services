@@ -7,6 +7,7 @@ use {
     autopilot::config::{
         Configuration,
         fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind},
+        run_loop::RunLoopConfig,
         solver::{Account, Solver},
     },
     bigdecimal::BigDecimal,
@@ -349,14 +350,18 @@ async fn two_limit_orders_test(web3: Web3) {
     let backend: Url = "http://0.0.0.0:11088".parse().unwrap();
     let _proxy = ReverseProxy::start_with_callback(proxy_addr, &[backend], on_request);
 
+    let config = Configuration::test_no_drivers();
     let config = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             "http://localhost:11089/test_solver".parse().unwrap(),
             Account::Address(solver.address()),
         )],
-        compress_solve_request: true,
-        ..Configuration::test_no_drivers()
+        run_loop: RunLoopConfig {
+            compress_solve_request: true,
+            ..config.run_loop
+        },
+        ..config
     };
     services
         .start_protocol_with_args(
@@ -554,6 +559,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // Start autopilot only once all the orders are created.
 
+    let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
             None,
@@ -569,8 +575,11 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                     ),
                     Solver::test("solver2", solver_b.address()),
                 ],
-                max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
-                ..Configuration::test_no_drivers()
+                run_loop: RunLoopConfig {
+                    max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
+                    ..config.run_loop
+                },
+                ..config
             },
         )
         .await;
@@ -1164,12 +1173,10 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![format!("--unsupported-tokens={:#x}", unsupported.address())],
-                ..Default::default()
-            },
+            ExtraServiceArgs::default(),
             Configuration {
                 drivers: vec![Solver::test("test_solver", solver.address())],
+                unsupported_tokens: vec![*unsupported.address()],
                 fee_policies: FeePoliciesConfig {
                     policies: vec![
                         FeePolicy {
