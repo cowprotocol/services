@@ -1,7 +1,7 @@
 use {
     super::Postgres,
     crate::database::orders::OrderStoring,
-    alloy::primitives::Address,
+    alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     database::{
         auction::{self, Auction as DbAuction, AuctionId},
@@ -21,6 +21,7 @@ use {
             Event,
             Execution,
             FeePolicy,
+            FeePolicyKind,
             ProposedSolution,
             ProtocolFee,
             SettlementAttempt,
@@ -51,7 +52,8 @@ impl Postgres {
             .into_iter()
             .map(|e| Event {
                 label: format!("{:?}", e.label).to_lowercase(),
-                timestamp: e.timestamp.to_rfc3339(),
+                timestamp: e.timestamp,
+                reason: e.reason.map(|r| r.to_string()),
             })
             .collect();
 
@@ -92,7 +94,7 @@ impl Postgres {
         );
 
         Ok(Some(DebugReport {
-            order_uid: uid.to_string(),
+            order_uid: *uid,
             order,
             events,
             auctions,
@@ -148,12 +150,12 @@ fn build_auctions(
     let mut auctions: Vec<Auction> = db_auctions
         .into_iter()
         .map(|a| {
-            let native_prices: HashMap<String, String> = a
+            let native_prices = a
                 .price_tokens
                 .iter()
                 .zip(&a.price_values)
                 .filter(|(token, _)| **token == sell || **token == buy)
-                .map(|(token, price)| (token.to_string(), price.to_string()))
+                .map(|(token, price)| (Address::from(token.0), price.clone()))
                 .collect();
             let id = a.id;
             Auction {
@@ -177,12 +179,12 @@ fn convert_solution(s: DbProposedSolution) -> ProposedSolution {
     ProposedSolution {
         solution_uid: s.solution_uid,
         ranking: s.solution_uid + 1,
-        solver: Address::from(s.solver.0).to_string(),
+        solver: Address::from(s.solver.0),
         is_winner: s.is_winner,
         filtered_out: s.filtered_out,
-        score: s.score.to_string(),
-        executed_sell: s.executed_sell.to_string(),
-        executed_buy: s.executed_buy.to_string(),
+        score: s.score,
+        executed_sell: s.executed_sell,
+        executed_buy: s.executed_buy,
     }
 }
 
@@ -192,13 +194,13 @@ fn convert_execution(e: DbOrderExecution) -> Execution {
         .iter()
         .zip(e.protocol_fee_amounts.iter())
         .map(|(token, amount)| ProtocolFee {
-            token: Address::from(token.0).to_string(),
-            amount: amount.to_string(),
+            token: Address::from(token.0),
+            amount: amount.clone(),
         })
         .collect();
     Execution {
-        executed_fee: e.executed_fee.to_string(),
-        executed_fee_token: Address::from(e.executed_fee_token.0).to_string(),
+        executed_fee: e.executed_fee,
+        executed_fee_token: Address::from(e.executed_fee_token.0),
         block_number: e.block_number,
         protocol_fees,
     }
@@ -208,20 +210,20 @@ fn convert_trade(t: DbTradesQueryRow) -> Trade {
     Trade {
         block_number: t.block_number,
         log_index: t.log_index,
-        buy_amount: t.buy_amount.to_string(),
-        sell_amount: t.sell_amount.to_string(),
-        sell_amount_before_fees: t.sell_amount_before_fees.to_string(),
-        tx_hash: t.tx_hash.map(|h| h.to_string()),
+        buy_amount: t.buy_amount,
+        sell_amount: t.sell_amount,
+        sell_amount_before_fees: t.sell_amount_before_fees,
+        tx_hash: t.tx_hash.map(|h| B256::from(h.0)),
         auction_id: t.auction_id,
     }
 }
 
 fn convert_settlement(s: DbSettlementExecution) -> SettlementAttempt {
     SettlementAttempt {
-        solver: Address::from(s.solver.0).to_string(),
+        solver: Address::from(s.solver.0),
         solution_uid: s.solution_uid,
-        start_timestamp: s.start_timestamp.to_rfc3339(),
-        end_timestamp: s.end_timestamp.map(|t| t.to_rfc3339()),
+        start_timestamp: s.start_timestamp,
+        end_timestamp: s.end_timestamp,
         start_block: s.start_block,
         end_block: s.end_block,
         deadline_block: s.deadline_block,
@@ -232,11 +234,10 @@ fn convert_settlement(s: DbSettlementExecution) -> SettlementAttempt {
 fn convert_fee_policy(f: DbFeePolicy) -> FeePolicy {
     FeePolicy {
         kind: match f.kind {
-            DbFeePolicyKind::Surplus => "surplus",
-            DbFeePolicyKind::Volume => "volume",
-            DbFeePolicyKind::PriceImprovement => "priceImprovement",
-        }
-        .to_string(),
+            DbFeePolicyKind::Surplus => FeePolicyKind::Surplus,
+            DbFeePolicyKind::Volume => FeePolicyKind::Volume,
+            DbFeePolicyKind::PriceImprovement => FeePolicyKind::PriceImprovement,
+        },
         surplus_factor: f.surplus_factor,
         surplus_max_volume_factor: f.surplus_max_volume_factor,
         volume_factor: f.volume_factor,
