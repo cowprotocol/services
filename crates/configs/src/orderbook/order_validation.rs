@@ -1,8 +1,17 @@
 use {
     serde::{Deserialize, Serialize},
-    shared::order_validation::SameTokensPolicy,
     std::time::Duration,
 };
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SameTokensPolicy {
+    #[default]
+    Disallow,
+    AllowSell,
+    // Allow, TODO: Allow sell and buy orders with the same tokens
+    // (https://github.com/cowprotocol/services/issues/3963)
+}
 
 const fn default_min_order_validity_period() -> Duration {
     Duration::from_secs(60) // 1m

@@ -177,7 +177,7 @@ async fn combined_protocol_fees(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -528,7 +528,7 @@ async fn surplus_partner_fee(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -775,7 +775,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -938,7 +938,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -1102,12 +1102,12 @@ async fn volume_fee_overrides(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration {
-                volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            configs::orderbook::Configuration {
+                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.01)), // Default 1% volume fee
                     effective_from_timestamp: None,
                 }),
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver,
         )

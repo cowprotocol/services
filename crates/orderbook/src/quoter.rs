@@ -1,9 +1,9 @@
 use {
-    crate::{app_data, config::VolumeFeeConfig},
+    crate::app_data,
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
-    configs::fee_factor::FeeFactor,
+    configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},

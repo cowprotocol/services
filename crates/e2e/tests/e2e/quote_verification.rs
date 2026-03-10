@@ -381,7 +381,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                 ..Default::default()
             },
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -526,7 +526,7 @@ async fn usdt_quote_verification(web3: Web3) {
                 ..Default::default()
             },
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;

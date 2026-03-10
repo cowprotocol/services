@@ -239,8 +239,8 @@ async fn fallback_native_price_estimator(web3: Web3) {
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
             ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            configs::orderbook::Configuration {
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     fallback_estimators: Some(price_estimation::NativePriceEstimators::new(vec![
                         vec![price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
@@ -254,9 +254,9 @@ async fn fallback_native_price_estimator(web3: Web3) {
                         },
                         ..Default::default()
                     },
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;

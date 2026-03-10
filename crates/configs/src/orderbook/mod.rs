@@ -1,14 +1,17 @@
 use {
-    crate::config::{
-        banned_users::BannedUsersConfig,
-        ipfs::IpfsConfig,
-        native_price::NativePriceConfig,
-        order_validation::OrderValidationConfig,
+    crate::{
+        database::DatabasePoolConfig,
+        fee_factor::FeeFactor,
+        orderbook::{
+            banned_users::BannedUsersConfig,
+            ipfs::IpfsConfig,
+            native_price::NativePriceConfig,
+            order_validation::OrderValidationConfig,
+        },
     },
     alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
-    configs::{database::DatabasePoolConfig, fee_factor::FeeFactor},
     serde::{Deserialize, Serialize},
     std::path::Path,
 };
@@ -95,13 +98,15 @@ impl Configuration {
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util {
     use {
-        crate::config::{
-            Configuration,
-            default_active_order_competition_threshold,
-            default_app_data_size_limit,
-            native_price::NativePriceConfig,
+        crate::{
+            orderbook::{
+                Configuration,
+                default_active_order_competition_threshold,
+                default_app_data_size_limit,
+                native_price::NativePriceConfig,
+            },
+            test_util::TestDefault,
         },
-        configs::test_util::TestDefault,
         std::path::Path,
     };
 
@@ -132,7 +137,7 @@ pub mod test_util {
 
     impl TestDefault for Configuration {
         fn test_default() -> Self {
-            use configs::test_util::TestDefault;
+            use crate::test_util::TestDefault;
 
             Self {
                 order_validation: Default::default(),
@@ -156,9 +161,8 @@ pub mod test_util {
 mod tests {
     use {
         super::*,
-        configs::test_util::TestDefault,
+        crate::{orderbook::order_validation::SameTokensPolicy, test_util::TestDefault},
         price_estimation::{NativePriceEstimator, NativePriceEstimators},
-        shared::order_validation::SameTokensPolicy,
         std::time::Duration,
     };
 

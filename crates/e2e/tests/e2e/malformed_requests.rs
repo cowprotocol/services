@@ -34,7 +34,7 @@ async fn http_validation(web3: Web3) {
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
     let client = services.client();
