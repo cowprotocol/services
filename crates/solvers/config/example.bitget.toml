@@ -1,0 +1,19 @@
+node-url = "http://localhost:8545"
+
+[dex]
+# Specify which chain to use, 1 for Ethereum.
+# Supported chains: eth (1), bsc (56), base (8453)
+chain-id = "1"
+
+# Optionally specify a custom Bitget swap API endpoint
+# endpoint = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
+
+[dex.credentials]
+# Bitget API key (obtain from Bitget integration team)
+api-key = "$BITGET_API_KEY"
+
+# Bitget API secret for signing requests
+api-secret = "$BITGET_API_SECRET"
+
+# Partner code sent in the Partner-Code header (defaults to "cowswap")
+# partner-code = "Cowswap"

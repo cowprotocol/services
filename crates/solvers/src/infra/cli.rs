@@ -48,4 +48,9 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
+    /// solve individual orders using Bitget API
+    Bitget {
+        #[clap(long, env)]
+        config: PathBuf,
+    },
 }
