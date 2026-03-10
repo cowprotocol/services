@@ -25,8 +25,6 @@ pub struct DebugReport {
 pub struct Event {
     pub label: String,
     pub timestamp: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
 }
 
 #[serde_as]

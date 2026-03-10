@@ -53,7 +53,6 @@ impl Postgres {
             .map(|e| Event {
                 label: format!("{:?}", e.label).to_lowercase(),
                 timestamp: e.timestamp,
-                reason: e.reason.map(|r| r.to_string()),
             })
             .collect();
 
