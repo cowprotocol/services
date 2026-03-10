@@ -68,6 +68,21 @@ pub struct Config {
     pub compress_solve_request: bool,
 }
 
+impl From<crate::config::run_loop::RunLoopConfig> for Config {
+    fn from(value: crate::config::run_loop::RunLoopConfig) -> Self {
+        Self {
+            submission_deadline: value.submission_deadline,
+            max_settlement_transaction_wait: value.max_settlement_transaction_wait,
+            solve_deadline: value.solve_deadline,
+            max_run_loop_delay: value.max_delay,
+            max_winners_per_auction: value.max_winners_per_auction,
+            max_solutions_per_solver: value.max_solutions_per_solver,
+            enable_leader_lock: value.enable_leader_lock,
+            compress_solve_request: value.compress_solve_request,
+        }
+    }
+}
+
 pub struct Probes {
     pub liveness: Arc<Liveness>,
     pub startup: Arc<Option<AtomicBool>>,
