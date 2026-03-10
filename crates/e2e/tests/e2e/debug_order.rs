@@ -3,14 +3,13 @@ use {
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
+        debug_report::DebugReport,
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    serde::Deserialize,
     shared::web3::Web3,
-    std::collections::HashMap,
 };
 
 #[tokio::test]
@@ -95,7 +94,7 @@ async fn debug_order(web3: Web3) {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        response.json::<DebugOrderResponse>().await.unwrap()
+        response.json::<DebugReport>().await.unwrap()
     };
 
     // Wait until the debug report is fully populated (settlement data is
@@ -110,7 +109,7 @@ async fn debug_order(web3: Web3) {
     let report = fetch_debug_report().await;
 
     assert_eq!(report.order_uid, uid.to_string());
-    assert_eq!(report.order.kind, OrderKind::Buy);
+    assert_eq!(report.order.data.kind, OrderKind::Buy);
 
     assert_eq!(
         report.events.len(),
@@ -152,35 +151,4 @@ async fn debug_order(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DebugOrderResponse {
-    order_uid: String,
-    order: DebugOrder,
-    events: Vec<DebugEvent>,
-    auctions: Vec<DebugAuction>,
-    trades: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DebugOrder {
-    kind: OrderKind,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DebugEvent {
-    label: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DebugAuction {
-    native_prices: HashMap<String, String>,
-    proposed_solutions: Vec<serde_json::Value>,
-    executions: Vec<serde_json::Value>,
-    settlement_attempts: Vec<serde_json::Value>,
 }
