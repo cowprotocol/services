@@ -40,6 +40,7 @@ cow-amm = { workspace = true }
 database = { workspace = true }
 driver = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
+fee = { workspace = true }
 futures = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }

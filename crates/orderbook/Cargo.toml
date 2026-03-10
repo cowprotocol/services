@@ -33,6 +33,7 @@ const-hex = { workspace = true }
 contracts = { workspace = true }
 database = { workspace = true }
 ethrpc = { workspace = true }
+fee = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }

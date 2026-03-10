@@ -9,8 +9,8 @@ use {
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     configs::database::DatabasePoolConfig,
+    fee::factor::FeeFactor,
     serde::{Deserialize, Serialize},
-    shared::fee_factor::FeeFactor,
     std::path::Path,
 };
 

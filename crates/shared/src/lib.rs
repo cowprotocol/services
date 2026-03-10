@@ -7,8 +7,6 @@ pub mod db_order_conversions;
 pub mod encoded_settlement;
 pub mod event_storing_helpers;
 pub mod external_prices;
-pub mod fee;
-pub mod fee_factor;
 pub mod http_client;
 pub mod http_solver;
 pub mod interaction;

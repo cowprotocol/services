@@ -15,6 +15,7 @@ use {
             SigningScheme as DbSigningScheme,
         },
     },
+    fee::parameters::FeeParameters,
     model::{
         interaction::InteractionData,
         order::{
@@ -140,7 +141,7 @@ pub fn order_quote_into_model(
         _ => quote.metadata.clone(),
     };
 
-    let fee_amount = crate::fee::FeeParameters {
+    let fee_amount = FeeParameters {
         gas_amount: quote.gas_amount,
         gas_price: quote.gas_price,
         sell_token_price: quote.sell_token_price,

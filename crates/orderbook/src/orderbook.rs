@@ -13,6 +13,7 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
+    fee::parameters::FeeParameters,
     model::{
         DomainSeparator,
         order::{
@@ -29,7 +30,6 @@ use {
     },
     observe::metrics::LivenessChecking,
     shared::{
-        fee::FeeParameters,
         order_quoting::Quote,
         order_validation::{
             Amounts,

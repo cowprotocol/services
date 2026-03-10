@@ -783,6 +783,7 @@ mod test {
         contracts::alloy::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethrpc::Web3,
+        fee::parameters::FeeParameters,
         model::{
             DomainSeparator,
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -796,7 +797,6 @@ mod test {
                 sell_token_source_into,
                 signing_scheme_into,
             },
-            fee::FeeParameters,
             order_quoting::{MockOrderQuoting, Quote, QuoteData},
         },
         sqlx::PgPool,

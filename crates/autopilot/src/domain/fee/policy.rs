@@ -4,7 +4,7 @@ use {
         config::fee_policy::FeePolicyKind,
         domain::{self, fee::Quote},
     },
-    shared::{fee::VolumeFeePolicy, fee_factor::FeeFactor},
+    fee::{factor::FeeFactor, parameters::VolumeFeePolicy},
 };
 
 pub enum Policy {

@@ -1,6 +1,6 @@
 use {
-    crate::{arguments::TokenBucketFeeOverride, fee_factor::FeeFactor},
-    alloy::primitives::{Address, U256},
+    crate::{TokenBucketFeeOverride, factor::FeeFactor},
+    alloy_primitives::{Address, U256},
 };
 
 /// Everything required to compute the fee amount in sell token
@@ -100,7 +100,7 @@ impl VolumeFeePolicy {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address};
+    use {super::*, alloy_primitives::address};
 
     #[test]
     fn test_volume_fee_bucket_override() {

@@ -1,14 +1,11 @@
 use {
-    crate::{
-        db_order_conversions::order_kind_from,
-        fee::FeeParameters,
-        order_validation::PreOrderData,
-    },
+    crate::{db_order_conversions::order_kind_from, order_validation::PreOrderData},
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
+    fee::parameters::FeeParameters,
     futures::TryFutureExt,
     gas_price_estimation::GasPriceEstimating,
     model::{

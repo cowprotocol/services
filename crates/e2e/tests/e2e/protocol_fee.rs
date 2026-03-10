@@ -15,6 +15,7 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{assert_approximately_eq, setup::*},
     ethrpc::alloy::CallBuilderExt,
+    fee::factor::FeeFactor,
     model::{
         fee_policy::FeePolicy,
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
@@ -31,7 +32,7 @@ use {
     number::units::EthUnit,
     reqwest::StatusCode,
     serde_json::json,
-    shared::{fee_factor::FeeFactor, web3::Web3},
+    shared::web3::Web3,
 };
 
 #[tokio::test]

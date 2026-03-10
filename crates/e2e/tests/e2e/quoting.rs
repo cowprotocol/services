@@ -3,6 +3,7 @@ use {
     configs::test_util::TestDefault,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
+    fee::factor::FeeFactor,
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -11,7 +12,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
-    shared::{fee_factor::FeeFactor, web3::Web3},
+    shared::web3::Web3,
     std::{
         sync::Arc,
         time::{Duration, Instant},

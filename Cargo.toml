@@ -56,6 +56,7 @@ derive_more = { version = "1.0.0", features = ["full"] }
 driver = { path = "crates/driver" }
 ethrpc = { path = "crates/ethrpc" }
 event-indexing = { path = "crates/event-indexing" }
+fee = { path = "crates/fee" }
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-price-estimation = { path = "crates/gas-price-estimation" }

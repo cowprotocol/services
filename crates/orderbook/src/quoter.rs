@@ -3,15 +3,13 @@ use {
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
+    fee::{TokenBucketFeeOverride, factor::FeeFactor, parameters::VolumeFeePolicy},
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
     price_estimation::{Verification, trade_finding},
     shared::{
-        arguments::TokenBucketFeeOverride,
-        fee::VolumeFeePolicy,
-        fee_factor::FeeFactor,
         order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
         order_validation::{
             AppDataValidationError,
@@ -305,13 +303,10 @@ mod tests {
     use {
         super::*,
         alloy::primitives::U256,
+        fee::{factor::FeeFactor, parameters::VolumeFeePolicy},
         model::quote::OrderQuoteSide,
         number::units::EthUnit,
-        shared::{
-            fee::VolumeFeePolicy,
-            fee_factor::FeeFactor,
-            order_quoting::{Quote, QuoteData},
-        },
+        shared::order_quoting::{Quote, QuoteData},
     };
 
     const TEST_SELL_TOKEN: alloy::primitives::Address =

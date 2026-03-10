@@ -12,6 +12,7 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
         orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
+    fee::parameters::FeeParameters,
     futures::{FutureExt, StreamExt, stream::TryStreamExt, try_join},
     model::{
         order::{
@@ -46,7 +47,6 @@ use {
             signing_scheme_from,
             signing_scheme_into,
         },
-        fee::FeeParameters,
         order_validation::{Amounts, LimitOrderCounting, is_order_outside_market_price},
     },
     sqlx::{Connection, PgConnection, types::BigDecimal},

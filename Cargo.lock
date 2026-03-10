@@ -1226,6 +1226,7 @@ dependencies = [
  "derive_more 1.0.0",
  "ethrpc",
  "event-indexing",
+ "fee",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -2798,7 +2799,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.114",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3047,6 +3048,7 @@ dependencies = [
  "database",
  "driver",
  "ethrpc",
+ "fee",
  "futures",
  "hex-literal",
  "itertools 0.14.0",
@@ -3292,6 +3294,16 @@ dependencies = [
  "arrayvec",
  "auto_impl",
  "bytes",
+]
+
+[[package]]
+name = "fee"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3990,7 +4002,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -5112,6 +5124,7 @@ dependencies = [
  "contracts",
  "database",
  "ethrpc",
+ "fee",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -5694,7 +5707,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.36",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -5732,7 +5745,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -6752,6 +6765,7 @@ dependencies = [
  "database",
  "derive_more 1.0.0",
  "ethrpc",
+ "fee",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -8375,7 +8389,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
