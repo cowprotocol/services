@@ -790,6 +790,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DebugOrderResponse"
+        "400":
+          description: Invalid order UID (malformed hex or wrong length).
         "404":
           description: Order not found.
         "500":
