@@ -5,6 +5,7 @@ use {
     crate::{OrderUid, byte_array::ByteArray},
     chrono::Utc,
     sqlx::{PgConnection, PgPool, types::chrono::DateTime},
+    std::fmt::Display,
     tracing::instrument,
 };
 
@@ -33,9 +34,43 @@ pub enum OrderEventLabel {
     Cancelled,
 }
 
+/// Why an order was filtered or marked invalid.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, sqlx::Type)]
+#[sqlx(type_name = "OrderFilterReason")]
+#[sqlx(rename_all = "snake_case")]
+pub enum OrderFilterReason {
+    InFlight,
+    BannedUser,
+    InvalidSignature,
+    UnsupportedToken,
+    InsufficientBalance,
+    DustOrder,
+    MissingPrice,
+}
+
+impl OrderFilterReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InFlight => "in_flight",
+            Self::BannedUser => "banned_user",
+            Self::InvalidSignature => "invalid_signature",
+            Self::UnsupportedToken => "unsupported_token",
+            Self::InsufficientBalance => "insufficient_balance",
+            Self::DustOrder => "dust_order",
+            Self::MissingPrice => "missing_price",
+        }
+    }
+}
+
+impl Display for OrderFilterReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Contains a single event of the life cycle of an order and when it was
 /// registered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
+#[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
 pub struct OrderEvent {
     /// Which order this event belongs to
     pub order_uid: OrderUid,
@@ -44,15 +79,25 @@ pub struct OrderEvent {
     pub timestamp: DateTime<Utc>,
     /// What kind of event happened
     pub label: OrderEventLabel,
+    /// Why the order was filtered/invalidated (only set for Filtered/Invalid
+    /// labels)
+    pub reason: Option<OrderFilterReason>,
 }
 
 /// Inserts a row into the `order_events` table only if the latest event for the
-/// corresponding order UID has a different label than the provided event..
+/// corresponding order UID has a different label than the provided event.
 pub async fn insert_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,
 ) -> Result<(), sqlx::Error> {
-    insert_order_events(ex, &[event.order_uid], event.timestamp, event.label).await
+    insert_order_events(
+        ex,
+        &[event.order_uid],
+        event.timestamp,
+        event.label,
+        event.reason,
+    )
+    .await
 }
 
 pub async fn insert_order_events(
@@ -60,29 +105,32 @@ pub async fn insert_order_events(
     orders: &[OrderUid],
     timestamp: DateTime<Utc>,
     label: OrderEventLabel,
+    reason: Option<OrderFilterReason>,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
     WITH latest_events AS (
-        SELECT DISTINCT ON (order_uid) order_uid, label
+        SELECT DISTINCT ON (order_uid) order_uid, label, reason
         FROM order_events
         WHERE order_uid = ANY($1)
         ORDER BY order_uid, timestamp DESC
     ),
     incoming AS (
-        SELECT t.order_uid, $2 AS timestamp, $3 AS label
+        SELECT t.order_uid, $2 AS timestamp, $3 AS label, $4 AS reason
         FROM unnest($1) AS t(order_uid)
     )
-    INSERT INTO order_events (order_uid, timestamp, label)
-    SELECT DISTINCT i.order_uid, i.timestamp, i.label
+    INSERT INTO order_events (order_uid, timestamp, label, reason)
+    SELECT DISTINCT i.order_uid, i.timestamp, i.label, i.reason
     FROM incoming i
     LEFT JOIN latest_events le ON le.order_uid = i.order_uid
     WHERE le.label IS DISTINCT FROM i.label
+       OR le.reason IS DISTINCT FROM i.reason
     "#;
 
     sqlx::query(QUERY)
         .bind(orders)
         .bind(timestamp)
         .bind(label)
+        .bind(reason)
         .execute(ex)
         .await?;
     Ok(())
@@ -156,24 +204,28 @@ mod tests {
             order_uid: uid_a,
             timestamp: now - chrono::Duration::milliseconds(300),
             label: OrderEventLabel::Created,
+            reason: None,
         };
         insert_order_event(&mut ex, &event_a).await.unwrap();
         let event_b = OrderEvent {
             order_uid: uid_a,
             timestamp: now - chrono::Duration::milliseconds(200),
             label: OrderEventLabel::Invalid,
+            reason: None,
         };
         insert_order_event(&mut ex, &event_b).await.unwrap();
         let event_c = OrderEvent {
             order_uid: uid_b,
             timestamp: now - chrono::Duration::milliseconds(100),
             label: OrderEventLabel::Invalid,
+            reason: None,
         };
         insert_order_event(&mut ex, &event_c).await.unwrap();
         let event_d = OrderEvent {
             order_uid: uid_a,
             timestamp: now,
             label: OrderEventLabel::Invalid,
+            reason: None,
         };
         insert_order_event(&mut ex, &event_d).await.unwrap();
 
@@ -225,19 +277,27 @@ mod tests {
             order_uid: uid_a,
             timestamp: early,
             label: OrderEventLabel::Created,
+            reason: None,
         };
         insert_order_event(&mut ex, &event_a).await.unwrap();
         let event_b = OrderEvent {
             order_uid: uid_b,
             timestamp: early,
             label: OrderEventLabel::Invalid,
+            reason: None,
         };
         insert_order_event(&mut ex, &event_b).await.unwrap();
 
         let later = Utc.with_ymd_and_hms(2027, 2, 19, 0, 0, 0).unwrap();
-        insert_order_events(&mut ex, &[uid_a, uid_b], later, OrderEventLabel::Invalid)
-            .await
-            .unwrap();
+        insert_order_events(
+            &mut ex,
+            &[uid_a, uid_b],
+            later,
+            OrderEventLabel::Invalid,
+            None,
+        )
+        .await
+        .unwrap();
 
         let a = get_latest(&mut ex, &uid_a).await.unwrap();
         assert_eq!(
@@ -247,6 +307,7 @@ mod tests {
                 // new latest event was added
                 timestamp: later,
                 label: OrderEventLabel::Invalid,
+                reason: None,
             })
         );
 
@@ -258,7 +319,8 @@ mod tests {
                 // since the latest event was already `Invalid`
                 // no new entry was created
                 timestamp: early,
-                label: OrderEventLabel::Invalid
+                label: OrderEventLabel::Invalid,
+                reason: None,
             })
         );
     }
@@ -270,9 +332,15 @@ mod tests {
         let mut ex = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut ex).await.unwrap();
         let uid = ByteArray([1; 56]);
-        insert_order_events(&mut ex, &[uid, uid], Utc::now(), OrderEventLabel::Invalid)
-            .await
-            .unwrap();
+        insert_order_events(
+            &mut ex,
+            &[uid, uid],
+            Utc::now(),
+            OrderEventLabel::Invalid,
+            None,
+        )
+        .await
+        .unwrap();
         let events = all_order_events(&mut ex).await;
         // query didn't insert 2 identical events for the same uid
         assert_eq!(events.len(), 1);

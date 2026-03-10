@@ -1,4 +1,5 @@
 use {
+    ::alloy::primitives::Address,
     configs::test_util::TestDefault,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
@@ -16,6 +17,12 @@ use {
 #[ignore]
 async fn local_node_debug_order() {
     run_test(debug_order).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_debug_order_filter_reason() {
+    run_test(debug_order_filter_reason).await;
 }
 
 async fn debug_order(web3: Web3) {
@@ -97,30 +104,38 @@ async fn debug_order(web3: Web3) {
         response.json::<DebugReport>().await.unwrap()
     };
 
-    // Wait until the debug report is fully populated (settlement data is
-    // written asynchronously, so we poll until trades appear).
+    // Wait until the debug report is fully populated: trades appear and all 5
+    // events are recorded (created → ready → executing → filtered/in_flight →
+    // traded).
     let report_populated = || async {
+        onchain.mint_block().await;
         let report = fetch_debug_report().await;
-        !report.trades.is_empty()
+        !report.trades.is_empty() && report.events.len() == 5
     };
     wait_for_condition(TIMEOUT, report_populated).await.unwrap();
 
     // Deserializing into DebugOrderResponse validates all field names and types.
     let report = fetch_debug_report().await;
 
-    assert_eq!(report.order_uid, uid.to_string());
+    assert_eq!(report.order_uid, uid);
     assert_eq!(report.order.data.kind, OrderKind::Buy);
 
     assert_eq!(
         report.events.len(),
-        4,
-        "expected exactly created+ready+executing+traded events, got {:?}",
+        5,
+        "expected created+ready+executing+filtered(in_flight)+traded events, got {:?}",
         report.events
     );
     assert_eq!(report.events[0].label, "created");
+    assert_eq!(report.events[0].reason, None);
     assert_eq!(report.events[1].label, "ready");
+    assert_eq!(report.events[1].reason, None);
     assert_eq!(report.events[2].label, "executing");
-    assert_eq!(report.events[3].label, "traded");
+    assert_eq!(report.events[2].reason, None);
+    assert_eq!(report.events[3].label, "filtered");
+    assert_eq!(report.events[3].reason.as_deref(), Some("in_flight"));
+    assert_eq!(report.events[4].label, "traded");
+    assert_eq!(report.events[4].reason, None);
 
     assert!(!report.trades.is_empty(), "expected at least one trade");
     assert!(!report.auctions.is_empty(), "expected at least one auction");
@@ -151,4 +166,119 @@ async fn debug_order(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// Tests that the debug report includes filtering reasons when an order is
+/// excluded from an auction due to insufficient balance.
+async fn debug_order_filter_reason(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Give the trader WETH and approve the allowance contract.
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(3u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, 3u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs::default(),
+            autopilot::config::Configuration::test("test_solver", solver.address()),
+            orderbook::config::Configuration::test_default(),
+            solver,
+        )
+        .await;
+
+    // Create an order for the trader.
+    let order = OrderCreation {
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: 2u64.eth(),
+        buy_token: *token.address(),
+        buy_amount: 1u64.eth(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Buy,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    // Drain the trader's WETH balance so the order becomes unfillable.
+    onchain
+        .contracts()
+        .weth
+        .transfer(Address::ZERO, 3u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Wait for at least one auction cycle to pick up the insufficient balance.
+    let client = services.client();
+    let has_invalid_event = || async {
+        onchain.mint_block().await;
+        let response = client
+            .get(format!("{API_HOST}/api/v1/debug/order/{uid}"))
+            .send()
+            .await
+            .unwrap();
+        if response.status() != StatusCode::OK {
+            return false;
+        }
+        let report: DebugReport = response.json().await.unwrap();
+        report
+            .events
+            .iter()
+            .any(|e| e.label == "invalid" && e.reason.as_deref() == Some("insufficient_balance"))
+    };
+    wait_for_condition(TIMEOUT, has_invalid_event)
+        .await
+        .unwrap();
+
+    // Verify the full event list.
+    let response = client
+        .get(format!("{API_HOST}/api/v1/debug/order/{uid}"))
+        .send()
+        .await
+        .unwrap();
+    let report: DebugReport = response.json().await.unwrap();
+
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|e| e.label == "created" && e.reason.is_none()),
+        "expected a 'created' event without reason, got {:?}",
+        report.events
+    );
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|e| e.label == "invalid" && e.reason.as_deref() == Some("insufficient_balance")),
+        "expected an 'invalid' event with reason 'insufficient_balance', got {:?}",
+        report.events
+    );
 }

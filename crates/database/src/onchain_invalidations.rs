@@ -32,6 +32,7 @@ pub async fn insert_onchain_invalidations(
                 // this is more involved, and now() should be good enough.
                 timestamp: Utc::now(),
                 order_uid: *event,
+                reason: None,
             },
         )
         .await?;
