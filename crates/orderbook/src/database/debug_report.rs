@@ -270,7 +270,7 @@ impl From<DbProposedSolution> for ProposedSolution {
     fn from(s: DbProposedSolution) -> Self {
         Self {
             solution_uid: s.solution_uid,
-            ranking: s.ranking,
+            ranking: s.solution_uid + 1,
             solver: Address::from(s.solver.0).to_string(),
             is_winner: s.is_winner,
             filtered_out: s.filtered_out,

@@ -487,7 +487,6 @@ pub async fn fetch_in_flight_orders(
 pub struct OrderProposedSolution {
     pub auction_id: AuctionId,
     pub solution_uid: i64,
-    pub ranking: i64,
     pub solver: Address,
     pub is_winner: bool,
     pub filtered_out: bool,
@@ -502,7 +501,7 @@ pub async fn find_solutions_for_order(
     order_uid: &OrderUid,
 ) -> Result<Vec<OrderProposedSolution>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT ps.auction_id, ps.uid AS solution_uid, ps.uid + 1 AS ranking,
+SELECT ps.auction_id, ps.uid AS solution_uid,
        ps.solver, ps.is_winner, ps.filtered_out, ps.score,
        pte.executed_sell, pte.executed_buy
 FROM proposed_trade_executions pte
