@@ -108,7 +108,7 @@ async fn debug_order(web3: Web3) {
     // Deserializing into DebugOrderResponse validates all field names and types.
     let report = fetch_debug_report().await;
 
-    assert_eq!(report.order_uid, uid.to_string());
+    assert_eq!(report.order_uid, uid);
     assert_eq!(report.order.data.kind, OrderKind::Buy);
 
     assert_eq!(
