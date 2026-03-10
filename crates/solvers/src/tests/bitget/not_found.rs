@@ -14,7 +14,7 @@ async fn sell_no_liquidity() {
             path: mock::http::Path::exact("bgw-pro/swapx/pro/swap"),
             req: mock::http::RequestBody::Any,
             res: json!({
-                "status": 40004,
+                "status": 404,
                 "data": {}
             }),
         },
