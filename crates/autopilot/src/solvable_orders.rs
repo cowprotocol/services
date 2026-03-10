@@ -322,6 +322,13 @@ impl SolvableOrdersCache {
         let surplus_capturing_jit_order_owners: Vec<_> = cow_amms
             .iter()
             .filter(|cow_amm| {
+                // Orders rebalancing cow amms revert when the cow amm does not have exactly the
+                // state the order was crafted for so having multiple orders in-flight for the
+                // same cow amm is an issue. Additionally an amm can be rebalanced in many
+                // different ways which would all result in different order UIDs so filtering
+                // based on that is not sufficient. That's way we check if there is any order
+                // in-flight for that amm based on the owner of the order (i.e. the cow amm) and
+                // then discard that amm altogether for that auction.
                 if in_flight_owners.contains(cow_amm.address()) {
                     return false;
                 }
