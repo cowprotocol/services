@@ -1,5 +1,8 @@
 use {
-    autopilot::{config::Configuration, shutdown_controller::ShutdownController},
+    autopilot::{
+        config::{Configuration, run_loop::RunLoopConfig},
+        shutdown_controller::ShutdownController,
+    },
     configs::test_util::TestDefault,
     e2e::setup::{
         OnchainComponents,
@@ -86,6 +89,17 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         ],
     );
 
+    let leader_config = Configuration::test("test_solver", solver1.address());
+    let leader_config = Configuration {
+        metrics_address: "0.0.0.0:9590".parse().unwrap(),
+        api_address: "0.0.0.0:12088".parse().unwrap(),
+        run_loop: RunLoopConfig {
+            enable_leader_lock: true,
+            ..leader_config.run_loop
+        },
+        ..leader_config
+    };
+
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
             None,
@@ -93,15 +107,22 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-                "--metrics-address=0.0.0.0:9590".to_string(),
-                "--api-address=0.0.0.0:12088".to_string(),
-                "--enable-leader-lock=true".to_string(),
             ],
-            // Configure autopilot-leader only with test_solver
-            Configuration::test("test_solver", solver1.address()),
+            leader_config,
             control,
         )
         .await;
+
+    let follower_config = Configuration::test("test_solver2", solver2.address());
+    let follower_config = Configuration {
+        metrics_address: "0.0.0.0:9591".parse().unwrap(),
+        api_address: "0.0.0.0:12089".parse().unwrap(),
+        run_loop: RunLoopConfig {
+            enable_leader_lock: true,
+            ..follower_config.run_loop
+        },
+        ..follower_config
+    };
 
     let _autopilot_follower = services
         .start_autopilot(
@@ -110,12 +131,8 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-                "--metrics-address=0.0.0.0:9591".to_string(),
-                "--api-address=0.0.0.0:12089".to_string(),
-                "--enable-leader-lock=true".to_string(),
             ],
-            // Configure autopilot-backup only with test_solver2
-            Configuration::test("test_solver2", solver2.address()),
+            follower_config,
         )
         .await;
 
