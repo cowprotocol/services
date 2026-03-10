@@ -1,7 +1,7 @@
 use {
+    crate::fee_factor::FeeFactor,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
-    shared::fee_factor::FeeFactor,
 };
 
 pub const fn default_max_partner_fee() -> FeeFactor {

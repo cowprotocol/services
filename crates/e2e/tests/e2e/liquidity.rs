@@ -6,9 +6,8 @@ use {
             ext::{AnvilApi, ImpersonateConfig},
         },
     },
-    autopilot::config::Configuration,
     chrono::{NaiveDateTime, Utc},
-    configs::test_util::TestDefault,
+    configs::{autopilot::Configuration, test_util::TestDefault},
     contracts::alloy::{ERC20, IZeroex},
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},

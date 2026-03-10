@@ -90,7 +90,7 @@ impl Default for RunLoopConfig {
 }
 
 #[cfg(any(test, feature = "test-util"))]
-impl configs::test_util::TestDefault for RunLoopConfig {
+impl crate::test_util::TestDefault for RunLoopConfig {
     fn test_default() -> Self {
         Self {
             max_delay: Duration::from_millis(100),

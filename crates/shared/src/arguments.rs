@@ -2,9 +2,9 @@
 //! the binaries.
 
 use {
-    crate::fee_factor::FeeFactor,
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
+    configs::fee_factor::FeeFactor,
     gas_price_estimation::GasEstimatorType,
     observe::TracingConfig,
     std::{

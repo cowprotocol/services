@@ -1,19 +1,21 @@
 use {
-    crate::config::{
-        banned_users::BannedUsersConfig,
-        cow_amm::CowAmmGroupConfig,
-        ethflow::EthflowConfig,
-        fee_policy::FeePoliciesConfig,
-        native_price::NativePriceConfig,
-        order_events_cleanup::OrderEventsCleanupConfig,
-        run_loop::RunLoopConfig,
-        s3::S3Config,
-        solver::Solver,
-        trusted_tokens::TrustedTokensConfig,
+    crate::{
+        autopilot::{
+            banned_users::BannedUsersConfig,
+            cow_amm::CowAmmGroupConfig,
+            ethflow::EthflowConfig,
+            fee_policy::FeePoliciesConfig,
+            native_price::NativePriceConfig,
+            order_events_cleanup::OrderEventsCleanupConfig,
+            run_loop::RunLoopConfig,
+            s3::S3Config,
+            solver::Solver,
+            trusted_tokens::TrustedTokensConfig,
+        },
+        database::DatabasePoolConfig,
     },
     alloy::primitives::Address,
     anyhow::{anyhow, ensure},
-    configs::database::DatabasePoolConfig,
     serde::Deserialize,
     std::{net::SocketAddr, path::Path, time::Duration},
     url::Url,
@@ -180,7 +182,7 @@ impl Configuration {
     /// It is rather useful for tests where drivers are setup separately or not
     /// actually used (like the `order_cancellation` test).
     pub fn test_no_drivers() -> Self {
-        use configs::test_util::TestDefault;
+        use crate::test_util::TestDefault;
 
         Self {
             drivers: vec![],
@@ -207,7 +209,7 @@ impl Configuration {
     }
 
     pub fn test(name: &str, solver_address: alloy::primitives::Address) -> Self {
-        use configs::test_util::TestDefault;
+        use crate::test_util::TestDefault;
 
         Self {
             drivers: vec![Solver::test(name, solver_address)],
@@ -259,7 +261,7 @@ impl Configuration {
 mod tests {
     use {
         super::*,
-        crate::config::{
+        crate::autopilot::{
             fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass, UpcomingFeePolicies},
             solver::Account,
         },

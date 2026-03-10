@@ -477,7 +477,7 @@ async fn single_replace_order_test(web3: Web3) {
                 api: vec!["--quote-verification=prefer".into()],
                 ..Default::default()
             },
-            autopilot::config::Configuration::test("test_solver", solver.address()),
+            configs::autopilot::Configuration::test("test_solver", solver.address()),
             orderbook::config::Configuration::test_default(),
             solver.clone(),
         )

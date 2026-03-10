@@ -8,9 +8,8 @@ use {
     alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
-    configs::database::DatabasePoolConfig,
+    configs::{database::DatabasePoolConfig, fee_factor::FeeFactor},
     serde::{Deserialize, Serialize},
-    shared::fee_factor::FeeFactor,
     std::path::Path,
 };
 
