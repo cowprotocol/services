@@ -239,7 +239,7 @@ impl SolvableOrdersCache {
         // on-chain.
         let (orders, removed) = filter_out_in_flight_orders(orders, &in_flight);
         Metrics::track_filtered_orders("in_flight", &removed);
-        // It's possible that some orders got marked as in-flight due to missing balance
+        // It's possible that some orders got marked as invalid due to missing balance
         // or so, but the order is perfectly fine if it's in-flight
         invalid_order_uids.retain(|uid| !in_flight.contains(uid));
 
