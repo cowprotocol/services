@@ -4,7 +4,7 @@ use {
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     serde::Serialize,
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
 };
 
