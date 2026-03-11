@@ -183,11 +183,12 @@ Indexes:
 
 Stores timestamped events throughout an order's life cycle. This information is used to get detailed metrics on a per order basis.
 
- Column           | Type                     | Nullable | Details
-------------------|--------------------------|----------|--------
- order\_uid       | bytea                    | not null | order this event belongs to
- timestamp        | timestamptz              | not null | when the event was registered
- label            | [enum](#ordereventlabel) | not null | which event happened exactly
+ Column           | Type                       | Nullable | Details
+------------------|----------------------------|----------|--------
+ order\_uid       | bytea                      | not null | order this event belongs to
+ timestamp        | timestamptz                | not null | when the event was registered
+ label            | [enum](#ordereventlabel)   | not null | which event happened exactly
+ reason           | [enum](#orderfilterreason) | nullable | why the order was filtered or marked invalid (only set for `filtered` and `invalid` labels)
 
 Indexes:
 - order\_events\_by\_uid: btree(`order_uid`, `timestamp`)
@@ -581,6 +582,18 @@ Indexes:
  considered | order was in a valid solution
  traded     | order was traded on-chain
  cancelled  | user cancelled the order
+
+#### orderfilterreason
+
+ Value                  | Meaning
+------------------------|--------
+ in\_flight             | order already won a previous auction and is being settled on-chain
+ banned\_user           | order owner is on the ban list
+ invalid\_signature     | presign or EIP-1271 signature is not yet valid
+ unsupported\_token     | sell or buy token is on the deny list
+ insufficient\_balance  | owner does not have enough sell token balance or allowance
+ dust\_order            | order value is too small to be worth settling
+ missing\_price         | no native price available for the order's tokens
 
 #### orderkind
 
