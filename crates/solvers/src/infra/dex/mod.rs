@@ -4,6 +4,7 @@ use {
     reqwest::RequestBuilder,
 };
 
+pub mod bitget;
 pub mod okx;
 pub mod simulator;
 
@@ -11,6 +12,7 @@ pub use self::simulator::Simulator;
 
 /// A supported external DEX/DEX aggregator API.
 pub enum Dex {
+    Bitget(bitget::Bitget),
     Okx(Box<okx::Okx>),
 }
 
@@ -23,9 +25,10 @@ impl Dex {
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        _tokens: &auction::Tokens,
+        tokens: &auction::Tokens,
     ) -> Result<dex::Swap, Error> {
         let swap = match self {
+            Dex::Bitget(bitget) => bitget.swap(order, slippage, tokens).await?,
             Dex::Okx(okx) => okx.swap(order, slippage).await?,
         };
         Ok(swap)
@@ -100,6 +103,18 @@ impl From<okx::Error> for Error {
             okx::Error::OrderNotSupported => Self::OrderNotSupported,
             okx::Error::NotFound => Self::NotFound,
             okx::Error::RateLimited => Self::RateLimited,
+            _ => Self::Other(Box::new(err)),
+        }
+    }
+}
+
+impl From<bitget::Error> for Error {
+    fn from(err: bitget::Error) -> Self {
+        match err {
+            bitget::Error::OrderNotSupported => Self::OrderNotSupported,
+            bitget::Error::NotFound => Self::NotFound,
+            bitget::Error::MissingDecimals => Self::BadRequest,
+            bitget::Error::RateLimited => Self::RateLimited,
             _ => Self::Other(Box::new(err)),
         }
     }
