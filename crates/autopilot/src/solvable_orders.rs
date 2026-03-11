@@ -202,11 +202,11 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
 
-        let orders = db_solvable_orders
+        let orders: Vec<&Order> = db_solvable_orders
             .orders
             .values()
             .map(|order| order.as_ref())
-            .collect::<Vec<_>>();
+            .collect();
 
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
@@ -222,7 +222,7 @@ impl SolvableOrdersCache {
             .map(|order| order.metadata.uid)
             .collect();
 
-        let (balances, orders, cow_amms) = {
+        let (balances, orders, cow_amms, in_flight) = {
             let queries = orders
                 .iter()
                 .map(|o| Query::from_order(o))
@@ -231,8 +231,17 @@ impl SolvableOrdersCache {
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut invalid_order_uids),
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
+                self.fetch_in_flight_orders(block),
             )
         };
+
+        // Remove in-flight orders - already won a previous auction, being settled
+        // on-chain.
+        let (orders, removed) = filter_out_in_flight_orders(orders, &in_flight);
+        Metrics::track_filtered_orders("in_flight", &removed);
+        // It's possible that some orders got marked as invalid due to missing balance
+        // or so, but the order is perfectly fine if it's in-flight
+        invalid_order_uids.retain(|uid| !in_flight.contains(uid));
 
         let orders = if self.disable_order_balance_filter {
             orders
@@ -306,9 +315,23 @@ impl SolvableOrdersCache {
             );
         }
 
-        let surplus_capturing_jit_order_owners = cow_amms
+        let in_flight_owners: HashSet<_> = in_flight
+            .iter()
+            .map(|uid| domain::OrderUid(uid.0).owner())
+            .collect();
+        let surplus_capturing_jit_order_owners: Vec<_> = cow_amms
             .iter()
             .filter(|cow_amm| {
+                // Orders rebalancing cow amms revert when the cow amm does not have exactly the
+                // state the order was crafted for so having multiple orders in-flight for the
+                // same cow amm is an issue. Additionally an amm can be rebalanced in many
+                // different ways which would all result in different order UIDs so filtering
+                // based on that is not sufficient. That's way we check if there is any order
+                // in-flight for that amm based on the owner of the order (i.e. the cow amm) and
+                // then discard that amm altogether for that auction.
+                if in_flight_owners.contains(cow_amm.address()) {
+                    return false;
+                }
                 cow_amm.traded_tokens().iter().all(|token| {
                     let price_exist = prices.contains_key(token);
                     if !price_exist {
@@ -322,7 +345,7 @@ impl SolvableOrdersCache {
                 })
             })
             .map(|cow_amm| *cow_amm.address())
-            .collect::<Vec<_>>();
+            .collect();
         let auction = domain::RawAuctionData {
             block,
             orders: tracing::info_span!("assemble_orders").in_scope(|| {
@@ -359,7 +382,17 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    #[instrument(skip_all)]
+    async fn fetch_in_flight_orders(&self, block: u64) -> HashSet<OrderUid> {
+        self.persistence
+            .fetch_in_flight_orders(block)
+            .await
+            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|uid| OrderUid(uid.0))
+            .collect()
+    }
+
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = self
             .timed_future(
@@ -682,6 +715,22 @@ fn find_unsupported_tokens(
                 .then_some(order.metadata.uid)
         })
         .collect()
+}
+
+fn filter_out_in_flight_orders<'a>(
+    mut orders: Vec<&'a Order>,
+    in_flight: &HashSet<OrderUid>,
+) -> (Vec<&'a Order>, Vec<OrderUid>) {
+    let mut removed = vec![];
+    orders.retain(|order| {
+        if in_flight.contains(&order.metadata.uid) {
+            removed.push(order.metadata.uid);
+            false
+        } else {
+            true
+        }
+    });
+    (orders, removed)
 }
 
 #[cfg(test)]
