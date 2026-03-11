@@ -478,7 +478,7 @@ async fn single_replace_order_test(web3: Web3) {
                 ..Default::default()
             },
             configs::autopilot::Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver.clone(),
         )
         .await;

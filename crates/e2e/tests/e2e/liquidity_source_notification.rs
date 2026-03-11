@@ -219,7 +219,7 @@ http-timeout = "10s"
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 

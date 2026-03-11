@@ -2,7 +2,6 @@ use {
     crate::{
         api,
         arguments::Arguments,
-        config::Configuration,
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
@@ -16,6 +15,7 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
+    configs::orderbook::Configuration,
     contracts::alloy::{
         BalancerV2Vault,
         ChainalysisOracle,

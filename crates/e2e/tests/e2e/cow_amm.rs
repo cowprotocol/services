@@ -202,7 +202,7 @@ async fn cow_amm_jit(web3: Web3) {
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 
@@ -591,7 +591,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 
@@ -857,7 +857,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
                 "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 
