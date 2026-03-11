@@ -1,26 +1,54 @@
 use {
     crate::config::{
         banned_users::BannedUsersConfig,
+        cow_amm::CowAmmGroupConfig,
+        ethflow::EthflowConfig,
         fee_policy::FeePoliciesConfig,
         native_price::NativePriceConfig,
         order_events_cleanup::OrderEventsCleanupConfig,
+        run_loop::RunLoopConfig,
         s3::S3Config,
         solver::Solver,
         trusted_tokens::TrustedTokensConfig,
     },
+    alloy::primitives::Address,
     anyhow::{anyhow, ensure},
     configs::database::DatabasePoolConfig,
     serde::Deserialize,
-    std::path::Path,
+    std::{net::SocketAddr, path::Path, time::Duration},
+    url::Url,
 };
 
 pub mod banned_users;
+pub mod cow_amm;
+pub mod ethflow;
 pub mod fee_policy;
 pub mod native_price;
 pub mod order_events_cleanup;
+pub mod run_loop;
 pub mod s3;
 pub mod solver;
 pub mod trusted_tokens;
+
+fn default_metrics_address() -> SocketAddr {
+    "0.0.0.0:9589".parse().unwrap()
+}
+
+fn default_api_address() -> SocketAddr {
+    "0.0.0.0:12088".parse().unwrap()
+}
+
+const fn default_max_maintenance_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+const fn default_min_order_validity_period() -> Duration {
+    Duration::from_mins(1)
+}
+
+const fn default_max_auction_age() -> Duration {
+    Duration::from_mins(5)
+}
 
 // Does not implement Default because `native_price_estimation` *cannot* have
 // empty `estimators`, as such, we cannot provide a proper default value for
@@ -53,10 +81,69 @@ pub struct Configuration {
     /// If absent, S3 uploads are disabled.
     pub s3: Option<S3Config>,
 
+    /// Configuration for native token price estimation strategies.
     pub native_price_estimation: NativePriceConfig,
 
+    /// Database connection pool settings.
     #[serde(default)]
     pub database: DatabasePoolConfig,
+
+    /// Configuration for eth-flow order indexing and processing.
+    #[serde(default)]
+    pub ethflow: EthflowConfig,
+
+    /// Run the autopilot in shadow mode by specifying an upstream CoW protocol
+    /// deployment to pull auctions from. The autopilot performs solver
+    /// competition and logs the winner without executing settlements.
+    #[serde(default)]
+    pub shadow: Option<Url>,
+
+    /// Address to bind the metrics server.
+    #[serde(default = "default_metrics_address")]
+    pub metrics_address: SocketAddr,
+
+    /// Address to bind the HTTP API server.
+    #[serde(default = "default_api_address")]
+    pub api_address: SocketAddr,
+
+    /// Configuration for CoW AMM indexing and archive node access.
+    #[serde(default)]
+    pub cow_amm: CowAmmGroupConfig,
+
+    /// Configuration for the autopilot's main auction run loop.
+    #[serde(default)]
+    pub run_loop: RunLoopConfig,
+
+    /// Maximum timeout for fetching native prices in the run loop.
+    /// If 0, native prices are fetched from cache.
+    #[serde(with = "humantime_serde", default)]
+    pub native_price_timeout: Duration,
+
+    /// Whether to skip filtering out orders with insufficient balances.
+    #[serde(default)]
+    pub disable_order_balance_filter: bool,
+
+    /// Maximum time the autopilot may spend on maintenance logic between
+    /// two auctions. When exceeded, a not-fully-updated auction runs instead
+    /// of stalling.
+    #[serde(with = "humantime_serde", default = "default_max_maintenance_timeout")]
+    pub max_maintenance_timeout: Duration,
+
+    /// List of token addresses to be ignored throughout service
+    #[serde(default)]
+    pub unsupported_tokens: Vec<Address>,
+
+    /// The minimum amount of time an order has to be valid for.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_min_order_validity_period"
+    )]
+    pub min_order_validity_period: Duration,
+
+    /// If the auction hasn't been updated in this amount of time the pod fails
+    /// the liveness check. Expects a value in seconds.
+    #[serde(with = "humantime_serde", default = "default_max_auction_age")]
+    pub max_auction_age: Duration,
 }
 
 impl Configuration {
@@ -104,6 +191,18 @@ impl Configuration {
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
+            ethflow: TestDefault::test_default(),
+            shadow: Default::default(),
+            metrics_address: default_metrics_address(),
+            api_address: default_api_address(),
+            cow_amm: Default::default(),
+            run_loop: TestDefault::test_default(),
+            disable_order_balance_filter: false,
+            max_maintenance_timeout: default_max_maintenance_timeout(),
+            native_price_timeout: Duration::from_millis(500),
+            unsupported_tokens: Default::default(),
+            min_order_validity_period: default_min_order_validity_period(),
+            max_auction_age: default_max_auction_age(),
         }
     }
 
@@ -119,6 +218,18 @@ impl Configuration {
             s3: Default::default(),
             native_price_estimation: NativePriceConfig::test_default(),
             database: DatabasePoolConfig::test_default(),
+            ethflow: TestDefault::test_default(),
+            shadow: Default::default(),
+            metrics_address: default_metrics_address(),
+            api_address: default_api_address(),
+            cow_amm: Default::default(),
+            run_loop: TestDefault::test_default(),
+            disable_order_balance_filter: false,
+            max_maintenance_timeout: default_max_maintenance_timeout(),
+            native_price_timeout: Duration::from_millis(500),
+            unsupported_tokens: Default::default(),
+            min_order_validity_period: default_min_order_validity_period(),
+            max_auction_age: default_max_auction_age(),
         }
     }
 
@@ -159,6 +270,11 @@ mod tests {
     #[test]
     fn deserialize_full_configuration() {
         let toml = r#"
+        unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
+        min-order-validity-period = "2m"
+        max-auction-age = "10m"
+        native-price-timeout = "3s"
+
         [[drivers]]
         name = "solver1"
         url = "http://localhost:8080"
@@ -210,6 +326,7 @@ mod tests {
             [{type = "Driver", name = "solver1", url = "http://localhost:8080"}],
             [{type = "Forwarder", url = "http://localhost:12088"}],
         ]
+
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -290,6 +407,15 @@ mod tests {
                 }],
             ]
         );
+
+        assert_eq!(config.unsupported_tokens.len(), 1);
+        assert_eq!(
+            config.unsupported_tokens[0],
+            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+        );
+        assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
+        assert_eq!(config.max_auction_age, Duration::from_secs(600));
+        assert_eq!(config.native_price_timeout, Duration::from_secs(3));
     }
 
     #[test]
@@ -344,6 +470,11 @@ mod tests {
         assert_eq!(config.banned_users.max_cache_size.get(), 10000);
 
         assert!(config.s3.is_none());
+
+        assert!(config.unsupported_tokens.is_empty());
+        assert_eq!(config.min_order_validity_period, Duration::from_secs(60));
+        assert_eq!(config.max_auction_age, Duration::from_secs(300));
+        assert_eq!(config.native_price_timeout, Duration::ZERO);
     }
 
     #[test]

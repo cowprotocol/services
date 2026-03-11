@@ -151,7 +151,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
-    if args.shadow.is_some() {
+    if config.shadow.is_some() {
         shadow_mode(args, config).await;
     } else {
         run(args, config, ShutdownController::default()).await;
@@ -164,7 +164,7 @@ pub async fn run(
     config: Configuration,
     shutdown_controller: ShutdownController,
 ) {
-    assert!(args.shadow.is_none(), "cannot run in shadow mode");
+    assert!(config.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         config.database.write_url.as_str(),
         crate::database::Config {
@@ -268,7 +268,7 @@ pub async fn run(
         .expect("failed to create gas price estimator"),
     );
 
-    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
+    let deny_listed_tokens = DenyListedTokens::new(config.unsupported_tokens.clone());
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
@@ -367,7 +367,7 @@ pub async fn run(
         )
         .unwrap();
 
-    let skip_event_sync_start = if args.skip_event_sync {
+    let skip_event_sync_start = if config.ethflow.skip_event_sync {
         Some(
             block_number_to_block_number_hash(&web3.provider, BlockNumberOrTag::Latest)
                 .await
@@ -408,20 +408,24 @@ pub async fn run(
         skip_event_sync_start,
     );
 
-    let archive_node_web3 = args.archive_node_url.as_ref().map_or(web3.clone(), |url| {
-        boundary::web3_client(url, &args.shared.ethrpc)
-    });
+    let archive_node_web3 = config
+        .cow_amm
+        .archive_node_url
+        .as_ref()
+        .map_or(web3.clone(), |url| {
+            boundary::web3_client(url, &args.shared.ethrpc)
+        });
 
     let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
         provider: archive_node_web3.provider,
         block_stream: eth.current_block().clone(),
     }));
-    for config in &args.cow_amm_configs {
+    for cow_amm_config in &config.cow_amm.contracts {
         cow_amm_registry
             .add_listener(
-                config.index_start,
-                config.factory,
-                config.helper,
+                cow_amm_config.index_start,
+                cow_amm_config.factory,
+                cow_amm_config.helper,
                 db_write.pool.clone(),
             )
             .await;
@@ -452,7 +456,7 @@ pub async fn run(
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
-        args.min_order_validity_period,
+        config.min_order_validity_period,
         persistence.clone(),
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
@@ -469,17 +473,17 @@ pub async fn run(
             args.shared.enable_sell_equals_buy_volume_fee,
         ),
         cow_amm_registry.clone(),
-        args.run_loop_native_price_timeout,
+        config.native_price_timeout,
         *eth.contracts().settlement().address(),
-        args.disable_order_balance_filter,
+        config.disable_order_balance_filter,
     );
 
-    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
 
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
     let api_task = tokio::spawn(infra::api::serve(
-        args.api_address,
+        config.api_address,
         api_native_price_estimator,
         args.price_estimation.quote_timeout,
         api_shutdown_receiver,
@@ -487,7 +491,7 @@ pub async fn run(
 
     observe::metrics::serve_metrics(
         liveness.clone(),
-        args.metrics_address,
+        config.metrics_address,
         Default::default(),
         startup.clone(),
     );
@@ -527,10 +531,10 @@ pub async fn run(
     );
     maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
-    if !args.ethflow_contracts.is_empty() {
+    if !config.ethflow.contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
-            args.ethflow_indexing_start,
+            config.ethflow.indexing_start,
             &web3,
             chain_id,
             db_write.clone(),
@@ -540,7 +544,7 @@ pub async fn run(
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
+            EthFlowRefundRetriever::new(web3.clone(), config.ethflow.contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -562,7 +566,7 @@ pub async fn run(
 
         let ethflow_start_block = determine_ethflow_indexing_start(
             &skip_event_sync_start,
-            args.ethflow_indexing_start,
+            config.ethflow.indexing_start,
             &web3,
             chain_id,
             &db_write,
@@ -572,7 +576,7 @@ pub async fn run(
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), config.ethflow.contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -584,16 +588,7 @@ pub async fn run(
         maintenance.add_ethflow_indexing(onchain_order_indexer, refund_event_handler);
     }
 
-    let run_loop_config = run_loop::Config {
-        submission_deadline: args.submission_deadline as u64,
-        max_settlement_transaction_wait: args.max_settlement_transaction_wait,
-        solve_deadline: args.solve_deadline,
-        max_run_loop_delay: args.max_run_loop_delay,
-        max_winners_per_auction: args.max_winners_per_auction,
-        max_solutions_per_solver: args.max_solutions_per_solver,
-        enable_leader_lock: args.enable_leader_lock,
-        compress_solve_request: args.compress_solve_request,
-    };
+    let run_loop_config = run_loop::Config::from(config.run_loop);
 
     let drivers_futures = config
         .drivers
@@ -613,7 +608,7 @@ pub async fn run(
         .collect();
 
     let awaiter = maintenance
-        .spawn_maintenance_task(eth.current_block().clone(), args.max_maintenance_timeout);
+        .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
 
     let run = RunLoop::new(
         run_loop_config,
@@ -639,7 +634,7 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
 
     let orderbook = infra::shadow::Orderbook::new(
         http_factory.create(),
-        args.shadow.expect("missing shadow mode configuration"),
+        config.shadow.expect("missing shadow mode configuration"),
     );
 
     let drivers_futures = config
@@ -698,10 +693,10 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         .await
     };
 
-    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    let liveness = Arc::new(Liveness::new(config.max_auction_age));
     observe::metrics::serve_metrics(
         liveness.clone(),
-        args.metrics_address,
+        config.metrics_address,
         Default::default(),
         Default::default(),
     );
@@ -717,11 +712,11 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         orderbook,
         drivers,
         trusted_tokens,
-        args.solve_deadline,
-        args.compress_solve_request,
+        config.run_loop.solve_deadline,
+        config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
-        args.max_winners_per_auction,
+        config.run_loop.max_winners_per_auction,
         (*weth.address()).into(),
     );
     shadow.run_forever().await;

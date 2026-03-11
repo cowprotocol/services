@@ -1,5 +1,10 @@
-pub use alloy::primitives::{Address, B256, U256};
+pub mod chain;
+
 use {crate::util::bytes::Bytes, alloy::rpc::types::AccessList, derive_more::From};
+pub use {
+    alloy::primitives::{Address, B256, U256},
+    chain::ChainId,
+};
 
 /// A contract address.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -50,6 +55,14 @@ impl From<i64> for SignedGas {
 /// Gas amount.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
+
+impl std::ops::Add<Gas> for Gas {
+    type Output = Self;
+
+    fn add(self, rhs: Gas) -> Self::Output {
+        Self(self.0.saturating_add(rhs.0))
+    }
+}
 
 impl std::ops::Add<SignedGas> for Gas {
     type Output = Self;

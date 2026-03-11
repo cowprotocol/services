@@ -1,0 +1,51 @@
+node-url = "http://localhost:8545"
+
+[dex]
+# Specify which chain to use, 1 for Ethereum.
+# More info here: https://www.okx.com/en-au/web3/build/docs/waas/walletapi-resources-supported-networks
+chain-id = "1"
+
+# Optionally specify custom OKX Swap API endpoints
+# Sell orders endpoint (exactIn mode, uses V6 API by default)
+# sell-orders-endpoint = "https://web3.okx.com/api/v6/dex/aggregator/"
+
+# Buy orders endpoint (exactOut mode, uses V5 API, only supports Ethereum, Base, BSC, and Arbitrum chains and only Uni v2 and v3 protocols)
+# If not specified, buy orders will be ignored.
+# buy-orders-endpoint = "https://www.okx.com/api/v5/dex/aggregator/"
+
+# Optional: When using a proxy, specify the original OKX API URLs for signature generation
+# These URLs are used only for generating the request signature, while the actual requests
+# are sent to the endpoints configured above (sell-orders-endpoint and buy-orders-endpoint).
+# If not specified, the signature is generated using the endpoint URLs.
+#
+# Example proxy configuration:
+# sell-orders-endpoint = "https://your-proxy.example.com/okx/v6/"
+# sell-orders-signature-base-url = "https://web3.okx.com/api/v6/dex/aggregator/"
+# buy-orders-endpoint = "https://your-proxy.example.com/okx/v5/"
+# buy-orders-signature-base-url = "https://www.okx.com/api/v5/dex/aggregator/"
+
+# OKX Project ID. Instruction on how to create a project:
+# https://www.okx.com/en-au/web3/build/docs/waas/introduction-to-developer-portal-interface#create-project
+api-project-id = "$OKX_PROJECT_ID"
+
+# OKX API Key. Instruction on how to generate an API key:
+# https://www.okx.com/en-au/web3/build/docs/waas/introduction-to-developer-portal-interface#generate-api-keys
+api-key = "$OKX_API_KEY"
+
+# OKX Secret key used for signing request. Instruction on how to get a security token:
+# https://www.okx.com/en-au/web3/build/docs/waas/introduction-to-developer-portal-interface#view-the-secret-key
+api-secret-key = "$OKX_SECRET_KEY"
+
+# OKX Secret key passphrase. Instruction on how to get a passphrase:
+# https://www.okx.com/en-au/web3/build/docs/waas/introduction-to-developer-portal-interface#generate-api-keys
+api-passphrase = "$OKX_PASSPHRASE"
+
+# Optional: Price impact protection percentage (between 0.0 - 1.0).
+# OKX API documentation: https://web3.okx.com/build/dev-docs/wallet-api/dex-swap
+#
+# When set to 1.0 (100%), the feature is disabled - all trades are allowed.
+# Note: If this field is omitted entirely, OKX API defaults to 0.9 (90% protection),
+# but this config defaults to 1.0 to disable the feature by default.
+#
+# Examples:
+# price-impact-protection-percent = 1.0   # Disabled (default) - allow all trades
