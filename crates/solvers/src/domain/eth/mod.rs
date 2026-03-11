@@ -1,10 +1,10 @@
 pub mod chain;
 
-use {crate::util::bytes::Bytes, alloy::rpc::types::AccessList, derive_more::From};
 pub use {
     alloy::primitives::{Address, B256, U256},
     chain::ChainId,
 };
+use {alloy::rpc::types::AccessList, derive_more::From};
 
 /// A contract address.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -85,7 +85,7 @@ pub struct Tx {
     pub from: Address,
     pub to: Address,
     pub value: Ether,
-    pub input: Bytes<Vec<u8>>,
+    pub input: alloy::primitives::Bytes,
     pub access_list: AccessList,
 }
 
