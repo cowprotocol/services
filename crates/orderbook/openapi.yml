@@ -2346,9 +2346,7 @@ components:
           nullable: true
           description: >
             Why the order was filtered or marked invalid. Only present for
-            "filtered" and "invalid" events. Possible values: in_flight,
-            banned_user, invalid_signature, unsupported_token,
-            insufficient_balance, dust_order, missing_price.
+            "filtered" and "invalid" events.
     DebugAuction:
       type: object
       required:
