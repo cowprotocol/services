@@ -5,7 +5,7 @@ CREATE TYPE OrderFilterReason AS ENUM (
   'unsupported_token',
   'insufficient_balance',
   'dust_order',
-  'missing_price'
+  'missing_native_price'
 );
 
 ALTER TABLE order_events ADD COLUMN reason OrderFilterReason;
