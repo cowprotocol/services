@@ -96,6 +96,7 @@ impl SwapRequest {
             to_chain: chain_name,
             from_address: settlement_contract,
             to_address: settlement_contract,
+            // as per a suggestion by the BitGet team for the best routes on EVM chains
             market: "bgwevmaggregator".to_string(),
             slippage: slippage.as_factor().to_f64().unwrap_or_default() * 100.0,
             request_mod: "rich".to_string(),
