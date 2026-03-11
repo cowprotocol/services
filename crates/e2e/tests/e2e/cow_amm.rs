@@ -6,8 +6,10 @@ use {
             ext::{AnvilApi, ImpersonateConfig},
         },
     },
-    autopilot::config::{Configuration, solver::Solver},
-    configs::test_util::TestDefault,
+    configs::{
+        autopilot::{Configuration, solver::Solver},
+        test_util::TestDefault,
+    },
     contracts::alloy::{
         ERC20,
         support::{Balances, Signatures},
@@ -571,8 +573,8 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
                     Solver::test("test_solver", solver.address()),
                     Solver::test("mock_solver", solver.address()),
                 ],
-                cow_amm: autopilot::config::cow_amm::CowAmmGroupConfig {
-                    contracts: vec![autopilot::config::cow_amm::CowAmmConfig {
+                cow_amm: configs::autopilot::cow_amm::CowAmmGroupConfig {
+                    contracts: vec![configs::autopilot::cow_amm::CowAmmConfig {
                         factory: address!("f76c421bAb7df8548604E60deCCcE50477C10462"),
                         helper: address!("3FF0041A614A9E6Bf392cbB961C97DA214E9CB31"),
                         index_start: 20476672,

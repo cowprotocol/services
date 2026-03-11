@@ -283,7 +283,6 @@ impl Ranking {
 mod tests {
     use {
         crate::{
-            config::solver::Account,
             domain::{
                 Auction,
                 Order,
@@ -298,6 +297,7 @@ mod tests {
             infra::Driver,
         },
         alloy::primitives::{Address, U160, U256, address},
+        configs::autopilot::solver::Account,
         hex_literal::hex,
         number::serialization::HexOrDecimalU256,
         serde::Deserialize,

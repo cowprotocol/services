@@ -21,7 +21,7 @@ pub struct EthflowConfig {
 }
 
 #[cfg(any(test, feature = "test-util"))]
-impl configs::test_util::TestDefault for EthflowConfig {
+impl crate::test_util::TestDefault for EthflowConfig {
     fn test_default() -> Self {
         Self {
             skip_event_sync: true,

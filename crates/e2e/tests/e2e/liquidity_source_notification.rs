@@ -4,9 +4,8 @@ use {
         providers::ext::{AnvilApi, ImpersonateConfig},
         signers::SignerSync,
     },
-    autopilot::config::Configuration,
     chrono::Utc,
-    configs::test_util::TestDefault,
+    configs::{autopilot::Configuration, test_util::TestDefault},
     contracts::alloy::{ERC20, LiquoriceSettlement},
     driver::infra,
     e2e::{

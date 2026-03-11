@@ -1,6 +1,5 @@
 use {
-    autopilot::config::Configuration,
-    configs::test_util::TestDefault,
+    configs::{autopilot::Configuration, fee_factor::FeeFactor, test_util::TestDefault},
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
@@ -11,7 +10,7 @@ use {
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
     serde_json::json,
-    shared::{fee_factor::FeeFactor, web3::Web3},
+    shared::web3::Web3,
     std::{
         sync::Arc,
         time::{Duration, Instant},

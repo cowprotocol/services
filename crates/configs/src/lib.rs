@@ -1,5 +1,7 @@
+pub mod autopilot;
 pub mod database;
 pub(crate) mod deserialize_env;
+pub mod fee_factor;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util {

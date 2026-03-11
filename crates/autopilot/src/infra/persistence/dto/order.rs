@@ -5,10 +5,10 @@ use {
     },
     alloy::primitives::{Address, U256},
     app_data::AppDataHash,
+    configs::fee_factor::FeeFactor,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    shared::fee_factor::FeeFactor,
 };
 
 #[serde_as]

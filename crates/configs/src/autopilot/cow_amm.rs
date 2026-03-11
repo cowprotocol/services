@@ -1,12 +1,8 @@
-use {
-    alloy::primitives::Address,
-    serde::{Deserialize, Serialize},
-    url::Url,
-};
+use {alloy::primitives::Address, serde::Deserialize, url::Url};
 
 /// Configuration for indexing CoW AMMs.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[cfg_attr(any(test, feature = "test-util"), derive(Serialize))]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CowAmmGroupConfig {
     /// List of CoW AMM factory/helper/start-block configurations.
@@ -20,7 +16,7 @@ pub struct CowAmmGroupConfig {
 
 /// A single CoW AMM factory configuration.
 #[derive(Debug, Clone, Deserialize)]
-#[cfg_attr(any(test, feature = "test-util"), derive(Serialize))]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CowAmmConfig {
     /// Contract address emitting CoW AMM deployment events.

@@ -1,8 +1,9 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{config::solver::Account, domain::eth, util},
+    crate::{domain::eth, util},
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
+    configs::autopilot::solver::Account,
     observe::tracing::{distributed::headers::tracing_headers, lazy::Lazy},
     reqwest::{Client, RequestBuilder, StatusCode},
     std::{borrow::Cow, time::Duration},
