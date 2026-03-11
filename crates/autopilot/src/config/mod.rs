@@ -278,12 +278,12 @@ mod tests {
         [[drivers]]
         name = "solver1"
         url = "http://localhost:8080"
-        submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
         [[drivers]]
         name = "solver2"
         url = "http://localhost:8081"
-        submission-account.kms = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+        kms = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
 
         [fee-policies]
         max-partner-fee = 0.005
@@ -424,7 +424,7 @@ mod tests {
         [[drivers]]
         name = "solver1"
         url = "http://localhost:8080"
-        submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
         [fee-policies]
 
