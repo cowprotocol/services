@@ -1,3 +1,4 @@
+pub mod bitget;
 pub mod file;
 pub mod okx;
 

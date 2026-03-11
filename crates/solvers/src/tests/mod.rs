@@ -10,6 +10,7 @@ use {
     tokio::{sync::oneshot, task::JoinHandle},
 };
 
+mod bitget;
 mod cases;
 mod mock;
 mod okx;

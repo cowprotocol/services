@@ -54,6 +54,16 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
                 config.base,
             )))
         }
+        cli::Command::Bitget { config: path } => {
+            let config = config::dex::bitget::file::load(&path).await;
+            solver::Solver::Dex(Box::new(solver::Dex::new(
+                dex::Dex::Bitget(
+                    dex::bitget::Bitget::try_new(config.bitget)
+                        .expect("invalid Bitget configuration"),
+                ),
+                config.base,
+            )))
+        }
     };
 
     crate::api::Api {
