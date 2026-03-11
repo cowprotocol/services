@@ -197,7 +197,7 @@ async fn debug_order_filter_reason(web3: Web3) {
         .start_protocol_with_args(
             ExtraServiceArgs::default(),
             configs::autopilot::Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
