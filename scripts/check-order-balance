@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ORDER_UID="${1:?Usage: $0 <order-uid> [rpc-url]}"
-RPC_URL="${2:-${ETH_MAINNET_RPC:?rpc-url required (or set ETH_MAINNET_RPC in .env.claude)}}"
+RPC_URL="${2:-${ETH_RPC_URL:?rpc-url required (or set ETH_MAINNET_RPC in .env.claude)}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/.env.claude"

@@ -323,7 +323,7 @@ scripts/vlogs "filtered all:ORDER_UID"
 - `insufficient_allowance`  
 - `invalid_signature` (ERC-1271 state changed, presign cancelled)
 - `pre_interaction_error`
-- `no_native_price` (can't get ETH price for buy token)
+- `missing_price` (can't get ETH price for buy token)
 
 ### 9.3 Market Price Verification
 
@@ -396,6 +396,50 @@ settle(
 - Monitors chain state, cancels if settlement becomes invalid (liquidity moved, etc)
 - **Penalty** if solution proposed but not settled
 
+### Investigating a Transaction That Expired in the Mempool
+
+**Always use `cast` first for blockchain interactions** — it has most utilities built in (`cast block`, `cast call`, `cast rpc`, `cast to-dec`, etc.). Fall back to raw RPC calls only when cast lacks the feature.
+
+When a settlement tx is submitted but never lands, check both dimensions:
+
+**1. Was the base fee covered?**
+```bash
+cast block $BLOCK_NUMBER --rpc-url $RPC --field baseFeePerGas
+```
+`max_fee_per_gas` must exceed the base fee of every block in the submission window, or the tx is simply invalid for that block.
+
+**2. Was the priority tip competitive?**
+A sufficient `max_fee_per_gas` is not enough — builders also need an adequate tip (`max_priority_fee_per_gas`) to make inclusion worth their time. Use `eth_feeHistory` to see the actual tip distribution of transactions that *were* included:
+
+```bash
+# Get tip percentiles [10,25,50,75,90,95] for the 3 target blocks
+# Replace 0xDEADBEEF with the hex of your last block (submission_deadline)
+cast rpc eth_feeHistory 3 0xDEADBEEF '[10,25,50,75,90,95]' --rpc-url $RPC
+```
+
+Convert hex values with `cast to-dec 0x...`. Compare our `max_priority_fee_per_gas` against the returned percentiles to see where it ranked among included transactions.
+
+**3. Was it a MEVBlocker/private relay issue?**
+If both base fee and tip were competitive (e.g. above p50 of included txs) but the tx still didn't land — especially in a low-utilization block — the likely cause is the private relay (MEVBlocker): the builder who produced the block either wasn't registered with the relay or chose not to include it. Check logs for `mempool=Mempool(mevblocker)` and `exceeded submission deadline`.
+
+Query MEVBlocker directly for the tx status:
+```bash
+curl -s "https://rpc.mevblocker.io/tx/$TX_HASH" | jq .
+```
+
+Key fields to check:
+- `status` — `PENDING` means MEVBlocker never saw it confirmed
+- `fastMode` — if `false`, the tx was only shared with a subset of registered builders (not broadcast widely); `true` = shared with all registered builders for faster inclusion
+- `shared` — `"registered"` means private order flow only, not public mempool
+- `simulationError` — if not `"None"`, MEVBlocker rejected or de-prioritised the tx
+
+**4. Which builder produced the block?**
+```bash
+cast block $BLOCK_NUMBER --rpc-url $RPC --field extraData --field miner
+cast to-ascii $EXTRA_DATA   # decodes builder identity e.g. "Titan (titanbuilder.xyz)"
+```
+Cross-reference the builder against MEVBlocker's registered builder list. If the same builder produced all blocks in the submission window and `fastMode` was false, the tx may have arrived too late for the builder to include it before the block was sealed.
+
 ---
 
 ## 11. Auction Runtime Issues
@@ -464,7 +508,7 @@ ORDER BY timestamp;
 |-------|---------|
 | `created` | Order was placed |
 | `ready` | Order ready for auction inclusion |
-| `considered` | Order was considered in an auction |
+| `considered` | Some solver bid on executing this order but did not win |
 | `executing` | Order is being settled (in-flight) |
 | `traded` | Order was filled on-chain |
 | `cancelled` | User cancelled the order |
