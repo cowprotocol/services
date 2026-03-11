@@ -108,7 +108,7 @@ async fn solver_competition(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 
@@ -267,7 +267,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             vec![
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 
@@ -434,7 +434,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 

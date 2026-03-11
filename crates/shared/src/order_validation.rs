@@ -210,35 +210,26 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: Address) -> Result<u64>;
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SameTokensPolicy {
-    #[default]
-    Disallow,
-    AllowSell,
-    // Allow, TODO: Allow sell and buy orders with the same tokens (https://github.com/cowprotocol/services/issues/3963)
-}
+pub use configs::orderbook::order_validation::SameTokensPolicy;
 
-impl SameTokensPolicy {
-    fn validate_same_sell_and_buy_token(
-        &self,
-        order: &PreOrderData,
-        native_token: &Address,
-    ) -> Result<(), PartialValidationError> {
-        // Check for orders selling wrapped native token for native token.
-        if &order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
+fn validate_same_sell_and_buy_token(
+    policy: &SameTokensPolicy,
+    order: &PreOrderData,
+    native_token: &Address,
+) -> Result<(), PartialValidationError> {
+    // Check for orders selling wrapped native token for native token.
+    if &order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS {
+        return Err(PartialValidationError::SameBuyAndSellToken);
+    }
 
-        if order.sell_token != order.buy_token {
-            return Ok(());
-        }
+    if order.sell_token != order.buy_token {
+        return Ok(());
+    }
 
-        match (self, order.kind) {
-            // (Self::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963
-            (Self::AllowSell, OrderKind::Sell) => Ok(()),
-            _ => Err(PartialValidationError::SameBuyAndSellToken),
-        }
+    match (policy, order.kind) {
+        // (SameTokensPolicy::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963
+        (SameTokensPolicy::AllowSell, OrderKind::Sell) => Ok(()),
+        _ => Err(PartialValidationError::SameBuyAndSellToken),
     }
 }
 
@@ -518,8 +509,11 @@ impl OrderValidating for OrderValidator {
         }
 
         self.validity_configuration.validate_period(&order)?;
-        self.same_tokens_policy
-            .validate_same_sell_and_buy_token(&order, self.native_token.address())?;
+        validate_same_sell_and_buy_token(
+            &self.same_tokens_policy,
+            &order,
+            self.native_token.address(),
+        )?;
 
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);

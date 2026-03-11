@@ -208,7 +208,7 @@ async fn zero_ex_liquidity(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
 

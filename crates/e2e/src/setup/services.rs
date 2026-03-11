@@ -253,7 +253,7 @@ impl<'a> Services<'a> {
     pub async fn start_api(
         &self,
         extra_args: Vec<String>,
-        config: orderbook::config::Configuration,
+        config: configs::orderbook::Configuration,
     ) {
         let (_config_file, config_arg) = config.to_cli_args();
         let args: Vec<_> = [
@@ -280,7 +280,7 @@ impl<'a> Services<'a> {
         self.start_protocol_with_args(
             Default::default(),
             configs::autopilot::Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -290,7 +290,7 @@ impl<'a> Services<'a> {
         &self,
         args: ExtraServiceArgs,
         autopilot_config: configs::autopilot::Configuration,
-        orderbook_config: orderbook::config::Configuration,
+        orderbook_config: configs::orderbook::Configuration,
         solver: TestAccount,
     ) {
         self.start_protocol_with_args_and_haircut(
@@ -307,7 +307,7 @@ impl<'a> Services<'a> {
         &self,
         args: ExtraServiceArgs,
         autopilot_config: configs::autopilot::Configuration,
-        orderbook_config: orderbook::config::Configuration,
+        orderbook_config: configs::orderbook::Configuration,
         solver: TestAccount,
         haircut_bps: u32,
     ) {
@@ -472,7 +472,7 @@ impl<'a> Services<'a> {
             autopilot_config,
         )
         .await;
-        self.start_api(api_args, orderbook::config::Configuration::test_default())
+        self.start_api(api_args, configs::orderbook::Configuration::test_default())
             .await;
     }
 

@@ -12,6 +12,7 @@ use {
             run_loop::RunLoopConfig,
             solver::{Account, Solver},
         },
+        orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
     contracts::alloy::ERC20,
@@ -28,7 +29,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
-    orderbook::config::order_validation::OrderValidationConfig,
     shared::web3::Web3,
     std::{
         collections::HashMap,
@@ -369,7 +369,7 @@ async fn two_limit_orders_test(web3: Web3) {
         .start_protocol_with_args(
             ExtraServiceArgs::default(),
             config,
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -511,17 +511,17 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             vec![
                 "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
             ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            configs::orderbook::Configuration {
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_solver".parse().unwrap(),
                         ),
                     ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
@@ -762,12 +762,12 @@ async fn too_many_limit_orders_test(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration {
+            configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {
                     max_limit_orders_per_user: 1,
                     ..Default::default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
@@ -865,12 +865,12 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
-            orderbook::config::Configuration {
+            configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {
                     max_limit_orders_per_user: 1,
                     ..Default::default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
@@ -1201,7 +1201,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -1372,7 +1372,7 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         .start_protocol_with_args_and_haircut(
             Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
             500,
         )
@@ -1573,7 +1573,7 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         .start_protocol_with_args_and_haircut(
             Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
             500,
         )

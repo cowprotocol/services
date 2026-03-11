@@ -79,13 +79,13 @@ async fn test(web3: Web3) {
         .start_protocol_with_args(
             Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration {
-                volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            configs::orderbook::Configuration {
+                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
                     // Set a far future effective timestamp to ensure the fee is not applied
                     effective_from_timestamp: Some("2099-01-01T10:00:00Z".parse().unwrap()),
                 }),
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver,
         )
@@ -325,17 +325,17 @@ async fn quote_timeout(web3: Web3) {
                     .to_string(),
                 format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms"),
             ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            configs::orderbook::Configuration {
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_solver".parse().unwrap(),
                         ),
                     ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
@@ -484,13 +484,13 @@ async fn volume_fee(web3: Web3) {
                 ..Default::default()
             },
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration {
-                volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            configs::orderbook::Configuration {
+                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
                     // Set a past effective timestamp to ensure the fee is applied
                     effective_from_timestamp: Some("2000-01-01T10:00:00Z".parse().unwrap()),
                 }),
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver,
         )

@@ -26,7 +26,7 @@ async fn cors_preflight(web3: Web3) {
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
     let client = services.client();
@@ -87,7 +87,7 @@ async fn cors_headers_on_error(web3: Web3) {
                     .to_string(),
                 "--gas-estimators=http://localhost:11088/gasprice".to_string(),
             ],
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
         )
         .await;
     let client = services.client();

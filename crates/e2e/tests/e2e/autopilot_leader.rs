@@ -141,16 +141,16 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver1,test_solver2|http://localhost:11088/test_solver2".to_string(),
             ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            configs::orderbook::Configuration {
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::forwarder(
                             "http://0.0.0.0:9588".parse().unwrap(),
                         ),
                     ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
