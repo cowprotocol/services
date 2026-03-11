@@ -3,7 +3,7 @@ use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
         domain::solver,
-        infra::{cli, config},
+        infra::{cli, config, dex},
     },
     clap::Parser,
     shared::arguments::tracing_config,
@@ -41,9 +41,18 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     tracing::info!(%commit_hash, "running solver engine with {args:#?}");
 
     let solver = match args.command {
-        cli::Command::Baseline { config } => {
-            let config = config::load(&config).await;
-            solver::Solver::new(config).await
+        cli::Command::Baseline { config: path } => {
+            let config = config::baseline::load(&path).await;
+            solver::Solver::Baseline(solver::Baseline::new(config).await)
+        }
+        cli::Command::Okx { config: path } => {
+            let config = config::dex::okx::file::load(&path).await;
+            solver::Solver::Dex(Box::new(solver::Dex::new(
+                dex::Dex::Okx(Box::new(
+                    dex::okx::Okx::try_new(config.okx).expect("invalid OKX configuration"),
+                )),
+                config.base,
+            )))
         }
     };
 
