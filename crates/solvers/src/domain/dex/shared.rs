@@ -8,18 +8,19 @@ use {
     alloy::primitives::U256,
     bigdecimal::{BigDecimal, Zero},
     num::{BigUint, Integer},
+    number::conversions::{big_uint_to_u256, u256_to_big_uint},
 };
 
 /// Computes the absolute tolerance amount from a relative factor.
 pub fn compute_absolute_tolerance(amount: U256, factor: &BigDecimal) -> U256 {
-    let amount = conv::u256_to_biguint(&amount);
+    let amount = u256_to_big_uint(&amount);
     let (int, exp) = factor.as_bigint_and_exponent();
 
     let numer = amount * int.to_biguint().expect("positive by construction");
     let denom = BigUint::from(10_u8).pow(exp.unsigned_abs().try_into().unwrap_or(u32::MAX));
 
     let abs = numer.div_ceil(&denom);
-    conv::biguint_to_u256(&abs).unwrap_or(U256::MAX)
+    big_uint_to_u256(&abs).unwrap_or(U256::MAX)
 }
 
 /// Converts an absolute slippage value to a relative slippage value based on

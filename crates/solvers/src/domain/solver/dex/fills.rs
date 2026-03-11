@@ -5,6 +5,7 @@ use {
     },
     alloy::primitives::{U256, U512, ruint::UintTryFrom},
     bigdecimal::BigDecimal,
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     std::{
         collections::HashMap,
         sync::Mutex,
@@ -32,7 +33,7 @@ impl Fills {
     pub fn new(smallest_fill: eth::Ether) -> Self {
         Self {
             amounts: Default::default(),
-            smallest_fill: conv::u256_to_bigdecimal(&smallest_fill.0),
+            smallest_fill: u256_to_big_decimal(&smallest_fill.0),
         }
     }
 
@@ -55,7 +56,7 @@ impl Fills {
         let smallest_fill = self.smallest_fill.clone()
             * conv::ether_to_decimal(&tokens.reference_price(&ETH)?.0)
             / conv::ether_to_decimal(&tokens.reference_price(&token)?.0);
-        let smallest_fill = conv::bigdecimal_to_u256(&smallest_fill)?;
+        let smallest_fill = big_decimal_to_u256(&smallest_fill)?;
 
         let now = Instant::now();
 
