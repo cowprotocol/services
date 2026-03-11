@@ -219,8 +219,8 @@ impl SolvableOrdersCache {
             .map(|order| order.as_ref())
             .collect();
 
-        let mut invalid_order_uids = HashMap::new();
-        let mut filtered_order_events: Vec<(OrderUid, OrderFilterReason)> = Vec::new();
+        let mut invalid_order_uids: HashMap<OrderUid, OrderFilterReason> = HashMap::new();
+        let mut filtered_order_events: HashMap<OrderFilterReason, Vec<OrderUid>> = HashMap::new();
 
         let balance_filter_exempt_orders: HashSet<_> = orders
             .iter()
@@ -250,7 +250,10 @@ impl SolvableOrdersCache {
         // on-chain.
         let (orders, removed) = filter_out_in_flight_orders(orders, &in_flight);
         Metrics::track_filtered_orders(InFlight, &removed);
-        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, InFlight)));
+        filtered_order_events
+            .entry(InFlight)
+            .or_default()
+            .extend(removed);
         // It's possible that some orders got marked as invalid due to missing balance
         // or so, but the order is perfectly fine if it's in-flight
         invalid_order_uids.retain(|uid, _| !in_flight.contains(uid));
@@ -269,7 +272,10 @@ impl SolvableOrdersCache {
 
             let (orders, removed) = filter_dust_orders(orders, &balances);
             Metrics::track_filtered_orders(DustOrder, &removed);
-            filtered_order_events.extend(removed.into_iter().map(|uid| (uid, DustOrder)));
+            filtered_order_events
+                .entry(DustOrder)
+                .or_default()
+                .extend(removed);
 
             orders
         };
@@ -308,13 +314,21 @@ impl SolvableOrdersCache {
             entry.insert(weth_price);
         }
         Metrics::track_filtered_orders(MissingNativePrice, &removed);
-        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
+        filtered_order_events
+            .entry(MissingNativePrice)
+            .or_default()
+            .extend(removed);
 
         Metrics::track_orders_in_final_auction(&orders);
 
         if store_events {
-            self.store_events_by_reason(invalid_order_uids, OrderEventLabel::Invalid);
-            self.store_events_by_reason(filtered_order_events, OrderEventLabel::Filtered);
+            // Flip uid->reason into reason->uids for batch insertion.
+            let invalid_by_reason: HashMap<OrderFilterReason, Vec<OrderUid>> = invalid_order_uids
+                .into_iter()
+                .map(|(uid, reason)| (reason, uid))
+                .into_group_map();
+            self.store_events_grouped(invalid_by_reason, OrderEventLabel::Invalid);
+            self.store_events_grouped(filtered_order_events, OrderEventLabel::Filtered);
         }
 
         let in_flight_owners: HashSet<_> = in_flight
@@ -514,15 +528,11 @@ impl SolvableOrdersCache {
         fut.await
     }
 
-    fn store_events_by_reason(
+    fn store_events_grouped(
         &self,
-        orders: impl IntoIterator<Item = (OrderUid, OrderFilterReason)>,
+        by_reason: HashMap<OrderFilterReason, Vec<OrderUid>>,
         label: OrderEventLabel,
     ) {
-        let mut by_reason: HashMap<OrderFilterReason, Vec<OrderUid>> = HashMap::new();
-        for (uid, reason) in orders {
-            by_reason.entry(reason).or_default().push(uid);
-        }
         for (reason, uids) in by_reason {
             self.persistence.store_order_events_owned(
                 uids,
