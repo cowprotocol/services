@@ -2341,6 +2341,14 @@ components:
         timestamp:
           type: string
           format: date-time
+        reason:
+          type: string
+          nullable: true
+          description: >
+            Why the order was filtered or marked invalid. Only present for
+            "filtered" and "invalid" events. Possible values: in_flight,
+            banned_user, invalid_signature, unsupported_token,
+            insufficient_balance, dust_order, missing_price.
     DebugAuction:
       type: object
       required:
