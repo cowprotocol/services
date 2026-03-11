@@ -16,4 +16,4 @@ api-key = "$BITGET_API_KEY"
 api-secret = "$BITGET_API_SECRET"
 
 # Partner code sent in the Partner-Code header (defaults to "cowswap")
-# partner-code = "Cowswap"
+# partner-code = "cowswap"
