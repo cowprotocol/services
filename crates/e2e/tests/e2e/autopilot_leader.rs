@@ -1,9 +1,9 @@
 use {
-    autopilot::{
-        config::{Configuration, run_loop::RunLoopConfig},
-        shutdown_controller::ShutdownController,
+    autopilot::shutdown_controller::ShutdownController,
+    configs::{
+        autopilot::{Configuration, run_loop::RunLoopConfig},
+        test_util::TestDefault,
     },
-    configs::test_util::TestDefault,
     e2e::setup::{
         OnchainComponents,
         Services,

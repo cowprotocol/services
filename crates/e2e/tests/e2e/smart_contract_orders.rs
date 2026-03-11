@@ -178,7 +178,7 @@ async fn erc1271_gas_limit(web3: Web3) {
     services
         .start_protocol_with_args(
             Default::default(),
-            autopilot::config::Configuration::test("test_solver", solver.address()),
+            configs::autopilot::Configuration::test("test_solver", solver.address()),
             orderbook::config::Configuration {
                 order_validation: OrderValidationConfig {
                     max_gas_per_order: 1_000_000,

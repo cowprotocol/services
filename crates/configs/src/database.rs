@@ -21,7 +21,7 @@ const fn default_insert_batch_size() -> NonZeroUsize {
 }
 
 #[derive(serde::Deserialize)]
-#[cfg_attr(feature = "test-util", derive(serde::Serialize))]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct DatabasePoolConfig {
     /// Url of the Postgres database. By default connects to `postgresql://`.

@@ -1,11 +1,13 @@
 use {
     ::alloy::primitives::{U256, address},
-    autopilot::config::{
-        Configuration,
-        run_loop::RunLoopConfig,
-        solver::{Account, Solver},
+    configs::{
+        autopilot::{
+            Configuration,
+            run_loop::RunLoopConfig,
+            solver::{Account, Solver},
+        },
+        test_util::TestDefault,
     },
-    configs::test_util::TestDefault,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     model::{

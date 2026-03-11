@@ -4,14 +4,16 @@ use {
         primitives::{Address, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    autopilot::config::{
-        Configuration,
-        fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind},
-        run_loop::RunLoopConfig,
-        solver::{Account, Solver},
-    },
     bigdecimal::BigDecimal,
-    configs::test_util::TestDefault,
+    configs::{
+        autopilot::{
+            Configuration,
+            fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind},
+            run_loop::RunLoopConfig,
+            solver::{Account, Solver},
+        },
+        test_util::TestDefault,
+    },
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
     driver::domain::eth::NonZeroU256,
@@ -1184,14 +1186,15 @@ async fn no_liquidity_limit_order(web3: Web3) {
                                 factor: 0.5.try_into().unwrap(),
                                 max_volume_factor: 0.01.try_into().unwrap(),
                             },
-                            order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Limit,
+                            order_class: configs::autopilot::fee_policy::FeePolicyOrderClass::Limit,
                         },
                         FeePolicy {
                             kind: FeePolicyKind::PriceImprovement {
                                 factor: 0.5.try_into().unwrap(),
                                 max_volume_factor: 0.01.try_into().unwrap(),
                             },
-                            order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Market,
+                            order_class:
+                                configs::autopilot::fee_policy::FeePolicyOrderClass::Market,
                         },
                     ],
                     ..Default::default()

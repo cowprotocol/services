@@ -2,7 +2,6 @@ use {
     crate::{
         arguments::CliArguments,
         boundary,
-        config::{Configuration, solver::Account},
         database::{
             Postgres,
             ethflow_events::event_retriever::EthFlowRefundRetriever,
@@ -30,6 +29,7 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
+    configs::autopilot::{Configuration, solver::Account},
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,

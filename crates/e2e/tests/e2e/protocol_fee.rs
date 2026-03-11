@@ -1,17 +1,20 @@
 use {
     ::alloy::primitives::{Address, U256},
-    autopilot::config::{
-        Configuration,
-        fee_policy::{
-            FeePoliciesConfig,
-            FeePolicy as ConfigFeePolicy,
-            FeePolicyKind as ConfigFeePolicyKind,
-            FeePolicyOrderClass as ConfigFeePolicyOrderClass,
-            UpcomingFeePolicies,
+    configs::{
+        autopilot::{
+            Configuration,
+            fee_policy::{
+                FeePoliciesConfig,
+                FeePolicy as ConfigFeePolicy,
+                FeePolicyKind as ConfigFeePolicyKind,
+                FeePolicyOrderClass as ConfigFeePolicyOrderClass,
+                UpcomingFeePolicies,
+            },
+            solver::Solver,
         },
-        solver::Solver,
+        fee_factor::FeeFactor,
+        test_util::TestDefault,
     },
-    configs::test_util::TestDefault,
     driver::domain::eth::NonZeroU256,
     e2e::{assert_approximately_eq, setup::*},
     ethrpc::alloy::CallBuilderExt,
@@ -31,7 +34,7 @@ use {
     number::units::EthUnit,
     reqwest::StatusCode,
     serde_json::json,
-    shared::{fee_factor::FeeFactor, web3::Web3},
+    shared::web3::Web3,
 };
 
 #[tokio::test]

@@ -3,6 +3,7 @@ use {
     alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
+    configs::fee_factor::FeeFactor,
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
@@ -11,7 +12,6 @@ use {
     shared::{
         arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
-        fee_factor::FeeFactor,
         order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
         order_validation::{
             AppDataValidationError,
@@ -305,11 +305,11 @@ mod tests {
     use {
         super::*,
         alloy::primitives::U256,
+        configs::fee_factor::FeeFactor,
         model::quote::OrderQuoteSide,
         number::units::EthUnit,
         shared::{
             fee::VolumeFeePolicy,
-            fee_factor::FeeFactor,
             order_quoting::{Quote, QuoteData},
         },
     };

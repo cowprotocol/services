@@ -15,17 +15,17 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-    autopilot::{
-        config::{
+    autopilot::infra::persistence::dto,
+    clap::Parser,
+    configs::{
+        autopilot::{
             Configuration,
             ethflow::EthflowConfig,
             native_price::NativePriceConfig,
             run_loop::RunLoopConfig,
         },
-        infra::persistence::dto,
+        test_util::TestDefault,
     },
-    clap::Parser,
-    configs::test_util::TestDefault,
     ethrpc::Web3,
     model::{
         AuctionId,
@@ -186,7 +186,7 @@ impl<'a> Services<'a> {
         &self,
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
-        config: autopilot::config::Configuration,
+        config: configs::autopilot::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
@@ -197,7 +197,7 @@ impl<'a> Services<'a> {
             .map(|c| *c.address())
             .collect::<Vec<_>>();
 
-        let config = autopilot::config::Configuration {
+        let config = configs::autopilot::Configuration {
             ethflow: EthflowConfig {
                 contracts: ethflow_contracts,
                 ..config.ethflow
@@ -237,7 +237,7 @@ impl<'a> Services<'a> {
         &self,
         solve_deadline: Option<Duration>,
         extra_args: Vec<String>,
-        config: autopilot::config::Configuration,
+        config: configs::autopilot::Configuration,
     ) -> JoinHandle<()> {
         self.start_autopilot_with_shutdown_controller(
             solve_deadline,
@@ -279,7 +279,7 @@ impl<'a> Services<'a> {
     pub async fn start_protocol(&self, solver: TestAccount) {
         self.start_protocol_with_args(
             Default::default(),
-            autopilot::config::Configuration::test("test_solver", solver.address()),
+            configs::autopilot::Configuration::test("test_solver", solver.address()),
             orderbook::config::Configuration::test_default(),
             solver,
         )
@@ -289,7 +289,7 @@ impl<'a> Services<'a> {
     pub async fn start_protocol_with_args(
         &self,
         args: ExtraServiceArgs,
-        autopilot_config: autopilot::config::Configuration,
+        autopilot_config: configs::autopilot::Configuration,
         orderbook_config: orderbook::config::Configuration,
         solver: TestAccount,
     ) {
@@ -306,7 +306,7 @@ impl<'a> Services<'a> {
     pub async fn start_protocol_with_args_and_haircut(
         &self,
         args: ExtraServiceArgs,
-        autopilot_config: autopilot::config::Configuration,
+        autopilot_config: configs::autopilot::Configuration,
         orderbook_config: orderbook::config::Configuration,
         solver: TestAccount,
         haircut_bps: u32,

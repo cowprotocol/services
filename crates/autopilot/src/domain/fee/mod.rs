@@ -9,18 +9,21 @@ mod policy;
 use {
     crate::{
         boundary::{self},
-        config::fee_policy::{
+        domain::{self, eth},
+    },
+    alloy::primitives::{Address, U256},
+    chrono::{DateTime, Utc},
+    configs::{
+        autopilot::fee_policy::{
             FeePoliciesConfig,
             FeePolicy,
             FeePolicyOrderClass,
             UpcomingFeePolicies,
         },
-        domain::{self, eth},
+        fee_factor::FeeFactor,
     },
-    alloy::primitives::{Address, U256},
-    chrono::{DateTime, Utc},
     rust_decimal::Decimal,
-    shared::{arguments::TokenBucketFeeOverride, fee::VolumeFeePolicy, fee_factor::FeeFactor},
+    shared::{arguments::TokenBucketFeeOverride, fee::VolumeFeePolicy},
     std::collections::HashSet,
 };
 
@@ -61,8 +64,8 @@ pub struct UpcomingProtocolFees {
     effective_from_timestamp: DateTime<Utc>,
 }
 
-impl From<UpcomingFeePolicies> for Option<UpcomingProtocolFees> {
-    fn from(value: UpcomingFeePolicies) -> Self {
+impl UpcomingProtocolFees {
+    fn from_config(value: UpcomingFeePolicies) -> Option<Self> {
         value
             // both config fields must be non-empty
             .effective_from_timestamp
@@ -106,7 +109,9 @@ impl ProtocolFees {
                 .map(ProtocolFee::from)
                 .collect(),
             max_partner_fee: config.max_partner_fee,
-            upcoming_fee_policies: config.upcoming_policies.clone().into(),
+            upcoming_fee_policies: UpcomingProtocolFees::from_config(
+                config.upcoming_policies.clone(),
+            ),
             volume_fee_policy,
         }
     }

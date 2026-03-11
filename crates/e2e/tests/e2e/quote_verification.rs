@@ -3,10 +3,9 @@ use {
         primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
     },
-    autopilot::config::Configuration,
     balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
     bigdecimal::{BigDecimal, Zero},
-    configs::test_util::TestDefault,
+    configs::{autopilot::Configuration, test_util::TestDefault},
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
