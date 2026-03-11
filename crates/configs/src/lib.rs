@@ -1,7 +1,10 @@
 pub mod autopilot;
+pub mod banned_users;
 pub mod database;
 pub(crate) mod deserialize_env;
 pub mod fee_factor;
+pub mod http_client;
+pub mod order_quoting;
 pub mod orderbook;
 
 #[cfg(any(test, feature = "test-util"))]

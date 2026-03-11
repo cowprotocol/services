@@ -1,5 +1,10 @@
 use {
-    configs::{autopilot::Configuration, fee_factor::FeeFactor, test_util::TestDefault},
+    configs::{
+        autopilot::Configuration,
+        fee_factor::FeeFactor,
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
+    },
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
@@ -320,12 +325,12 @@ async fn quote_timeout(web3: Web3) {
 
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
-                    .to_string(),
-                format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms"),
-            ],
+            vec![format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms")],
             configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_quoter",
+                )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(

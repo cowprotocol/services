@@ -1,6 +1,10 @@
 use {
     ::alloy::primitives::U256,
-    configs::{autopilot::trusted_tokens::TrustedTokensConfig, test_util::TestDefault},
+    configs::{
+        autopilot::trusted_tokens::TrustedTokensConfig,
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
+    },
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -64,10 +68,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
+            vec![],
             configs::autopilot::Configuration {
                 trusted_tokens: TrustedTokensConfig {
                     tokens: vec![
@@ -77,17 +78,24 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                     ],
                     ..Default::default()
                 },
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
                 ..configs::autopilot::Configuration::test("test_solver", solver.address())
             },
         )
         .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            configs::orderbook::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 
