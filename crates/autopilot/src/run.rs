@@ -179,7 +179,7 @@ pub async fn run(
     // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
     crate::database::run_database_metrics_work(db_write.clone());
 
-    let http_factory = HttpClientFactory::new(&args.http_client);
+    let http_factory = HttpClientFactory::from(config.http_client);
     let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
     let simulation_web3 = args
         .shared
@@ -353,7 +353,7 @@ pub async fn run(
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args
+            &config
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
@@ -438,15 +438,15 @@ pub async fn run(
         Arc::new(db_write.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.eip1271_onchain_quote_validity,
+                config.order_quoting.eip1271_onchain_quote_validity,
             )
             .unwrap(),
             presign_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.presign_onchain_quote_validity,
+                config.order_quoting.presign_onchain_quote_validity,
             )
             .unwrap(),
             standard_quote: chrono::Duration::from_std(
-                args.order_quoting.standard_offchain_quote_validity,
+                config.order_quoting.standard_offchain_quote_validity,
             )
             .unwrap(),
         },
@@ -630,7 +630,7 @@ pub async fn run(
 }
 
 async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
-    let http_factory = HttpClientFactory::new(&args.http_client);
+    let http_factory = HttpClientFactory::from(config.http_client);
 
     let orderbook = infra::shadow::Orderbook::new(
         http_factory.create(),

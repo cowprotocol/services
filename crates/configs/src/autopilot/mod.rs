@@ -1,7 +1,6 @@
 use {
     crate::{
         autopilot::{
-            banned_users::BannedUsersConfig,
             cow_amm::CowAmmGroupConfig,
             ethflow::EthflowConfig,
             fee_policy::FeePoliciesConfig,
@@ -12,7 +11,10 @@ use {
             solver::Solver,
             trusted_tokens::TrustedTokensConfig,
         },
+        banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
+        http_client::HttpClient,
+        order_quoting::OrderQuoting,
     },
     alloy::primitives::Address,
     anyhow::{anyhow, ensure},
@@ -21,7 +23,6 @@ use {
     url::Url,
 };
 
-pub mod banned_users;
 pub mod cow_amm;
 pub mod ethflow;
 pub mod fee_policy;
@@ -146,6 +147,13 @@ pub struct Configuration {
     /// the liveness check. Expects a value in seconds.
     #[serde(with = "humantime_serde", default = "default_max_auction_age")]
     pub max_auction_age: Duration,
+
+    /// Configurations for the HTTP client (e.g. HTTP timeout).
+    #[serde(default)]
+    pub http_client: HttpClient,
+
+    // Configurations for the order creation process.
+    pub order_quoting: OrderQuoting,
 }
 
 impl Configuration {
@@ -205,6 +213,8 @@ impl Configuration {
             unsupported_tokens: Default::default(),
             min_order_validity_period: default_min_order_validity_period(),
             max_auction_age: default_max_auction_age(),
+            http_client: Default::default(),
+            order_quoting: TestDefault::test_default(),
         }
     }
 
@@ -232,6 +242,8 @@ impl Configuration {
             unsupported_tokens: Default::default(),
             min_order_validity_period: default_min_order_validity_period(),
             max_auction_age: default_max_auction_age(),
+            http_client: Default::default(),
+            order_quoting: TestDefault::test_default(),
         }
     }
 
@@ -329,6 +341,8 @@ mod tests {
             [{type = "Forwarder", url = "http://localhost:12088"}],
         ]
 
+        [order-quoting]
+        price-estimation-drivers = []
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -432,6 +446,9 @@ mod tests {
 
         [native-price-estimation]
         estimators = [[{type = "CoinGecko"}]]
+
+        [order-quoting]
+        price-estimation-drivers = []
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
