@@ -6943,7 +6943,6 @@ dependencies = [
  "ethrpc",
  "futures",
  "glob",
- "hex",
  "hmac",
  "humantime-serde",
  "itertools 0.14.0",
