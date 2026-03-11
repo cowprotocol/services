@@ -53,7 +53,6 @@ impl Postgres {
             .map(|e| Event {
                 label: format!("{:?}", e.label).to_lowercase(),
                 timestamp: e.timestamp,
-                reason: e.reason.map(|r| r.to_string()),
             })
             .collect();
 
@@ -69,16 +68,9 @@ impl Postgres {
         let auction_ids: Vec<AuctionId> =
             auction::fetch_auction_ids_by_order_uid(&mut conn, &db_uid).await?;
 
-        let db_auctions = if auction_ids.is_empty() {
-            vec![]
-        } else {
-            auction::fetch_multiple(&mut conn, &auction_ids).await?
-        };
-        let settlement_execs = if auction_ids.is_empty() {
-            vec![]
-        } else {
-            settlement_executions::read_by_auction_ids(&mut conn, &auction_ids).await?
-        };
+        let db_auctions = auction::fetch_multiple(&mut conn, &auction_ids).await?;
+        let settlement_execs =
+            settlement_executions::read_by_auction_ids(&mut conn, &auction_ids).await?;
         let fee_policies = fee_policies::fetch_by_order_uid(&mut conn, &db_uid).await?;
 
         let sell_token = order.data.sell_token;

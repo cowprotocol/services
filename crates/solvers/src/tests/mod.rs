@@ -11,6 +11,8 @@ use {
 };
 
 mod cases;
+mod mock;
+mod okx;
 
 /// A solver engine handle for E2E testing.
 pub struct SolverEngine {

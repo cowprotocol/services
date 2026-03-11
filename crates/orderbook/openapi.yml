@@ -775,23 +775,14 @@ paths:
       summary: Debug an order's lifecycle.
       description: >
         Returns a comprehensive debug report for the given order, including
-        order details, quote, lifecycle events, auction participation,
-        proposed solutions, executions, trades, and settlement attempts. This
-        endpoint is disabled by default and returns 404 unless
-        `debug-route-auth-tokens` is configured on the server. Requires a
-        valid `x-auth-token` header.
+        order details, lifecycle events, auction participation, proposed
+        solutions, executions, trades, and settlement attempts.
       parameters:
         - in: path
           name: uid
           schema:
             $ref: "#/components/schemas/UID"
           required: true
-        - in: header
-          name: x-auth-token
-          schema:
-            type: string
-          required: true
-          description: Authentication token configured on the server.
       responses:
         "200":
           description: Debug report returned.
@@ -799,11 +790,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DebugOrderResponse"
-        "401":
-          description: Invalid or missing authentication token.
+        "400":
+          description: Invalid order UID (malformed hex or wrong length).
         "404":
-          description: >
-            Endpoint is not enabled (no tokens configured) or order not found.
+          description: Order not found.
         "500":
           description: Internal error.
 components:

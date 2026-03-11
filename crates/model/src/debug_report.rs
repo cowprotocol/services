@@ -4,7 +4,7 @@ use {
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     serde::Serialize,
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::{DisplayFromStr, serde_as},
     std::collections::HashMap,
 };
 
@@ -25,8 +25,6 @@ pub struct DebugReport {
 pub struct Event {
     pub label: String,
     pub timestamp: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
 }
 
 #[serde_as]

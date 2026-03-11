@@ -403,14 +403,9 @@ impl Competition {
         let encoded = all_solutions
             .into_iter()
             .map(|solution| async move {
-                let id = solution.id().clone();
-                let orders: Vec<_> = solution
-                    .user_trades()
-                    .map(|trade| trade.order().uid)
-                    .collect();
-                let has_haircut = solution.has_haircut();
-                observe::encoding(&id);
+                observe::encoding(solution.id());
                 let settlement = solution
+                    .clone()
                     .encode(
                         auction,
                         &self.eth,
@@ -418,20 +413,32 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, orders, has_haircut, settlement)
+                (solution, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, orders, has_haircut, result)| async move {
+            .filter_map(|(solution, result)| async move {
+                let id = solution.id().clone();
+                let orders: Vec<_> = solution
+                    .user_trades()
+                    .map(|trade| trade.order().uid)
+                    .collect();
+                let has_haircut = solution.has_haircut();
                 match result {
-                    Ok(solution) => {
+                    Ok(encoded) => {
                         self.risk_detector.encoding_succeeded(&orders);
-                        Some(solution)
+                        Some(encoded)
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
                         self.risk_detector.encoding_failed(&orders);
-                        observe::encoding_failed(self.solver.name(), &id, &err, has_haircut);
+                        observe::encoding_failed(
+                            self.solver.name(),
+                            &id,
+                            &err,
+                            has_haircut,
+                            &orders,
+                        );
                         // don't notify on errors for solutions with haircut
                         if !has_haircut {
                             notify::encoding_failed(&self.solver, auction.id(), &id, &err);
