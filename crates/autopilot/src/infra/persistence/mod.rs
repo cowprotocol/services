@@ -392,17 +392,19 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.acquire().await?;
 
+        let order_uids: Vec<_> = auction
+            .orders
+            .iter()
+            .map(|order| ByteArray(order.uid.0))
+            .collect();
+
         database::auction::save(
             &mut ex,
             database::auction::Auction {
                 id: auction.id,
                 block: i64::try_from(auction.block).context("block overflow")?,
                 deadline: i64::try_from(deadline).context("deadline overflow")?,
-                order_uids: auction
-                    .orders
-                    .iter()
-                    .map(|order| ByteArray(order.uid.0))
-                    .collect(),
+                order_uids: order_uids.clone(),
                 price_tokens: auction
                     .prices
                     .keys()
@@ -421,6 +423,8 @@ impl Persistence {
             },
         )
         .await?;
+
+        database::auction::save_auction_orders(&mut ex, auction.id, &order_uids).await?;
 
         Ok(())
     }
