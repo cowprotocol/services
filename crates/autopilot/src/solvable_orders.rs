@@ -17,7 +17,7 @@ use {
             InFlight,
             InsufficientBalance,
             InvalidSignature,
-            MissingPrice,
+            MissingNativePrice,
             UnsupportedToken,
         },
     },
@@ -307,8 +307,8 @@ impl SolvableOrdersCache {
 
             entry.insert(weth_price);
         }
-        Metrics::track_filtered_orders(MissingPrice, &removed);
-        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingPrice)));
+        Metrics::track_filtered_orders(MissingNativePrice, &removed);
+        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
 
         Metrics::track_orders_in_final_auction(&orders);
 

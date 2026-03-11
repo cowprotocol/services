@@ -45,7 +45,7 @@ pub enum OrderFilterReason {
     UnsupportedToken,
     InsufficientBalance,
     DustOrder,
-    MissingPrice,
+    MissingNativePrice,
 }
 
 impl OrderFilterReason {
@@ -57,7 +57,7 @@ impl OrderFilterReason {
             Self::UnsupportedToken => "unsupported_token",
             Self::InsufficientBalance => "insufficient_balance",
             Self::DustOrder => "dust_order",
-            Self::MissingPrice => "missing_price",
+            Self::MissingNativePrice => "missing_native_price",
         }
     }
 }

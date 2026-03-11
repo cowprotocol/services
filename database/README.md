@@ -593,7 +593,7 @@ Indexes:
  unsupported\_token     | sell or buy token is on the deny list
  insufficient\_balance  | owner does not have enough sell token balance or allowance
  dust\_order            | order value is too small to be worth settling
- missing\_price         | no native price available for the order's tokens
+ missing\_native\_price | no native price available for the order's tokens
 
 #### orderkind
 
