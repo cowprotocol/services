@@ -18,9 +18,7 @@ pub struct ExternalSolver {
     pub url: Url,
 }
 
-// The following arguments are used to configure the order creation process
-// The arguments are shared between the orderbook crate and the autopilot crate,
-// as both crates can create orders
+// The following arguments are used to configure the order creation process.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]
