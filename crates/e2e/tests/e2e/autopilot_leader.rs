@@ -2,6 +2,7 @@ use {
     autopilot::shutdown_controller::ShutdownController,
     configs::{
         autopilot::{Configuration, run_loop::RunLoopConfig},
+        order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
     e2e::setup::{
@@ -100,14 +101,17 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         ..leader_config
     };
 
+    let leader_config = Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+            "test_quoter",
+            "http://localhost:11088/test_solver",
+        )]),
+        ..leader_config
+    };
     let autopilot_leader = services
         .start_autopilot_with_shutdown_controller(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
+            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
             leader_config,
             control,
         )
@@ -124,24 +128,29 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         ..follower_config
     };
 
+    let follower_config = Configuration {
+        order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+            "test_quoter",
+            "http://localhost:11088/test_solver2",
+        )]),
+        ..follower_config
+    };
     let _autopilot_follower = services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver2"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
+            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
             follower_config,
         )
         .await;
 
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver1,test_solver2|http://localhost:11088/test_solver2".to_string(),
-            ],
+            vec![],
             configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![
+                    ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver1"),
+                    ExternalSolver::new("test_solver2", "http://localhost:11088/test_solver2"),
+                ]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::forwarder(

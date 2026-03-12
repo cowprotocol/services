@@ -8,6 +8,7 @@ use {
     },
     configs::{
         autopilot::{Configuration, solver::Solver},
+        order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
     contracts::alloy::{
@@ -189,20 +190,26 @@ async fn cow_amm_jit(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            Configuration::test("mock_solver", solver.address()),
+            vec![],
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..Configuration::test("mock_solver", solver.address())
+            },
         )
         .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            configs::orderbook::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 
@@ -564,10 +571,7 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
+            vec![],
             Configuration {
                 drivers: vec![
                     Solver::test("test_solver", solver.address()),
@@ -581,17 +585,24 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
                     }],
                     ..Default::default()
                 },
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
                 ..Configuration::test_no_drivers()
             },
         )
         .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            configs::orderbook::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 
@@ -844,20 +855,26 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
-                    .to_string(),
-            ],
-            Configuration::test("mock_solver", solver.address()),
+            vec![],
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "mock_solver",
+                    "http://localhost:11088/mock_solver",
+                )]),
+                ..Configuration::test("mock_solver", solver.address())
+            },
         )
         .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
-                    .to_string(),
-            ],
-            configs::orderbook::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "mock_solver",
+                    "http://localhost:11088/mock_solver",
+                )]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 

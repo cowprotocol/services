@@ -1,6 +1,10 @@
 use {
     ::alloy::primitives::U256,
-    configs::{autopilot::Configuration, test_util::TestDefault},
+    configs::{
+        autopilot::Configuration,
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
+    },
     database::order_events::OrderEventLabel,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
@@ -69,23 +73,29 @@ async fn order_cancellation(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
+            vec![],
             // Empty drivers to prevent settlement — this test places multiple
             // orders and asserts exact auction counts, which would race with the
             // solver settling them.
-            Configuration::test_no_drivers(),
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..Configuration::test_no_drivers()
+            },
         )
         .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            configs::orderbook::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 

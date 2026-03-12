@@ -24,6 +24,7 @@ use {
             native_price::NativePriceConfig,
             run_loop::RunLoopConfig,
         },
+        order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
     ethrpc::Web3,
@@ -329,14 +330,21 @@ impl<'a> Services<'a> {
             false,
         );
 
+        let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
+
+        let autopilot_config = Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter.clone()]),
+            ..autopilot_config
+        };
+        let orderbook_config = configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter]),
+            ..orderbook_config
+        };
+
         self.start_autopilot(
             None,
             [
-                vec![
-                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                        .to_string(),
-                    "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-                ],
+                vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
                 args.autopilot,
             ]
             .concat(),
@@ -346,11 +354,7 @@ impl<'a> Services<'a> {
 
         self.start_api(
             [
-                vec![
-                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                        .to_string(),
-                    "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-                ],
+                vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
                 args.api,
             ]
             .concat(),
@@ -424,7 +428,7 @@ impl<'a> Services<'a> {
             ..Configuration::test("test_solver", solver.address())
         };
 
-        let (autopilot_args, api_args) = if run_baseline {
+        let drivers = if run_baseline {
             solvers.push(
                 colocation::start_baseline_solver(
                     "baseline_solver".into(),
@@ -439,24 +443,24 @@ impl<'a> Services<'a> {
 
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
-            let autopilot_args = vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-            ];
-            let api_args = vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-            ];
-            (autopilot_args, api_args)
+            vec![
+                ExternalSolver::new("test_quoter", "http://localhost:11088/baseline_solver"),
+                ExternalSolver::new("test_solver", "http://localhost:11088/test_solver"),
+            ]
         } else {
-            let autopilot_args = vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ];
+            vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]
+        };
 
-            let api_args = vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ];
-            (autopilot_args, api_args)
+        let autopilot_config = Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(drivers.clone()),
+            ..autopilot_config
+        };
+        let orderbook_config = configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(drivers),
+            ..configs::orderbook::Configuration::test_default()
         };
 
         colocation::start_driver(
@@ -466,14 +470,9 @@ impl<'a> Services<'a> {
             false,
         );
 
-        self.start_autopilot(
-            Some(Duration::from_secs(11)),
-            autopilot_args,
-            autopilot_config,
-        )
-        .await;
-        self.start_api(api_args, configs::orderbook::Configuration::test_default())
+        self.start_autopilot(Some(Duration::from_secs(11)), vec![], autopilot_config)
             .await;
+        self.start_api(vec![], orderbook_config).await;
     }
 
     async fn wait_for_api_to_come_up() {
