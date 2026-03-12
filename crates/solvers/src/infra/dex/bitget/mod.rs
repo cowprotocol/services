@@ -38,6 +38,11 @@ mod dto;
 /// Default Bitget swap API base endpoint.
 pub const DEFAULT_ENDPOINT: &str = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/";
 
+/// Default API path used for signature computation. When a proxy endpoint is
+/// configured, the request URL differs from the canonical path that Bitget
+/// expects in the signature.
+const SIGNATURE_API_PATH: &str = "/bgw-pro/swapx/pro/";
+
 /// Bitget API path for getting swap calldata.
 const SWAP_PATH: &str = "swap";
 
@@ -234,8 +239,8 @@ impl Bitget {
 
         let body_str = serde_json::to_string(body).map_err(|_| Error::RequestBuildFailed)?;
         let timestamp = chrono::Utc::now().timestamp_millis().to_string();
-        let api_path = url.path();
-        let signature = self.generate_signature(api_path, &body_str, &timestamp)?;
+        let signature_path = format!("{SIGNATURE_API_PATH}{endpoint}");
+        let signature = self.generate_signature(&signature_path, &body_str, &timestamp)?;
 
         let request_builder = self
             .client
