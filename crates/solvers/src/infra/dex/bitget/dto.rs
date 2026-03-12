@@ -3,7 +3,7 @@
 
 use {
     crate::domain::{dex, eth},
-    bigdecimal::{BigDecimal, ToPrimitive},
+    bigdecimal::{BigDecimal, ToPrimitive, Zero},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -17,7 +17,7 @@ pub enum ChainName {
     Bnb,
     #[serde(rename = "base")]
     Base,
-    #[serde(rename = "morph")]
+    #[serde(rename = "matic")]
     Polygon,
     #[serde(rename = "arbitrum")]
     ArbitrumOne,
@@ -75,6 +75,13 @@ pub struct SwapRequest {
     /// Request mode - "rich" returns quote data alongside swap calldata.
     pub request_mod: String,
 
+    /// Minimum acceptable output amount in human-readable decimal units.
+    /// When set, Bitget will only return routes that produce at least this much
+    /// output, avoiding quotes that would violate the order's limit price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub to_min_amount: BigDecimal,
+
     /// Fee rate in per mille. 0 for no fee.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_rate: Option<f64>,
@@ -100,6 +107,9 @@ impl SwapRequest {
             market: "bgwevmaggregator".to_string(),
             slippage: slippage.as_factor().to_f64().unwrap_or_default() * 100.0,
             request_mod: "rich".to_string(),
+            // zero value is ignored by the API, but when the field is not set, this sometimes leads
+            // to errors from the API side
+            to_min_amount: BigDecimal::zero(),
             fee_rate: Some(0.0),
         }
     }
