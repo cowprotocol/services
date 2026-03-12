@@ -5,6 +5,8 @@ use {
 };
 
 fn default_max_cache_size() -> NonZeroUsize {
+    // Note that this default value does not apply to both the orderbook and
+    // autopilot! Remember to explicitly change it in the infra repo.
     NonZeroUsize::new(10000).unwrap()
 }
 

@@ -8,6 +8,18 @@ use {
 
 type Execution = (AuctionId, OrderUid);
 
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
+pub struct OrderExecution {
+    pub order_uid: OrderUid,
+    pub auction_id: AuctionId,
+    pub reward: f64,
+    pub executed_fee: BigDecimal,
+    pub executed_fee_token: Address,
+    pub block_number: i64,
+    pub protocol_fee_tokens: Vec<Address>,
+    pub protocol_fee_amounts: Vec<BigDecimal>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Asset {
     pub amount: BigDecimal,
@@ -46,6 +58,21 @@ DO UPDATE SET reward = $3, executed_fee = $4, executed_fee_token = $5, block_num
         .execute(ex)
         .await?;
     Ok(())
+}
+
+#[instrument(skip_all)]
+pub async fn read_by_order_uid(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+) -> Result<Vec<OrderExecution>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT order_uid, auction_id, reward, executed_fee, executed_fee_token,
+       block_number, protocol_fee_tokens, protocol_fee_amounts
+FROM order_execution
+WHERE order_uid = $1
+ORDER BY auction_id
+    "#;
+    sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await
 }
 
 /// Fetch protocol fees for all keys in the filter

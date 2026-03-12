@@ -1,20 +1,23 @@
 use {
-    crate::config::{
+    crate::{
         banned_users::BannedUsersConfig,
-        ipfs::IpfsConfig,
-        native_price::NativePriceConfig,
-        order_validation::OrderValidationConfig,
+        database::DatabasePoolConfig,
+        fee_factor::FeeFactor,
+        http_client::HttpClient,
+        order_quoting::OrderQuoting,
+        orderbook::{
+            ipfs::IpfsConfig,
+            native_price::NativePriceConfig,
+            order_validation::OrderValidationConfig,
+        },
     },
     alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
-    configs::database::DatabasePoolConfig,
     serde::{Deserialize, Serialize},
-    shared::fee_factor::FeeFactor,
     std::path::Path,
 };
 
-pub mod banned_users;
 pub mod ipfs;
 pub mod native_price;
 pub mod order_validation;
@@ -74,6 +77,13 @@ pub struct Configuration {
 
     #[serde(default)]
     pub database: DatabasePoolConfig,
+
+    /// Configurations for the HTTP client (e.g. HTTP timeout).
+    #[serde(default)]
+    pub http_client: HttpClient,
+
+    // Configurations for the order creation process.
+    pub order_quoting: OrderQuoting,
 }
 
 impl Configuration {
@@ -96,13 +106,15 @@ impl Configuration {
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util {
     use {
-        crate::config::{
-            Configuration,
-            default_active_order_competition_threshold,
-            default_app_data_size_limit,
-            native_price::NativePriceConfig,
+        crate::{
+            orderbook::{
+                Configuration,
+                default_active_order_competition_threshold,
+                default_app_data_size_limit,
+                native_price::NativePriceConfig,
+            },
+            test_util::TestDefault,
         },
-        configs::test_util::TestDefault,
         std::path::Path,
     };
 
@@ -133,7 +145,7 @@ pub mod test_util {
 
     impl TestDefault for Configuration {
         fn test_default() -> Self {
-            use configs::test_util::TestDefault;
+            use crate::test_util::TestDefault;
 
             Self {
                 order_validation: Default::default(),
@@ -148,6 +160,8 @@ pub mod test_util {
                 // have the test_default trait impl
                 native_price_estimation: NativePriceConfig::test_default(),
                 database: TestDefault::test_default(),
+                http_client: Default::default(),
+                order_quoting: TestDefault::test_default(),
             }
         }
     }
@@ -157,9 +171,8 @@ pub mod test_util {
 mod tests {
     use {
         super::*,
-        configs::test_util::TestDefault,
+        crate::{orderbook::order_validation::SameTokensPolicy, test_util::TestDefault},
         price_estimation::{NativePriceEstimator, NativePriceEstimators},
-        shared::order_validation::SameTokensPolicy,
         std::time::Duration,
     };
 
@@ -192,6 +205,9 @@ mod tests {
 
         [native-price-estimation]
         estimators = [[{type = "CoinGecko"}]]
+
+        [order-quoting]
+        price-estimation-drivers = []
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -235,6 +251,9 @@ mod tests {
         let toml = r#"
         [native-price-estimation]
         estimators = [[{type = "CoinGecko"}]]
+
+        [order-quoting]
+        price-estimation-drivers = []
         "#;
         let config: Configuration = toml::from_str(toml).unwrap();
 
@@ -294,7 +313,9 @@ mod tests {
                 fallback_estimators: None,
                 ..NativePriceConfig::test_default()
             },
+            order_quoting: TestDefault::test_default(),
             database: TestDefault::test_default(),
+            http_client: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -325,5 +346,6 @@ mod tests {
             config.eip1271_skip_creation_validation,
             deserialized.eip1271_skip_creation_validation
         );
+        assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
     }
 }

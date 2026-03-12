@@ -2370,9 +2370,18 @@ dependencies = [
 name = "configs"
 version = "0.1.0"
 dependencies = [
+ "alloy",
+ "anyhow",
+ "chrono",
+ "humantime-serde",
+ "price-estimation",
+ "s3",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
+ "tokio",
+ "toml",
  "tracing",
  "url",
 ]
@@ -2965,6 +2974,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "contracts",
  "cow-amm",
@@ -3059,6 +3069,7 @@ dependencies = [
  "refunder",
  "reqwest 0.13.2",
  "rstest",
+ "serde",
  "serde_json",
  "shared",
  "signature-validator",
@@ -6746,6 +6757,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "contracts",
  "dashmap",

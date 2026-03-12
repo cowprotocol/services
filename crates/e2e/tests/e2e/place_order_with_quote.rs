@@ -1,7 +1,11 @@
 use {
     ::alloy::primitives::U256,
-    autopilot::{config::Configuration, shutdown_controller::ShutdownController},
-    configs::test_util::TestDefault,
+    autopilot::shutdown_controller::ShutdownController,
+    configs::{
+        autopilot::Configuration,
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
+    },
     driver::domain::eth::NonZeroU256,
     e2e::setup::{colocation, wait_for_condition, *},
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
@@ -222,25 +226,27 @@ async fn fallback_native_price_estimator(web3: Web3) {
     let autopilot_handle = services
         .start_autopilot_with_shutdown_controller(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
-            Configuration::test("test_solver", solver.address()),
+            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..Configuration::test("test_solver", solver.address())
+            },
             control,
         )
         .await;
 
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     fallback_estimators: Some(price_estimation::NativePriceEstimators::new(vec![
                         vec![price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
@@ -254,9 +260,9 @@ async fn fallback_native_price_estimator(web3: Web3) {
                         },
                         ..Default::default()
                     },
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;

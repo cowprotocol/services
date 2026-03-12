@@ -127,9 +127,11 @@ pub fn encoding_failed(
     id: &solution::Id,
     err: &solution::Error,
     has_haircut: bool,
+    orders: &[competition::order::Uid],
 ) {
     tracing::info!(
         ?id,
+        ?orders,
         ?err,
         has_haircut,
         "discarded solution: settlement encoding"

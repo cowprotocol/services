@@ -7,8 +7,11 @@ use {
             types::{Transaction, TransactionReceipt},
         },
     },
-    autopilot::config::Configuration,
-    configs::test_util::TestDefault,
+    configs::{
+        autopilot::Configuration,
+        orderbook::order_validation::OrderValidationConfig,
+        test_util::TestDefault,
+    },
     e2e::setup::*,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     futures::StreamExt,
@@ -18,7 +21,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, testing::ApproxEq, units::EthUnit},
-    orderbook::config::order_validation::OrderValidationConfig,
     shared::web3::Web3,
     std::time::Duration,
 };
@@ -163,12 +165,12 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
         .start_protocol_with_args(
             Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration {
+            configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {
                     same_tokens_policy: shared::order_validation::SameTokensPolicy::AllowSell,
                     ..Default::default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver.clone(),
         )
@@ -279,12 +281,12 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
         .start_protocol_with_args(
             Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration {
+            configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {
                     same_tokens_policy: shared::order_validation::SameTokensPolicy::AllowSell,
                     ..Default::default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver.clone(),
         )

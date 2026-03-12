@@ -68,8 +68,8 @@ pub struct Config {
     pub compress_solve_request: bool,
 }
 
-impl From<crate::config::run_loop::RunLoopConfig> for Config {
-    fn from(value: crate::config::run_loop::RunLoopConfig) -> Self {
+impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
+    fn from(value: configs::autopilot::run_loop::RunLoopConfig) -> Self {
         Self {
             submission_deadline: value.submission_deadline,
             max_settlement_transaction_wait: value.max_settlement_transaction_wait,

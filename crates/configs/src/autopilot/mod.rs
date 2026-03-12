@@ -1,25 +1,28 @@
 use {
-    crate::config::{
+    crate::{
+        autopilot::{
+            cow_amm::CowAmmGroupConfig,
+            ethflow::EthflowConfig,
+            fee_policy::FeePoliciesConfig,
+            native_price::NativePriceConfig,
+            order_events_cleanup::OrderEventsCleanupConfig,
+            run_loop::RunLoopConfig,
+            s3::S3Config,
+            solver::Solver,
+            trusted_tokens::TrustedTokensConfig,
+        },
         banned_users::BannedUsersConfig,
-        cow_amm::CowAmmGroupConfig,
-        ethflow::EthflowConfig,
-        fee_policy::FeePoliciesConfig,
-        native_price::NativePriceConfig,
-        order_events_cleanup::OrderEventsCleanupConfig,
-        run_loop::RunLoopConfig,
-        s3::S3Config,
-        solver::Solver,
-        trusted_tokens::TrustedTokensConfig,
+        database::DatabasePoolConfig,
+        http_client::HttpClient,
+        order_quoting::OrderQuoting,
     },
     alloy::primitives::Address,
     anyhow::{anyhow, ensure},
-    configs::database::DatabasePoolConfig,
     serde::Deserialize,
     std::{net::SocketAddr, path::Path, time::Duration},
     url::Url,
 };
 
-pub mod banned_users;
 pub mod cow_amm;
 pub mod ethflow;
 pub mod fee_policy;
@@ -144,6 +147,13 @@ pub struct Configuration {
     /// the liveness check. Expects a value in seconds.
     #[serde(with = "humantime_serde", default = "default_max_auction_age")]
     pub max_auction_age: Duration,
+
+    /// Configurations for the HTTP client (e.g. HTTP timeout).
+    #[serde(default)]
+    pub http_client: HttpClient,
+
+    // Configurations for the order creation process.
+    pub order_quoting: OrderQuoting,
 }
 
 impl Configuration {
@@ -180,7 +190,7 @@ impl Configuration {
     /// It is rather useful for tests where drivers are setup separately or not
     /// actually used (like the `order_cancellation` test).
     pub fn test_no_drivers() -> Self {
-        use configs::test_util::TestDefault;
+        use crate::test_util::TestDefault;
 
         Self {
             drivers: vec![],
@@ -203,11 +213,13 @@ impl Configuration {
             unsupported_tokens: Default::default(),
             min_order_validity_period: default_min_order_validity_period(),
             max_auction_age: default_max_auction_age(),
+            http_client: Default::default(),
+            order_quoting: TestDefault::test_default(),
         }
     }
 
     pub fn test(name: &str, solver_address: alloy::primitives::Address) -> Self {
-        use configs::test_util::TestDefault;
+        use crate::test_util::TestDefault;
 
         Self {
             drivers: vec![Solver::test(name, solver_address)],
@@ -230,6 +242,8 @@ impl Configuration {
             unsupported_tokens: Default::default(),
             min_order_validity_period: default_min_order_validity_period(),
             max_auction_age: default_max_auction_age(),
+            http_client: Default::default(),
+            order_quoting: TestDefault::test_default(),
         }
     }
 
@@ -259,7 +273,7 @@ impl Configuration {
 mod tests {
     use {
         super::*,
-        crate::config::{
+        crate::autopilot::{
             fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass, UpcomingFeePolicies},
             solver::Account,
         },
@@ -278,12 +292,12 @@ mod tests {
         [[drivers]]
         name = "solver1"
         url = "http://localhost:8080"
-        submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
         [[drivers]]
         name = "solver2"
         url = "http://localhost:8081"
-        submission-account.kms = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+        kms = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
 
         [fee-policies]
         max-partner-fee = 0.005
@@ -327,6 +341,8 @@ mod tests {
             [{type = "Forwarder", url = "http://localhost:12088"}],
         ]
 
+        [order-quoting]
+        price-estimation-drivers = []
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -424,12 +440,15 @@ mod tests {
         [[drivers]]
         name = "solver1"
         url = "http://localhost:8080"
-        submission-account.address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
         [fee-policies]
 
         [native-price-estimation]
         estimators = [[{type = "CoinGecko"}]]
+
+        [order-quoting]
+        price-estimation-drivers = []
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();

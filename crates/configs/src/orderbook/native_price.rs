@@ -4,7 +4,6 @@ use {
         config::native_price::NativePriceConfig as SharedNativePriceConfig,
     },
     serde::{Deserialize, Serialize},
-    std::str::FromStr,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -29,7 +28,7 @@ impl NativePriceConfig {
         use price_estimation::NativePriceEstimator;
         Self {
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::forwarder(
-                reqwest::Url::from_str("http://localhost:12088").unwrap(),
+                "http://localhost:12088".parse().unwrap(),
             )]]),
             fallback_estimators: Default::default(),
             shared: Default::default(),
