@@ -13,18 +13,6 @@ use {
     alloy_rpc_types::TransactionRequest,
     derive_more::{From, Into, derive::Deref},
 };
-use {
-    alloy_primitives::Bytes,
-    alloy_rpc_types::TransactionRequest,
-    derive_more::{From, Into, derive::Display},
-    solvers_dto::auction::FlashloanHint,
-};
-
-mod access_list;
-pub mod allowance;
-mod eip712;
-mod gas;
-mod token_amount;
 
 mod access_list;
 pub mod allowance;
