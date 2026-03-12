@@ -106,6 +106,7 @@ async fn cancel_order(
             order_uid: uid,
             timestamp: now,
             label: OrderEventLabel::Cancelled,
+            reason: None,
         },
     )
     .await?;
@@ -121,6 +122,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             order_uid,
             timestamp: Utc::now(),
             label: OrderEventLabel::Created,
+            reason: None,
         },
     )
     .await?;
