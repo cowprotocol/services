@@ -1,9 +1,6 @@
 use {
     reqwest::{Client, ClientBuilder},
-    std::{
-        fmt::{self, Display, Formatter},
-        time::Duration,
-    },
+    std::time::Duration,
 };
 
 const USER_AGENT: &str = "cowprotocol-services/2.0.0";

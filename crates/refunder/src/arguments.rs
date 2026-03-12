@@ -2,7 +2,10 @@ use {
     alloy::primitives::Address,
     clap::Parser,
     shared::{arguments::display_option, logging_args_with_default_filter, web3},
-    std::{fmt::{self, Display, Formatter}, time::Duration},
+    std::{
+        fmt::{self, Display, Formatter},
+        time::Duration,
+    },
     url::Url,
 };
 
