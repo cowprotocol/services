@@ -280,10 +280,12 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
-                .map(|price_estimator_driver| price_estimation::ExternalSolver {
-                    name: price_estimator_driver.name.clone(),
-                    url: price_estimator_driver.url.clone(),
-                })
+                .map(
+                    |price_estimator_driver| configs::price_estimation::ExternalSolver {
+                        name: price_estimator_driver.name.clone(),
+                        url: price_estimator_driver.url.clone(),
+                    },
+                )
                 .collect::<Vec<_>>(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -295,10 +297,12 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
-                .map(|price_estimator_driver| price_estimation::ExternalSolver {
-                    name: price_estimator_driver.name.clone(),
-                    url: price_estimator_driver.url.clone(),
-                })
+                .map(
+                    |price_estimator_driver| configs::price_estimation::ExternalSolver {
+                        name: price_estimator_driver.name.clone(),
+                        url: price_estimator_driver.url.clone(),
+                    },
+                )
                 .collect::<Vec<_>>(),
             config.native_price_estimation.shared.results_required,
             native_price_estimator.clone(),

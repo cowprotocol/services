@@ -171,8 +171,11 @@ pub mod test_util {
 mod tests {
     use {
         super::*,
-        crate::{orderbook::order_validation::SameTokensPolicy, test_util::TestDefault},
-        price_estimation::{NativePriceEstimator, NativePriceEstimators},
+        crate::{
+            orderbook::order_validation::SameTokensPolicy,
+            price_estimation::{NativePriceEstimator, NativePriceEstimators},
+            test_util::TestDefault,
+        },
         std::time::Duration,
     };
 

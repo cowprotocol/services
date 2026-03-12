@@ -1,5 +1,5 @@
 use {
-    price_estimation::NativePriceEstimators,
+    crate::price_estimation::NativePriceEstimators,
     serde::{Deserialize, Serialize},
     std::time::Duration,
 };
@@ -45,7 +45,7 @@ pub struct NativePriceConfig {
     pub prefetch_time: Duration,
 
     #[serde(flatten)]
-    pub shared: price_estimation::config::native_price::NativePriceConfig,
+    pub shared: crate::price_estimation::NativePriceConfig,
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -59,8 +59,8 @@ impl NativePriceConfig {
             api_estimators: Default::default(),
             cache_refresh_interval: default_native_price_cache_refresh(),
             prefetch_time: Duration::from_millis(500),
-            shared: price_estimation::config::native_price::NativePriceConfig {
-                cache: price_estimation::config::native_price::CacheConfig {
+            shared: crate::price_estimation::NativePriceConfig {
+                cache: crate::price_estimation::CacheConfig {
                     max_age: Duration::from_secs(2),
                     ..Default::default()
                 },
