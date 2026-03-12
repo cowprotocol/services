@@ -2,15 +2,15 @@ use {
     crate::{
         boundary::{self, Result},
         domain::{
-            eth,
-            liquidity::{
+            self, liquidity::{
                 self,
                 uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
-            },
+            }
         },
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
+    eth_domain_types as eth,
     event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
     liquidity_sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
     shared::{http_solver::model::TokenAmount, interaction::Interaction},
@@ -68,7 +68,7 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
+) -> domain::Interaction {
     let handler = UniswapV3SettlementHandler::new(pool.router.into(), *receiver, pool.fee.0);
 
     let interaction = handler.settle(
@@ -77,7 +77,7 @@ pub fn to_interaction(
     );
 
     let encoded = interaction.encode();
-    eth::Interaction {
+    domain::Interaction {
         target: encoded.0,
         value: encoded.1.into(),
         call_data: encoded.2,

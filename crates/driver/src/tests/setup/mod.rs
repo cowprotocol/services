@@ -5,7 +5,6 @@ use {
     crate::{
         domain::{
             competition::order::{self, app_data::AppData},
-            eth,
             time,
         },
         infra::{
@@ -43,6 +42,7 @@ use {
     },
     axum::http::StatusCode,
     bigdecimal::{BigDecimal, FromPrimitive},
+    eth_domain_types as eth,
     ethrpc::Web3,
     futures::future::join_all,
     model::order::{BuyTokenDestination, SellTokenSource},

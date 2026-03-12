@@ -1,7 +1,7 @@
 use {
     super::{Asset, Order, Partial},
     crate::{
-        domain::{competition::order, eth},
+        domain::competition::order,
         tests::{self, boundary, cases::EtherExt},
     },
     alloy::{
@@ -22,6 +22,7 @@ use {
         WETH9,
         support::{Balances, Signatures},
     },
+    eth_domain_types as eth,
     ethrpc::{
         Web3,
         alloy::{CallBuilderExt, EvmProviderExt, ProviderExt},

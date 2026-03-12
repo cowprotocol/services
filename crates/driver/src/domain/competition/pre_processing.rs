@@ -4,7 +4,6 @@ use {
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
             cow_amm,
-            eth,
             liquidity,
         },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
@@ -18,6 +17,7 @@ use {
     },
     balance_overrides::BalanceOverrideRequest,
     chrono::Utc,
+    eth_domain_types as eth,
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{

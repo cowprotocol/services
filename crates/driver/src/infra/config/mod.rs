@@ -1,6 +1,5 @@
 use {
     crate::{
-        domain::eth,
         infra::{
             blockchain,
             config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
@@ -11,6 +10,7 @@ use {
             solver,
         },
     },
+    eth_domain_types as eth,
     std::time::Duration,
 };
 

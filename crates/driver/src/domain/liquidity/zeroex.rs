@@ -1,8 +1,9 @@
 use {
-    crate::domain::{eth, liquidity},
+    crate::domain::liquidity,
     alloy::primitives::{Address, B256, U256},
     anyhow::anyhow,
     contracts::alloy::IZeroex,
+    eth_domain_types as eth,
     std::sync::Arc,
 };
 
@@ -47,7 +48,7 @@ pub struct ZeroExSignature {
 }
 
 impl LimitOrder {
-    pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<eth::Interaction> {
+    pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<domain::Interaction> {
         let method = self.zeroex.fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
                 makerToken: self.order.maker_token,
@@ -78,7 +79,7 @@ impl LimitOrder {
         );
         let calldata = method.calldata();
 
-        Ok(eth::Interaction {
+        Ok(domain::Interaction {
             target: *self.zeroex.address(),
             value: 0.into(),
             call_data: calldata.to_vec().into(),

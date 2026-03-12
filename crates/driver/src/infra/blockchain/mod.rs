@@ -1,7 +1,6 @@
 use {
     crate::{
         boundary,
-        domain::{eth, eth::U256},
     },
     account_balances::{BalanceSimulator, SimulationError},
     alloy::{
@@ -14,6 +13,7 @@ use {
     anyhow::anyhow,
     balance_overrides::{BalanceOverrides, BalanceOverriding},
     chain::Chain,
+    eth_domain_types::{self as eth, U256},
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::Eip1559EstimationExt,
     shared::web3,

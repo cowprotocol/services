@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition::risk_detector, eth},
+        domain::competition::risk_detector,
         infra::{
             self,
             blockchain,
@@ -14,6 +14,7 @@ use {
     },
     alloy::signers::{aws::AwsSigner, local::PrivateKeySigner},
     chain::Chain,
+    eth_domain_types as eth,
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
     std::path::Path,

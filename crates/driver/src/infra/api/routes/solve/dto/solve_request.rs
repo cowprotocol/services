@@ -9,10 +9,10 @@ use {
                     app_data::{AppData, AppDataHash},
                 },
             },
-            eth,
         },
         infra::{Ethereum, tokens},
     },
+    eth_domain_types as eth,
     serde::Deserialize,
     serde_with::serde_as,
     std::{
@@ -81,7 +81,7 @@ impl SolveRequest {
                     pre_interactions: order
                         .pre_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: interaction.call_data.into(),
@@ -90,7 +90,7 @@ impl SolveRequest {
                     post_interactions: order
                         .post_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: interaction.call_data.into(),

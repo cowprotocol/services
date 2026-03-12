@@ -2,11 +2,11 @@ use {
     crate::{
         domain::{
             competition::{auction::Tokens, order},
-            eth,
         },
         util,
     },
     chrono::Duration,
+    eth_domain_types as eth,
     std::{fmt::Debug, sync::Arc},
 };
 

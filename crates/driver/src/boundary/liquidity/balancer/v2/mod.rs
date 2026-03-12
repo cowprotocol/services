@@ -2,8 +2,7 @@ use {
     crate::{
         boundary,
         domain::{
-            eth,
-            liquidity::{self, balancer},
+            self, liquidity::{self, balancer}
         },
         infra::{self, blockchain::Ethereum},
     },
@@ -16,6 +15,7 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
+    eth_domain_types as eth,
     ethrpc::block_stream::CurrentBlockWatcher,
     event_indexing::block_retriever::BlockRetrieving,
     liquidity_sources::balancer_v2::{
@@ -44,7 +44,7 @@ fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
+) -> domain::Interaction {
     let handler = balancer_v2::SettlementHandler::new(
         pool.id.0,
         // Note that this code assumes `receiver == sender`. This assumption is
@@ -61,7 +61,7 @@ fn to_interaction(
 
     let (target, value, call_data) = interaction.encode_swap();
 
-    eth::Interaction {
+    domain::Interaction {
         target,
         value: value.into(),
         call_data: call_data.0.to_vec().into(),

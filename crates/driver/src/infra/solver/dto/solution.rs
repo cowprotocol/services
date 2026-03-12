@@ -2,13 +2,13 @@ use {
     crate::{
         domain::{
             competition::{self, solution::WrapperCall},
-            eth,
             liquidity,
         },
         infra::Solver,
     },
     alloy::primitives::Bytes,
     app_data::AppDataHash,
+    eth_domain_types as eth,
     itertools::Itertools,
     model::{
         DomainSeparator,
@@ -147,7 +147,7 @@ impl Solutions {
                     solution
                         .pre_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: Bytes::from(interaction.calldata),
@@ -224,7 +224,7 @@ impl Solutions {
                     solution
                         .post_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: interaction.calldata.into(),

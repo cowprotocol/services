@@ -8,7 +8,6 @@ use {
     crate::{
         domain::{
             competition::{solution::Settlement, sorting::SortingStrategy},
-            eth,
             time::DeadlineExceeded,
         },
         infra::{
@@ -25,6 +24,7 @@ use {
     alloy::{network::TxSigner as _, primitives::Bytes},
     anyhow::Context as _,
     axum::{body::Body, http::Request},
+    eth_domain_types as eth,
     futures::{FutureExt, StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
     std::{
@@ -49,7 +49,10 @@ pub mod sorting;
 
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
-use crate::{domain::BlockNo, infra::notify::liquidity_sources::LiquiditySourceNotifying};
+use {
+    crate::{infra::notify::liquidity_sources::LiquiditySourceNotifying},
+    eth_domain_types::BlockNo
+};
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
@@ -812,7 +815,7 @@ impl Competition {
             tracing_span,
         } = request;
         async {
-            if self.eth.current_block().borrow().number >= submission_deadline {
+            if self.eth.current_block().borrow().number >= submission_deadline.0 {
                 if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
                     tracing::error!(
                         ?err,

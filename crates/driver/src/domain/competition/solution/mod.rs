@@ -1,11 +1,8 @@
 use {
-    self::trade::{ClearingPrices, Fee, Fulfillment},
-    super::auction,
-    crate::{
+    self::trade::{ClearingPrices, Fee, Fulfillment}, super::auction, crate::{
         boundary,
         domain::{
-            competition::{self, order},
-            eth::{self, Flashloan, TokenAddress},
+            self, competition::{self, order}
         },
         infra::{
             Simulator,
@@ -14,18 +11,10 @@ use {
             simulator,
             solver::{ManageNativeToken, Solver},
         },
-    },
-    alloy::network::TxSigner,
-    chrono::Utc,
-    futures::future::try_join_all,
-    itertools::Itertools,
-    num::{BigRational, One},
-    number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
-    std::{
+    }, alloy::network::TxSigner, chrono::Utc, eth_domain_types::{self as eth, TokenAddress}, futures::future::try_join_all, itertools::Itertools, num::{BigRational, One}, number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational}, solvers_dto::solution::Flashloan, std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},
-    },
-    thiserror::Error,
+    }, thiserror::Error
 };
 
 pub mod encoding;
@@ -57,15 +46,15 @@ pub struct Solution {
     trades: Vec<Trade>,
     prices: Prices,
     #[debug(ignore)]
-    pre_interactions: Vec<eth::Interaction>,
+    pre_interactions: Vec<domain::Interaction>,
     #[debug(ignore)]
     interactions: Vec<Interaction>,
     #[debug(ignore)]
-    post_interactions: Vec<eth::Interaction>,
+    post_interactions: Vec<domain::Interaction>,
     #[debug("{}", solver.name())]
     solver: Solver,
     #[debug(ignore)]
-    weth: eth::WethAddress,
+    weth: eth::WrappedNativeToken,
     gas: Option<eth::Gas>,
     flashloans: HashMap<order::Uid, Flashloan>,
     #[debug(ignore)]
@@ -78,11 +67,11 @@ impl Solution {
         id: Id,
         mut trades: Vec<Trade>,
         prices: Prices,
-        pre_interactions: Vec<eth::Interaction>,
+        pre_interactions: Vec<domain::Interaction>,
         interactions: Vec<Interaction>,
-        post_interactions: Vec<eth::Interaction>,
+        post_interactions: Vec<domain::Interaction>,
         solver: Solver,
-        weth: eth::WethAddress,
+        weth: eth::WrappedNativeToken,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
@@ -214,11 +203,11 @@ impl Solution {
         &self.interactions
     }
 
-    pub fn pre_interactions(&self) -> &[eth::Interaction] {
+    pub fn pre_interactions(&self) -> &[domain::Interaction] {
         &self.pre_interactions
     }
 
-    pub fn post_interactions(&self) -> &[eth::Interaction] {
+    pub fn post_interactions(&self) -> &[domain::Interaction] {
         &self.post_interactions
     }
 
@@ -479,11 +468,11 @@ impl Solution {
             // price is needed. Remove the unneeded WETH price, which slightly reduces
             // gas used by the settlement.
             let mut prices: Prices = if self.user_trades().all(|trade| {
-                trade.order().sell.token != self.weth.0 && trade.order().buy.token != self.weth.0
+                trade.order().sell.token != *self.weth && trade.order().buy.token != *self.weth
             }) {
                 prices
                     .into_iter()
-                    .filter(|(token, _price)| *token != self.weth.0)
+                    .filter(|(token, _price)| *token != *self.weth)
                     .collect()
             } else {
                 prices

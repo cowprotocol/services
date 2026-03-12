@@ -1,9 +1,10 @@
 use {
     crate::{
-        domain::{eth, liquidity},
+        domain::liquidity,
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
+    eth_domain_types as eth,
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::future,
     http_client::HttpClientFactory,

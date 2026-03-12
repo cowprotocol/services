@@ -1,6 +1,6 @@
 use {
     super::{Error, Ethereum},
-    crate::domain::eth,
+    eth_domain_types as eth,
     ethrpc::alloy::errors::ContractErrorExt,
 };
 

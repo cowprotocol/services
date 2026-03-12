@@ -18,8 +18,8 @@
 use {
     crate::domain::{
         competition::{Auction, order::Uid},
-        eth,
     },
+    eth_domain_types as eth,
     futures::{StreamExt, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
 };

@@ -1,9 +1,9 @@
 use {
-    crate::domain::eth::{self, ContractAddress},
     alloy::primitives::Address,
     chain::Chain,
     contracts::alloy::BalancerV2Vault,
     derive_more::Debug,
+    eth_domain_types::{self as eth, ContractAddress},
     hex_literal::hex,
     liquidity_sources::uniswap_v2::{
         BAOSWAP_INIT,
