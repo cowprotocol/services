@@ -2,11 +2,11 @@
 name = "http-client"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
-edition = "2021"
+edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
 clap = { workspace = true }
 configs = { workspace = true }
 humantime = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["cookies", "gzip", "json", "query"] }
