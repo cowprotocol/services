@@ -111,9 +111,15 @@ impl FromStr for ExternalSolver {
 #[serde(tag = "type")]
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
-    Forwarder { url: Url },
+    Forwarder {
+        url: Url,
+    },
     OneInchSpotPriceApi,
     CoinGecko,
+    /// Prices EIP-4626 vault tokens by looking up the underlying `asset()` and
+    /// applying `convertToAssets()` as a conversion rate. The inner estimator
+    /// is used to price the underlying asset.
+    Eip4626(Box<NativePriceEstimator>),
 }
 
 impl NativePriceEstimator {
@@ -133,6 +139,7 @@ impl Display for NativePriceEstimator {
             NativePriceEstimator::Forwarder { url } => format!("Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
             NativePriceEstimator::CoinGecko => "CoinGecko".into(),
+            NativePriceEstimator::Eip4626(inner) => format!("Eip4626|{inner}"),
         };
         write!(f, "{formatter}")
     }
@@ -192,6 +199,10 @@ impl FromStr for NativePriceEstimator {
                     .parse()
                     .context("Forwarder price estimator invalid URL")?,
             }),
+            "Eip4626" => Ok(NativePriceEstimator::Eip4626(Box::new(
+                NativePriceEstimator::from_str(args)
+                    .context("Eip4626 inner estimator failed to parse")?,
+            ))),
             _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
         }
     }

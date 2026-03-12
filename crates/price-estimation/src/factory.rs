@@ -266,6 +266,11 @@ impl<'a> PriceEstimatorFactory<'a> {
 
                 Ok((name, coin_gecko))
             }
+            // Eip4626 wraps another estimator and is handled at the call site
+            // to avoid recursive async fn.
+            NativePriceEstimatorSource::Eip4626(_) => {
+                unreachable!("Eip4626 is handled before calling create_native_estimator")
+            }
         }
     }
 
@@ -366,7 +371,20 @@ impl<'a> PriceEstimatorFactory<'a> {
         for stage in native.iter() {
             let mut stages = Vec::with_capacity(stage.len());
             for source in stage {
-                stages.push(self.create_native_estimator(source, weth).await?);
+                let entry = if let NativePriceEstimatorSource::Eip4626(inner_source) = source {
+                    let name = format!("Eip4626|{inner_source}");
+                    let (_, inner) = self.create_native_estimator(inner_source, weth).await?;
+                    (
+                        name.clone(),
+                        Arc::new(InstrumentedPriceEstimator::new(
+                            native::Eip4626::new(inner, self.network.web3.provider.clone()),
+                            name,
+                        )) as Arc<dyn NativePriceEstimating>,
+                    )
+                } else {
+                    self.create_native_estimator(source, weth).await?
+                };
+                stages.push(entry);
             }
             estimators.push(stages);
         }
