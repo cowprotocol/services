@@ -412,7 +412,7 @@ impl Solver {
                     notify::Kind::DeserializationError(format!("Request format invalid: {err}")),
                 );
             })?;
-        
+
         match res {
             solvers_dto::solution::SolverResponse::Error { error } => {
                 tracing::debug!(?error, "solver returned custom error");

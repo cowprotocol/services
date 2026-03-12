@@ -406,6 +406,18 @@ pub enum PriceEstimationError {
     #[error("Rate limited")]
     RateLimited,
 
+    #[error("{message}")]
+    TradingOutsideAllowedWindow { message: String },
+
+    #[error("{message}")]
+    TokenTemporarilySuspended { message: String },
+
+    #[error("{message}")]
+    InsufficientLiquidity { message: String },
+
+    #[error("{message}")]
+    CustomSolverError { message: String },
+
     #[error(transparent)]
     EstimatorInternal(anyhow::Error),
 
@@ -436,12 +448,52 @@ impl Clone for PriceEstimationError {
                 Self::UnsupportedOrderType(order_type.clone())
             }
             Self::RateLimited => Self::RateLimited,
+            Self::TradingOutsideAllowedWindow { message } => Self::TradingOutsideAllowedWindow {
+                message: message.clone(),
+            },
+            Self::TokenTemporarilySuspended { message } => Self::TokenTemporarilySuspended {
+                message: message.clone(),
+            },
+            Self::InsufficientLiquidity { message } => Self::InsufficientLiquidity {
+                message: message.clone(),
+            },
+            Self::CustomSolverError { message } => Self::CustomSolverError {
+                message: message.clone(),
+            },
             Self::EstimatorInternal(err) => {
                 Self::EstimatorInternal(crate::utils::clone_anyhow_error(err))
             }
             Self::ProtocolInternal(err) => {
                 Self::ProtocolInternal(crate::utils::clone_anyhow_error(err))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod price_estimation_error_tests {
+    use super::PriceEstimationError;
+
+    #[test]
+    fn clone_preserves_custom_solver_error_messages() {
+        let cases = [
+            PriceEstimationError::TradingOutsideAllowedWindow {
+                message: "window".to_string(),
+            },
+            PriceEstimationError::TokenTemporarilySuspended {
+                message: "suspended".to_string(),
+            },
+            PriceEstimationError::InsufficientLiquidity {
+                message: "insufficient".to_string(),
+            },
+            PriceEstimationError::CustomSolverError {
+                message: "custom".to_string(),
+            },
+        ];
+
+        for err in cases {
+            let cloned = err.clone();
+            assert_eq!(cloned.to_string(), err.to_string());
         }
     }
 }
