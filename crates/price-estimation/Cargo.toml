@@ -26,9 +26,9 @@ derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
+http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
-http-client = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }
