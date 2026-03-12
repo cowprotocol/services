@@ -1,26 +1,24 @@
-use {
-    alloy_primitives::Bytes,
-    alloy_rpc_types::TransactionRequest,
-    derive_more::{From, Into, derive::Display},
-    number::u256_ext::U256Ext,
-    solvers_dto::auction::FlashloanHint,
-    std::{
-        collections::{HashMap, HashSet},
-        ops::{Div, Mul, Sub},
-    },
-};
-
-pub mod allowance;
-mod eip712;
-mod gas;
-
 pub use {
+    access_list::{AccessList, StorageKey},
     allowance::Allowance,
     alloy_primitives::{Address, B256, U256, U512},
     eip712::DomainSeparator,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::NonZeroU256,
+    token_amount::{SellTokenAmount, SurplusTokenAmount, TokenAmount},
 };
+use {
+    alloy_primitives::Bytes,
+    alloy_rpc_types::TransactionRequest,
+    derive_more::{From, Into, derive::Display},
+    solvers_dto::auction::FlashloanHint,
+};
+
+mod access_list;
+pub mod allowance;
+mod eip712;
+mod gas;
+mod token_amount;
 
 // TODO This module is getting a little hectic with all kinds of different
 // types, I wonder if there could be meaningful submodules?
@@ -30,95 +28,6 @@ pub use {
 /// convention across the Ethereum ecosystem whenever ETH is treated like an
 /// ERC20 token.
 pub const ETH_TOKEN: TokenAddress = TokenAddress(Address::repeat_byte(0xee));
-
-/// An EIP-2930 access list. This type ensures that the addresses and storage
-/// keys are not repeated, and that the ordering is deterministic.
-///
-/// https://eips.ethereum.org/EIPS/eip-2930
-#[derive(Debug, Clone, Default)]
-pub struct AccessList(HashMap<Address, HashSet<StorageKey>>);
-
-impl AccessList {
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl AccessList {
-    /// Merge two access lists together.
-    pub fn merge(mut self, other: Self) -> Self {
-        for (address, storage_keys) in other.0.into_iter() {
-            self.0.entry(address).or_default().extend(storage_keys);
-        }
-        self
-    }
-}
-
-impl IntoIterator for AccessList {
-    type IntoIter = std::collections::hash_map::IntoIter<Address, HashSet<StorageKey>>;
-    type Item = (Address, HashSet<StorageKey>);
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<I> FromIterator<(Address, I)> for AccessList
-where
-    I: IntoIterator<Item = B256>,
-{
-    fn from_iter<T: IntoIterator<Item = (Address, I)>>(iter: T) -> Self {
-        Self(
-            iter.into_iter()
-                .map(|(address, i)| {
-                    (
-                        address,
-                        i.into_iter().map(StorageKey).collect::<HashSet<_>>(),
-                    )
-                })
-                .collect(),
-        )
-    }
-}
-
-impl From<alloy_eips::eip2930::AccessList> for AccessList {
-    fn from(value: alloy_eips::eip2930::AccessList) -> Self {
-        Self(
-            value
-                .0
-                .into_iter()
-                .map(|item| {
-                    (
-                        item.address,
-                        item.storage_keys
-                            .into_iter()
-                            .map(StorageKey)
-                            .collect::<HashSet<_>>(),
-                    )
-                })
-                .collect(),
-        )
-    }
-}
-
-impl From<AccessList> for alloy_eips::eip2930::AccessList {
-    fn from(value: AccessList) -> Self {
-        Self(
-            value
-                .into_iter()
-                .map(
-                    |(address, storage_keys)| alloy_eips::eip2930::AccessListItem {
-                        address,
-                        storage_keys: storage_keys.into_iter().map(|k| k.0).collect(),
-                    },
-                )
-                .collect(),
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
-pub struct StorageKey(pub B256);
 
 /// An ERC20 token address.
 ///
@@ -141,126 +50,6 @@ pub struct WrappedNativeToken(TokenAddress);
 impl From<Address> for WrappedNativeToken {
     fn from(value: Address) -> Self {
         WrappedNativeToken(value.into())
-    }
-}
-
-/// An ERC20 token amount.
-///
-/// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct TokenAmount(pub U256);
-
-impl TokenAmount {
-    /// Applies a factor to the token amount.
-    pub fn apply_factor(&self, factor: f64) -> Option<Self> {
-        Some(self.0.checked_mul_f64(factor)?.into())
-    }
-}
-
-/// A value denominated in an order's surplus token (buy token for
-/// sell orders and sell token for buy orders).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct SurplusTokenAmount(pub U256);
-
-/// An ERC20 sell token amount.
-///
-/// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct SellTokenAmount(pub U256);
-
-impl From<TokenAmount> for SellTokenAmount {
-    fn from(value: TokenAmount) -> Self {
-        Self(value.0)
-    }
-}
-
-impl From<SellTokenAmount> for TokenAmount {
-    fn from(value: SellTokenAmount) -> Self {
-        Self(value.0)
-    }
-}
-
-impl Sub<Self> for TokenAmount {
-    type Output = TokenAmount;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        self.0.sub(rhs.0).into()
-    }
-}
-
-impl num::CheckedSub for TokenAmount {
-    fn checked_sub(&self, other: &Self) -> Option<Self> {
-        self.0.checked_sub(other.0).map(Into::into)
-    }
-}
-
-impl Mul<Self> for TokenAmount {
-    type Output = TokenAmount;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        self.0.mul(rhs.0).into()
-    }
-}
-
-impl num::CheckedMul for TokenAmount {
-    fn checked_mul(&self, other: &Self) -> Option<Self> {
-        self.0.checked_mul(other.0).map(Into::into)
-    }
-}
-
-impl num::CheckedAdd for TokenAmount {
-    fn checked_add(&self, other: &Self) -> Option<Self> {
-        self.0.checked_add(other.0).map(Into::into)
-    }
-}
-
-impl Div<Self> for TokenAmount {
-    type Output = TokenAmount;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        self.0.div(rhs.0).into()
-    }
-}
-
-impl num::CheckedDiv for TokenAmount {
-    fn checked_div(&self, other: &Self) -> Option<Self> {
-        self.0.checked_div(other.0).map(Into::into)
-    }
-}
-
-impl From<u128> for TokenAmount {
-    fn from(value: u128) -> Self {
-        Self(U256::from(value))
-    }
-}
-
-impl std::ops::Add for TokenAmount {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl std::ops::AddAssign for TokenAmount {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-    }
-}
-
-impl num::Zero for TokenAmount {
-    fn zero() -> Self {
-        Self(U256::ZERO)
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.is_zero()
-    }
-}
-
-impl std::fmt::Display for TokenAmount {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
     }
 }
 
@@ -425,6 +214,15 @@ pub struct Tx {
     pub access_list: AccessList,
 }
 
+impl Tx {
+    pub fn set_access_list(self, access_list: AccessList) -> Self {
+        Self {
+            access_list,
+            ..self
+        }
+    }
+}
+
 impl From<Tx> for TransactionRequest {
     fn from(value: Tx) -> Self {
         TransactionRequest::default()
@@ -433,15 +231,6 @@ impl From<Tx> for TransactionRequest {
             .value(value.value.0)
             .input(value.input.into())
             .access_list(value.access_list.into())
-    }
-}
-
-impl Tx {
-    pub fn set_access_list(self, access_list: AccessList) -> Self {
-        Self {
-            access_list,
-            ..self
-        }
     }
 }
 
