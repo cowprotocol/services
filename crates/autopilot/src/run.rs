@@ -299,8 +299,8 @@ pub async fn run(
             block_stream: eth.current_block().clone(),
         },
         factory::Components {
-            http_factory: http_client::HttpClientFactory::new(&http_client::Arguments {
-                http_timeout: http_factory.timeout,
+            http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
+                timeout: http_factory.timeout,
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),

@@ -86,8 +86,8 @@ pub async fn collector(
     let settlement = *eth.contracts().settlement().address();
     let web3 = eth.web3().clone();
     let contract = contracts::alloy::IZeroex::Instance::deployed(&web3.provider).await?;
-    let http_client_factory = &HttpClientFactory::new(&http_client::Arguments {
-        http_timeout: config.http_timeout,
+    let http_client_factory = &HttpClientFactory::new(&configs::http_client::HttpClient {
+        timeout: config.http_timeout,
     });
     let api = Arc::new(DefaultZeroExApi::new(
         http_client_factory.builder(),
