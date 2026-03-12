@@ -273,9 +273,12 @@ impl Configuration {
 mod tests {
     use {
         super::*,
-        crate::autopilot::{
-            fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass, UpcomingFeePolicies},
-            solver::Account,
+        crate::{
+            autopilot::{
+                fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass, UpcomingFeePolicies},
+                solver::Account,
+            },
+            price_estimation::{ExternalSolver, NativePriceEstimator},
         },
         alloy::primitives::address,
         std::time::Duration,
@@ -406,7 +409,6 @@ mod tests {
         assert_eq!(s3.bucket, "my-bucket");
         assert_eq!(s3.filename_prefix, "staging/mainnet/");
 
-        use price_estimation::{ExternalSolver, NativePriceEstimator};
         assert_eq!(
             config.native_price_estimation.estimators.as_slice(),
             vec![
