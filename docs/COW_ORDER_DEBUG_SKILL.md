@@ -648,6 +648,19 @@ cast call $HOOK_EXECUTOR $HOOK_CALLDATA --from $SETTLEMENT --block $BLOCK --rpc-
 
 `scripts/check-order-balance <order-uid> [rpc-url]` automates all of the above for every block in the order's validity window.
 
+If the nonce was already consumed, use `scripts/find-permit-tx` to find the transaction(s) that used it — this reveals whether a competing `supplyWithPermit` or another CoW order stole the nonce first:
+
+```bash
+# Most recent permit tx for this owner/token
+scripts/find-permit-tx --owner <addr> --token <addr> --rpc-url <url>
+
+# Last N permit txs, optionally capped at a point in time
+scripts/find-permit-tx --owner <addr> --token <addr> --rpc-url <url> --count 5
+scripts/find-permit-tx --owner <addr> --token <addr> --rpc-url <url> --count 5 --stop-at 2025-01-15T12:00:00Z
+```
+
+Output is `nonce\tISO_timestamp\ttx_hash` per line.
+
 ---
 
 ## 16. Useful Links

@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# Finds the last N transactions that consumed ERC-2612 permit nonces for an owner,
+# up to a given point in time.
+#
+# Usage: find-permit-tx --owner <addr> --token <addr> --rpc-url <url> [--count N] [--stop-at TIMESTAMP]
+#
+# --stop-at accepts a UNIX timestamp or ISO 8601 (e.g. 2025-01-15T12:00:00Z); defaults to now
+# --count defaults to 1
+#
+# All parameters can also be set via environment variables:
+#   PERMIT_OWNER, PERMIT_TOKEN, ETH_RPC_URL, PERMIT_COUNT, PERMIT_STOP_AT
+#
+# Output: one "nonce\tISO_timestamp\ttx_hash" line per consumed nonce, oldest first
+
+set -euo pipefail
+
+COUNT="${PERMIT_COUNT:-1}"
+STOP_AT="${PERMIT_STOP_AT:-}"
+OWNER="${PERMIT_OWNER:-}"
+TOKEN="${PERMIT_TOKEN:-}"
+RPC_URL="${ETH_RPC_URL:-}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --owner)    OWNER="$2";   shift 2 ;;
+        --token)    TOKEN="$2";   shift 2 ;;
+        --rpc-url)  RPC_URL="$2"; shift 2 ;;
+        --count)    COUNT="$2";   shift 2 ;;
+        --stop-at)  STOP_AT="$2"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$OWNER" || -z "$TOKEN" || -z "$RPC_URL" ]]; then
+    echo "Usage: $0 --owner <addr> --token <addr> --rpc-url <url> [--count N] [--stop-at TIMESTAMP]" >&2
+    echo "       or set PERMIT_OWNER, PERMIT_TOKEN, ETH_RPC_URL, PERMIT_COUNT, PERMIT_STOP_AT" >&2
+    exit 1
+fi
+
+OWNER_LC=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+TOKEN_LC=$(echo "$TOKEN" | tr '[:upper:]' '[:lower:]')
+
+# permit(address,address,uint256,uint256,uint8,bytes32,bytes32)
+PERMIT_SEL="0xd505accf"
+# Approval(address indexed owner, address indexed spender, uint256 value)
+APPROVAL_TOPIC="0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"
+OWNER_PADDED="0x000000000000000000000000${OWNER_LC:2}"
+
+iso_to_unix() {
+    if date -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null; then :
+    else date -d "$1" +%s; fi
+}
+
+unix_to_iso() {
+    if date -u -r "$1" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null; then :
+    else date -u -d "@$1" +"%Y-%m-%dT%H:%M:%SZ"; fi
+}
+
+if [[ -z "$STOP_AT" ]]; then
+    STOP_AT_UNIX=$(date +%s)
+elif [[ "$STOP_AT" =~ ^[0-9]+$ ]]; then
+    STOP_AT_UNIX=$STOP_AT
+else
+    STOP_AT_UNIX=$(iso_to_unix "$STOP_AT")
+fi
+
+get_block_ts() {
+    cast block "$1" --field timestamp --rpc-url "$RPC_URL"
+}
+
+get_nonce_at() {
+    cast call "$TOKEN" "nonces(address)(uint256)" "$OWNER" \
+        --block "$1" --rpc-url "$RPC_URL" 2>/dev/null || echo "0"
+}
+
+# Binary search for the last block with timestamp <= STOP_AT_UNIX
+CURRENT_BLOCK=$(cast block-number --rpc-url "$RPC_URL")
+
+if (( STOP_AT_UNIX >= $(get_block_ts "$CURRENT_BLOCK") )); then
+    STOP_BLOCK=$CURRENT_BLOCK
+else
+    LOW=0
+    HIGH=$CURRENT_BLOCK
+    while (( HIGH - LOW > 1 )); do
+        MID=$(( (LOW + HIGH) / 2 ))
+        if (( $(get_block_ts "$MID") <= STOP_AT_UNIX )); then
+            LOW=$MID
+        else
+            HIGH=$MID
+        fi
+    done
+    STOP_BLOCK=$LOW
+fi
+
+echo "Stop block: $STOP_BLOCK ($(unix_to_iso "$(get_block_ts "$STOP_BLOCK")"))" >&2
+
+STOP_NONCE=$(get_nonce_at "$STOP_BLOCK")
+
+if (( STOP_NONCE == 0 )); then
+    echo "Error: no nonces consumed before $(unix_to_iso "$STOP_AT_UNIX")" >&2
+    exit 1
+fi
+
+if (( COUNT > STOP_NONCE )); then
+    echo "Warning: only $STOP_NONCE nonces consumed before $(unix_to_iso "$STOP_AT_UNIX"), capping count" >&2
+    COUNT=$STOP_NONCE
+fi
+
+# Primary: Approval logs (one RPC call). Falls back to full tx scan only when
+# multiple Approval events exist in the same block (to disambiguate permit vs approve).
+find_tx_in_block() {
+    local target_block="$1"
+
+    local log_txs
+    log_txs=$(cast logs \
+        --from-block "$target_block" \
+        --to-block "$target_block" \
+        --address "$TOKEN" \
+        "$APPROVAL_TOPIC" "$OWNER_PADDED" \
+        --json --rpc-url "$RPC_URL" \
+        | jq -r '[.[].transactionHash] | unique[]')
+
+    local count
+    count=$(echo "$log_txs" | grep -c "0x" 2>/dev/null || echo 0)
+
+    if (( count == 1 )); then
+        echo "$log_txs"
+        return 0
+    fi
+
+    if (( count > 1 )); then
+        # Multiple Approval events in this block — find the one with the permit selector
+        for tx_hash in $log_txs; do
+            local tx_to tx_input
+            tx_to=$(cast tx "$tx_hash" to --rpc-url "$RPC_URL" | tr '[:upper:]' '[:lower:]')
+            tx_input=$(cast tx "$tx_hash" input --rpc-url "$RPC_URL")
+            if [[ "$tx_to" == "$TOKEN_LC" && "${tx_input:0:10}" == "$PERMIT_SEL" ]]; then
+                echo "$tx_hash"
+                return 0
+            fi
+        done
+        # Internal permit (via router) — can't distinguish further, return first candidate
+        echo "$log_txs" | head -1
+        return 0
+    fi
+
+    # No Approval logs: token may not be fully EIP-2612 compliant; scan all txs
+    local tx_hashes
+    tx_hashes=$(cast block "$target_block" --json --rpc-url "$RPC_URL" | jq -r '.transactions[]')
+    for tx_hash in $tx_hashes; do
+        local tx tx_to tx_input
+        tx=$(cast tx "$tx_hash" --json --rpc-url "$RPC_URL")
+        tx_to=$(echo "$tx" | jq -r '.to // ""' | tr '[:upper:]' '[:lower:]')
+        tx_input=$(echo "$tx" | jq -r '.input // ""')
+        if [[ "$tx_to" != "$TOKEN_LC" || "${tx_input:0:10}" != "$PERMIT_SEL" ]]; then
+            continue
+        fi
+        local decoded tx_owner
+        decoded=$(cast calldata-decode \
+            "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)" \
+            "$tx_input" 2>/dev/null) || continue
+        tx_owner=$(echo "$decoded" | awk 'NR==1 {print tolower($1)}')
+        if [[ "$tx_owner" == "$OWNER_LC" ]]; then
+            echo "$tx_hash"
+            return 0
+        fi
+    done
+
+    echo "?" && return 1
+}
+
+START_NONCE=$(( STOP_NONCE - COUNT ))
+
+# Cascading binary search: each search uses the previous result as its lower bound,
+# cutting the search space for later nonces significantly.
+LOW=0
+HIGH=$STOP_BLOCK
+
+for (( i = 0; i < COUNT; i++ )); do
+    NONCE=$(( START_NONCE + i ))
+
+    lo=$LOW
+    hi=$HIGH
+    while (( hi - lo > 1 )); do
+        mid=$(( (lo + hi) / 2 ))
+        if (( $(get_nonce_at "$mid") <= NONCE )); then
+            lo=$mid
+        else
+            hi=$mid
+        fi
+    done
+
+    TARGET_BLOCK=$hi
+    echo "Nonce $NONCE consumed in block $TARGET_BLOCK" >&2
+
+    TX_HASH=$(find_tx_in_block "$TARGET_BLOCK")
+    TIMESTAMP=$(unix_to_iso "$(get_block_ts "$TARGET_BLOCK")")
+    echo -e "$NONCE\t$TIMESTAMP\t$TX_HASH"
+
+    LOW=$TARGET_BLOCK
+done
