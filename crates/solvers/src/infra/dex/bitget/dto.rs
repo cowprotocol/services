@@ -17,7 +17,7 @@ pub enum ChainName {
     Bnb,
     #[serde(rename = "base")]
     Base,
-    #[serde(rename = "morph")]
+    #[serde(rename = "matic")]
     Polygon,
     #[serde(rename = "arbitrum")]
     ArbitrumOne,
