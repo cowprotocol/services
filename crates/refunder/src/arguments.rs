@@ -1,7 +1,7 @@
 use {
     alloy::primitives::Address,
     clap::Parser,
-    shared::{arguments::display_option, http_client, logging_args_with_default_filter, web3},
+    shared::{arguments::display_option, logging_args_with_default_filter, web3},
     std::time::Duration,
     url::Url,
 };

@@ -1,6 +1,5 @@
 use {
     price_estimation,
-    shared::http_client,
     std::{net::SocketAddr, path::PathBuf},
 };
 

@@ -54,6 +54,7 @@ dashmap = "6.1.0"
 database = { path = "crates/database" }
 derive_more = { version = "1.0.0", features = ["full"] }
 driver = { path = "crates/driver" }
+eth-domain-types = { path = "crates/eth-domain-types" }
 ethrpc = { path = "crates/ethrpc" }
 event-indexing = { path = "crates/event-indexing" }
 flate2 = "1.0.30"
@@ -62,6 +63,7 @@ gas-price-estimation = { path = "crates/gas-price-estimation" }
 hex-literal = "0.4.1"
 http-body = "1"
 http-body-util = "0.1"
+http-client = { path = "crates/http-client" }
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
 indexmap = "2.2.6"

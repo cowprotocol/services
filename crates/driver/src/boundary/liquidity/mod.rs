@@ -6,12 +6,12 @@ use {
     anyhow::Result,
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::future,
+    http_client::HttpClientFactory,
     liquidity_sources::{
         base_tokens::BaseTokens,
         recent_block_cache::{self, CacheConfig},
     },
     model::TokenPair,
-    shared::http_client::HttpClientFactory,
     solver::{
         liquidity::Liquidity,
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},

@@ -8,9 +8,9 @@ use {
     },
     anyhow::anyhow,
     ethrpc::block_stream::CurrentBlockWatcher,
+    http_client::HttpClientFactory,
     liquidity_sources::zeroex::DefaultZeroExApi,
     price_estimation::gas::GAS_PER_ZEROEX_ORDER,
-    shared::http_client::HttpClientFactory,
     solver::{
         liquidity::{LimitOrder, zeroex::ZeroExLiquidity},
         liquidity_collector::LiquidityCollecting,
@@ -86,7 +86,7 @@ pub async fn collector(
     let settlement = *eth.contracts().settlement().address();
     let web3 = eth.web3().clone();
     let contract = contracts::alloy::IZeroex::Instance::deployed(&web3.provider).await?;
-    let http_client_factory = &HttpClientFactory::new(&shared::http_client::Arguments {
+    let http_client_factory = &HttpClientFactory::new(&http_client::Arguments {
         http_timeout: config.http_timeout,
     });
     let api = Arc::new(DefaultZeroExApi::new(

@@ -7,7 +7,6 @@ use {
 };
 
 pub mod encoding;
-pub mod http_client_factory;
 
 /// Join a path with a URL, ensuring that there is only one slash between them.
 /// It doesn't matter if the URL ends with a slash or the path starts with one.

@@ -1,7 +1,7 @@
 use {
     alloy::primitives::Address,
     anyhow::Context,
-    shared::{arguments::display_option, http_client},
+    shared::arguments::display_option,
     std::{net::SocketAddr, num::NonZeroUsize, path::PathBuf, str::FromStr, time::Duration},
     url::Url,
 };

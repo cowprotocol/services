@@ -33,6 +33,7 @@ use {
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
+    http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
@@ -43,7 +44,6 @@ use {
     },
     shared::{
         arguments::tracing_config,
-        http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -299,9 +299,9 @@ pub async fn run(
             block_stream: eth.current_block().clone(),
         },
         factory::Components {
-            http_factory: price_estimation::utils::http_client_factory::HttpClientFactory::new(
-                http_factory.timeout,
-            ),
+            http_factory: http_client::HttpClientFactory::new(&http_client::Arguments {
+                http_timeout: http_factory.timeout,
+            }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
