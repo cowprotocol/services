@@ -25,7 +25,6 @@ const-hex = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
-hex = { workspace = true }
 hmac = { workspace = true }
 humantime-serde = { workspace = true }
 itertools = { workspace = true }
