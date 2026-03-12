@@ -13,13 +13,13 @@ use {
 pub enum ChainName {
     #[serde(rename = "eth")]
     Mainnet,
-    #[serde(rename = "bsc")]
+    #[serde(rename = "bnb")]
     Bnb,
     #[serde(rename = "base")]
     Base,
-    #[serde(rename = "polygon")]
+    #[serde(rename = "morph")]
     Polygon,
-    #[serde(rename = "arb")]
+    #[serde(rename = "arbitrum")]
     ArbitrumOne,
 }
 
