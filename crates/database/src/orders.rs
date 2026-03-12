@@ -116,6 +116,7 @@ pub async fn insert_orders_and_ignore_conflicts(
                     label: OrderEventLabel::Created,
                     timestamp: order.creation_timestamp,
                     order_uid: order.uid,
+                    reason: None,
                 },
             )
             .await?;

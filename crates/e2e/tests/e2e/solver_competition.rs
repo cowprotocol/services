@@ -1,10 +1,14 @@
 use {
     ::alloy::primitives::{U256, address},
-    autopilot::config::{
-        Configuration,
-        solver::{Account, Solver},
+    configs::{
+        autopilot::{
+            Configuration,
+            run_loop::RunLoopConfig,
+            solver::{Account, Solver},
+        },
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
     },
-    configs::test_util::TestDefault,
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -87,25 +91,33 @@ async fn solver_competition(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
-    services.start_autopilot(
-        None,
-        vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
-        ],
-        Configuration {
-            drivers: vec![
-                Solver::test("test_solver", solver.address()),
-                Solver::test("solver2", solver.address()),
-            ],
-            ..Configuration::test_no_drivers()
-        }
-    ).await;
+    services
+        .start_autopilot(
+            None,
+            vec![],
+            Configuration {
+                drivers: vec![
+                    Solver::test("test_solver", solver.address()),
+                    Solver::test("solver2", solver.address()),
+                ],
+                order_quoting: OrderQuoting::test_with_drivers(vec![
+                    ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver"),
+                    ExternalSolver::new("solver2", "http://localhost:11088/solver2"),
+                ]),
+                ..Configuration::test_no_drivers()
+            },
+        )
+        .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![
+                    ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver"),
+                    ExternalSolver::new("solver2", "http://localhost:11088/solver2"),
+                ]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 
@@ -241,9 +253,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-            ],
+            vec![],
             Configuration {
                 drivers: vec![
                     // Solver 1 has a wrong submission address, meaning that the solutions should
@@ -255,16 +265,24 @@ async fn wrong_solution_submission_address(web3: Web3) {
                     ),
                     Solver::test("solver2", solver.address()),
                 ],
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "solver1",
+                    "http://localhost:11088/test_solver",
+                )]),
                 ..Configuration::test_no_drivers()
             },
         )
         .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "solver1",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 
@@ -404,30 +422,38 @@ async fn store_filtered_solutions(web3: Web3) {
 
     // We start the quoter as the baseline solver, and the mock solver as the one
     // returning the solution
+    let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--max-winners-per-auction=10".to_string(),
-            ],
+            vec![],
             Configuration {
                 drivers: vec![
                     Solver::test("good_solver", good_solver_account.address()),
                     Solver::test("bad_solver", bad_solver_account.address()),
                 ],
-                ..Configuration::test_no_drivers()
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
+                run_loop: RunLoopConfig {
+                    max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
+                    ..config.run_loop
+                },
+                ..config
             },
         )
         .await;
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
+            vec![],
+            configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..configs::orderbook::Configuration::test_default()
+            },
         )
         .await;
 

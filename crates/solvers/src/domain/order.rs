@@ -25,6 +25,13 @@ impl Order {
     pub fn solver_determines_fee(&self) -> bool {
         self.class == Class::Limit
     }
+
+    /// Returns the owner address of the order extracted from the UID.
+    pub fn owner(&self) -> eth::Address {
+        let mut bytes = [0u8; 20];
+        bytes.copy_from_slice(&self.uid.0[32..52]);
+        eth::Address::from(bytes)
+    }
 }
 
 /// UID of an order.
@@ -46,7 +53,7 @@ impl Display for Uid {
 }
 
 /// The trading side of an order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Side {
     /// An order with a fixed buy amount and maximum sell amount.
     Buy,

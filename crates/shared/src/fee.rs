@@ -1,6 +1,7 @@
 use {
-    crate::{arguments::TokenBucketFeeOverride, fee_factor::FeeFactor},
+    crate::arguments::TokenBucketFeeOverride,
     alloy::primitives::{Address, U256},
+    configs::fee_factor::FeeFactor,
 };
 
 /// Everything required to compute the fee amount in sell token

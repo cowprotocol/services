@@ -19,6 +19,7 @@ cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+configs = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 derive_more = { workspace = true }

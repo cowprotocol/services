@@ -1,17 +1,20 @@
 use {
     ::alloy::primitives::{Address, U256},
-    autopilot::config::{
-        Configuration,
-        fee_policy::{
-            FeePoliciesConfig,
-            FeePolicy as ConfigFeePolicy,
-            FeePolicyKind as ConfigFeePolicyKind,
-            FeePolicyOrderClass as ConfigFeePolicyOrderClass,
-            UpcomingFeePolicies,
+    configs::{
+        autopilot::{
+            Configuration,
+            fee_policy::{
+                FeePoliciesConfig,
+                FeePolicy as ConfigFeePolicy,
+                FeePolicyKind as ConfigFeePolicyKind,
+                FeePolicyOrderClass as ConfigFeePolicyOrderClass,
+                UpcomingFeePolicies,
+            },
+            solver::Solver,
         },
-        solver::Solver,
+        fee_factor::FeeFactor,
+        test_util::TestDefault,
     },
-    configs::test_util::TestDefault,
     driver::domain::eth::NonZeroU256,
     e2e::{assert_approximately_eq, setup::*},
     ethrpc::alloy::CallBuilderExt,
@@ -31,7 +34,7 @@ use {
     number::units::EthUnit,
     reqwest::StatusCode,
     serde_json::json,
-    shared::{fee_factor::FeeFactor, web3::Web3},
+    shared::web3::Web3,
 };
 
 #[tokio::test]
@@ -174,7 +177,7 @@ async fn combined_protocol_fees(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -525,7 +528,7 @@ async fn surplus_partner_fee(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -772,7 +775,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -935,7 +938,7 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -1099,12 +1102,12 @@ async fn volume_fee_overrides(web3: Web3) {
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration {
-                volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            configs::orderbook::Configuration {
+                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.01)), // Default 1% volume fee
                     effective_from_timestamp: None,
                 }),
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver,
         )

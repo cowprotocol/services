@@ -1,10 +1,10 @@
 use {
     crate::{
         boundary,
-        config::fee_policy::FeePolicyKind,
         domain::{self, fee::Quote},
     },
-    shared::{fee::VolumeFeePolicy, fee_factor::FeeFactor},
+    configs::{autopilot::fee_policy::FeePolicyKind, fee_factor::FeeFactor},
+    shared::fee::VolumeFeePolicy,
 };
 
 pub enum Policy {

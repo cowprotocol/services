@@ -5,10 +5,9 @@ use {
         utils::{display_option, display_secret_option},
     },
     alloy::primitives::{Address, U256},
-    anyhow::{Context, Result, ensure},
+    anyhow::Result,
     bigdecimal::BigDecimal,
     futures::future::BoxFuture,
-    itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     number::nonzero::NonZeroU256,
     rate_limit::{RateLimiter, Strategy},
@@ -19,7 +18,6 @@ use {
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
-        str::FromStr,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -28,7 +26,6 @@ use {
 
 mod buffered;
 pub mod competition;
-pub mod config;
 pub mod external;
 pub mod factory;
 pub mod gas;
@@ -39,163 +36,6 @@ pub mod sanitized;
 pub mod trade_finding;
 pub mod trade_verifier;
 pub mod utils;
-
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
-
-impl<'de> Deserialize<'de> for NativePriceEstimators {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let estimators = <Vec<Vec<NativePriceEstimator>>>::deserialize(deserializer)?;
-        if estimators.is_empty() {
-            return Err(serde::de::Error::invalid_length(
-                0,
-                &"expected native price estimator stages to be configured",
-            ));
-        }
-        match estimators
-            .iter()
-            .enumerate()
-            .find_map(|(n, stage)| stage.is_empty().then_some(n))
-        {
-            Some(n) => Err(serde::de::Error::invalid_length(
-                0,
-                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
-            )),
-            None => Ok(Self(estimators)),
-        }
-    }
-}
-
-impl NativePriceEstimators {
-    pub fn new(estimators: Vec<Vec<NativePriceEstimator>>) -> Self {
-        Self(estimators)
-    }
-}
-
-#[cfg(any(test, feature = "test-util"))]
-impl NativePriceEstimators {
-    /// Returns a list with a single stage, said stage contains a Driver estimator named `test_quoter` with URL `http://localhost:11088/test_solver`.
-    pub fn test_default() -> Self {
-        NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
-            "test_quoter".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-        )]])
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
-pub struct ExternalSolver {
-    pub name: String,
-    pub url: Url,
-}
-
-impl FromStr for ExternalSolver {
-    type Err = anyhow::Error;
-
-    fn from_str(solver: &str) -> Result<Self> {
-        let parts: Vec<&str> = solver.split('|').collect();
-        ensure!(parts.len() >= 2, "not enough arguments for external solver");
-        let (name, url) = (parts[0], parts[1]);
-        let url: Url = url.parse()?;
-        Ok(Self {
-            name: name.to_owned(),
-            url,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(tag = "type")]
-pub enum NativePriceEstimator {
-    Driver(ExternalSolver),
-    Forwarder { url: Url },
-    OneInchSpotPriceApi,
-    CoinGecko,
-}
-
-impl NativePriceEstimator {
-    pub const fn driver(name: String, url: Url) -> Self {
-        Self::Driver(ExternalSolver { name, url })
-    }
-
-    pub const fn forwarder(url: Url) -> Self {
-        Self::Forwarder { url }
-    }
-}
-
-impl Display for NativePriceEstimator {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let formatter = match self {
-            NativePriceEstimator::Driver(s) => format!("Driver|{}|{}", &s.name, s.url),
-            NativePriceEstimator::Forwarder { url } => format!("Forwarder|{}", url),
-            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
-            NativePriceEstimator::CoinGecko => "CoinGecko".into(),
-        };
-        write!(f, "{formatter}")
-    }
-}
-
-impl NativePriceEstimators {
-    pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
-        &self.0
-    }
-}
-
-impl Display for NativePriceEstimators {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let formatter = self
-            .as_slice()
-            .iter()
-            .map(|stage| {
-                stage
-                    .iter()
-                    .format_with(",", |estimator, f| f(&format_args!("{estimator}")))
-            })
-            .format(";");
-        write!(f, "{formatter}")
-    }
-}
-
-impl FromStr for NativePriceEstimators {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(
-            s.split(';')
-                .map(|sub_list| {
-                    sub_list
-                        .split(',')
-                        .map(NativePriceEstimator::from_str)
-                        .collect::<Result<Vec<NativePriceEstimator>>>()
-                })
-                .collect::<Result<Vec<Vec<NativePriceEstimator>>>>()?,
-        ))
-    }
-}
-
-impl FromStr for NativePriceEstimator {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (variant, args) = s.split_once('|').unwrap_or((s, ""));
-        match variant {
-            "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
-            "CoinGecko" => Ok(NativePriceEstimator::CoinGecko),
-            "Driver" => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
-                args,
-            )?)),
-            "Forwarder" => Ok(NativePriceEstimator::Forwarder {
-                url: args
-                    .parse()
-                    .context("Forwarder price estimator invalid URL")?,
-            }),
-            _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
-        }
-    }
-}
 
 /// Shared price estimation configuration arguments.
 #[derive(clap::Parser)]
@@ -571,7 +411,12 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, clap::Parser};
+    use {
+        super::*,
+        clap::Parser,
+        configs::price_estimation::{ExternalSolver, NativePriceEstimator, NativePriceEstimators},
+        std::str::FromStr,
+    };
 
     #[test]
     fn string_repr_round_trip_native_price_estimators() {

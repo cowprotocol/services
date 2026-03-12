@@ -53,6 +53,14 @@ impl Default for HttpClientFactory {
     }
 }
 
+impl From<configs::http_client::HttpClient> for HttpClientFactory {
+    fn from(value: configs::http_client::HttpClient) -> Self {
+        Self {
+            timeout: value.timeout,
+        }
+    }
+}
+
 /// Command line arguments for the common HTTP factory.
 #[derive(clap::Parser)]
 #[group(skip)]

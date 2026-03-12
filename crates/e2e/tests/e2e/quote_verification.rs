@@ -3,10 +3,9 @@ use {
         primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
     },
-    autopilot::config::Configuration,
     balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
     bigdecimal::{BigDecimal, Zero},
-    configs::test_util::TestDefault,
+    configs::{autopilot::Configuration, test_util::TestDefault},
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
@@ -382,7 +381,7 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                 ..Default::default()
             },
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -527,7 +526,7 @@ async fn usdt_quote_verification(web3: Web3) {
                 ..Default::default()
             },
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;

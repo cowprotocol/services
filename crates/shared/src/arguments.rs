@@ -2,9 +2,9 @@
 //! the binaries.
 
 use {
-    crate::fee_factor::FeeFactor,
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
+    configs::fee_factor::FeeFactor,
     gas_price_estimation::GasEstimatorType,
     observe::TracingConfig,
     std::{
@@ -47,51 +47,6 @@ macro_rules! logging_args_with_default_filter {
             }
         }
     };
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ExternalSolver {
-    pub name: String,
-    pub url: Url,
-}
-
-// The following arguments are used to configure the order creation process
-// The arguments are shared between the orderbook crate and the autopilot crate,
-// as both crates can create orders
-#[derive(clap::Parser)]
-pub struct OrderQuotingArguments {
-    /// A list of external drivers used for price estimation in the following
-    /// format: `<NAME>|<URL>,<NAME>|<URL>`
-    #[clap(long, env, use_value_delimiter = true)]
-    pub price_estimation_drivers: Vec<ExternalSolver>,
-
-    /// The time period an EIP1271-quote request is valid.
-    #[clap(
-        long,
-        env,
-        default_value = "10m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub eip1271_onchain_quote_validity: Duration,
-
-    /// The time period an PRESIGN-quote request is valid.
-    #[clap(
-        long,
-        env,
-        default_value = "10m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub presign_onchain_quote_validity: Duration,
-
-    /// The time period a regular offchain-quote request (ethsign/eip712) is
-    /// valid.
-    #[clap(
-        long,
-        env,
-        default_value = "1m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub standard_offchain_quote_validity: Duration,
 }
 
 logging_args_with_default_filter!(
@@ -269,31 +224,6 @@ where
     Ok(())
 }
 
-impl Display for OrderQuotingArguments {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            eip1271_onchain_quote_validity,
-            presign_onchain_quote_validity,
-            price_estimation_drivers,
-            standard_offchain_quote_validity,
-        } = self;
-
-        writeln!(
-            f,
-            "eip1271_onchain_quote_validity_second: {eip1271_onchain_quote_validity:?}"
-        )?;
-        writeln!(
-            f,
-            "presign_onchain_quote_validity_second: {presign_onchain_quote_validity:?}"
-        )?;
-        display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
-        writeln!(
-            f,
-            "standard_offchain_quote_validity: {standard_offchain_quote_validity:?}"
-        )?;
-        Ok(())
-    }
-}
 // We have a custom Display implementation so that we can log the arguments on
 // start up without leaking any potentially secret values.
 impl Display for Arguments {
@@ -373,31 +303,6 @@ impl Display for Arguments {
     }
 }
 
-impl Display for ExternalSolver {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({})", self.name, self.url)
-    }
-}
-
-impl FromStr for ExternalSolver {
-    type Err = anyhow::Error;
-
-    fn from_str(solver: &str) -> Result<Self> {
-        let parts: Vec<&str> = solver.split('|').collect();
-        ensure!(
-            parts.len() == 2,
-            "wrong number of arguments for external solver"
-        );
-        let (name, url) = (parts[0], parts[1]);
-        let url: Url = url.parse()?;
-
-        Ok(Self {
-            name: name.to_owned(),
-            url,
-        })
-    }
-}
-
 /// Helper type for parsing token bucket fee overrides from strings
 #[derive(Debug, Clone)]
 pub struct TokenBucketFeeOverride {
@@ -442,21 +347,6 @@ impl FromStr for TokenBucketFeeOverride {
 #[cfg(test)]
 mod test {
     use {super::*, alloy::primitives::address};
-
-    #[test]
-    fn parse_drivers_wrong_arguments() {
-        // too few arguments
-        assert!(ExternalSolver::from_str("").is_err());
-        assert!(ExternalSolver::from_str("name").is_err());
-
-        // broken URL
-        assert!(ExternalSolver::from_str("name1|sdfsdfds").is_err());
-
-        // too many arguments
-        assert!(
-            ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
-        );
-    }
 
     #[test]
     fn parse_token_bucket_fee_override() {

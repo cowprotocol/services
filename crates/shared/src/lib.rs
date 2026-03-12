@@ -8,7 +8,6 @@ pub mod encoded_settlement;
 pub mod event_storing_helpers;
 pub mod external_prices;
 pub mod fee;
-pub mod fee_factor;
 pub mod http_solver;
 pub mod interaction;
 pub mod order_quoting;

@@ -14,7 +14,7 @@ use {
     database::{
         events::EventIndex,
         leader_pg_lock::LeaderLock,
-        order_events::OrderEventLabel,
+        order_events::{OrderEventLabel, OrderFilterReason},
         order_execution::Asset,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
@@ -295,7 +295,7 @@ impl Persistence {
         label: boundary::OrderEventLabel,
     ) {
         let order_uids: Vec<_> = order_uids.into_iter().collect();
-        self.store_order_events_owned(order_uids, std::convert::identity, label);
+        self.store_order_events_owned(order_uids, std::convert::identity, label, None);
     }
 
     /// A variants of [`store_order_events`] where [`items`] is already an owned
@@ -307,6 +307,7 @@ impl Persistence {
         items: I,
         convert: F,
         label: boundary::OrderEventLabel,
+        reason: Option<OrderFilterReason>,
     ) where
         I: IntoIterator + Send + 'static,
         I::Item: Send,
@@ -318,7 +319,7 @@ impl Persistence {
                 let order_uids = items.into_iter().map(convert).collect();
                 match db.pool.acquire().await {
                     Ok(mut tx) => {
-                        store_order_events(&mut tx, order_uids, label, Utc::now()).await;
+                        store_order_events(&mut tx, order_uids, label, reason, Utc::now()).await;
                     }
                     Err(err) => {
                         tracing::error!(
@@ -392,17 +393,19 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.acquire().await?;
 
+        let order_uids: Vec<_> = auction
+            .orders
+            .iter()
+            .map(|order| ByteArray(order.uid.0))
+            .collect();
+
         database::auction::save(
             &mut ex,
             database::auction::Auction {
                 id: auction.id,
                 block: i64::try_from(auction.block).context("block overflow")?,
                 deadline: i64::try_from(deadline).context("deadline overflow")?,
-                order_uids: auction
-                    .orders
-                    .iter()
-                    .map(|order| ByteArray(order.uid.0))
-                    .collect(),
+                order_uids: order_uids.clone(),
                 price_tokens: auction
                     .prices
                     .keys()
@@ -421,6 +424,8 @@ impl Persistence {
             },
         )
         .await?;
+
+        database::auction::save_auction_orders(&mut ex, auction.id, &order_uids).await?;
 
         Ok(())
     }
@@ -820,6 +825,7 @@ impl Persistence {
                 &mut ex,
                 fee_breakdown.keys().cloned().collect(),
                 OrderEventLabel::Traded,
+                None,
                 Utc::now(),
             )
             .await;
