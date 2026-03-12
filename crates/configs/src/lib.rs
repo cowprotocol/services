@@ -4,6 +4,8 @@ pub mod database;
 pub(crate) mod deserialize_env;
 pub mod fee_factor;
 pub mod http_client;
+pub mod native_price;
+pub mod native_price_estimators;
 pub mod order_quoting;
 pub mod orderbook;
 pub mod price_estimation;

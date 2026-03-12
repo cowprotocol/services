@@ -24,8 +24,8 @@ use {
             native_price::NativePriceConfig,
             run_loop::RunLoopConfig,
         },
+        native_price_estimators::{NativePriceEstimator, NativePriceEstimators},
         order_quoting::{ExternalSolver, OrderQuoting},
-        price_estimation::{NativePriceEstimator, NativePriceEstimators},
         test_util::TestDefault,
     },
     ethrpc::Web3,
@@ -136,7 +136,6 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         [
-            "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             format!("--node-ws-url={NODE_WS_HOST}"),
             "--simulation-node-url=http://localhost:8545".to_string(),
@@ -150,7 +149,6 @@ impl<'a> Services<'a> {
 
     fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
         self.api_autopilot_arguments()
-            .chain(["--quote-timeout=10s".to_string()])
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
@@ -257,17 +255,12 @@ impl<'a> Services<'a> {
         config: configs::orderbook::Configuration,
     ) {
         let (_config_file, config_arg) = config.to_cli_args();
-        let args: Vec<_> = [
-            "orderbook".to_string(),
-            "--quote-timeout=10s".to_string(),
-            "--quote-verification=enforce-when-possible".to_string(),
-            config_arg,
-        ]
-        .into_iter()
-        .chain(self.api_autopilot_solver_arguments())
-        .chain(self.api_autopilot_arguments())
-        .chain(extra_args)
-        .collect();
+        let args: Vec<_> = ["orderbook".to_string(), config_arg]
+            .into_iter()
+            .chain(self.api_autopilot_solver_arguments())
+            .chain(self.api_autopilot_arguments())
+            .chain(extra_args)
+            .collect();
         let args = ignore_overwritten_cli_params(args);
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
@@ -385,8 +378,8 @@ impl<'a> Services<'a> {
             forwarder_contract: None,
         }];
 
-        let shared_native_price_config = configs::price_estimation::NativePriceConfig {
-            cache: configs::price_estimation::CacheConfig {
+        let shared_native_price_config = configs::native_price::NativePriceConfig {
+            cache: configs::native_price::CacheConfig {
                 max_age: Duration::from_secs(2),
                 ..Default::default()
             },

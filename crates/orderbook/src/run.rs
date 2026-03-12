@@ -32,6 +32,7 @@ use {
     price_estimation::{
         PriceEstimating,
         QuoteVerificationMode,
+        config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
         trade_verifier::code_fetching::CachedCodeFetcher,
@@ -124,7 +125,7 @@ pub async fn run(args: Arguments, config: Configuration) {
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
+    let balance_overrider = config.price_estimation.balance_overrides.init(web3.clone());
     let signature_validator = signature_validator::validator(
         &web3,
         signature_validator::Contracts {
@@ -212,7 +213,7 @@ pub async fn run(args: Arguments, config: Configuration) {
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
-        &args.price_estimation,
+        &config.price_estimation,
         &config.native_price_estimation.shared,
         factory::Network {
             web3: web3.clone(),
@@ -281,7 +282,7 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .price_estimation_drivers
                 .iter()
                 .map(
-                    |price_estimator_driver| configs::price_estimation::ExternalSolver {
+                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
                         name: price_estimator_driver.name.clone(),
                         url: price_estimator_driver.url.clone(),
                     },
@@ -298,7 +299,7 @@ pub async fn run(args: Arguments, config: Configuration) {
                 .price_estimation_drivers
                 .iter()
                 .map(
-                    |price_estimator_driver| configs::price_estimation::ExternalSolver {
+                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
                         name: price_estimator_driver.name.clone(),
                         url: price_estimator_driver.url.clone(),
                     },
@@ -339,10 +340,10 @@ pub async fn run(args: Arguments, config: Configuration) {
             },
             balance_fetcher.clone(),
             verification,
-            args.price_estimation.quote_timeout,
+            config.price_estimation.quote_timeout,
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator, args.price_estimation.quote_verification);
+    let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
@@ -421,7 +422,7 @@ pub async fn run(args: Arguments, config: Configuration) {
             let _ = shutdown_receiver.await;
         },
         native_price_estimator,
-        args.price_estimation.quote_timeout,
+        config.price_estimation.quote_timeout,
     );
 
     let mut metrics_address = args.bind_address;

@@ -104,6 +104,12 @@ impl Display for Arguments {
 #[derive(Clone, Debug, Default)]
 pub struct TokenConfiguration(HashMap<Address, Strategy>);
 
+impl TokenConfiguration {
+    pub fn into_inner(self) -> HashMap<Address, Strategy> {
+        self.0
+    }
+}
+
 impl Display for TokenConfiguration {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let format_entry =
@@ -164,6 +170,33 @@ impl FromStr for TokenConfiguration {
             })
             .collect::<Result<_, _>>()?;
         Ok(Self(entries))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TokenConfiguration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for TokenConfiguration {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let parts: Vec<String> = self
+            .0
+            .iter()
+            .map(|(addr, strategy)| match strategy {
+                Strategy::SolidityMapping { map_slot, .. } => format!("{addr:?}@{map_slot}"),
+                other => unreachable!("only SolidityMapping can be serialized, got: {other:?}"),
+            })
+            .collect();
+        serializer.serialize_str(&parts.join(","))
     }
 }
 
@@ -380,6 +413,23 @@ mod tests {
         ethrpc::mock,
         maplit::hashmap,
     };
+
+    #[test]
+    fn token_configuration_serde_roundtrip() {
+        let config =
+            TokenConfiguration::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2@3").unwrap();
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: TokenConfiguration = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(config.0, deserialized.0);
+    }
+
+    #[test]
+    fn empty_token_configuration_serde_roundtrip() {
+        let config = TokenConfiguration::default();
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: TokenConfiguration = serde_json::from_str(&serialized).unwrap();
+        assert!(deserialized.0.is_empty());
+    }
 
     #[tokio::test]
     async fn balance_override_computation() {

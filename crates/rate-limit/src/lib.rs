@@ -1,9 +1,8 @@
 use {
-    anyhow::{Context, Result, ensure},
+    anyhow::{Result, ensure},
     std::{
         fmt::{Display, Formatter},
         future::Future,
-        str::FromStr,
         sync::{Arc, Mutex, MutexGuard},
         time::{Duration, Instant},
     },
@@ -29,13 +28,25 @@ fn metrics() -> &'static Metrics {
         .expect("unexpected error getting metrics instance")
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case")]
 pub struct Strategy {
+    /// Point in time until which incoming requests are dropped due to
+    /// active rate limiting.
+    #[serde(skip, default = "Instant::now")]
     drop_requests_until: Instant,
     /// How many requests got rate limited in a row.
+    #[serde(skip)]
     times_rate_limited: u64,
+    /// Multiplier applied to the back-off duration after each successive
+    /// rate-limited response. Must be >= 1.0.
     back_off_growth_factor: f64,
+    /// Initial back-off duration used after the first rate-limited response.
+    #[serde(with = "humantime_serde")]
     min_back_off: Duration,
+    /// Upper bound for the back-off duration regardless of growth factor.
+    #[serde(with = "humantime_serde")]
     max_back_off: Duration,
 }
 
@@ -52,29 +63,6 @@ impl Display for Strategy {
             "RateLimitingStrategy{{ min_back_off: {:?}, max_back_off: {:?}, growth_factor: {:?} }}",
             self.min_back_off, self.max_back_off, self.back_off_growth_factor
         )
-    }
-}
-
-impl FromStr for Strategy {
-    type Err = anyhow::Error;
-
-    fn from_str(config: &str) -> Result<Self> {
-        let mut parts = config.split(',');
-        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
-        let min_back_off = parts.next().context("missing min_back_off")?;
-        let max_back_off = parts.next().context("missing max_back_off")?;
-        ensure!(
-            parts.next().is_none(),
-            "extraneous rate limiting parameters"
-        );
-        let back_off_growth_factor: f64 = back_off_growth_factor
-            .parse()
-            .context("parsing back_off_growth_factor")?;
-        let min_back_off =
-            humantime::parse_duration(min_back_off).context("parsing min_back_off")?;
-        let max_back_off =
-            humantime::parse_duration(max_back_off).context("parsing max_back_off")?;
-        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }
 
@@ -285,6 +273,20 @@ pub mod back_off {
 #[cfg(test)]
 mod tests {
     use {super::*, futures::FutureExt, std::ops::Add, tokio::time::sleep};
+
+    #[test]
+    fn serde_roundtrip() {
+        let strategy =
+            Strategy::try_new(2.0, Duration::from_millis(100), Duration::from_secs(30)).unwrap();
+        let serialized = serde_json::to_string(&strategy).unwrap();
+        let deserialized: Strategy = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(
+            strategy.back_off_growth_factor,
+            deserialized.back_off_growth_factor,
+        );
+        assert_eq!(strategy.min_back_off, deserialized.min_back_off);
+        assert_eq!(strategy.max_back_off, deserialized.max_back_off);
+    }
 
     #[test]
     fn current_back_off_does_not_panic() {

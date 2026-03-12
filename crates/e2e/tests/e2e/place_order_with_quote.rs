@@ -248,15 +248,15 @@ async fn fallback_native_price_estimator(web3: Web3) {
                 )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     fallback_estimators: Some(
-                        configs::price_estimation::NativePriceEstimators::new(vec![vec![
-                            configs::price_estimation::NativePriceEstimator::driver(
+                        configs::native_price_estimators::NativePriceEstimators::new(vec![vec![
+                            configs::native_price_estimators::NativePriceEstimator::driver(
                                 "test_quoter".to_string(),
                                 "http://localhost:11088/test_solver".parse().unwrap(),
                             ),
                         ]]),
                     ),
-                    shared: configs::price_estimation::NativePriceConfig {
-                        cache: configs::price_estimation::CacheConfig {
+                    shared: configs::native_price::NativePriceConfig {
+                        cache: configs::native_price::CacheConfig {
                             max_age: std::time::Duration::from_secs(2),
                             ..Default::default()
                         },
