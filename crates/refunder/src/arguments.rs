@@ -1,17 +1,42 @@
 use {
     alloy::primitives::Address,
     clap::Parser,
-    shared::{arguments::display_option, http_client, logging_args_with_default_filter, web3},
-    std::time::Duration,
+    shared::{arguments::display_option, logging_args_with_default_filter, web3},
+    std::{
+        fmt::{self, Display, Formatter},
+        time::Duration,
+    },
     url::Url,
 };
 
 logging_args_with_default_filter!(LoggingArguments, "warn,refunder=debug,shared=debug");
 
+/// Command line arguments for the common HTTP factory.
+/// TODO: will be removed after refunder is migrated to `configs` crate.
+#[derive(clap::Parser)]
+#[group(skip)]
+pub struct HttpClientArguments {
+    /// Default timeout in seconds for http requests.
+    #[clap(
+        long,
+        env,
+        default_value = "10s",
+        value_parser = humantime::parse_duration,
+    )]
+    pub http_timeout: Duration,
+}
+
+impl Display for HttpClientArguments {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let Self { http_timeout } = self;
+        writeln!(f, "http_timeout: {http_timeout:?}")
+    }
+}
+
 #[derive(Parser)]
 pub struct Arguments {
     #[clap(flatten)]
-    pub http_client: http_client::Arguments,
+    pub http_client: HttpClientArguments,
 
     #[clap(flatten)]
     pub ethrpc: web3::Arguments,
