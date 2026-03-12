@@ -6,8 +6,8 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy-primitives = { workspace = true }
 alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true }
 alloy-rpc-types = { workspace = true }
 derive_more = { workspace = true }
 model = { workspace = true }
