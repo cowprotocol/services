@@ -5,12 +5,12 @@ use {
                 self,
                 order::{self, Side, fees, signature::Scheme},
             },
-            eth::{self},
             liquidity,
         },
         infra::{config::file::FeeHandler, solver::ManageNativeToken},
     },
     app_data::AppDataHash,
+    eth_domain_types as eth,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::conversions::rational_to_big_decimal,
     std::collections::HashMap,
@@ -357,7 +357,7 @@ fn fee_policy_from_domain(value: fees::FeePolicy) -> solvers_dto::auction::FeePo
     }
 }
 
-fn interaction_from_domain(value: eth::Interaction) -> solvers_dto::auction::InteractionData {
+fn interaction_from_domain(value: domain::Interaction) -> solvers_dto::auction::InteractionData {
     solvers_dto::auction::InteractionData {
         target: value.target,
         value: value.value.0,

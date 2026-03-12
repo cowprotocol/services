@@ -22,9 +22,9 @@ use {
                 fee::{self, adjust_quote_to_order_limits},
             },
         },
-        eth,
     },
     alloy::primitives::ruint::UintTryFrom,
+    eth_domain_types as eth,
     number::u256_ext::U256Ext,
 };
 

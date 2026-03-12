@@ -2,13 +2,13 @@ use {
     crate::{
         domain::{
             competition::{self},
-            eth::{self, GasPrice},
             liquidity,
             time,
         },
         infra::{Ethereum, blockchain, solver::Timeouts},
     },
     alloy::primitives::U256,
+    eth_domain_types::{self as eth, GasPrice},
     std::collections::{HashMap, HashSet},
     thiserror::Error,
 };

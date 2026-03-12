@@ -1,11 +1,10 @@
 use {
     crate::{
-        domain::eth,
-        infra::{Ethereum, blockchain},
-        util,
+        domain, infra::{Ethereum, blockchain}, util
     },
     alloy::primitives::FixedBytes,
     derive_more::{From, Into},
+    eth_domain_types as eth,
     model::order::{BuyTokenDestination, SellTokenSource},
 };
 pub use {fees::FeePolicy, signature::Signature};
@@ -33,11 +32,11 @@ pub struct Order {
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
     /// These are set by the user and included in the settlement transaction.
-    pub pre_interactions: Vec<eth::Interaction>,
+    pub pre_interactions: Vec<domain::Interaction>,
     /// The onchain calls to run after sending tokens from the settlement
     /// contract to the user.
     /// These are set by the user and included in the settlement transaction.
-    pub post_interactions: Vec<eth::Interaction>,
+    pub post_interactions: Vec<domain::Interaction>,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,

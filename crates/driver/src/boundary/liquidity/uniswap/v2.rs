@@ -2,12 +2,12 @@ use {
     crate::{
         boundary::{self, Result},
         domain::{
-            eth,
-            liquidity::{self, uniswap},
+            self, liquidity::{self, uniswap}
         },
         infra::{self, blockchain::Ethereum},
     },
     contracts::alloy::IUniswapLikeRouter,
+    eth_domain_types as eth,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     liquidity_sources::uniswap_v2::{
         pair_provider::PairProvider,
@@ -85,7 +85,7 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
+) -> domain::Interaction {
     let handler = uniswap_v2::Inner::new(pool.router.0, *receiver);
 
     let interaction = handler.settle(
@@ -95,7 +95,7 @@ pub fn to_interaction(
 
     let (target, value, call_data) = interaction.encode_swap();
 
-    eth::Interaction {
+    domain::Interaction {
         target,
         value: value.into(),
         call_data: call_data.0.to_vec().into(),

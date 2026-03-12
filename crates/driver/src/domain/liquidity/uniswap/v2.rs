@@ -1,8 +1,9 @@
 use {
     crate::{
         boundary,
-        domain::{eth, liquidity},
+        domain::liquidity,
     },
+    eth_domain_types as eth,
     std::cmp::Ordering,
 };
 
@@ -31,7 +32,7 @@ impl Pool {
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
         receiver: &eth::Address,
-    ) -> Result<eth::Interaction, liquidity::InvalidSwap> {
+    ) -> Result<domain::Interaction, liquidity::InvalidSwap> {
         if !self.reserves.has_tokens(&input.0.token, &output.0.token) {
             return Err(liquidity::InvalidSwap);
         }

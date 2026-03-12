@@ -1,5 +1,6 @@
 use {
-    crate::{domain::eth, infra::Ethereum},
+    crate::infra::Ethereum,
+    eth_domain_types as eth,
     thiserror::Error,
 };
 

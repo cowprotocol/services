@@ -1,7 +1,7 @@
 //! Data transfer objects for interacting with the Tenderly API.
 
 use {
-    crate::domain::eth,
+    eth_domain_types as eth,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
