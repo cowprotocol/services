@@ -138,10 +138,8 @@ pub struct SwapTransaction {
 }
 
 impl SwapTransaction {
-    /// Decode the hex-encoded calldata (with "0x" prefix) to bytes.
-    pub fn decode_calldata(&self) -> Result<Vec<u8>, hex::FromHexError> {
-        let hex_str = self.data.strip_prefix("0x").unwrap_or(&self.data);
-        hex::decode(hex_str)
+    pub fn decode_calldata(&self) -> Result<Vec<u8>, const_hex::FromHexError> {
+        const_hex::decode(&self.data)
     }
 }
 

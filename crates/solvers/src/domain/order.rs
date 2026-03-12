@@ -1,7 +1,7 @@
 //! The domain object representing a CoW Protocol order.
 
 use {
-    crate::{domain::eth, util},
+    crate::domain::eth,
     alloy::primitives::B256,
     eth::Address,
     std::fmt::{self, Debug, Display, Formatter},
@@ -41,14 +41,14 @@ pub struct Uid(pub [u8; 56]);
 impl Debug for Uid {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_tuple("Uid")
-            .field(&util::fmt::Hex(&self.0))
+            .field(&format_args!("{}", const_hex::encode_prefixed(self.0)))
             .finish()
     }
 }
 
 impl Display for Uid {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&util::fmt::Hex(&self.0), f)
+        f.write_str(&const_hex::encode_prefixed(self.0))
     }
 }
 
@@ -139,7 +139,7 @@ pub struct AppData(pub [u8; 32]);
 impl Debug for AppData {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("AppData")
-            .field(&util::fmt::Hex(&self.0))
+            .field(&format_args!("{}", const_hex::encode_prefixed(self.0)))
             .finish()
     }
 }

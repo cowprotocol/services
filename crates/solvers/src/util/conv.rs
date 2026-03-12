@@ -1,62 +1,20 @@
-//! Conversion utilities.
+//! Conversion utilities for `eth::Ether` and `eth::Rational`.
 
 use {
     crate::domain::eth,
-    alloy::primitives::U256,
-    bigdecimal::{BigDecimal, num_bigint::ToBigInt},
-    num::{BigInt, BigUint, One, rational::Ratio},
+    bigdecimal::BigDecimal,
+    num::{BigInt, One},
+    number::conversions::{big_decimal_to_big_rational, big_int_to_u256, u256_to_big_uint},
 };
 
 /// Converts a `BigDecimal` value to a `eth::Rational` value. Returns `None` if
 /// the specified decimal value cannot be represented as a rational of `U256`
 /// integers.
 pub fn decimal_to_rational(d: &BigDecimal) -> Option<eth::Rational> {
-    let (int, exp) = d.as_bigint_and_exponent();
-
-    // First convert to a `Ratio<BigUint>`. This ensures that the ratio is
-    // normalized (i.e. GCD of numerator and denomninator is 1) before trying to
-    // convert the components to `U256`s. This allows values like `1.00...000`
-    // that would otherwise overflow a `U256` numerator.
-    let uint = int.to_biguint()?;
-    let factor = BigUint::from(10_u8).pow(exp.unsigned_abs().try_into().ok()?);
-    let ratio = if exp >= 0 {
-        Ratio::new(uint, factor)
-    } else {
-        Ratio::new(uint * factor, num::one())
-    };
-
-    let numer = biguint_to_u256(ratio.numer())?;
-    let denom = biguint_to_u256(ratio.denom())?;
-
+    let ratio = big_decimal_to_big_rational(d);
+    let numer = big_int_to_u256(ratio.numer()).ok()?;
+    let denom = big_int_to_u256(ratio.denom()).ok()?;
     Some(eth::Rational::new_raw(numer, denom))
-}
-
-pub fn biguint_to_u256(i: &BigUint) -> Option<U256> {
-    let bytes = i.to_bytes_be();
-    if bytes.len() > 32 {
-        return None;
-    }
-    Some(U256::from_be_slice(&bytes))
-}
-
-pub fn u256_to_biguint(i: &U256) -> BigUint {
-    BigUint::from_bytes_be(i.to_be_bytes::<32>().as_slice())
-}
-
-pub fn u256_to_bigdecimal(i: &U256) -> BigDecimal {
-    BigDecimal::new(u256_to_biguint(i).into(), 0)
-}
-
-pub fn bigint_to_u256(i: &BigInt) -> Option<U256> {
-    if i.sign() == num::bigint::Sign::Minus {
-        return None;
-    }
-    biguint_to_u256(i.magnitude())
-}
-
-pub fn bigdecimal_to_u256(d: &BigDecimal) -> Option<U256> {
-    let d = d.to_bigint()?;
-    bigint_to_u256(&d)
 }
 
 /// Converts a `BigDecimal` amount in Ether units to wei.
@@ -68,7 +26,7 @@ pub fn decimal_to_ether(d: &BigDecimal) -> Option<eth::Ether> {
 
 /// Converts an `eth::Ether` amount into a `BigDecimal` representation.
 pub fn ether_to_decimal(e: &eth::Ether) -> BigDecimal {
-    BigDecimal::new(u256_to_biguint(&e.0).into(), 18)
+    BigDecimal::new(u256_to_big_uint(&e.0).into(), 18)
 }
 
 #[cfg(test)]

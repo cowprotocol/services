@@ -8,6 +8,7 @@ use {
     bigdecimal::BigDecimal,
     ethrpc::block_stream::CurrentBlockWatcher,
     hmac::{Hmac, Mac},
+    number::conversions::{big_decimal_to_u256, u256_to_big_uint},
     sha2::Sha256,
     std::{
         collections::BTreeMap,
@@ -19,18 +20,14 @@ use {
 /// Convert a U256 wei amount to a decimal string using the token's decimals.
 /// e.g., 1000000000000000000 with 18 decimals → "1"
 fn wei_to_decimal(amount: U256, decimals: u8) -> BigDecimal {
-    BigDecimal::new(
-        util::conv::u256_to_biguint(&amount).into(),
-        i64::from(decimals),
-    )
-    .normalized()
+    BigDecimal::new(u256_to_big_uint(&amount).into(), i64::from(decimals)).normalized()
 }
 
 /// Convert a decimal amount (from API response) to U256 wei.
 /// e.g., "1964.365496" with 6 decimals → 1964365496
 fn decimal_to_wei(amount: &BigDecimal, decimals: u8) -> Result<U256, Error> {
     let scaled = amount * BigDecimal::new(1.into(), -i64::from(decimals));
-    util::conv::bigdecimal_to_u256(&scaled).ok_or(Error::AmountConversionFailed)
+    big_decimal_to_u256(&scaled).ok_or(Error::AmountConversionFailed)
 }
 
 mod dto;
