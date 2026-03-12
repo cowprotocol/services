@@ -1,6 +1,6 @@
 use {
     self::contracts::Contracts,
-    crate::{boundary, domain::eth},
+    crate::boundary,
     alloy::{
         providers::{Provider, ext::DebugApi},
         rpc::types::{
@@ -10,6 +10,7 @@ use {
     },
     anyhow::bail,
     chain::Chain,
+    eth_domain_types as eth,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     thiserror::Error,
     url::Url,
@@ -160,17 +161,6 @@ fn into_domain(
         timestamp: u32::try_from(timestamp)?,
         trace_calls,
     })
-}
-
-impl From<alloy::rpc::types::trace::geth::CallFrame> for eth::CallFrame {
-    fn from(value: alloy::rpc::types::trace::geth::CallFrame) -> Self {
-        Self {
-            from: value.from,
-            to: value.to,
-            input: value.input,
-            calls: value.calls.into_iter().map(Into::into).collect(),
-        }
-    }
 }
 
 #[derive(Debug, Error)]

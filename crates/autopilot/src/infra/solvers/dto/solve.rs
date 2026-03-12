@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{self, eth},
+        domain,
         infra::{
             persistence::dto::{self, order::Order},
             solvers::{InjectIntoHttpRequest, byte_stream::ByteStream},
@@ -11,6 +11,7 @@ use {
     brotli::enc::writer::CompressorWriter,
     bytes::Bytes,
     chrono::{DateTime, Utc},
+    eth_domain_types as eth,
     itertools::Itertools,
     number::serialization::HexOrDecimalU256,
     reqwest::{RequestBuilder, header::HeaderValue},

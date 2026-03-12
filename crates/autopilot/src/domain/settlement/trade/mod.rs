@@ -3,10 +3,10 @@ use {
     crate::domain::{
         self,
         auction::{self, order},
-        eth,
         fee,
     },
     bigdecimal::Zero,
+    eth_domain_types as eth,
 };
 
 pub mod math;

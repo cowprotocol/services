@@ -1,6 +1,7 @@
 use {
-    super::{Order, eth},
+    super::Order,
     alloy::primitives::{Address, U256},
+    eth_domain_types as eth,
     std::collections::HashMap,
 };
 

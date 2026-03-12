@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self, SolvableOrders},
-        domain::{self, auction::Price, eth},
+        domain::{self, auction::Price},
         infra::{self, banned},
     },
     account_balances::{BalanceFetching, Query},
@@ -21,6 +21,7 @@ use {
             UnsupportedToken,
         },
     },
+    eth_domain_types as eth,
     futures::FutureExt,
     itertools::Itertools,
     model::{

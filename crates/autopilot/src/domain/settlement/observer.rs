@@ -12,13 +12,11 @@
 
 use {
     crate::{
-        domain::{
-            eth,
-            settlement::{self, Settlement},
-        },
+        domain::settlement::{self, Settlement},
         infra,
     },
     anyhow::{Context, Result, anyhow},
+    eth_domain_types as eth,
     futures::StreamExt,
     rand::Rng,
     std::time::Duration,

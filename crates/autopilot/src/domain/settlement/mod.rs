@@ -5,19 +5,13 @@
 
 use {
     crate::{
-        domain::{
-            self,
-            Metrics,
-            OrderUid,
-            auction::order,
-            eth,
-            settlement::transaction::EncodedTrade,
-        },
+        domain::{self, Metrics, OrderUid, auction::order, settlement::transaction::EncodedTrade},
         infra::{self, persistence::dto::AuctionId},
     },
     chain::Chain,
     chrono::{DateTime, Utc},
     database::{orders::OrderKind, solver_competition_v2::Solution},
+    eth_domain_types as eth,
     futures::TryFutureExt,
     number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
@@ -351,10 +345,10 @@ mod tests {
         crate::domain::{
             self,
             auction,
-            eth,
             settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
+        eth_domain_types as eth,
         hex_literal::hex,
         number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
@@ -702,8 +696,8 @@ mod tests {
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
 
         let transaction = super::transaction::Transaction::try_new(
-            &domain::eth::Transaction {
-                trace_calls: domain::eth::CallFrame {
+            &eth::Transaction {
+                trace_calls: eth::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -809,8 +803,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &domain::eth::Transaction {
-                trace_calls: domain::eth::CallFrame {
+            &eth::Transaction {
+                trace_calls: eth::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -949,8 +943,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &domain::eth::Transaction {
-                trace_calls: domain::eth::CallFrame {
+            &eth::Transaction {
+                trace_calls: eth::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -1122,8 +1116,8 @@ mod tests {
         let settlement_contract =
             eth::Address::from_slice(&hex!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
         let transaction = super::transaction::Transaction::try_new(
-            &domain::eth::Transaction {
-                trace_calls: domain::eth::CallFrame {
+            &eth::Transaction {
+                trace_calls: eth::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -1300,8 +1294,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &domain::eth::Transaction {
-                trace_calls: domain::eth::CallFrame {
+            &eth::Transaction {
+                trace_calls: eth::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -1525,8 +1519,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &domain::eth::Transaction {
-                trace_calls: domain::eth::CallFrame {
+            &eth::Transaction {
+                trace_calls: eth::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()

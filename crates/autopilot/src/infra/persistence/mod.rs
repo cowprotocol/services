@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{Postgres, order_events::store_order_events},
-        domain::{self, eth, settlement::transaction::EncodedTrade},
+        domain::{self, settlement::transaction::EncodedTrade},
         infra::persistence::dto::{AuctionId, RawAuctionData},
     },
     ::winner_selection::state::RankedItem,
@@ -28,6 +28,7 @@ use {
         SellTokenSource as DomainSellTokenSource,
         SigningScheme as DomainSigningScheme,
     },
+    eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::full_order_into_model_order,
@@ -270,7 +271,7 @@ impl Persistence {
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[domain::eth::Address],
+        surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> Result<(), DatabaseError> {
         self.postgres
             .save_surplus_capturing_jit_order_owners(
@@ -708,7 +709,7 @@ impl Persistence {
     /// not yet populated in the database.
     pub async fn get_settlements_without_auction(
         &self,
-    ) -> Result<Vec<domain::eth::SettlementEvent>, DatabaseError> {
+    ) -> Result<Vec<eth::SettlementEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_without_auction"])
@@ -719,7 +720,7 @@ impl Persistence {
             .await?
             .into_iter()
             .map(|event| {
-                let event = domain::eth::SettlementEvent {
+                let event = eth::SettlementEvent {
                     block: u64::try_from(event.block_number)
                         .context("negative block")?
                         .into(),
@@ -735,8 +736,8 @@ impl Persistence {
     /// Returns the trade events that are associated with the settlement event
     pub async fn get_trades_for_settlement(
         &self,
-        settlement: &domain::eth::SettlementEvent,
-    ) -> Result<Vec<domain::eth::TradeEvent>, DatabaseError> {
+        settlement: &eth::SettlementEvent,
+    ) -> Result<Vec<eth::TradeEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_trades_for_settlement"])
@@ -753,12 +754,12 @@ impl Persistence {
         .await?
         .into_iter()
         .map(|event| {
-            let event = domain::eth::TradeEvent {
+            let event = eth::TradeEvent {
                 block: u64::try_from(event.block_number)
                     .context("negative block")?
                     .into(),
                 log_index: u64::try_from(event.log_index).context("negative log index")?,
-                order_uid: domain::OrderUid(event.order_uid.0),
+                order_uid: domain::OrderUid(event.order_uid.0).into(),
             };
             Ok::<_, DatabaseError>(event)
         })
@@ -767,7 +768,7 @@ impl Persistence {
 
     pub async fn save_settlement(
         &self,
-        event: domain::eth::SettlementEvent,
+        event: eth::SettlementEvent,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
@@ -865,7 +866,7 @@ impl Persistence {
                     &mut ex,
                     &jit_orders
                         .into_iter()
-                        .filter_map(|jit_order| match trade_events.get(&jit_order.uid) {
+                        .filter_map(|jit_order| match trade_events.get(&jit_order.uid.into()) {
                             Some((block_number, log_index)) => {
                                 Some(database::jit_orders::JitOrder {
                                     block_number: i64::try_from(block_number.0).ok()?,

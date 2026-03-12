@@ -11,7 +11,6 @@ use {
                 Unscored,
                 winner_selection::{self, Ranking},
             },
-            eth::{self, TxId},
             settlement::{ExecutionEnded, ExecutionStarted},
         },
         infra::{
@@ -29,6 +28,7 @@ use {
     alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
+    eth_domain_types::{self as eth, TxId},
     ethrpc::block_stream::BlockInfo,
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,

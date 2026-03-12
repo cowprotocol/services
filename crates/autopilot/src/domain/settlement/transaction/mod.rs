@@ -1,10 +1,11 @@
 use {
     crate::{
         boundary,
-        domain::{self, auction::order, eth},
+        domain::{self, auction::order},
     },
     alloy::{eips::BlockId, sol_types::SolCall},
     contracts::alloy::{GPv2AllowListAuthentication, GPv2Settlement},
+    eth_domain_types as eth,
     std::collections::HashSet,
 };
 

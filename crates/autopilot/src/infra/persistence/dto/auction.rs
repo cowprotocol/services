@@ -1,7 +1,8 @@
 use {
     super::order::Order,
-    crate::domain::{self, auction::Price, eth},
+    crate::domain::{self, auction::Price},
     alloy::primitives::{Address, U256},
+    eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
