@@ -301,9 +301,7 @@ mod encode {
     use {
         crate::domain::{self, competition::solution},
         alloy::primitives::Address,
-        eth_domain_types::{
-            allowance::{Approval, Required},
-        },
+        eth_domain_types::allowance::{Approval, Required},
         num::rational::Ratio,
     };
 
