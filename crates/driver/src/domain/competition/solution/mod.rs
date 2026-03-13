@@ -3,7 +3,10 @@ use {
     super::auction,
     crate::{
         boundary,
-        domain::competition::{self, order},
+        domain::{
+            self,
+            competition::{self, order},
+        },
         infra::{
             Simulator,
             blockchain::{self, Ethereum},
@@ -489,7 +492,7 @@ impl Solution {
             };
 
             // Add a clearing price for ETH equal to WETH.
-            prices.insert(eth::ETH_TOKEN, self.prices[&self.weth.into()].to_owned());
+            prices.insert(eth::ETH_TOKEN, self.prices[&self.weth].to_owned());
 
             return prices;
         }

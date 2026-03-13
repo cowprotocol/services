@@ -1,11 +1,14 @@
 use {
     crate::{
-        domain::competition::{
+        domain::{
             self,
-            auction,
-            order::{
+            competition::{
                 self,
-                app_data::{AppData, AppDataHash},
+                auction,
+                order::{
+                    self,
+                    app_data::{AppData, AppDataHash},
+                },
             },
         },
         infra::{Ethereum, tokens},

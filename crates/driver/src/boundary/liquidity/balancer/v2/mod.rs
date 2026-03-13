@@ -1,7 +1,10 @@
 use {
     crate::{
         boundary,
-        domain::{self, liquidity::{self, balancer}},
+        domain::{
+            self,
+            liquidity::{self, balancer},
+        },
         infra::{self, blockchain::Ethereum},
     },
     anyhow::{Context, Result},

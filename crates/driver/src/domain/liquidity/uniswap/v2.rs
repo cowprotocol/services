@@ -1,5 +1,8 @@
 use {
-    crate::{boundary, domain::liquidity},
+    crate::{
+        boundary,
+        domain::{self, liquidity},
+    },
     eth_domain_types as eth,
     std::cmp::Ordering,
 };

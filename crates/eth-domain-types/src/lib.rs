@@ -11,11 +11,7 @@ pub use {
 use {
     alloy_primitives::Bytes,
     alloy_rpc_types::TransactionRequest,
-    derive_more::{
-        From,
-        Into,
-        derive::Deref,
-    },
+    derive_more::{From, Into, derive::Deref},
 };
 
 mod access_list;

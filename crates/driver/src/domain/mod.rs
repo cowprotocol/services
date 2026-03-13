@@ -1,6 +1,7 @@
+pub mod blockchain;
 pub mod competition;
 pub mod cow_amm;
-// pub mod eth;
+pub mod flashloan;
 pub mod interaction;
 pub mod liquidity;
 pub mod mempools;
@@ -9,9 +10,8 @@ pub mod time;
 
 pub use {
     competition::Competition,
+    flashloan::Flashloan,
     interaction::Interaction,
     liquidity::Liquidity,
     mempools::{Mempools, RevertProtection},
 };
-
-// pub type BlockNo = u64;

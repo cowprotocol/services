@@ -1,7 +1,10 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::liquidity::{self, uniswap},
+        domain::{
+            self,
+            liquidity::{self, uniswap},
+        },
         infra::{self, blockchain::Ethereum},
     },
     contracts::alloy::IUniswapLikeRouter,
@@ -83,7 +86,7 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
+) -> domain::Interaction {
     let handler = uniswap_v2::Inner::new(*pool.router, *receiver);
 
     let interaction = handler.settle(

@@ -1,9 +1,12 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::liquidity::{
+        domain::{
             self,
-            uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
+            liquidity::{
+                self,
+                uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
+            },
         },
         infra::{self, blockchain::Ethereum},
     },
@@ -66,7 +69,7 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
+) -> domain::Interaction {
     let handler = UniswapV3SettlementHandler::new(*pool.router, *receiver, pool.fee.0);
 
     let interaction = handler.settle(

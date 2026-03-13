@@ -3,6 +3,7 @@ use {
     crate::{
         boundary,
         domain::{
+            self,
             competition::{self, order},
             liquidity,
             time,
@@ -298,10 +299,9 @@ impl Tokens {
 
 mod encode {
     use {
-        crate::domain::competition::solution,
+        crate::domain::{self, competition::solution},
         alloy::primitives::Address,
         eth_domain_types::{
-            self as eth,
             allowance::{Approval, Required},
         },
         num::rational::Ratio,
