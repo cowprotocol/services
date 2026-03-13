@@ -1,7 +1,10 @@
 use {
     crate::{
         boundary,
-        domain::liquidity::{self, InvalidSwap},
+        domain::{
+            self,
+            liquidity::{self, InvalidSwap},
+        },
     },
     derive_more::Debug,
     eth_domain_types as eth,

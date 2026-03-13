@@ -1,9 +1,8 @@
 use {
-    crate::domain::liquidity,
+    crate::domain::{self, liquidity},
     alloy::primitives::{Address, B256, U256},
     anyhow::anyhow,
     contracts::alloy::IZeroex,
-    eth_domain_types as eth,
     std::sync::Arc,
 };
 

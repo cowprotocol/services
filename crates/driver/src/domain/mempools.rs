@@ -1,13 +1,13 @@
 use {
     super::competition::solution::settlement,
     crate::{
-        domain::competition::solution::Settlement,
+        domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
     anyhow::Context,
     contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
-    eth_domain_types::{self as eth, BlockNo, TxId, TxStatus},
+    eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
     num::Saturating,

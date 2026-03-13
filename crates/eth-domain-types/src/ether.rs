@@ -21,6 +21,12 @@ use {
 )]
 pub struct Ether(pub U256);
 
+impl From<i32> for Ether {
+    fn from(value: i32) -> Self {
+        Self(U256::from(value))
+    }
+}
+
 impl From<Ether> for num::BigInt {
     fn from(value: Ether) -> Self {
         num::BigUint::from_bytes_be(value.0.to_be_bytes::<32>().as_slice()).into()

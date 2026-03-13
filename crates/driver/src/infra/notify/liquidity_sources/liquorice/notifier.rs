@@ -84,10 +84,12 @@ impl LiquiditySourceNotifying for Notifier {
 
 mod utils {
     use {
-        crate::domain::competition::solution::{self, Settlement},
+        crate::domain::{
+            self,
+            competition::solution::{self, Settlement},
+        },
         alloy::{primitives::Address, sol_types::SolCall},
         contracts::alloy::LiquoriceSettlement,
-        eth_domain_types as eth,
         std::collections::HashSet,
     };
 
@@ -158,9 +160,11 @@ mod utils {
     #[cfg(test)]
     mod tests {
         use {
-            crate::infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
+            crate::{
+                domain,
+                infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
+            },
             alloy::primitives::{Address, Bytes},
-            eth_domain_types as eth,
         };
 
         #[test]

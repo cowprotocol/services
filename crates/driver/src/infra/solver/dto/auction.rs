@@ -1,6 +1,8 @@
 use {
     crate::{
         domain::{
+            self,
+            Flashloan,
             competition::{
                 self,
                 order::{self, Side, fees, signature::Scheme},
@@ -22,10 +24,10 @@ pub type WrapperCalls = HashMap<order::Uid, Vec<solvers_dto::auction::WrapperCal
 pub fn new(
     auction: &competition::Auction,
     liquidity: &[liquidity::Liquidity],
-    weth: eth::WethAddress,
+    weth: eth::WrappedNativeToken,
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
-    flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
+    flashloan_hints: &HashMap<order::Uid, Flashloan>,
     wrappers: &WrapperCalls,
     deadline: chrono::DateTime<chrono::Utc>,
 ) -> solvers_dto::auction::Auction {

@@ -1,4 +1,5 @@
 use {
+    crate::domain::blockchain::CodeDigest,
     alloy::primitives::Address,
     chain::Chain,
     contracts::alloy::BalancerV2Vault,
@@ -51,7 +52,7 @@ pub struct UniswapV2 {
     pub router: eth::ContractAddress,
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
-    pub pool_code: eth::CodeDigest,
+    pub pool_code: CodeDigest,
     /// How long liquidity should not be fetched for a token pair that didn't
     /// return useful liquidity before allowing to fetch it again.
     pub missing_pool_cache_time: Duration,
@@ -139,7 +140,7 @@ pub struct Swapr {
     pub router: eth::ContractAddress,
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
-    pub pool_code: eth::CodeDigest,
+    pub pool_code: CodeDigest,
     /// How long liquidity should not be fetched for a token pair that didn't
     /// return useful liquidity before allowing to fetch it again.
     pub missing_pool_cache_time: Duration,

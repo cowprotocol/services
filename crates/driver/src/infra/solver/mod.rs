@@ -2,6 +2,7 @@ use {
     super::notify,
     crate::{
         domain::{
+            self,
             competition::{
                 auction::{self, Auction},
                 order,
@@ -424,7 +425,10 @@ impl Solver {
         Ok(solutions)
     }
 
-    fn assemble_flashloan_hints(&self, auction: &Auction) -> HashMap<order::Uid, eth::Flashloan> {
+    fn assemble_flashloan_hints(
+        &self,
+        auction: &Auction,
+    ) -> HashMap<order::Uid, domain::flashloan::Flashloan> {
         if !self.config.flashloans_enabled {
             return Default::default();
         }
@@ -434,9 +438,9 @@ impl Solver {
             .iter()
             .flat_map(|order| {
                 let hint = order.app_data.flashloan()?;
-                let flashloan = eth::Flashloan {
-                    liquidity_provider: hint.liquidity_provider,
-                    protocol_adapter: hint.protocol_adapter,
+                let flashloan = domain::flashloan::Flashloan {
+                    liquidity_provider: hint.liquidity_provider.into(),
+                    protocol_adapter: hint.protocol_adapter.into(),
                     receiver: hint.receiver,
                     token: hint.token.into(),
                     amount: hint.amount.into(),

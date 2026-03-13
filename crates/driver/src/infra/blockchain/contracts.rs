@@ -139,7 +139,7 @@ impl Contracts {
         &self.weth
     }
 
-    pub fn weth_address(&self) -> eth::WethAddress {
+    pub fn weth_address(&self) -> eth::WrappedNativeToken {
         (*self.weth.address()).into()
     }
 

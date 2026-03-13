@@ -271,10 +271,10 @@ fn encode_flashloan_settlement(
         .flashloans
         .values()
         .map(|flashloan| LoanRequest::Data {
-            amount: flashloan.amount.0,
+            amount: flashloan.amount,
             borrower: flashloan.protocol_adapter,
             lender: flashloan.liquidity_provider,
-            token: *flashloan.token,
+            token: flashloan.token,
         })
         .collect();
 

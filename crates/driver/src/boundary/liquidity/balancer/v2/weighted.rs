@@ -1,7 +1,10 @@
 use {
     crate::{
         boundary::Result,
-        domain::liquidity::{self, balancer},
+        domain::{
+            self,
+            liquidity::{self, balancer},
+        },
     },
     eth_domain_types as eth,
     liquidity_sources::balancer_v2::pool_fetching::WeightedPoolVersion,
