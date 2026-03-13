@@ -107,6 +107,13 @@ pub struct Arguments {
     /// (e.g. private liquidity that exists but can't be verified).
     #[clap(long, env, value_delimiter = ',')]
     pub tokens_without_verification: Vec<Address>,
+
+    /// How much gas a single tx may consume at most. Any quote using more than
+    /// this will fail during the verification.
+    /// Defaults to the maximum transaction gas limit of ethereum introduced
+    /// in the Fusaka hardfork.
+    #[clap(long, env, default_value_t = 16777215)]
+    pub max_gas_per_tx: u64,
 }
 
 #[derive(clap::Parser)]
@@ -178,6 +185,7 @@ impl Display for Arguments {
             quote_timeout,
             balance_overrides,
             tokens_without_verification,
+            max_gas_per_tx,
         } = self;
 
         write!(f, "{tenderly}")?;
@@ -227,6 +235,7 @@ impl Display for Arguments {
             f,
             "tokens_without_verification: {tokens_without_verification:?}"
         )?;
+        writeln!(f, "max_gas_per_tx: {max_gas_per_tx}")?;
 
         Ok(())
     }
