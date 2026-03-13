@@ -25,6 +25,7 @@ use {
         support::Balances,
     },
     gas_price_estimation::gas_price::InstrumentedGasEstimator,
+    http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
@@ -38,7 +39,6 @@ use {
     },
     shared::{
         arguments::tracing_config,
-        http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
     },
@@ -228,9 +228,9 @@ pub async fn run(args: Arguments, config: Configuration) {
             block_stream: current_block_stream.clone(),
         },
         factory::Components {
-            http_factory: price_estimation::utils::http_client_factory::HttpClientFactory::new(
-                http_factory.timeout,
-            ),
+            http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
+                timeout: http_factory.timeout,
+            }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),

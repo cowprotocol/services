@@ -14,7 +14,6 @@ use {
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
         trade_verifier::{code_fetching::CachedCodeFetcher, tenderly_api::TenderlyCodeSimulator},
-        utils::http_client_factory::HttpClientFactory,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
@@ -27,6 +26,7 @@ use {
     contracts::alloy::WETH9,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,
+    http_client::HttpClientFactory,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
@@ -115,6 +115,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             network.native_token,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
+            args.max_gas_per_tx,
         )
         .await?;
         Ok(Some(Arc::new(verifier)))

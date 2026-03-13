@@ -1,7 +1,7 @@
 //! Module containing Tenderly API implementation.
 
 use {
-    crate::utils::{display_option, display_secret_option, http_client_factory::HttpClientFactory},
+    crate::utils::{display_option, display_secret_option},
     alloy::{
         primitives::{Address, B256, TxKind, U256, map::B256Map},
         rpc::types::{TransactionRequest, state::StateOverride as AlloyStateOverride},
@@ -9,6 +9,7 @@ use {
     anyhow::{Result, ensure},
     bytes_hex::BytesHex,
     clap::Parser,
+    http_client::HttpClientFactory,
     prometheus::IntGaugeVec,
     reqwest::{
         Url,
