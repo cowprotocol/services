@@ -35,7 +35,7 @@ pub struct TokenAddress(pub Address);
 
 impl TokenAddress {
     /// If the token is ETH, return WETH, thereby converting it to erc20.
-    pub fn as_erc20(self, weth: WethAddress) -> Self {
+    pub fn as_erc20(self, weth: WrappedNativeToken) -> Self {
         if self == ETH_TOKEN { weth.into() } else { self }
     }
 }
@@ -48,16 +48,6 @@ pub struct WrappedNativeToken(TokenAddress);
 impl From<Address> for WrappedNativeToken {
     fn from(value: Address) -> Self {
         WrappedNativeToken(value.into())
-    }
-}
-
-/// The address of the WETH contract.
-#[derive(Debug, Clone, Copy, From, Into)]
-pub struct WethAddress(pub TokenAddress);
-
-impl From<Address> for WethAddress {
-    fn from(value: Address) -> Self {
-        WethAddress(value.into())
     }
 }
 
