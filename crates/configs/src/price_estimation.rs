@@ -1,320 +1,443 @@
 use {
-    alloy::primitives::Address,
-    anyhow::{Context, Result, ensure},
-    itertools::Itertools,
-    serde::{Deserialize, Serialize},
-    std::{
-        fmt::{self, Display, Formatter},
-        num::NonZeroUsize,
-        str::FromStr,
-        time::Duration,
-    },
+    crate::{balance_overrides, rate_limit::Strategy},
+    alloy::primitives::{Address, U256, map::HashSet},
+    bigdecimal::BigDecimal,
+    serde::Deserialize,
+    std::{str::FromStr, time::Duration},
     url::Url,
 };
 
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
-
-impl<'de> Deserialize<'de> for NativePriceEstimators {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let estimators = <Vec<Vec<NativePriceEstimator>>>::deserialize(deserializer)?;
-        if estimators.is_empty() {
-            return Err(serde::de::Error::invalid_length(
-                0,
-                &"expected native price estimator stages to be configured",
-            ));
-        }
-        match estimators
-            .iter()
-            .enumerate()
-            .find_map(|(n, stage)| stage.is_empty().then_some(n))
-        {
-            Some(n) => Err(serde::de::Error::invalid_length(
-                0,
-                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
-            )),
-            None => Ok(Self(estimators)),
-        }
-    }
+/// Controls which level of quote verification gets applied.
+#[derive(Copy, Clone, Debug, Default, serde::Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case")]
+pub enum QuoteVerificationMode {
+    /// Quotes do not get verified.
+    #[default]
+    Unverified,
+    /// Quotes get verified whenever possible and verified
+    /// quotes are preferred over unverified ones.
+    Prefer,
+    /// Quotes get discarded if they can't be verified.
+    /// Some scenarios like missing sell token balance are exempt.
+    EnforceWhenPossible,
 }
 
-impl NativePriceEstimators {
-    pub fn new(estimators: Vec<Vec<NativePriceEstimator>>) -> Self {
-        Self(estimators)
+const fn default_quote_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_quote_inaccuracy_limit() -> BigDecimal {
+    BigDecimal::from(1)
+}
+
+const fn default_max_gas_per_tx() -> u64 {
+    16777215
+}
+
+#[derive(Deserialize, Debug)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PriceEstimation {
+    /// Configures the back off strategy for price estimators when requests take
+    /// too long. Requests issued while back off is active get dropped
+    /// entirely.
+    #[serde(default)]
+    pub price_estimation_rate_limiter: Option<Strategy>,
+
+    /// The amount in native token atoms to use for price estimation. Should be
+    /// reasonably large so that small pools do not influence the prices. If
+    /// not set, a reasonable default is used based on network id.
+    #[serde(default)]
+    pub amount_to_estimate_prices_with: Option<U256>,
+
+    /// How inaccurate a quote must be before it gets discarded, provided as a
+    /// factor. E.g. a value of `0.01` means at most 1 percent of the sell or
+    /// buy tokens can be paid out of the settlement contract buffers.
+    #[serde(default = "default_quote_inaccuracy_limit")]
+    pub quote_inaccuracy_limit: BigDecimal,
+
+    /// How strict quote verification should be.
+    #[serde(default)]
+    pub quote_verification: QuoteVerificationMode,
+
+    /// Default timeout for quote requests.
+    #[serde(with = "humantime_serde", default = "default_quote_timeout")]
+    pub quote_timeout: Duration,
+
+    #[serde(default)]
+    pub balance_overrides: BalanceOverridesConfig,
+
+    /// Tokens for which quote verification should not be attempted. This is an
+    /// escape hatch when there is a very bad but verifiable liquidity source
+    /// that would win against a very good but unverifiable liquidity source
+    /// (e.g. private liquidity that exists but can't be verified).
+    #[serde(default)]
+    pub tokens_without_verification: HashSet<Address>,
+
+    /// How much gas a single tx may consume at most. Any quote using more than
+    /// this will fail during the verification.
+    /// Defaults to the maximum transaction gas limit Ethereum introduced in the
+    /// Fusaka hardfork.
+    #[serde(default = "default_max_gas_per_tx")]
+    pub max_gas_per_tx: u64,
+
+    /// Tenderly configuration (URL, project & API key).
+    #[serde(default)]
+    pub tenderly: Option<TenderlyConfig>,
+
+    /// The CoinGecko native price configuration.
+    #[serde(default)]
+    pub coin_gecko: Option<CoinGeckoConfig>,
+
+    /// 1-inch API connection settings (URL & key).
+    #[serde(default)]
+    pub one_inch: Option<OneInchApi>,
+}
+
+impl Default for PriceEstimation {
+    fn default() -> Self {
+        Self {
+            tenderly: Default::default(),
+            price_estimation_rate_limiter: None,
+            amount_to_estimate_prices_with: None,
+            one_inch: Default::default(),
+            coin_gecko: Default::default(),
+            quote_inaccuracy_limit: default_quote_inaccuracy_limit(),
+            quote_verification: Default::default(),
+            quote_timeout: default_quote_timeout(),
+            balance_overrides: Default::default(),
+            tokens_without_verification: Default::default(),
+            max_gas_per_tx: default_max_gas_per_tx(),
+        }
     }
 }
 
 #[cfg(any(test, feature = "test-util"))]
-impl NativePriceEstimators {
-    /// Returns a list with a single stage, said stage contains a Driver estimator named `test_quoter` with URL `http://localhost:11088/test_solver`.
-    pub fn test_default() -> Self {
-        NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
-            "test_quoter".to_string(),
-            Url::from_str("http://localhost:11088/test_solver").unwrap(),
-        )]])
-    }
-}
-
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(tag = "type")]
-pub enum NativePriceEstimator {
-    Driver(ExternalSolver),
-    Forwarder { url: Url },
-    OneInchSpotPriceApi,
-    CoinGecko,
-}
-
-impl NativePriceEstimator {
-    pub const fn driver(name: String, url: Url) -> Self {
-        Self::Driver(ExternalSolver { name, url })
-    }
-
-    pub const fn forwarder(url: Url) -> Self {
-        Self::Forwarder { url }
-    }
-}
-
-impl Display for NativePriceEstimator {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let formatter = match self {
-            NativePriceEstimator::Driver(s) => format!("Driver|{}|{}", &s.name, s.url),
-            NativePriceEstimator::Forwarder { url } => format!("Forwarder|{}", url),
-            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
-            NativePriceEstimator::CoinGecko => "CoinGecko".into(),
-        };
-        write!(f, "{formatter}")
-    }
-}
-
-impl NativePriceEstimators {
-    pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
-        &self.0
-    }
-}
-
-impl Display for NativePriceEstimators {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let formatter = self
-            .as_slice()
-            .iter()
-            .map(|stage| {
-                stage
-                    .iter()
-                    .format_with(",", |estimator, f| f(&format_args!("{estimator}")))
-            })
-            .format(";");
-        write!(f, "{formatter}")
-    }
-}
-
-impl FromStr for NativePriceEstimators {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(
-            s.split(';')
-                .map(|sub_list| {
-                    sub_list
-                        .split(',')
-                        .map(NativePriceEstimator::from_str)
-                        .collect::<Result<Vec<NativePriceEstimator>>>()
-                })
-                .collect::<Result<Vec<Vec<NativePriceEstimator>>>>()?,
-        ))
-    }
-}
-
-impl FromStr for NativePriceEstimator {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (variant, args) = s.split_once('|').unwrap_or((s, ""));
-        match variant {
-            "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
-            "CoinGecko" => Ok(NativePriceEstimator::CoinGecko),
-            "Driver" => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
-                args,
-            )?)),
-            "Forwarder" => Ok(NativePriceEstimator::Forwarder {
-                url: args
-                    .parse()
-                    .context("Forwarder price estimator invalid URL")?,
-            }),
-            _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
+impl crate::test_util::TestDefault for PriceEstimation {
+    fn test_default() -> Self {
+        Self {
+            amount_to_estimate_prices_with: Some(alloy::primitives::U256::from(
+                1_000_000_000_000_000_000u64,
+            )),
+            quote_timeout: Duration::from_secs(10),
+            quote_verification: QuoteVerificationMode::EnforceWhenPossible,
+            ..Default::default()
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
-pub struct ExternalSolver {
-    pub name: String,
-    pub url: Url,
-}
-
-impl FromStr for ExternalSolver {
-    type Err = anyhow::Error;
-
-    fn from_str(solver: &str) -> Result<Self> {
-        let parts: Vec<&str> = solver.split('|').collect();
-        ensure!(parts.len() >= 2, "not enough arguments for external solver");
-        let (name, url) = (parts[0], parts[1]);
-        let url: Url = url.parse()?;
-        Ok(Self {
-            name: name.to_owned(),
-            url,
-        })
-    }
-}
-
-const fn default_cache_max_age() -> Duration {
-    Duration::from_mins(10)
-}
-
-const fn default_cache_concurrent_requests() -> NonZeroUsize {
-    NonZeroUsize::new(1).expect("value should be greater than 0")
-}
-
-const fn default_results_required() -> NonZeroUsize {
-    NonZeroUsize::new(2).expect("value should not be zero")
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct NativePriceConfig {
-    /// List of mappings of native price tokens substitutions with approximated:
-    /// - the first is a token address for which we get the native token price
-    /// - the second is a token address used for the price approximation
+pub struct TenderlyConfig {
+    /// The Tenderly user associated with the API key.
     #[serde(default)]
-    pub approximation_tokens: Vec<(Address, Address)>,
+    pub user: String,
 
-    /// Configuration for the native price caching mechanism.
+    /// The Tenderly project associated with the API key.
     #[serde(default)]
-    pub cache: CacheConfig,
+    pub project: String,
 
-    /// How many successful price estimates for each order will cause a native
-    /// price estimation to return its result early.
-    ///
-    /// As this value increases, the fast estimator behavior will approximate
-    /// the behavior of the optimal estimator.
-    ///
-    /// It's possible to pass values greater than the total number of enabled
-    /// estimators but that will not have any further effect.
-    #[serde(default = "default_results_required")]
-    pub results_required: NonZeroUsize,
+    /// Tenderly requires an API key to work. Optional since Tenderly could be
+    /// skipped in access lists estimators.
+    #[serde(default)]
+    pub api_key: String,
 }
 
-impl Default for NativePriceConfig {
-    fn default() -> Self {
+impl std::fmt::Debug for TenderlyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TenderlyConfig")
+            .field("user", &self.user)
+            .field("project", &self.project)
+            .field("api_key", &"<REDACTED>")
+            .finish()
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl crate::test_util::TestDefault for TenderlyConfig {
+    fn test_default() -> Self {
         Self {
-            approximation_tokens: Default::default(),
-            cache: Default::default(),
-            results_required: default_results_required(),
+            user: "test-user".to_string(),
+            project: "test-project".to_string(),
+            api_key: "test-api-key".to_string(),
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct CacheConfig {
-    /// How long cached native prices stay valid.
-    #[serde(default = "default_cache_max_age", with = "humantime_serde")]
-    pub max_age: Duration,
-
-    /// How many price estimation requests can be executed concurrently in the
-    /// maintenance task.
-    #[serde(default = "default_cache_concurrent_requests")]
-    pub concurrent_requests: NonZeroUsize,
+fn default_coin_gecko_url() -> Url {
+    Url::from_str("https://api.coingecko.com/api/v3/simple/token_price")
+        .expect("url should be valid")
 }
 
-impl Default for CacheConfig {
+#[derive(Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CoinGeckoConfig {
+    /// The API key for the CoinGecko API.
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_env::deserialize_string_from_env"
+    )]
+    pub api_key: String,
+
+    /// The base URL for the CoinGecko API.
+    #[serde(default = "default_coin_gecko_url")]
+    pub url: Url,
+
+    #[serde(default)]
+    pub buffered: Option<CoinGeckoBufferedConfig>,
+}
+
+impl std::fmt::Debug for CoinGeckoConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoinGeckoConfig")
+            .field("api_key", &"<REDACTED>")
+            .field("url", &self.url)
+            .field("buffered", &self.buffered)
+            .finish()
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl crate::test_util::TestDefault for CoinGeckoConfig {
+    fn test_default() -> Self {
+        Self {
+            api_key: "test-api-key".to_string(),
+            url: default_coin_gecko_url(),
+            buffered: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CoinGeckoBufferedConfig {
+    /// An additional minimum delay to wait for collecting CoinGecko requests.
+    ///
+    /// The delay to start counting after receiving the first request.
+    #[serde(with = "humantime_serde")]
+    pub debouncing_time: Duration,
+
+    /// Maximum capacity of the broadcast channel to store the CoinGecko native
+    /// prices results
+    pub broadcast_channel_capacity: usize,
+}
+
+const fn default_probing_depth() -> u8 {
+    60
+}
+
+const fn default_cache_size() -> usize {
+    1000
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BalanceOverridesConfig {
+    /// Token configuration for simulated balances on verified quotes. This
+    /// allows the quote verification system to produce verified quotes for
+    /// traders without sufficient balance for the configured token pairs.
+    #[serde(default)]
+    pub token_overrides: balance_overrides::TokenConfiguration,
+
+    /// Enable automatic detection of token balance overrides. Pre-configured
+    /// values in `token_overrides` take precedence.
+    #[serde(default)]
+    pub autodetect: bool,
+
+    /// Controls how many storage slots get probed per storage entry point
+    /// for automatically detecting how to override the balances of a token.
+    #[serde(default = "default_probing_depth")]
+    pub probing_depth: u8,
+
+    /// Controls for how many tokens we store the result of the automatic
+    /// balance override detection before evicting less used entries.
+    #[serde(default = "default_cache_size")]
+    pub cache_size: usize,
+}
+
+impl Default for BalanceOverridesConfig {
     fn default() -> Self {
         Self {
-            max_age: default_cache_max_age(),
-            concurrent_requests: default_cache_concurrent_requests(),
+            token_overrides: Default::default(),
+            autodetect: false,
+            probing_depth: default_probing_depth(),
+            cache_size: default_cache_size(),
+        }
+    }
+}
+
+fn default_one_inch_url() -> Url {
+    Url::from_str("https://api.1inch.dev/").expect("url should be valid")
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case")]
+pub struct OneInchApi {
+    /// The base URL for the 1Inch API.
+    #[serde(default = "default_one_inch_url")]
+    pub url: Url,
+
+    /// The API key for the 1Inch API.
+    #[serde(default)]
+    pub api_key: String,
+}
+
+impl std::fmt::Debug for OneInchApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OneInchApi")
+            .field("url", &self.url)
+            .field("api_key", &"<REDACTED>")
+            .finish()
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl crate::test_util::TestDefault for OneInchApi {
+    fn test_default() -> Self {
+        Self {
+            url: default_one_inch_url(),
+            api_key: "test-api-key".to_string(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::test_util::TestDefault};
+
+    #[test]
+    fn deserialize_defaults() {
+        let toml = "";
+        let config: PriceEstimation = toml::from_str(toml).unwrap();
+        assert!(config.tenderly.is_none());
+        assert!(config.price_estimation_rate_limiter.is_none());
+        assert!(config.amount_to_estimate_prices_with.is_none());
+        assert!(config.one_inch.is_none());
+        assert!(config.coin_gecko.is_none());
+        assert_eq!(config.quote_inaccuracy_limit, BigDecimal::from(1));
+        assert!(matches!(
+            config.quote_verification,
+            QuoteVerificationMode::Unverified
+        ));
+        assert_eq!(config.quote_timeout, Duration::from_secs(5));
+        assert!(!config.balance_overrides.autodetect);
+        assert_eq!(config.balance_overrides.probing_depth, 60);
+        assert_eq!(config.balance_overrides.cache_size, 1000);
+        assert!(config.tokens_without_verification.is_empty());
+    }
 
     #[test]
     fn deserialize_full() {
         let toml = r#"
-            approximation-tokens = [
-                ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
-            ]
+        quote-inaccuracy-limit = "0.01"
+        quote-verification = "enforce-when-possible"
+        quote-timeout = "10s"
+        tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
+        amount-to-estimate-prices-with = "1000000000000000000"
 
-            [cache]
-            max-age = "5m"
-            concurrent-requests = 4
-        "#;
-        let config: NativePriceConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.approximation_tokens.len(), 1);
-        assert_eq!(config.cache.max_age, Duration::from_secs(300));
-        assert_eq!(
-            config.cache.concurrent_requests,
-            NonZeroUsize::new(4).unwrap()
-        );
-    }
+        [price-estimation-rate-limiter]
+        back-off-growth-factor = 2.0
+        min-back-off = "1s"
+        max-back-off = "30s"
 
-    #[test]
-    fn cache_defaults() {
-        let toml = r#"
-            approximation-tokens = []
-            [cache]
-        "#;
-        let config: NativePriceConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.cache.max_age, Duration::from_mins(10));
-        assert_eq!(
-            config.cache.concurrent_requests,
-            NonZeroUsize::new(1).unwrap()
-        );
-    }
+        [tenderly]
+        user = "my-user"
+        project = "my-project"
+        api-key = "my-tenderly-key"
 
-    #[test]
-    fn multiple_approximation_tokens() {
-        let toml = r#"
-            approximation-tokens = [
-                ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
-                ["0x0000000000000000000000000000000000000003", "0x0000000000000000000000000000000000000004"],
-            ]
-            [cache]
+        [one-inch]
+        api-key = "my-1inch-key"
+        url = "https://custom.1inch.dev/"
+
+        [coin-gecko]
+        api-key = "my-cg-key"
+        url = "https://pro-api.coingecko.com/api/v3/simple/token_price"
+
+        [coin-gecko.buffered]
+        debouncing-time = "500ms"
+        broadcast-channel-capacity = 100
+
+        [balance-overrides]
+        autodetect = true
+        probing-depth = 30
+        cache-size = 500
         "#;
-        let config: NativePriceConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.approximation_tokens.len(), 2);
+        let config: PriceEstimation = toml::from_str(toml).unwrap();
+
+        let tenderly = config.tenderly.as_ref().unwrap();
+        assert_eq!(tenderly.user, "my-user");
+        assert_eq!(tenderly.project, "my-project");
+        assert_eq!(tenderly.api_key, "my-tenderly-key");
+        assert!(config.price_estimation_rate_limiter.is_some());
         assert_eq!(
-            config.approximation_tokens[0].0,
-            Address::from_slice(&[0; 19].into_iter().chain([1]).collect::<Vec<_>>()),
+            config.amount_to_estimate_prices_with,
+            Some(alloy::primitives::U256::from(1_000_000_000_000_000_000u64))
         );
+        let one_inch = config.one_inch.as_ref().unwrap();
+        assert_eq!(one_inch.api_key, "my-1inch-key");
+        assert_eq!(one_inch.url.as_str(), "https://custom.1inch.dev/");
+        let coin_gecko = config.coin_gecko.as_ref().unwrap();
+        assert_eq!(coin_gecko.api_key, "my-cg-key");
+        assert_eq!(
+            coin_gecko.url.as_str(),
+            "https://pro-api.coingecko.com/api/v3/simple/token_price"
+        );
+        let buffered = coin_gecko.buffered.as_ref().unwrap();
+        assert_eq!(buffered.debouncing_time, Duration::from_millis(500));
+        assert_eq!(buffered.broadcast_channel_capacity, 100);
+        assert_eq!(config.quote_inaccuracy_limit.to_string(), "0.01");
+        assert!(matches!(
+            config.quote_verification,
+            QuoteVerificationMode::EnforceWhenPossible
+        ));
+        assert_eq!(config.quote_timeout, Duration::from_secs(10));
+        assert!(config.balance_overrides.autodetect);
+        assert_eq!(config.balance_overrides.probing_depth, 30);
+        assert_eq!(config.balance_overrides.cache_size, 500);
+        assert_eq!(config.tokens_without_verification.len(), 1);
     }
 
     #[test]
     fn roundtrip_serialization() {
-        let config = NativePriceConfig {
-            approximation_tokens: vec![(Address::repeat_byte(1), Address::repeat_byte(2))],
-            cache: CacheConfig {
-                max_age: Duration::from_secs(120),
-                concurrent_requests: NonZeroUsize::new(8).unwrap(),
-            },
-            results_required: default_results_required(),
+        let config = PriceEstimation {
+            quote_timeout: Duration::from_secs(10),
+            quote_verification: QuoteVerificationMode::Prefer,
+            ..Default::default()
         };
-
         let serialized = toml::to_string_pretty(&config).unwrap();
-        let deserialized: NativePriceConfig = toml::from_str(&serialized).unwrap();
+        let deserialized: PriceEstimation = toml::from_str(&serialized).unwrap();
+        assert_eq!(config.quote_timeout, deserialized.quote_timeout);
+        assert!(matches!(
+            deserialized.quote_verification,
+            QuoteVerificationMode::Prefer
+        ));
+    }
 
-        assert_eq!(
-            config.approximation_tokens,
-            deserialized.approximation_tokens,
-        );
-        assert_eq!(config.cache.max_age, deserialized.cache.max_age);
-        assert_eq!(
-            config.cache.concurrent_requests,
-            deserialized.cache.concurrent_requests,
-        );
+    #[test]
+    fn debug_redacts_secrets() {
+        let config = PriceEstimation {
+            one_inch: Some(OneInchApi {
+                api_key: "secret".to_string(),
+                ..TestDefault::test_default()
+            }),
+            coin_gecko: Some(CoinGeckoConfig {
+                api_key: "secret".to_string(),
+                ..TestDefault::test_default()
+            }),
+            tenderly: Some(TenderlyConfig {
+                api_key: "secret".to_string(),
+                ..TestDefault::test_default()
+            }),
+            ..Default::default()
+        };
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("secret"));
+        assert!(debug.contains("<REDACTED>"));
     }
 }
