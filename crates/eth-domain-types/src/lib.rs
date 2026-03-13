@@ -11,11 +11,7 @@ pub use {
 use {
     alloy_primitives::Bytes,
     alloy_rpc_types::TransactionRequest,
-    derive_more::{
-        From,
-        Into,
-        derive::Deref,
-    },
+    derive_more::{From, Into, derive::Deref},
 };
 
 mod access_list;
@@ -46,13 +42,13 @@ pub struct TokenAddress(Address);
 impl TokenAddress {
     /// If the token is ETH, return WETH, thereby converting it to erc20.
     pub fn as_erc20(self, weth: WrappedNativeToken) -> Self {
-        if self == ETH_TOKEN { weth.into() } else { self }
+        if self == ETH_TOKEN { *weth } else { self }
     }
 }
 
 /// ERC20 representation of the chain's native token (e.g. WETH on mainnet,
 /// WXDAI on Gnosis Chain).
-#[derive(Debug, Clone, Copy, From, Into)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deref)]
 pub struct WrappedNativeToken(TokenAddress);
 
 impl From<Address> for WrappedNativeToken {

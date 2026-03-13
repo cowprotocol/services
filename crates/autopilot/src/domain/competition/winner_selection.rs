@@ -49,7 +49,7 @@ pub struct Arbitrator(winsel::Arbitrator);
 /// changing the ordering or the `bids`.
 impl Arbitrator {
     pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
-        let token: eth::TokenAddress = wrapped_native_token.into();
+        let token: eth::TokenAddress = *wrapped_native_token;
         Self(winsel::Arbitrator {
             max_winners,
             weth: *token,
