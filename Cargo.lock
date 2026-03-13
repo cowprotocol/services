@@ -1224,6 +1224,7 @@ dependencies = [
  "dashmap",
  "database",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "event-indexing",
  "futures",
@@ -2982,6 +2983,7 @@ dependencies = [
  "cow-amm",
  "dashmap",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "event-indexing",
  "futures",
@@ -3059,6 +3061,7 @@ dependencies = [
  "cow-amm",
  "database",
  "driver",
+ "eth-domain-types",
  "ethrpc",
  "futures",
  "hex-literal",
@@ -3197,6 +3200,18 @@ dependencies = [
  "cfg-if",
  "home",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "eth-domain-types"
+version = "0.1.0"
+dependencies = [
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-rpc-types",
+ "derive_more 1.0.0",
+ "num",
+ "number",
 ]
 
 [[package]]

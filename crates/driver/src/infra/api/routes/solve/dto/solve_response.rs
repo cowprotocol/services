@@ -1,8 +1,9 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth},
+        domain::{competition, competition::order},
         infra::Solver,
     },
+    eth_domain_types as eth,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::HashMap,

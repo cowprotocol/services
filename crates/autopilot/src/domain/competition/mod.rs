@@ -1,8 +1,9 @@
 use {
     super::auction::order,
-    crate::domain::{self, auction, eth},
+    crate::domain::{self, auction},
     alloy::primitives::Address,
     derive_more::Display,
+    eth_domain_types as eth,
     num::Saturating,
     std::collections::HashMap,
 };

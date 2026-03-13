@@ -1,6 +1,6 @@
 use {
     super::{Address, TokenAddress},
-    alloy::primitives::U256,
+    alloy_primitives::U256,
     derive_more::{From, Into},
 };
 

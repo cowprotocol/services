@@ -1,7 +1,8 @@
 //! Auction data related to the specific settlement.
 
 use {
-    crate::domain::{self},
+    crate::domain,
+    eth_domain_types as eth,
     std::collections::{HashMap, HashSet},
 };
 
@@ -13,7 +14,7 @@ use {
 pub struct Auction {
     pub id: domain::auction::Id,
     /// The block on top of which the auction was created.
-    pub block: domain::eth::BlockNo,
+    pub block: eth::BlockNo,
     /// All orders from a competition auction. Some of them may contain fee
     /// policies.
     pub orders: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
@@ -21,5 +22,5 @@ pub struct Auction {
     pub prices: domain::auction::Prices,
     /// JIT orders with surplus capturing JIT order owners should capture
     /// surplus if settled.
-    pub surplus_capturing_jit_order_owners: HashSet<domain::eth::Address>,
+    pub surplus_capturing_jit_order_owners: HashSet<eth::Address>,
 }

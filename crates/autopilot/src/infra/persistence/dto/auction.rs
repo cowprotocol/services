@@ -1,7 +1,8 @@
 use {
     super::order::Order,
-    crate::domain::{self, auction::Price, eth},
+    crate::domain::{self, auction::Price},
     alloy::primitives::{Address, U256},
+    eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -19,7 +20,7 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
         prices: auction
             .prices
             .into_iter()
-            .map(|(key, value)| (key.0, value.get().0))
+            .map(|(key, value)| (*key, value.get().0))
             .collect(),
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
@@ -66,7 +67,7 @@ impl Auction {
                 .prices
                 .into_iter()
                 .map(|(key, value)| {
-                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                    Price::try_new(value.into()).map(|price| (eth::TokenAddress::from(key), price))
                 })
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners: self

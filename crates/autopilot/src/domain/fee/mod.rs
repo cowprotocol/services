@@ -9,7 +9,7 @@ mod policy;
 use {
     crate::{
         boundary::{self},
-        domain::{self, eth},
+        domain,
     },
     alloy::primitives::{Address, U256},
     chrono::{DateTime, Utc},
@@ -22,6 +22,7 @@ use {
         },
         fee_factor::FeeFactor,
     },
+    eth_domain_types as eth,
     rust_decimal::Decimal,
     shared::{arguments::TokenBucketFeeOverride, fee::VolumeFeePolicy},
     std::collections::HashSet,

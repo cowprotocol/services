@@ -2,7 +2,7 @@ use {
     crate::{
         boundary::{self, Result},
         domain::{
-            eth,
+            self,
             liquidity::{
                 self,
                 uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
@@ -11,6 +11,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
+    eth_domain_types as eth,
     event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
     liquidity_sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
     shared::{http_solver::model::TokenAmount, interaction::Interaction},
@@ -68,8 +69,8 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
-    let handler = UniswapV3SettlementHandler::new(pool.router.into(), *receiver, pool.fee.0);
+) -> domain::Interaction {
+    let handler = UniswapV3SettlementHandler::new(*pool.router, *receiver, pool.fee.0);
 
     let interaction = handler.settle(
         TokenAmount::new(input.0.token.into(), input.0.amount),
@@ -77,7 +78,7 @@ pub fn to_interaction(
     );
 
     let encoded = interaction.encode();
-    eth::Interaction {
+    domain::Interaction {
         target: encoded.0,
         value: encoded.1.into(),
         call_data: encoded.2,
@@ -132,7 +133,7 @@ async fn init_liquidity(
     tokio::task::spawn(update_task);
 
     Ok(UniswapV3Liquidity::new(
-        config.router.into(),
+        *config.router,
         *eth.contracts().settlement().address(),
         pool_fetcher,
     ))

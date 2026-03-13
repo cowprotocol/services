@@ -2,7 +2,10 @@ use {
     crate::{
         boundary,
         database::{Postgres, order_events::store_order_events},
-        domain::{self, eth, settlement::transaction::EncodedTrade},
+        domain::{
+            self,
+            settlement::{SettlementEvent, TradeEvent, transaction::EncodedTrade},
+        },
         infra::persistence::dto::{AuctionId, RawAuctionData},
     },
     ::winner_selection::state::RankedItem,
@@ -28,6 +31,7 @@ use {
         SellTokenSource as DomainSellTokenSource,
         SigningScheme as DomainSigningScheme,
     },
+    eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::full_order_into_model_order,
@@ -235,8 +239,8 @@ impl Persistence {
                             .iter()
                             .map(|(order_uid, order)| Order {
                                 uid: ByteArray(order_uid.0),
-                                sell_token: ByteArray(order.sell.token.0.0.0),
-                                buy_token: ByteArray(order.buy.token.0.0.0),
+                                sell_token: ByteArray(order.sell.token.into_array()),
+                                buy_token: ByteArray(order.buy.token.into_array()),
                                 limit_sell: u256_to_big_decimal(&order.sell.amount.0),
                                 limit_buy: u256_to_big_decimal(&order.buy.amount.0),
                                 executed_sell: u256_to_big_decimal(&order.executed_sell.0),
@@ -248,7 +252,7 @@ impl Persistence {
                             .solution()
                             .prices()
                             .keys()
-                            .map(|token| ByteArray(token.0.0.0))
+                            .map(|token| ByteArray(token.into_array()))
                             .collect(),
                         price_values: bid
                             .solution()
@@ -270,7 +274,7 @@ impl Persistence {
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[domain::eth::Address],
+        surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> Result<(), DatabaseError> {
         self.postgres
             .save_surplus_capturing_jit_order_owners(
@@ -409,7 +413,7 @@ impl Persistence {
                 price_tokens: auction
                     .prices
                     .keys()
-                    .map(|token| ByteArray(token.0.0.0))
+                    .map(|token| ByteArray(token.into_array()))
                     .collect(),
                 price_values: auction
                     .prices
@@ -708,7 +712,7 @@ impl Persistence {
     /// not yet populated in the database.
     pub async fn get_settlements_without_auction(
         &self,
-    ) -> Result<Vec<domain::eth::SettlementEvent>, DatabaseError> {
+    ) -> Result<Vec<SettlementEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_without_auction"])
@@ -719,7 +723,7 @@ impl Persistence {
             .await?
             .into_iter()
             .map(|event| {
-                let event = domain::eth::SettlementEvent {
+                let event = SettlementEvent {
                     block: u64::try_from(event.block_number)
                         .context("negative block")?
                         .into(),
@@ -735,8 +739,8 @@ impl Persistence {
     /// Returns the trade events that are associated with the settlement event
     pub async fn get_trades_for_settlement(
         &self,
-        settlement: &domain::eth::SettlementEvent,
-    ) -> Result<Vec<domain::eth::TradeEvent>, DatabaseError> {
+        settlement: &SettlementEvent,
+    ) -> Result<Vec<TradeEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_trades_for_settlement"])
@@ -753,12 +757,12 @@ impl Persistence {
         .await?
         .into_iter()
         .map(|event| {
-            let event = domain::eth::TradeEvent {
+            let event = TradeEvent {
                 block: u64::try_from(event.block_number)
                     .context("negative block")?
                     .into(),
                 log_index: u64::try_from(event.log_index).context("negative log index")?,
-                order_uid: domain::OrderUid(event.order_uid.0),
+                order_uid: domain::OrderUid(event.order_uid.0).into(),
             };
             Ok::<_, DatabaseError>(event)
         })
@@ -767,7 +771,7 @@ impl Persistence {
 
     pub async fn save_settlement(
         &self,
-        event: domain::eth::SettlementEvent,
+        event: SettlementEvent,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
@@ -837,14 +841,14 @@ impl Persistence {
                     auction_id,
                     block_number,
                     Asset {
-                        token: ByteArray(order_fee.total.token.0.0.0),
+                        token: ByteArray(order_fee.total.token.into_array()),
                         amount: u256_to_big_decimal(&order_fee.total.amount.0),
                     },
                     &order_fee
                         .protocol
                         .into_iter()
                         .map(|executed| Asset {
-                            token: ByteArray(executed.fee.token.0.0.0),
+                            token: ByteArray(executed.fee.token.into_array()),
                             amount: u256_to_big_decimal(&executed.fee.amount.0),
                         })
                         .collect::<Vec<_>>(),
@@ -865,7 +869,7 @@ impl Persistence {
                     &mut ex,
                     &jit_orders
                         .into_iter()
-                        .filter_map(|jit_order| match trade_events.get(&jit_order.uid) {
+                        .filter_map(|jit_order| match trade_events.get(&jit_order.uid.into()) {
                             Some((block_number, log_index)) => {
                                 Some(database::jit_orders::JitOrder {
                                     block_number: i64::try_from(block_number.0).ok()?,
@@ -877,8 +881,8 @@ impl Persistence {
                                         0,
                                     )
                                         .unwrap_or_default(),
-                                    sell_token: ByteArray(jit_order.sell.token.0.0.0),
-                                    buy_token: ByteArray(jit_order.buy.token.0.0.0),
+                                    sell_token: ByteArray(jit_order.sell.token.into_array()),
+                                    buy_token: ByteArray(jit_order.buy.token.into_array()),
                                     sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
                                     buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
                                     valid_to: i64::from(jit_order.valid_to),

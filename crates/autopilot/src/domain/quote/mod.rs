@@ -1,7 +1,8 @@
 use {
     super::OrderUid,
-    crate::{boundary::Amounts, domain::eth},
+    crate::boundary::Amounts,
     alloy::primitives::Address,
+    eth_domain_types as eth,
 };
 
 #[derive(Clone, Debug, PartialEq)]
