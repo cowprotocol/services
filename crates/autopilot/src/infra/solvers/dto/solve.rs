@@ -57,9 +57,9 @@ impl Request {
                 .prices
                 .iter()
                 .map(|(address, price)| Token {
-                    address: address.to_owned().0,
+                    address: *address.to_owned(),
                     price: Some(price.get().0),
-                    trusted: trusted_tokens.contains(&(address.0)),
+                    trusted: trusted_tokens.contains(&Address::from(*address)),
                 })
                 .chain(trusted_tokens.iter().map(|&address| Token {
                     address,

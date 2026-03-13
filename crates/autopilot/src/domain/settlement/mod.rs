@@ -357,7 +357,7 @@ mod tests {
             settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
-        eth_domain_types as eth,
+        eth_domain_types::{self as eth, Address},
         hex_literal::hex,
         number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
@@ -420,8 +420,8 @@ mod tests {
 
         ws::Order {
             uid: ws::OrderUid(trade.uid.0),
-            sell_token: trade.sell.token.0,
-            buy_token: trade.buy.token.0,
+            sell_token: *trade.sell.token,
+            buy_token: *trade.buy.token,
             sell_amount: trade.sell.amount.0,
             buy_amount: trade.buy.amount.0,
             executed_sell,
@@ -458,7 +458,7 @@ mod tests {
         auction
             .prices
             .iter()
-            .map(|(token, price)| (token.0, price.get().0))
+            .map(|(token, price)| (Address::from(*token), price.get().0))
             .collect()
     }
 
@@ -834,12 +834,12 @@ mod tests {
             // prices read from https://solver-instances.s3.eu-central-1.amazonaws.com/prod/mainnet/legacy/8655372.json
             prices: auction::Prices::from([
                 (
-                    eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
+                    eth::TokenAddress::from(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                     auction::Price::try_new(eth::U256::from(1000000000000000000u128).into())
                         .unwrap(),
                 ),
                 (
-                    eth::TokenAddress(address!("c52fafdc900cb92ae01e6e4f8979af7f436e2eb2")),
+                    eth::TokenAddress::from(address!("c52fafdc900cb92ae01e6e4f8979af7f436e2eb2")),
                     auction::Price::try_new(eth::U256::from(537359915436704u128).into()).unwrap(),
                 ),
             ]),
@@ -969,12 +969,12 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
+                eth::TokenAddress::from(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
                 auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
                     .unwrap(),
             ),
             (
-                eth::TokenAddress(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
+                eth::TokenAddress::from(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
                 auction::Price::try_new(
                     eth::U256::from(3177764302250520038326415654912u128).into(),
                 )
@@ -1142,12 +1142,12 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")),
+                eth::TokenAddress::from(address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")),
                 auction::Price::try_new(eth::U256::from(374263465721452989998170112u128).into())
                     .unwrap(),
             ),
             (
-                eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
+                eth::TokenAddress::from(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                 auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);
@@ -1320,15 +1320,15 @@ mod tests {
 
         let prices: auction::Prices = From::from([
             (
-                eth::TokenAddress(address!("812Ba41e071C7b7fA4EBcFB62dF5F45f6fA853Ee")),
+                eth::TokenAddress::from(address!("812Ba41e071C7b7fA4EBcFB62dF5F45f6fA853Ee")),
                 auction::Price::try_new(eth::U256::from(400373909534592401408u128).into()).unwrap(),
             ),
             (
-                eth::TokenAddress(address!("a21Af1050F7B26e0cfF45ee51548254C41ED6b5c")),
+                eth::TokenAddress::from(address!("a21Af1050F7B26e0cfF45ee51548254C41ED6b5c")),
                 auction::Price::try_new(eth::U256::from(127910593u128).into()).unwrap(),
             ),
             (
-                eth::TokenAddress(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
+                eth::TokenAddress::from(address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
                 auction::Price::try_new(eth::U256::from(1000000000000000000u128).into()).unwrap(),
             ),
         ]);

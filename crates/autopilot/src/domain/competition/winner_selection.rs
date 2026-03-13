@@ -32,7 +32,7 @@ use {
         fee,
     },
     ::winner_selection::state::{HasState, RankedItem, ScoredItem, UnscoredItem},
-    eth_domain_types::{self as eth, WrappedNativeToken},
+    eth_domain_types::{self as eth, Address, WrappedNativeToken},
     std::collections::HashMap,
     tracing::instrument,
     winner_selection::{self as winsel},
@@ -52,7 +52,7 @@ impl Arbitrator {
         let token: eth::TokenAddress = wrapped_native_token.into();
         Self(winsel::Arbitrator {
             max_winners,
-            weth: token.0,
+            weth: *token,
         })
     }
 
@@ -139,7 +139,7 @@ impl From<&domain::Auction> for winsel::AuctionContext {
             native_prices: auction
                 .prices
                 .iter()
-                .map(|(token, price)| (token.0, price.get().0))
+                .map(|(token, price)| (Address::from(*token), price.get().0))
                 .collect(),
         }
     }
@@ -158,7 +158,7 @@ impl From<&Solution> for winsel::Solution<winsel::Unscored> {
             solution
                 .prices()
                 .iter()
-                .map(|(token, price)| (token.0, price.get().0))
+                .map(|(token, price)| (Address::from(*token), price.get().0))
                 .collect(),
         )
     }
@@ -167,8 +167,8 @@ impl From<&Solution> for winsel::Solution<winsel::Unscored> {
 fn to_winsel_order(uid: domain::OrderUid, order: &TradedOrder) -> winsel::Order {
     winsel::Order {
         uid: winsel::OrderUid(uid.0),
-        sell_token: order.sell.token.0,
-        buy_token: order.buy.token.0,
+        sell_token: *order.sell.token,
+        buy_token: *order.buy.token,
         sell_amount: order.sell.amount.0,
         buy_amount: order.buy.amount.0,
         executed_sell: order.executed_sell.0,

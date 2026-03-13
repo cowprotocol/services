@@ -28,7 +28,7 @@ use {
     alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
-    eth_domain_types::{self as eth, TxId},
+    eth_domain_types::{self as eth, Address, TxId},
     ethrpc::block_stream::BlockInfo,
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
@@ -496,7 +496,7 @@ impl RunLoop {
                     .solution()
                     .prices()
                     .iter()
-                    .map(|(token, price)| (token.0, price.get().0))
+                    .map(|(token, price)| (Address::from(*token), price.get().0))
                     .collect(),
                 is_winner: bid.is_winner(),
                 filtered_out: bid.is_filtered_out(),
@@ -518,7 +518,7 @@ impl RunLoop {
                 prices: auction
                     .prices
                     .iter()
-                    .map(|(key, value)| (key.0, value.get().0))
+                    .map(|(key, value)| (Address::from(*key), value.get().0))
                     .collect(),
             },
             solutions,
@@ -531,7 +531,7 @@ impl RunLoop {
                 .prices
                 .clone()
                 .into_iter()
-                .map(|(key, value)| (key.0, value.get().0))
+                .map(|(key, value)| (*key, value.get().0))
                 .collect(),
             block_deadline,
             competition_simulation_block,

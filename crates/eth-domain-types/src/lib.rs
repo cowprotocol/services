@@ -11,7 +11,11 @@ pub use {
 use {
     alloy_primitives::Bytes,
     alloy_rpc_types::TransactionRequest,
-    derive_more::{From, Into},
+    derive_more::{
+        From,
+        Into,
+        derive::Deref,
+    },
 };
 
 mod access_list;
@@ -27,11 +31,17 @@ mod token_amount;
 /// ERC20 token.
 pub const ETH_TOKEN: TokenAddress = TokenAddress(Address::repeat_byte(0xee));
 
+// TODO This type should probably use Ethereum::is_contract to verify during
+// construction that it does indeed point to a contract
+/// A smart contract address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deref)]
+pub struct ContractAddress(Address);
+
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TokenAddress(pub Address);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deref)]
+pub struct TokenAddress(Address);
 
 impl TokenAddress {
     /// If the token is ETH, return WETH, thereby converting it to erc20.
@@ -57,8 +67,20 @@ impl From<Address> for TokenAddress {
     }
 }
 
+impl From<Address> for ContractAddress {
+    fn from(value: Address) -> Self {
+        Self(value)
+    }
+}
+
 impl From<TokenAddress> for Address {
     fn from(value: TokenAddress) -> Self {
+        value.0
+    }
+}
+
+impl From<ContractAddress> for Address {
+    fn from(value: ContractAddress) -> Self {
         value.0
     }
 }

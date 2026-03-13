@@ -239,8 +239,8 @@ impl Persistence {
                             .iter()
                             .map(|(order_uid, order)| Order {
                                 uid: ByteArray(order_uid.0),
-                                sell_token: ByteArray(order.sell.token.0.0.0),
-                                buy_token: ByteArray(order.buy.token.0.0.0),
+                                sell_token: ByteArray(order.sell.token.into_array()),
+                                buy_token: ByteArray(order.buy.token.into_array()),
                                 limit_sell: u256_to_big_decimal(&order.sell.amount.0),
                                 limit_buy: u256_to_big_decimal(&order.buy.amount.0),
                                 executed_sell: u256_to_big_decimal(&order.executed_sell.0),
@@ -252,7 +252,7 @@ impl Persistence {
                             .solution()
                             .prices()
                             .keys()
-                            .map(|token| ByteArray(token.0.0.0))
+                            .map(|token| ByteArray(token.into_array()))
                             .collect(),
                         price_values: bid
                             .solution()
@@ -413,7 +413,7 @@ impl Persistence {
                 price_tokens: auction
                     .prices
                     .keys()
-                    .map(|token| ByteArray(token.0.0.0))
+                    .map(|token| ByteArray(token.into_array()))
                     .collect(),
                 price_values: auction
                     .prices
@@ -841,14 +841,14 @@ impl Persistence {
                     auction_id,
                     block_number,
                     Asset {
-                        token: ByteArray(order_fee.total.token.0.0.0),
+                        token: ByteArray(order_fee.total.token.into_array()),
                         amount: u256_to_big_decimal(&order_fee.total.amount.0),
                     },
                     &order_fee
                         .protocol
                         .into_iter()
                         .map(|executed| Asset {
-                            token: ByteArray(executed.fee.token.0.0.0),
+                            token: ByteArray(executed.fee.token.into_array()),
                             amount: u256_to_big_decimal(&executed.fee.amount.0),
                         })
                         .collect::<Vec<_>>(),
@@ -881,8 +881,8 @@ impl Persistence {
                                         0,
                                     )
                                         .unwrap_or_default(),
-                                    sell_token: ByteArray(jit_order.sell.token.0.0.0),
-                                    buy_token: ByteArray(jit_order.buy.token.0.0.0),
+                                    sell_token: ByteArray(jit_order.sell.token.into_array()),
+                                    buy_token: ByteArray(jit_order.buy.token.into_array()),
                                     sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
                                     buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
                                     valid_to: i64::from(jit_order.valid_to),

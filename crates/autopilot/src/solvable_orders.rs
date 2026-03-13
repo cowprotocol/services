@@ -21,7 +21,6 @@ use {
             UnsupportedToken,
         },
     },
-    eth_domain_types as eth,
     futures::FutureExt,
     itertools::Itertools,
     model::{
@@ -366,9 +365,7 @@ impl SolvableOrdersCache {
             }),
             prices: prices
                 .into_iter()
-                .map(|(key, value)| {
-                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
-                })
+                .map(|(key, value)| Price::try_new(value.into()).map(|price| (key.into(), price)))
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
