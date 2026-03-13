@@ -87,6 +87,7 @@ async fn uniswap() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -258,6 +259,7 @@ async fn balancer_weighted() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -411,6 +413,7 @@ async fn balancer_weighted_v3plus() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -555,6 +558,7 @@ async fn distant_convergence() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -735,6 +739,7 @@ async fn same_path() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -886,6 +891,7 @@ async fn balancer_stable() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [
                 {
                     "id": 0,

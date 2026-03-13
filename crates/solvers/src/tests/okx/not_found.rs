@@ -89,7 +89,7 @@ async fn sell() {
         }))
         .await;
 
-    assert_eq!(solution, json!({ "solutions": [] }),);
+    assert_eq!(solution, json!({ "type": "solutions", "solutions": [] }),);
 }
 
 #[tokio::test]
@@ -283,5 +283,5 @@ async fn sell_no_approve_transaction() {
         }))
         .await;
 
-    assert_eq!(solution, json!({ "solutions": [] }),);
+    assert_eq!(solution, json!({ "type": "solutions", "solutions": [] }),);
 }

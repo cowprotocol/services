@@ -517,8 +517,8 @@ async fn quote_custom_solver_errors(web3: Web3) {
                     "http://localhost:11088/test_quoter",
                 )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
-                        price_estimation::NativePriceEstimator::driver(
+                    estimators: configs::price_estimation::NativePriceEstimators::new(vec![vec![
+                        configs::price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_quoter".parse().unwrap(),
                         ),
@@ -642,8 +642,8 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                     "http://localhost:11088/test_quoter",
                 )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
-                        price_estimation::NativePriceEstimator::driver(
+                    estimators: configs::price_estimation::NativePriceEstimators::new(vec![vec![
+                        configs::price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_quoter".parse().unwrap(),
                         ),
@@ -758,12 +758,12 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                     ),
                 ]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
-                        price_estimation::NativePriceEstimator::driver(
+                    estimators: configs::price_estimation::NativePriceEstimators::new(vec![vec![
+                        configs::price_estimation::NativePriceEstimator::driver(
                             "custom_solver".to_string(),
                             "http://localhost:11088/custom_solver".parse().unwrap(),
                         ),
-                        price_estimation::NativePriceEstimator::driver(
+                        configs::price_estimation::NativePriceEstimator::driver(
                             "no_liquidity_solver".to_string(),
                             "http://localhost:11088/no_liquidity_solver"
                                 .parse()

@@ -112,6 +112,7 @@ async fn sell_order() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -257,6 +258,7 @@ async fn buy_order() {
     assert_eq!(
         solution,
         json!({
+            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
