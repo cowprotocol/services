@@ -1,33 +1,23 @@
 //! Module containing Tenderly API implementation.
-
 use {
-    crate::utils::{display_option, display_secret_option},
-    alloy::{
-        primitives::{Address, B256, TxKind, U256, map::B256Map},
-        rpc::types::{TransactionRequest, state::StateOverride as AlloyStateOverride},
-    },
+    crate::tenderly::dto,
+    alloy_primitives::TxKind,
+    alloy_rpc_types::{TransactionRequest, state::StateOverride as AlloyStateOverride},
     anyhow::{Result, ensure},
-    bytes_hex::BytesHex,
-    clap::Parser,
     http_client::HttpClientFactory,
     prometheus::IntGaugeVec,
     reqwest::{
         Url,
         header::{HeaderMap, HeaderValue},
     },
-    serde::{Deserialize, Serialize},
-    std::{
-        collections::HashMap,
-        fmt::{self, Display, Formatter},
-        sync::Arc,
-    },
+    std::sync::Arc,
     tracing::instrument,
 };
 /// Trait for abstracting Tenderly API.
 #[async_trait::async_trait]
 pub trait TenderlyApi: Send + Sync + 'static {
-    async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse>;
-    fn log(&self, simulation: SimulationRequest) -> Result<()>;
+    async fn simulate(&self, simulation: dto::Request) -> Result<dto::Response>;
+    fn log(&self, simulation: dto::Request) -> Result<()>;
     fn simulation_url(&self, id: &str) -> Url;
 }
 
@@ -81,7 +71,7 @@ impl TenderlyHttpApi {
 #[async_trait::async_trait]
 impl TenderlyApi for TenderlyHttpApi {
     #[instrument(skip_all)]
-    async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
+    async fn simulate(&self, simulation: dto::Request) -> Result<dto::Response> {
         let url = crate::utils::join_url(&self.api, "simulate");
         let body = serde_json::to_string(&simulation)?;
 
@@ -104,7 +94,7 @@ impl TenderlyApi for TenderlyHttpApi {
         Ok(serde_json::from_str(&body)?)
     }
 
-    fn log(&self, simulation: SimulationRequest) -> Result<()> {
+    fn log(&self, simulation: dto::Request) -> Result<()> {
         let request_url = crate::utils::join_url(&self.api, "simulate");
         let simulation_url =
             crate::utils::join_url(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
@@ -136,7 +126,7 @@ pub struct Instrumented {
 
 #[async_trait::async_trait]
 impl TenderlyApi for Instrumented {
-    async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
+    async fn simulate(&self, simulation: dto::Request) -> Result<dto::Response> {
         let result = self.inner.simulate(simulation).await;
 
         Metrics::get()
@@ -153,7 +143,7 @@ impl TenderlyApi for Instrumented {
         result
     }
 
-    fn log(&self, simulation: SimulationRequest) -> Result<()> {
+    fn log(&self, simulation: dto::Request) -> Result<()> {
         self.inner.log(simulation)
     }
 
@@ -162,118 +152,7 @@ impl TenderlyApi for Instrumented {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SimulationRequest {
-    pub network_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub block_number: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_index: Option<i64>,
-    pub from: Address,
-    pub to: Address,
-    #[serde(with = "bytes_hex")]
-    pub input: Vec<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gas: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gas_price: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<U256>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub simulation_kind: Option<SimulationKind>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub save: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub save_if_fails: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub generate_access_list: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_objects: Option<HashMap<Address, StateObject>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub access_list: Option<Vec<AccessListItem>>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SimulationKind {
-    Full,
-    Quick,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
-pub struct StateObject {
-    /// Fake balance to set for the account before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub balance: Option<alloy::primitives::U256>,
-
-    /// Fake EVM bytecode to inject into the account before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<alloy::primitives::Bytes>,
-
-    /// Fake key-value mapping to override **individual** slots in the account
-    /// storage before executing the call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub storage: Option<B256Map<B256>>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SimulationResponse {
-    pub transaction: Transaction,
-    pub generated_access_list: Option<Vec<AccessListItem>>,
-    pub simulation: Simulation,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Transaction {
-    pub status: bool,
-    pub gas_used: u64,
-    pub call_trace: Vec<CallTrace>,
-}
-
-#[serde_with::serde_as]
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct CallTrace {
-    #[serde(default)]
-    #[serde_as(as = "Option<BytesHex>")]
-    pub output: Option<Vec<u8>>,
-    pub error: Option<String>,
-}
-
-// Had to introduce copy of the web3 AccessList because tenderly responds with
-// snake_case fields and tenderly storage_keys field does not exist if empty (it
-// should be empty Vec instead)
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct AccessListItem {
-    /// Accessed address
-    pub address: Address,
-    /// Accessed storage keys
-    #[serde(default)]
-    pub storage_keys: Vec<B256>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Simulation {
-    pub id: String,
-}
-
-/// Tenderly API arguments.
-#[derive(Debug, Parser)]
-#[group(skip)]
-pub struct Arguments {
-    /// The Tenderly user associated with the API key.
-    #[clap(long, env)]
-    pub tenderly_user: Option<String>,
-
-    /// The Tenderly project associated with the API key.
-    #[clap(long, env)]
-    pub tenderly_project: Option<String>,
-
-    /// Tenderly requires api key to work. Optional since Tenderly could be
-    /// skipped in access lists estimators.
-    #[clap(long, env)]
-    pub tenderly_api_key: Option<String>,
-}
-
+/*
 impl Arguments {
     pub fn get_api_instance(
         &self,
@@ -310,7 +189,7 @@ impl Display for Arguments {
 
         Ok(())
     }
-}
+}*/
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
@@ -343,8 +222,8 @@ impl TenderlyCodeSimulator {
         tx: TransactionRequest,
         overrides: AlloyStateOverride,
         block: Option<u64>,
-    ) -> Result<SimulationRequest> {
-        Ok(SimulationRequest {
+    ) -> Result<dto::Request> {
+        Ok(dto::Request {
             block_number: block,
             // By default, tenderly simulates on the top of the specified block, whereas regular
             // nodes simulate at the end of the specified block. This is to make
@@ -360,7 +239,7 @@ impl TenderlyCodeSimulator {
                 .map(TryInto::try_into)
                 .map(|gas_price| gas_price.unwrap()),
             value: tx.value,
-            simulation_kind: Some(SimulationKind::Quick),
+            simulation_kind: Some(dto::SimulationKind::Quick),
             state_objects: Some(
                 overrides
                     .into_iter()
@@ -377,7 +256,7 @@ impl TenderlyCodeSimulator {
         overrides: AlloyStateOverride,
         block: Option<u64>,
     ) -> Result<()> {
-        let request = SimulationRequest {
+        let request = dto::Request {
             save: Some(true),
             save_if_fails: Some(true),
             ..self.prepare_request(tx, overrides, block)?
@@ -386,18 +265,18 @@ impl TenderlyCodeSimulator {
     }
 }
 
-impl TryFrom<alloy::rpc::types::eth::state::AccountOverride> for StateObject {
+impl TryFrom<alloy_rpc_types::eth::state::AccountOverride> for dto::StateObject {
     type Error = anyhow::Error;
 
     fn try_from(
-        value: alloy::rpc::types::eth::state::AccountOverride,
+        value: alloy_rpc_types::eth::state::AccountOverride,
     ) -> std::result::Result<Self, Self::Error> {
         ensure!(
             value.nonce.is_none() && value.state.is_none(),
             "full state and nonce overrides not supported on Tenderly",
         );
 
-        Ok(StateObject {
+        Ok(dto::StateObject {
             balance: value.balance,
             code: value.code,
             storage: value.state_diff,
@@ -409,7 +288,7 @@ impl TryFrom<alloy::rpc::types::eth::state::AccountOverride> for StateObject {
 mod tests {
     use {
         super::*,
-        alloy::primitives::address,
+        alloy_primitives::address,
         hex_literal::hex,
         serde_json::json,
         testlib::assert_json_matches,
@@ -417,7 +296,7 @@ mod tests {
 
     #[test]
     fn serialize_deserialize_simulation_request() {
-        let request = SimulationRequest {
+        let request = dto::Request {
             network_id: "1".to_string(),
             block_number: Some(14122310),
             from: address!("e92f359e6f05564849afa933ce8f62b8007a1d5d"),
@@ -440,7 +319,7 @@ mod tests {
 
         assert_json_matches!(serde_json::to_value(&request).unwrap(), json);
         assert_eq!(
-            serde_json::from_value::<SimulationRequest>(json).unwrap(),
+            serde_json::from_value::<dto::Request>(json).unwrap(),
             request
         );
     }
@@ -450,10 +329,10 @@ mod tests {
     async fn simulate_transaction() {
         let tenderly = TenderlyHttpApi::test_from_env();
         let result = tenderly
-            .simulate(SimulationRequest {
+            .simulate(dto::Request {
                 network_id: "1".to_string(),
                 to: address!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
-                simulation_kind: Some(SimulationKind::Quick),
+                simulation_kind: Some(dto::SimulationKind::Quick),
                 ..Default::default()
             })
             .await

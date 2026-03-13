@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{Ethereum, Mempool, simulator, solver::Timeouts},
+    super::{Ethereum, Mempool, solver::Timeouts},
     crate::{
         boundary,
         domain::{

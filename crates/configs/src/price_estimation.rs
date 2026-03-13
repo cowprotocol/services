@@ -204,6 +204,9 @@ pub struct NativePriceConfig {
     /// estimators but that will not have any further effect.
     #[serde(default = "default_results_required")]
     pub results_required: NonZeroUsize,
+
+    #[serde(default)]
+    pub tenderly: Option<crate::simulator::TenderlyConfig>,
 }
 
 impl Default for NativePriceConfig {
@@ -212,6 +215,7 @@ impl Default for NativePriceConfig {
             approximation_tokens: Default::default(),
             cache: Default::default(),
             results_required: default_results_required(),
+            tenderly: Default::default(),
         }
     }
 }
@@ -302,6 +306,7 @@ mod tests {
                 concurrent_requests: NonZeroUsize::new(8).unwrap(),
             },
             results_required: default_results_required(),
+            tenderly: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

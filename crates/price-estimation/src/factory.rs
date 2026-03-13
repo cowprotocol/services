@@ -13,12 +13,11 @@ use {
     crate::{
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
-        trade_verifier::{code_fetching::CachedCodeFetcher, tenderly_api::TenderlyCodeSimulator},
+        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     bad_tokens::list_based::DenyListedTokens,
-    code_fetching::CachedCodeFetcher,
     configs::price_estimation::{
         ExternalSolver,
         NativePriceConfig,
@@ -31,6 +30,7 @@ use {
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
+    simulator::{swap_simulator::SwapSimulator, tenderly},
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
     token_info::TokenInfoFetching,
 };
@@ -79,7 +79,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, &network, &components).await?,
+            trade_verifier: Self::trade_verifier(args, config, &network, &components).await?,
             args,
             config,
             network,
@@ -90,6 +90,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     async fn trade_verifier(
         args: &'a Arguments,
+        config: &'a NativePriceConfig,
         network: &Network,
         components: &Components,
     ) -> Result<Option<Arc<dyn TradeVerifying>>> {
@@ -98,25 +99,41 @@ impl<'a> PriceEstimatorFactory<'a> {
         };
         let web3 = web3.labeled("simulator");
 
-        let tenderly = args
+        /*let tenderly = config
             .tenderly
             .get_api_instance(&components.http_factory, "price_estimation".to_owned())
             .unwrap()
             .map(|t| Arc::new(TenderlyCodeSimulator::new(t, network.chain.id())));
-
+        */
         let balance_overrides = args.balance_overrides.init(web3.clone());
+
+        let tenderly = config.tenderly.as_ref().map(|config| {
+            Arc::new(tenderly::TenderlyApi::new_instrumented(
+                "price_estimation".to_string(),
+                config,
+                &components.http_factory,
+                network.chain.id().to_string(),
+            )) as Arc<dyn tenderly::Api>
+        });
+        let simulator = SwapSimulator::new(
+            balance_overrides.clone(),
+            network.settlement,
+            network.native_token,
+            network.block_stream.clone(),
+            web3.clone(),
+            args.max_gas_per_tx,
+        )
+        .await?;
 
         let verifier = TradeVerifier::new(
             web3,
             tenderly,
+            simulator,
             components.code_fetcher.clone(),
             balance_overrides,
-            network.block_stream.clone(),
             network.settlement,
-            network.native_token,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
-            args.max_gas_per_tx,
         )
         .await?;
         Ok(Some(Arc::new(verifier)))

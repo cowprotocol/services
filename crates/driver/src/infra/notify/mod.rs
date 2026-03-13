@@ -7,7 +7,7 @@ pub mod liquidity_sources;
 mod notification;
 
 pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
-use {super::simulator, crate::domain::mempools::Error, eth_domain_types as eth};
+use {crate::domain::mempools::Error, eth_domain_types as eth};
 
 pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {
     solver.notify(auction_id, None, notification::Kind::Timeout);

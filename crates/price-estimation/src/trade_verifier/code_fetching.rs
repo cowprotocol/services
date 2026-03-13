@@ -2,8 +2,10 @@
 //! more easily be tested with mocked versions of these behaviours.
 
 use {
-    alloy_primitives::{Address, Bytes},
-    alloy_provider::Provider,
+    alloy::{
+        primitives::{Address, Bytes},
+        providers::Provider,
+    },
     anyhow::Result,
     cached::{Cached, SizedCache},
     ethrpc::Web3,

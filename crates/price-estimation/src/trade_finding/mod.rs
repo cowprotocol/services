@@ -6,7 +6,7 @@ pub mod trade_estimator;
 
 use {
     crate::{PriceEstimationError, Query},
-    alloy::primitives::{Address, Bytes, U256},
+    alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     derive_more::Debug,
     external::dto,
@@ -207,14 +207,6 @@ pub struct Interaction {
 }
 
 impl Interaction {
-    pub fn encode(&self) -> EncodedInteraction {
-        (
-            self.target,
-            self.value,
-            Bytes::copy_from_slice(self.data.as_slice()),
-        )
-    }
-
     pub fn to_interaction_data(&self) -> InteractionData {
         InteractionData {
             target: self.target,
@@ -234,7 +226,15 @@ impl From<InteractionData> for Interaction {
     }
 }
 
-pub type EncodedInteraction = (Address, U256, Bytes);
+impl From<Interaction> for simulator::encoding::Interaction {
+    fn from(interaction: Interaction) -> Self {
+        Self {
+            target: interaction.target,
+            value: interaction.value,
+            data: interaction.data,
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum TradeError {

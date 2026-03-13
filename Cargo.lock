@@ -1254,6 +1254,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "shared",
+ "simulator",
  "sqlx",
  "strum",
  "tempfile",
@@ -3014,6 +3015,7 @@ dependencies = [
  "serde_with",
  "shared",
  "signature-validator",
+ "simulator",
  "solver",
  "solvers-dto",
  "tempfile",
@@ -3079,6 +3081,7 @@ dependencies = [
  "serde_json",
  "shared",
  "signature-validator",
+ "simulator",
  "solver",
  "solvers",
  "solvers-dto",
@@ -3552,6 +3555,7 @@ dependencies = [
  "alloy-provider",
  "anyhow",
  "async-trait",
+ "configs",
  "ethrpc",
  "futures",
  "mockall",
@@ -5488,6 +5492,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "simulator",
  "testlib",
  "thiserror 1.0.69",
  "token-info",
@@ -6889,6 +6894,50 @@ name = "simd-adler32"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
+
+[[package]]
+name = "simulator"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types",
+ "alloy-sol-types",
+ "alloy-transport",
+ "anyhow",
+ "app-data",
+ "async-trait",
+ "balance-overrides",
+ "cached",
+ "chain",
+ "configs",
+ "const-hex",
+ "contracts",
+ "derive_more 1.0.0",
+ "eth-domain-types",
+ "ethrpc",
+ "gas-price-estimation",
+ "hex-literal",
+ "http-client",
+ "mockall",
+ "model",
+ "number",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest 0.13.2",
+ "serde",
+ "serde-ext",
+ "serde_json",
+ "serde_with",
+ "testlib",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "slab"

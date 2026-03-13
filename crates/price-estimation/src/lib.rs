@@ -1,7 +1,6 @@
 use {
     crate::{
         trade_finding::{Interaction, QuoteExecution},
-        trade_verifier::tenderly_api,
         utils::{display_option, display_secret_option},
     },
     alloy::primitives::{Address, U256},
@@ -41,9 +40,6 @@ pub mod utils;
 #[derive(clap::Parser)]
 #[group(skip)]
 pub struct Arguments {
-    #[clap(flatten)]
-    pub tenderly: tenderly_api::Arguments,
-
     /// Configures the back off strategy for price estimators when requests take
     /// too long. Requests issued while back off is active get dropped
     /// entirely. Needs to be passed as
@@ -174,7 +170,6 @@ pub enum QuoteVerificationMode {
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self {
-            tenderly,
             price_estimation_rate_limiter,
             amount_to_estimate_prices_with,
             one_inch_api_key,
@@ -187,8 +182,6 @@ impl Display for Arguments {
             tokens_without_verification,
             max_gas_per_tx,
         } = self;
-
-        write!(f, "{tenderly}")?;
         display_option(
             f,
             "price_estimation_rate_limites",

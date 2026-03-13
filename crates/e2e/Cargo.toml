@@ -53,6 +53,7 @@ price-estimation = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "query"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+simulator = { workspace = true }
 shared = { workspace = true }
 signature-validator = { workspace = true }
 solver = { workspace = true }

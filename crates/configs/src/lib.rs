@@ -3,10 +3,12 @@ pub mod banned_users;
 pub mod database;
 pub(crate) mod deserialize_env;
 pub mod fee_factor;
+pub mod gas_price_estimation;
 pub mod http_client;
 pub mod order_quoting;
 pub mod orderbook;
 pub mod price_estimation;
+pub mod simulator;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util {

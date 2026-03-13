@@ -471,7 +471,6 @@ impl Solver {
                 flashloan_router: Some((*config.blockchain.flashloan_router.address()).into()),
             },
             gas,
-            eth::U256::from(45_000_000),
             &shared::current_block::Arguments {
                 block_stream_poll_interval: None,
                 node_ws_url: Some(config.blockchain.web3_ws_url.parse().unwrap()),
