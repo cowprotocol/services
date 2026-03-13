@@ -468,17 +468,21 @@ async fn single_replace_order_test(web3: Web3) {
     onchain.set_solver_allowed(solver.address(), false).await;
 
     let services = Services::new(&onchain).await;
+    // To avoid race conditions we have to start the protocol
+    // with the solver being banned. To allow us to still create
+    // orders we override the quote verification to prefer mode.
+    let orderbook_config = configs::orderbook::Configuration {
+        price_estimation: configs::price_estimation::PriceEstimation {
+            quote_verification: configs::price_estimation::QuoteVerificationMode::Prefer,
+            ..configs::orderbook::Configuration::test_default().price_estimation
+        },
+        ..configs::orderbook::Configuration::test_default()
+    };
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                // To avoid race conditions we have to start the protocol
-                // with the solver being banned. To allow us to still create
-                // orders we override the quote verification to be disabled.
-                api: vec!["--quote-verification=prefer".into()],
-                ..Default::default()
-            },
+            ExtraServiceArgs::default(),
             configs::autopilot::Configuration::test("test_solver", solver.address()),
-            configs::orderbook::Configuration::test_default(),
+            orderbook_config,
             solver.clone(),
         )
         .await;
