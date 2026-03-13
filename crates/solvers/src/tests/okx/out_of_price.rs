@@ -201,5 +201,5 @@ async fn sell() {
         }))
         .await;
 
-    assert_eq!(solution, json!({ "solutions": [] }),);
+    assert_eq!(solution, json!({ "type": "solutions", "solutions": [] }),);
 }

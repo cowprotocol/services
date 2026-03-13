@@ -403,7 +403,7 @@ impl Solver {
             auction.id().is_none(),
         );
         let res = res?;
-        let res: solvers_dto::solution::Solutions =
+        let res: solvers_dto::solution::SolverResponse =
             serde_json::from_str(&res).inspect_err(|err| {
                 tracing::warn!(res, ?err, "failed to parse solver response");
                 self.notify(
@@ -412,16 +412,25 @@ impl Solver {
                     notify::Kind::DeserializationError(format!("Request format invalid: {err}")),
                 );
             })?;
-        let solutions = dto::Solutions::from(res).into_domain(
-            auction,
-            liquidity,
-            weth,
-            self.clone(),
-            &flashloan_hints,
-        )?;
 
-        super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
-        Ok(solutions)
+        match res {
+            solvers_dto::solution::SolverResponse::Error { error } => {
+                tracing::debug!(?error, "solver returned custom error");
+                return Err(Error::CustomError(error));
+            }
+            solvers_dto::solution::SolverResponse::Solutions { solutions } => {
+                let solutions = dto::Solutions::from(solutions).into_domain(
+                    auction,
+                    liquidity,
+                    weth,
+                    self.clone(),
+                    &flashloan_hints,
+                )?;
+
+                super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
+                Ok(solutions)
+            }
+        }
     }
 
     fn assemble_flashloan_hints(&self, auction: &Auction) -> HashMap<order::Uid, eth::Flashloan> {
@@ -517,6 +526,8 @@ pub enum Error {
     Deserialize(#[from] serde_json::Error),
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
+    #[error("solver returned custom error: {0:?}")]
+    CustomError(solvers_dto::solution::SolverError),
 }
 
 impl Error {
@@ -524,6 +535,13 @@ impl Error {
         match self {
             Self::Http(util::http::Error::Response(err)) => err.is_timeout(),
             _ => false,
+        }
+    }
+
+    pub fn custom_error(&self) -> Option<&solvers_dto::solution::SolverError> {
+        match self {
+            Self::CustomError(err) => Some(err),
+            _ => None,
         }
     }
 }

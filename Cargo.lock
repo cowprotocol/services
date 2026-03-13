@@ -7011,6 +7011,7 @@ dependencies = [
  "number",
  "serde",
  "serde-ext",
+ "serde_json",
  "serde_with",
 ]
 

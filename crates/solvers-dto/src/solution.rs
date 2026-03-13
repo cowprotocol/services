@@ -6,10 +6,40 @@ use {
     std::collections::HashMap,
 };
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct Solutions {
-    pub solutions: Vec<Solution>,
+pub struct SolverError {
+    pub code: SolverErrorCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SolverErrorCode {
+    /// Token can only be traded during specific time windows (e.g., RWA tokens)
+    TradingOutsideAllowedWindow,
+    /// Token is temporarily suspended from trading
+    TokenTemporarilySuspended,
+    /// Insufficient liquidity for the requested trade size
+    InsufficientLiquidity,
+    /// Generic solver error with custom message
+    Other,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SolverResponse {
+    Solutions { solutions: Vec<Solution> },
+    Error { error: SolverError },
+}
+
+impl Default for SolverResponse {
+    fn default() -> Self {
+        Self::Solutions {
+            solutions: Vec::new(),
+        }
+    }
 }
 
 #[serde_as]
@@ -226,4 +256,70 @@ pub struct WrapperCall {
     #[serde_as(as = "serde_ext::Hex")]
     #[serde(default)]
     pub data: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, serde_json::json};
+
+    #[test]
+    fn serializes_empty_solutions_response() {
+        let response = SolverResponse::default();
+
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "type": "solutions",
+                "solutions": [],
+            })
+        );
+    }
+
+    #[test]
+    fn serializes_and_deserializes_error_responses() {
+        let cases = vec![
+            (
+                SolverErrorCode::TradingOutsideAllowedWindow,
+                "tradingOutsideAllowedWindow",
+            ),
+            (
+                SolverErrorCode::TokenTemporarilySuspended,
+                "tokenTemporarilySuspended",
+            ),
+            (
+                SolverErrorCode::InsufficientLiquidity,
+                "insufficientLiquidity",
+            ),
+            (SolverErrorCode::Other, "other"),
+        ];
+
+        for (code, expected_code) in cases {
+            let response = SolverResponse::Error {
+                error: SolverError {
+                    code: code.clone(),
+                    message: Some("custom message".to_string()),
+                },
+            };
+
+            let value = serde_json::to_value(response).unwrap();
+            assert_eq!(
+                value,
+                json!({
+                    "type": "error",
+                    "error": {
+                        "code": expected_code,
+                        "message": "custom message",
+                    },
+                })
+            );
+
+            let decoded: SolverResponse = serde_json::from_value(value).unwrap();
+            assert!(matches!(
+                decoded,
+                SolverResponse::Error { error }
+                if error.code == code && error.message.as_deref() == Some("custom message")
+            ));
+        }
+    }
 }
