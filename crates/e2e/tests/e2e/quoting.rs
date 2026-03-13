@@ -510,11 +510,12 @@ async fn quote_custom_solver_errors(web3: Web3) {
 
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
-                    .to_string(),
-            ],
+            vec![],
             configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_quoter",
+                )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
@@ -634,11 +635,12 @@ async fn native_price_custom_solver_errors(web3: Web3) {
 
     services
         .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
-                    .to_string(),
-            ],
+            vec![],
             configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_quoter",
+                )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
@@ -746,8 +748,15 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
 
     services
         .start_api(
-            vec!["--price-estimation-drivers=custom_solver|http://localhost:11088/custom_solver,no_liquidity_solver|http://localhost:11088/no_liquidity_solver".to_string()],
+            vec![],
             configs::orderbook::Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![
+                    ExternalSolver::new("custom_solver", "http://localhost:11088/custom_solver"),
+                    ExternalSolver::new(
+                        "no_liquidity_solver",
+                        "http://localhost:11088/no_liquidity_solver",
+                    ),
+                ]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
