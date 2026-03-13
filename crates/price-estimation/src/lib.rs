@@ -235,7 +235,7 @@ impl Display for Arguments {
             f,
             "tokens_without_verification: {tokens_without_verification:?}"
         )?;
-        writeln!(f, "max_tx_per_gas: {max_gas_per_tx}")?;
+        writeln!(f, "max_gas_per_tx: {max_gas_per_tx}")?;
 
         Ok(())
     }
