@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self, SolvableOrders},
-        domain::{self, auction::Price, eth},
+        domain::{self, auction::Price},
         infra::{self, banned},
     },
     account_balances::{BalanceFetching, Query},
@@ -365,9 +365,7 @@ impl SolvableOrdersCache {
             }),
             prices: prices
                 .into_iter()
-                .map(|(key, value)| {
-                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
-                })
+                .map(|(key, value)| Price::try_new(value.into()).map(|price| (key.into(), price)))
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };

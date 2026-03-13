@@ -6,7 +6,6 @@ use {
         order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
-    driver::domain::eth::NonZeroU256,
     e2e::setup::{colocation, wait_for_condition, *},
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
@@ -14,7 +13,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::units::EthUnit,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     shared::web3::Web3,
     std::ops::DerefMut,
 };
