@@ -2,7 +2,6 @@ use {
     alloy_primitives::U256,
     derive_more::{From, Into},
     number::u256_ext::U256Ext,
-    std::ops::{Div, Mul, Sub},
 };
 
 /// An ERC20 token amount.
@@ -41,7 +40,7 @@ impl From<SellTokenAmount> for TokenAmount {
     }
 }
 
-impl Sub<Self> for TokenAmount {
+impl std::ops::Sub<Self> for TokenAmount {
     type Output = TokenAmount;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -55,7 +54,7 @@ impl num::CheckedSub for TokenAmount {
     }
 }
 
-impl Mul<Self> for TokenAmount {
+impl std::ops::Mul<Self> for TokenAmount {
     type Output = TokenAmount;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -75,7 +74,7 @@ impl num::CheckedAdd for TokenAmount {
     }
 }
 
-impl Div<Self> for TokenAmount {
+impl std::ops::Div<Self> for TokenAmount {
     type Output = TokenAmount;
 
     fn div(self, rhs: Self) -> Self::Output {

@@ -3,7 +3,6 @@ use {
     alloy_eips::eip1559::calc_effective_gas_price,
     alloy_primitives::U256,
     derive_more::{Display, From, Into},
-    std::ops::{self, Add},
 };
 
 /// Gas amount in gas units.
@@ -19,7 +18,7 @@ impl From<u64> for Gas {
     }
 }
 
-impl Add for Gas {
+impl std::ops::Add for Gas {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -104,7 +103,7 @@ impl From<U256> for FeePerGas {
     }
 }
 
-impl ops::Add<FeePerGas> for FeePerGas {
+impl std::ops::Add<FeePerGas> for FeePerGas {
     type Output = FeePerGas;
 
     fn add(self, rhs: FeePerGas) -> Self::Output {
@@ -118,7 +117,7 @@ impl From<FeePerGas> for U256 {
     }
 }
 
-impl ops::Mul<FeePerGas> for Gas {
+impl std::ops::Mul<FeePerGas> for Gas {
     type Output = Ether;
 
     fn mul(self, rhs: FeePerGas) -> Self::Output {
