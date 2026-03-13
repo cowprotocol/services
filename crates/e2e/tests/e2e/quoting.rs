@@ -514,17 +514,17 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
                     .to_string(),
             ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            configs::orderbook::Configuration {
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_quoter".parse().unwrap(),
                         ),
                     ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
@@ -638,17 +638,17 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
                     .to_string(),
             ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            configs::orderbook::Configuration {
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_quoter".parse().unwrap(),
                         ),
                     ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
@@ -747,8 +747,8 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
     services
         .start_api(
             vec!["--price-estimation-drivers=custom_solver|http://localhost:11088/custom_solver,no_liquidity_solver|http://localhost:11088/no_liquidity_solver".to_string()],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
+            configs::orderbook::Configuration {
+                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
                     estimators: price_estimation::NativePriceEstimators::new(vec![vec![
                         price_estimation::NativePriceEstimator::driver(
                             "custom_solver".to_string(),
@@ -761,9 +761,9 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                                 .unwrap(),
                         ),
                     ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
         )
         .await;
