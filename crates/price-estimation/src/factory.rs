@@ -18,6 +18,7 @@ use {
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     bad_tokens::list_based::DenyListedTokens,
+    code_fetching::CachedCodeFetcher,
     configs::price_estimation::{
         ExternalSolver,
         NativePriceConfig,
