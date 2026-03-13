@@ -3,10 +3,11 @@ use {
         primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
     },
-    balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy, TokenConfiguration},
+    balance_overrides::{BalanceOverrides, BalanceOverriding},
     bigdecimal::{BigDecimal, Zero},
     configs::{
         autopilot::Configuration,
+        balance_overrides::Strategy,
         price_estimation::BalanceOverridesConfig,
         test_util::TestDefault,
     },
@@ -25,7 +26,7 @@ use {
         trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
     serde_json::json,
-    std::{str::FromStr, sync::Arc},
+    std::sync::Arc,
 };
 
 #[tokio::test]
@@ -374,8 +375,12 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     let services = Services::new(&onchain).await;
     // The OpenZeppelin `ERC20Mintable` token uses a mapping in
     // the first (0'th) storage slot for balances.
-    let token_overrides =
-        TokenConfiguration::from_str(&format!("{:?}@0", token.address())).unwrap();
+    let token_overrides: configs::balance_overrides::TokenConfiguration = toml::from_str(&format!(
+        "[{:?}]\ntype = \"SolidityMapping\"\ntarget_contract = \"{:?}\"\nmap_slot = \"0x0\"",
+        token.address(),
+        token.address(),
+    ))
+    .unwrap();
     let orderbook_config = configs::orderbook::Configuration {
         price_estimation: configs::price_estimation::PriceEstimation {
             balance_overrides: BalanceOverridesConfig {

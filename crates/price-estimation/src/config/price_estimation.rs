@@ -14,7 +14,7 @@ pub trait BalanceOverridesConfigExt {
 impl BalanceOverridesConfigExt for BalanceOverridesConfig {
     fn init(&self, web3: ethrpc::Web3) -> Arc<dyn BalanceOverriding> {
         Arc::new(balance_overrides::BalanceOverrides {
-            hardcoded: self.token_overrides.clone().into_inner(),
+            hardcoded: self.token_overrides.inner().clone(),
             detector: self.autodetect.then(|| {
                 (
                     balance_overrides::detector::Detector::new(web3, self.probing_depth),
@@ -30,7 +30,7 @@ pub trait TenderlyConfigExt {
         &self,
         http_factory: &HttpClientFactory,
         name: String,
-    ) -> Result<Option<Arc<dyn TenderlyApi>>>;
+    ) -> Result<Arc<dyn TenderlyApi>>;
 }
 
 impl TenderlyConfigExt for TenderlyConfig {
@@ -38,19 +38,8 @@ impl TenderlyConfigExt for TenderlyConfig {
         &self,
         http_factory: &HttpClientFactory,
         name: String,
-    ) -> Result<Option<Arc<dyn TenderlyApi>>> {
-        Some(())
-            .and_then(|_| {
-                Some(
-                    TenderlyHttpApi::new(
-                        http_factory,
-                        self.user.as_deref()?,
-                        self.project.as_deref()?,
-                        self.api_key.as_deref()?,
-                    )
-                    .map(|inner| Arc::new(Instrumented { inner, name }) as _),
-                )
-            })
-            .transpose()
+    ) -> Result<Arc<dyn TenderlyApi>> {
+        TenderlyHttpApi::new(http_factory, &self.user, &self.project, &self.api_key)
+            .map(|inner| Arc::new(Instrumented { inner, name }) as _)
     }
 }

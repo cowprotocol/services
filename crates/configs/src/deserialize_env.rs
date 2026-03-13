@@ -53,18 +53,18 @@ where
 
 /// Deserializes an optional String from *either* an environment variable —
 /// with the format `%<ENV_VAR_NAME>` — or directly from the field value.
-pub(crate) fn deserialize_optional_string_from_env<'de, D>(
-    deserializer: D,
-) -> Result<Option<String>, D::Error>
+pub(crate) fn deserialize_string_from_env<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let Some(value) = Option::<String>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
+    let value = String::deserialize(deserializer)?;
     match value.strip_prefix(ENV_VAR_PREFIX) {
-        Some(env_var_name) => Ok(std::env::var(env_var_name).ok()),
-        None => Ok(Some(value)),
+        Some(env_var_name) => Ok(std::env::var(env_var_name)
+            .inspect_err(|err| {
+                tracing::error!(%err, %env_var_name, "failed to load env var");
+            })
+            .map_err(|_| invalid_value_env_var_missing(env_var_name))?),
+        None => Ok(value),
     }
 }
 
@@ -182,52 +182,5 @@ mod tests {
     fn optional_invalid_url_is_error() {
         let json = r#"{"url": "not a url"}"#;
         assert!(serde_json::from_str::<Optional>(json).is_err());
-    }
-
-    #[derive(Deserialize)]
-    struct OptionalString {
-        #[serde(
-            default,
-            deserialize_with = "super::deserialize_optional_string_from_env"
-        )]
-        value: Option<String>,
-    }
-
-    #[test]
-    fn optional_string_none_when_absent() {
-        let json = r#"{}"#;
-        let parsed: OptionalString = serde_json::from_str(json).unwrap();
-        assert!(parsed.value.is_none());
-    }
-
-    #[test]
-    fn optional_string_none_when_null() {
-        let json = r#"{"value": null}"#;
-        let parsed: OptionalString = serde_json::from_str(json).unwrap();
-        assert!(parsed.value.is_none());
-    }
-
-    #[test]
-    fn optional_string_direct_value() {
-        let json = r#"{"value": "hello"}"#;
-        let parsed: OptionalString = serde_json::from_str(json).unwrap();
-        assert_eq!(parsed.value.unwrap(), "hello");
-    }
-
-    #[test]
-    fn optional_string_from_env_var() {
-        let var = "TEST_DESER_OPT_STR_FROM_ENV";
-        unsafe { std::env::set_var(var, "secret_value") };
-        let json = format!(r#"{{"value": "%{var}"}}"#);
-        let parsed: OptionalString = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.value.unwrap(), "secret_value");
-        unsafe { std::env::remove_var(var) };
-    }
-
-    #[test]
-    fn optional_string_missing_env_var_returns_none() {
-        let json = r#"{"value": "%NONEXISTENT_OPT_STR_TEST_VAR_12345"}"#;
-        let parsed: OptionalString = serde_json::from_str(json).unwrap();
-        assert!(parsed.value.is_none());
     }
 }

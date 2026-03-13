@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
+configs = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
 observe = { workspace = true }

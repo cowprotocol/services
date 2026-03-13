@@ -1,7 +1,7 @@
 use {
-    anyhow::{Result, ensure},
+    anyhow::Result,
+    configs::rate_limit::Strategy,
     std::{
-        fmt::{Display, Formatter},
         future::Future,
         sync::{Arc, Mutex, MutexGuard},
         time::{Duration, Instant},
@@ -28,73 +28,25 @@ fn metrics() -> &'static Metrics {
         .expect("unexpected error getting metrics instance")
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
-#[serde(rename_all = "kebab-case")]
-pub struct Strategy {
-    /// Point in time until which incoming requests are dropped due to
-    /// active rate limiting.
-    #[serde(skip, default = "Instant::now")]
-    drop_requests_until: Instant,
-    /// How many requests got rate limited in a row.
-    #[serde(skip)]
-    times_rate_limited: u64,
-    /// Multiplier applied to the back-off duration after each successive
-    /// rate-limited response. Must be >= 1.0.
-    back_off_growth_factor: f64,
-    /// Initial back-off duration used after the first rate-limited response.
-    #[serde(with = "humantime_serde")]
-    min_back_off: Duration,
-    /// Upper bound for the back-off duration regardless of growth factor.
-    #[serde(with = "humantime_serde")]
-    max_back_off: Duration,
-}
-
-impl Default for Strategy {
-    fn default() -> Self {
-        Self::try_new(1.0, Duration::default(), Duration::default()).unwrap()
-    }
-}
-
-impl Display for Strategy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "RateLimitingStrategy{{ min_back_off: {:?}, max_back_off: {:?}, growth_factor: {:?} }}",
-            self.min_back_off, self.max_back_off, self.back_off_growth_factor
-        )
-    }
-}
-
-impl Strategy {
-    pub fn try_new(
-        back_off_growth_factor: f64,
-        min_back_off: Duration,
-        max_back_off: Duration,
-    ) -> Result<Self> {
-        ensure!(
-            back_off_growth_factor.is_normal(),
-            "back_off_growth_factor must be a normal f64"
-        );
-        ensure!(
-            back_off_growth_factor >= 1.0,
-            "back_off_growth_factor needs to be at least 1.0"
-        );
-        ensure!(
-            min_back_off <= max_back_off,
-            "min_back_off needs to be <= max_back_off"
-        );
-        Ok(Self {
-            drop_requests_until: Instant::now(),
-            times_rate_limited: 0,
-            back_off_growth_factor,
-            min_back_off,
-            max_back_off,
-        })
-    }
-
+trait StrategyExt {
     /// Resets back off and stops rate limiting requests.
-    pub fn response_ok(&mut self, name: &str) {
+    fn response_ok(&mut self, name: &str);
+
+    /// Calculates back off based on how often we got rate limited in a row.
+    fn get_current_back_off(&self) -> Duration;
+
+    /// Returns updated back off if no other thread increased it in the mean
+    /// time.
+    fn response_rate_limited(&mut self, previous_rate_limits: u64, name: &str) -> Option<Duration>;
+
+    /// Returns number of times we got rate limited in a row if we are currently
+    /// allowing requests.
+    fn times_rate_limited(&self, now: Instant, name: &str) -> Option<u64>;
+}
+
+impl StrategyExt for Strategy {
+    /// Resets back off and stops rate limiting requests.
+    fn response_ok(&mut self, name: &str) {
         metrics()
             .successful_requests
             .with_label_values(&[name])
@@ -117,11 +69,7 @@ impl Strategy {
 
     /// Returns updated back off if no other thread increased it in the mean
     /// time.
-    pub fn response_rate_limited(
-        &mut self,
-        previous_rate_limits: u64,
-        name: &str,
-    ) -> Option<Duration> {
+    fn response_rate_limited(&mut self, previous_rate_limits: u64, name: &str) -> Option<Duration> {
         metrics()
             .rate_limited_requests
             .with_label_values(&[name])
@@ -139,7 +87,7 @@ impl Strategy {
 
     /// Returns number of times we got rate limited in a row if we are currently
     /// allowing requests.
-    pub fn times_rate_limited(&self, now: Instant, name: &str) -> Option<u64> {
+    fn times_rate_limited(&self, now: Instant, name: &str) -> Option<u64> {
         if self.drop_requests_until > now {
             metrics().requests_dropped.with_label_values(&[name]).inc();
             return None;

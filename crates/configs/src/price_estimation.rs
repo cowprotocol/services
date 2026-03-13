@@ -1,5 +1,6 @@
 use {
-    alloy::primitives::Address,
+    crate::{balance_overrides, rate_limit::Strategy},
+    alloy::primitives::{Address, U256, map::HashSet},
     bigdecimal::BigDecimal,
     serde::Deserialize,
     std::{str::FromStr, time::Duration},
@@ -34,29 +35,21 @@ const fn default_max_gas_per_tx() -> u64 {
     16777215
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PriceEstimation {
-    /// Tenderly configuration (URL, project & API key).
-    #[serde(default)]
-    pub tenderly: TenderlyConfig,
-
     /// Configures the back off strategy for price estimators when requests take
     /// too long. Requests issued while back off is active get dropped
     /// entirely.
     #[serde(default)]
-    pub price_estimation_rate_limiter: Option<rate_limit::Strategy>,
+    pub price_estimation_rate_limiter: Option<Strategy>,
 
     /// The amount in native token atoms to use for price estimation. Should be
     /// reasonably large so that small pools do not influence the prices. If
     /// not set, a reasonable default is used based on network id.
     #[serde(default)]
-    pub amount_to_estimate_prices_with: Option<alloy::primitives::U256>,
-
-    /// The CoinGecko native price configuration.
-    #[serde(default)]
-    pub coin_gecko: CoinGeckoConfig,
+    pub amount_to_estimate_prices_with: Option<U256>,
 
     /// How inaccurate a quote must be before it gets discarded, provided as a
     /// factor. E.g. a value of `0.01` means at most 1 percent of the sell or
@@ -80,11 +73,7 @@ pub struct PriceEstimation {
     /// that would win against a very good but unverifiable liquidity source
     /// (e.g. private liquidity that exists but can't be verified).
     #[serde(default)]
-    pub tokens_without_verification: Vec<Address>,
-
-    /// 1-inch API connection settings (URL & key).
-    #[serde(default)]
-    pub one_inch: OneInchApi,
+    pub tokens_without_verification: HashSet<Address>,
 
     /// How much gas a single tx may consume at most. Any quote using more than
     /// this will fail during the verification.
@@ -92,6 +81,18 @@ pub struct PriceEstimation {
     /// Fusaka hardfork.
     #[serde(default = "default_max_gas_per_tx")]
     pub max_gas_per_tx: u64,
+
+    /// Tenderly configuration (URL, project & API key).
+    #[serde(default)]
+    pub tenderly: Option<TenderlyConfig>,
+
+    /// The CoinGecko native price configuration.
+    #[serde(default)]
+    pub coin_gecko: Option<CoinGeckoConfig>,
+
+    /// 1-inch API connection settings (URL & key).
+    #[serde(default)]
+    pub one_inch: Option<OneInchApi>,
 }
 
 impl Default for PriceEstimation {
@@ -126,48 +127,22 @@ impl crate::test_util::TestDefault for PriceEstimation {
     }
 }
 
-impl std::fmt::Debug for PriceEstimation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PriceEstimation")
-            .field("tenderly", &self.tenderly)
-            .field(
-                "price_estimation_rate_limiter",
-                &self.price_estimation_rate_limiter,
-            )
-            .field(
-                "amount_to_estimate_prices_with",
-                &self.amount_to_estimate_prices_with,
-            )
-            .field("coin_gecko", &self.coin_gecko)
-            .field("quote_inaccuracy_limit", &self.quote_inaccuracy_limit)
-            .field("quote_verification", &self.quote_verification)
-            .field("quote_timeout", &self.quote_timeout)
-            .field("balance_overrides", &self.balance_overrides)
-            .field(
-                "tokens_without_verification",
-                &self.tokens_without_verification,
-            )
-            .field("one_inch", &self.one_inch)
-            .finish()
-    }
-}
-
-#[derive(Default, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct TenderlyConfig {
     /// The Tenderly user associated with the API key.
     #[serde(default)]
-    pub user: Option<String>,
+    pub user: String,
 
     /// The Tenderly project associated with the API key.
     #[serde(default)]
-    pub project: Option<String>,
+    pub project: String,
 
     /// Tenderly requires an API key to work. Optional since Tenderly could be
     /// skipped in access lists estimators.
     #[serde(default)]
-    pub api_key: Option<String>,
+    pub api_key: String,
 }
 
 impl std::fmt::Debug for TenderlyConfig {
@@ -177,6 +152,17 @@ impl std::fmt::Debug for TenderlyConfig {
             .field("project", &self.project)
             .field("api_key", &"<REDACTED>")
             .finish()
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl crate::test_util::TestDefault for TenderlyConfig {
+    fn test_default() -> Self {
+        Self {
+            user: "test-user".to_string(),
+            project: "test-project".to_string(),
+            api_key: "test-api-key".to_string(),
+        }
     }
 }
 
@@ -192,9 +178,9 @@ pub struct CoinGeckoConfig {
     /// The API key for the CoinGecko API.
     #[serde(
         default,
-        deserialize_with = "crate::deserialize_env::deserialize_optional_string_from_env"
+        deserialize_with = "crate::deserialize_env::deserialize_string_from_env"
     )]
-    pub api_key: Option<String>,
+    pub api_key: String,
 
     /// The base URL for the CoinGecko API.
     #[serde(default = "default_coin_gecko_url")]
@@ -204,16 +190,6 @@ pub struct CoinGeckoConfig {
     pub buffered: Option<CoinGeckoBufferedConfig>,
 }
 
-impl Default for CoinGeckoConfig {
-    fn default() -> Self {
-        Self {
-            api_key: None,
-            url: default_coin_gecko_url(),
-            buffered: None,
-        }
-    }
-}
-
 impl std::fmt::Debug for CoinGeckoConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoinGeckoConfig")
@@ -221,6 +197,17 @@ impl std::fmt::Debug for CoinGeckoConfig {
             .field("url", &self.url)
             .field("buffered", &self.buffered)
             .finish()
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl crate::test_util::TestDefault for CoinGeckoConfig {
+    fn test_default() -> Self {
+        Self {
+            api_key: "test-api-key".to_string(),
+            url: default_coin_gecko_url(),
+            buffered: None,
+        }
     }
 }
 
@@ -298,16 +285,7 @@ pub struct OneInchApi {
 
     /// The API key for the 1Inch API.
     #[serde(default)]
-    pub api_key: Option<String>,
-}
-
-impl Default for OneInchApi {
-    fn default() -> Self {
-        Self {
-            url: default_one_inch_url(),
-            api_key: Default::default(),
-        }
-    }
+    pub api_key: String,
 }
 
 impl std::fmt::Debug for OneInchApi {
@@ -319,27 +297,29 @@ impl std::fmt::Debug for OneInchApi {
     }
 }
 
+#[cfg(any(test, feature = "test-util"))]
+impl crate::test_util::TestDefault for OneInchApi {
+    fn test_default() -> Self {
+        Self {
+            url: default_one_inch_url(),
+            api_key: "test-api-key".to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::test_util::TestDefault};
 
     #[test]
     fn deserialize_defaults() {
         let toml = "";
         let config: PriceEstimation = toml::from_str(toml).unwrap();
-        assert!(config.tenderly.user.is_none());
-        assert!(config.tenderly.project.is_none());
-        assert!(config.tenderly.api_key.is_none());
+        assert!(config.tenderly.is_none());
         assert!(config.price_estimation_rate_limiter.is_none());
         assert!(config.amount_to_estimate_prices_with.is_none());
-        assert!(config.one_inch.api_key.is_none());
-        assert_eq!(config.one_inch.url.as_str(), "https://api.1inch.dev/");
-        assert!(config.coin_gecko.api_key.is_none());
-        assert_eq!(
-            config.coin_gecko.url.as_str(),
-            "https://api.coingecko.com/api/v3/simple/token_price"
-        );
-        assert!(config.coin_gecko.buffered.is_none());
+        assert!(config.one_inch.is_none());
+        assert!(config.coin_gecko.is_none());
         assert_eq!(config.quote_inaccuracy_limit, BigDecimal::from(1));
         assert!(matches!(
             config.quote_verification,
@@ -390,22 +370,25 @@ mod tests {
         "#;
         let config: PriceEstimation = toml::from_str(toml).unwrap();
 
-        assert_eq!(config.tenderly.user.as_deref(), Some("my-user"));
-        assert_eq!(config.tenderly.project.as_deref(), Some("my-project"));
-        assert_eq!(config.tenderly.api_key.as_deref(), Some("my-tenderly-key"));
+        let tenderly = config.tenderly.as_ref().unwrap();
+        assert_eq!(tenderly.user, "my-user");
+        assert_eq!(tenderly.project, "my-project");
+        assert_eq!(tenderly.api_key, "my-tenderly-key");
         assert!(config.price_estimation_rate_limiter.is_some());
         assert_eq!(
             config.amount_to_estimate_prices_with,
             Some(alloy::primitives::U256::from(1_000_000_000_000_000_000u64))
         );
-        assert_eq!(config.one_inch.api_key.as_deref(), Some("my-1inch-key"));
-        assert_eq!(config.one_inch.url.as_str(), "https://custom.1inch.dev/");
-        assert_eq!(config.coin_gecko.api_key.as_deref(), Some("my-cg-key"));
+        let one_inch = config.one_inch.as_ref().unwrap();
+        assert_eq!(one_inch.api_key, "my-1inch-key");
+        assert_eq!(one_inch.url.as_str(), "https://custom.1inch.dev/");
+        let coin_gecko = config.coin_gecko.as_ref().unwrap();
+        assert_eq!(coin_gecko.api_key, "my-cg-key");
         assert_eq!(
-            config.coin_gecko.url.as_str(),
+            coin_gecko.url.as_str(),
             "https://pro-api.coingecko.com/api/v3/simple/token_price"
         );
-        let buffered = config.coin_gecko.buffered.as_ref().unwrap();
+        let buffered = coin_gecko.buffered.as_ref().unwrap();
         assert_eq!(buffered.debouncing_time, Duration::from_millis(500));
         assert_eq!(buffered.broadcast_channel_capacity, 100);
         assert_eq!(config.quote_inaccuracy_limit.to_string(), "0.01");
@@ -439,18 +422,18 @@ mod tests {
     #[test]
     fn debug_redacts_secrets() {
         let config = PriceEstimation {
-            one_inch: OneInchApi {
-                api_key: Some("secret".to_string()),
-                ..Default::default()
-            },
-            coin_gecko: CoinGeckoConfig {
-                api_key: Some("secret".to_string()),
-                ..Default::default()
-            },
-            tenderly: TenderlyConfig {
-                api_key: Some("secret".to_string()),
-                ..Default::default()
-            },
+            one_inch: Some(OneInchApi {
+                api_key: "secret".to_string(),
+                ..TestDefault::test_default()
+            }),
+            coin_gecko: Some(CoinGeckoConfig {
+                api_key: "secret".to_string(),
+                ..TestDefault::test_default()
+            }),
+            tenderly: Some(TenderlyConfig {
+                api_key: "secret".to_string(),
+                ..TestDefault::test_default()
+            }),
             ..Default::default()
         };
         let debug = format!("{config:?}");

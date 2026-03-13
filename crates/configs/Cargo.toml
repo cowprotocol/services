@@ -6,11 +6,9 @@ edition = "2024"
 [dependencies]
 alloy = { workspace = true, features = ["signer-aws"] }
 anyhow = { workspace = true }
-balance-overrides = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, features = ["serde"] }
 humantime-serde = { workspace = true }
-rate-limit = { workspace = true }
 s3 = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true, optional = true }

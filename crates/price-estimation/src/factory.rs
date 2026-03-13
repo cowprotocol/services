@@ -98,11 +98,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         };
         let web3 = web3.labeled("simulator");
 
-        let tenderly = args
-            .tenderly
-            .get_api_instance(&components.http_factory, "price_estimation".to_owned())
-            .unwrap()
-            .map(|t| Arc::new(TenderlyCodeSimulator::new(t, network.chain.id())));
+        let tenderly = if let Some(tenderly) = &args.tenderly {
+            tenderly
+                .get_api_instance(&components.http_factory, "price_estimation".to_owned())
+                .map(|tenderly| Arc::new(TenderlyCodeSimulator::new(tenderly, network.chain.id())))
+                .inspect_err(|err| tracing::error!(%err, "failed to setup tenderly api"))
+                .ok()
+        } else {
+            None
+        };
 
         let balance_overrides = args.balance_overrides.init(web3.clone());
 
@@ -206,14 +210,19 @@ impl<'a> PriceEstimatorFactory<'a> {
                 ))
             }
             NativePriceEstimatorSource::OneInchSpotPriceApi => {
+                let one_inch = self
+                    .args
+                    .one_inch
+                    .as_ref()
+                    .context("one-inch config must be set when OneInchSpotPriceApi is used")?;
                 let name = "OneInchSpotPriceApi".to_string();
                 Ok((
                     name.clone(),
                     Arc::new(InstrumentedPriceEstimator::new(
                         native::OneInch::new(
                             self.components.http_factory.create(),
-                            self.args.one_inch.url.clone(),
-                            self.args.one_inch.api_key.clone(),
+                            one_inch.url.clone(),
+                            Some(one_inch.api_key.clone()),
                             self.network.chain.id(),
                             self.network.block_stream.clone(),
                             self.components.tokens.clone(),
@@ -223,17 +232,17 @@ impl<'a> PriceEstimatorFactory<'a> {
                 ))
             }
             NativePriceEstimatorSource::CoinGecko => {
-                anyhow::ensure!(
-                    self.args.coin_gecko.api_key.is_some(),
-                    "coin_gecko api_key must be set when CoinGecko is used as native price \
-                     estimator"
-                );
+                let coin_gecko_config = self
+                    .args
+                    .coin_gecko
+                    .as_ref()
+                    .context("coin-gecko config must be set when CoinGecko is used")?;
 
                 let name = "CoinGecko".to_string();
                 let coin_gecko = native::CoinGecko::new(
                     self.components.http_factory.create(),
-                    self.args.coin_gecko.url.clone(),
-                    self.args.coin_gecko.api_key.clone(),
+                    coin_gecko_config.url.clone(),
+                    Some(coin_gecko_config.api_key.clone()),
                     &self.network.chain,
                     *weth.address(),
                     self.components.tokens.clone(),
@@ -241,7 +250,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .await?;
 
                 let coin_gecko: Arc<dyn NativePriceEstimating> =
-                    if let Some(buffered_config) = &self.args.coin_gecko.buffered {
+                    if let Some(buffered_config) = &coin_gecko_config.buffered {
                         let configuration = buffered::Configuration {
                             max_concurrent_requests: Some(
                                 coin_gecko
