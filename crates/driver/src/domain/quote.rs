@@ -300,7 +300,10 @@ mod encode {
     use {
         crate::domain::competition::solution,
         alloy::primitives::Address,
-        eth_domain_types::{self as eth, allowance::{Approval, Required}},
+        eth_domain_types::{
+            self as eth,
+            allowance::{Approval, Required},
+        },
         num::rational::Ratio,
     };
 
@@ -320,7 +323,7 @@ mod encode {
         let encoded = match interaction {
             solution::Interaction::Custom(interaction) => domain::Interaction {
                 value: interaction.value,
-                target: interaction.target.0,
+                target: *interaction.target,
                 call_data: interaction.call_data.clone(),
             },
             solution::Interaction::Liquidity(liquidity) => {

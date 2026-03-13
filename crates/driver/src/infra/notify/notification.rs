@@ -1,7 +1,5 @@
 use {
-    crate::domain::{
-        competition::{auction, solution},
-    },
+    crate::domain::competition::{auction, solution},
     eth_domain_types::{self as eth, Ether, TokenAddress},
     std::collections::BTreeSet,
 };

@@ -97,7 +97,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         .iter()
                         .map(|(token, supported)| {
                             (
-                                eth::TokenAddress(eth::ContractAddress(*token)),
+                                eth::TokenAddress::from(*token),
                                 match supported {
                                     true => risk_detector::Quality::Supported,
                                     false => risk_detector::Quality::Unsupported,

@@ -100,8 +100,10 @@ impl Contracts {
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
-            .or_else(|| FlashLoanRouter::deployment_address(&chain.id()).map(eth::ContractAddress))
-            .map(|address| FlashLoanRouter::Instance::new(address.0, web3.provider.clone()));
+            .or_else(|| {
+                FlashLoanRouter::deployment_address(&chain.id()).map(eth::ContractAddress::from)
+            })
+            .map(|address| FlashLoanRouter::Instance::new(*address, web3.provider.clone()));
 
         Ok(Self {
             settlement,

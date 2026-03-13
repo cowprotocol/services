@@ -1,9 +1,9 @@
 use {
-    self::trade::{ClearingPrices, Fee, Fulfillment}, super::auction, crate::{
+    self::trade::{ClearingPrices, Fee, Fulfillment},
+    super::auction,
+    crate::{
         boundary,
-        domain::{
-            self, competition::{self, order}
-        },
+        domain::competition::{self, order},
         infra::{
             Simulator,
             blockchain::{self, Ethereum},
@@ -11,10 +11,20 @@ use {
             simulator,
             solver::{ManageNativeToken, Solver},
         },
-    }, alloy::network::TxSigner, chrono::Utc, eth_domain_types::{self as eth, TokenAddress}, futures::future::try_join_all, itertools::Itertools, num::{BigRational, One}, number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational}, solvers_dto::solution::Flashloan, std::{
+    },
+    alloy::network::TxSigner,
+    chrono::Utc,
+    eth_domain_types::{self as eth, TokenAddress},
+    futures::future::try_join_all,
+    itertools::Itertools,
+    num::{BigRational, One},
+    number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+    solvers_dto::solution::Flashloan,
+    std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         sync::atomic::{AtomicU64, Ordering},
-    }, thiserror::Error
+    },
+    thiserror::Error,
 };
 
 pub mod encoding;

@@ -1,9 +1,7 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{
-            self, liquidity::{self, uniswap}
-        },
+        domain::liquidity::{self, uniswap},
         infra::{self, blockchain::Ethereum},
     },
     contracts::alloy::IUniswapLikeRouter,
@@ -85,12 +83,12 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> domain::Interaction {
-    let handler = uniswap_v2::Inner::new(pool.router.0, *receiver);
+) -> eth::Interaction {
+    let handler = uniswap_v2::Inner::new(*pool.router, *receiver);
 
     let interaction = handler.settle(
-        TokenAmount::new(input.0.token.into(), input.0.amount),
-        TokenAmount::new(output.0.token.into(), output.0.amount),
+        TokenAmount::new(*input.0.token, input.0.amount),
+        TokenAmount::new(*output.0.token, output.0.amount),
     );
 
     let (target, value, call_data) = interaction.encode_swap();
@@ -121,7 +119,7 @@ where
     R: PoolReading + Send + Sync + 'static,
     F: FnOnce(Web3, PairProvider) -> R,
 {
-    let router = IUniswapLikeRouter::Instance::new(config.router.0, eth.web3().provider.clone());
+    let router = IUniswapLikeRouter::Instance::new(*config.router, eth.web3().provider.clone());
     let settlement = eth.contracts().settlement().clone();
     let pool_fetcher = {
         let factory = router.factory().call().await?;

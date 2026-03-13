@@ -1,5 +1,5 @@
 use {
-        crate::{
+    crate::{
         domain::competition::order,
         infra::config::file::FeeHandler,
         tests::{

@@ -1,10 +1,8 @@
 use {
-    crate::domain::{
-        competition::{
-            self,
-            order::{self, FeePolicy, SellAmount, Side, TargetAmount, Uid},
-            solution::error::{self, Math},
-        },
+    crate::domain::competition::{
+        self,
+        order::{self, FeePolicy, SellAmount, Side, TargetAmount, Uid},
+        solution::error::{self, Math},
     },
     eth_domain_types::{self as eth, Asset},
     number::u256_ext::U256Ext,

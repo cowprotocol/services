@@ -1,9 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{
-            self, liquidity::{self, balancer}
-        },
+        domain::{self, liquidity::{self, balancer}},
         infra::{self, blockchain::Ethereum},
     },
     anyhow::{Context, Result},
@@ -51,12 +49,12 @@ fn to_interaction(
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
         *receiver,
-        pool.vault.0,
+        *pool.vault,
     );
 
     let interaction = handler.swap(
-        TokenAmount::new(input.0.token.0.0, input.0.amount.0),
-        TokenAmount::new(output.0.token.0.0, output.0.amount.0),
+        TokenAmount::new(*input.0.token, input.0.amount.0),
+        TokenAmount::new(*output.0.token, output.0.amount.0),
     );
 
     let (target, value, call_data) = interaction.encode_swap();
@@ -101,7 +99,7 @@ async fn init_liquidity(
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
-        vault: BalancerV2Vault::Instance::new(config.vault.0, web3.provider.clone()),
+        vault: BalancerV2Vault::Instance::new(*config.vault, web3.provider.clone()),
         factories: [
             config
                 .weighted

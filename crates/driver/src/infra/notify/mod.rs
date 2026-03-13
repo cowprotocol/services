@@ -7,11 +7,7 @@ pub mod liquidity_sources;
 mod notification;
 
 pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
-use {
-    super::simulator,
-    crate::domain::mempools::Error,
-    eth_domain_types as eth,
-};
+use {super::simulator, crate::domain::mempools::Error, eth_domain_types as eth};
 
 pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {
     solver.notify(auction_id, None, notification::Kind::Timeout);
@@ -106,8 +102,8 @@ pub fn executed(
     res: &Result<eth::TxId, Error>,
 ) {
     let kind = match res {
-        Ok(hash) => notification::Settlement::Success(hash.clone()),
-        Err(Error::Revert { tx_id: hash, .. }) => notification::Settlement::Revert(hash.clone()),
+        Ok(hash) => notification::Settlement::Success(*hash),
+        Err(Error::Revert { tx_id: hash, .. }) => notification::Settlement::Revert(*hash),
         Err(Error::SimulationRevert { .. }) => notification::Settlement::SimulationRevert,
         Err(Error::Expired { .. }) => notification::Settlement::Expired,
         Err(Error::Other(_) | Error::Disabled) => notification::Settlement::Fail,

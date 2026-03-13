@@ -48,7 +48,10 @@ pub struct ZeroExSignature {
 }
 
 impl LimitOrder {
-    pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<domain::Interaction> {
+    pub fn to_interaction(
+        &self,
+        input: &liquidity::MaxInput,
+    ) -> anyhow::Result<domain::Interaction> {
         let method = self.zeroex.fillOrKillLimitOrder(
             IZeroex::LibNativeOrder::LimitOrder {
                 makerToken: self.order.maker_token,

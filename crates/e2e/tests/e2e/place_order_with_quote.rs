@@ -7,6 +7,7 @@ use {
         test_util::TestDefault,
     },
     e2e::setup::{colocation, wait_for_condition, *},
+    eth_domain_types::NonZeroU256,
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
         order::{OrderCreation, OrderKind},
