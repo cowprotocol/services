@@ -76,10 +76,10 @@ pub struct TradeVerifier {
     quote_inaccuracy_limit: BigRational,
     domain_separator: DomainSeparator,
     tokens_without_verification: HashSet<Address>,
+    gas_limit: u64,
 }
 
 impl TradeVerifier {
-    const DEFAULT_GAS: u64 = 12_000_000;
     const SPARDOSE: Address = address!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: Address = address!("0000000000000000000000000000000000010000");
 
@@ -94,6 +94,7 @@ impl TradeVerifier {
         native_token: Address,
         quote_inaccuracy_limit: BigDecimal,
         tokens_without_verification: HashSet<Address>,
+        gas_limit: u64,
     ) -> Result<Self> {
         let settlement_contract =
             GPv2Settlement::GPv2Settlement::new(settlement, web3.provider.clone());
@@ -110,6 +111,7 @@ impl TradeVerifier {
             web3,
             domain_separator,
             tokens_without_verification,
+            gas_limit,
         })
     }
 
@@ -176,7 +178,7 @@ impl TradeVerifier {
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
             .from(solver_address)
             .to(solver_address)
-            .gas(Self::DEFAULT_GAS)
+            .gas(self.gas_limit)
             // Use a high enough non-zero gas price to catch tokens with special logic
             // for gas_price == 0 but also avoid reverts due to too low gas price.
             // The exact price is not important since we are only interested in the used

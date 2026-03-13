@@ -113,6 +113,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             network.native_token,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
+            args.max_gas_per_tx,
         )
         .await?;
         Ok(Some(Arc::new(verifier)))
