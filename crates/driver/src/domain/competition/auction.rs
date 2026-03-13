@@ -180,7 +180,7 @@ impl Price {
     /// Converting 1 ETH expressed in `eth::TokenAmount` into `eth::Ether`
     ///
     /// ```
-    /// use driver::domain::{competition::auction::Price, eth};
+    /// use {driver::domain::competition::auction::Price, eth_domain_types as eth};
     ///
     /// let amount = eth::TokenAmount::from(eth::U256::from(10).pow(eth::U256::from(18)));
     /// let price = Price::try_new(eth::Ether::from(
@@ -204,7 +204,7 @@ impl Price {
     ///
     /// # Examples
     /// ```
-    /// use driver::domain::{competition::auction::Price, eth};
+    /// use {driver::domain::competition::auction::Price, eth_domain_types as eth};
     ///
     /// let amount = eth::Ether::from(eth::U256::from(10).pow(eth::U256::from(18)));
     /// let price = Price::try_new(eth::Ether::from(
