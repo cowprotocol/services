@@ -3208,10 +3208,8 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types",
  "derive_more 1.0.0",
- "model",
  "num",
  "number",
- "solvers-dto",
 ]
 
 [[package]]

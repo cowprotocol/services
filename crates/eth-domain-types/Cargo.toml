@@ -10,7 +10,5 @@ alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rpc-types = { workspace = true }
 derive_more = { workspace = true }
-model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
-solvers-dto = { workspace = true }

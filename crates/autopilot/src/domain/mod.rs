@@ -1,4 +1,5 @@
 pub mod auction;
+pub mod blockchain;
 pub mod competition;
 pub mod fee;
 pub mod quote;

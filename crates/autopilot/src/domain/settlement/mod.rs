@@ -24,7 +24,7 @@ pub mod transaction;
 pub use {
     auction::Auction,
     observer::Observer,
-    trade::{Trade, math},
+    trade::{Trade, TradeEvent, math},
     transaction::Transaction,
 };
 
@@ -201,6 +201,14 @@ impl Settlement {
     }
 }
 
+/// A settlement event emitted by a settlement smart contract.
+#[derive(Debug, Clone, Copy)]
+pub struct SettlementEvent {
+    pub block: eth::BlockNo,
+    pub log_index: u64,
+    pub transaction: eth::TxId,
+}
+
 #[derive(Debug, Hash, Eq, PartialEq)]
 struct OrderMatchKey {
     uid: OrderUid,
@@ -345,6 +353,7 @@ mod tests {
         crate::domain::{
             self,
             auction,
+            blockchain,
             settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
@@ -696,8 +705,8 @@ mod tests {
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
 
         let transaction = super::transaction::Transaction::try_new(
-            &eth::Transaction {
-                trace_calls: eth::CallFrame {
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -803,8 +812,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &eth::Transaction {
-                trace_calls: eth::CallFrame {
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -943,8 +952,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &eth::Transaction {
-                trace_calls: eth::CallFrame {
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -1116,8 +1125,8 @@ mod tests {
         let settlement_contract =
             eth::Address::from_slice(&hex!("9008d19f58aabd9ed0d60971565aa8510560ab41"));
         let transaction = super::transaction::Transaction::try_new(
-            &eth::Transaction {
-                trace_calls: eth::CallFrame {
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -1294,8 +1303,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &eth::Transaction {
-                trace_calls: eth::CallFrame {
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()
@@ -1519,8 +1528,8 @@ mod tests {
         ));
         let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
         let transaction = super::transaction::Transaction::try_new(
-            &eth::Transaction {
-                trace_calls: eth::CallFrame {
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
                     to: Some(settlement_contract),
                     input: calldata.into(),
                     ..Default::default()

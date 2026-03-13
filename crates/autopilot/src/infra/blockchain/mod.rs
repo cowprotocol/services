@@ -1,6 +1,6 @@
 use {
     self::contracts::Contracts,
-    crate::boundary,
+    crate::{boundary, domain},
     alloy::{
         providers::{Provider, ext::DebugApi},
         rpc::types::{
@@ -109,7 +109,10 @@ impl Ethereum {
         &self.contracts
     }
 
-    pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
+    pub async fn transaction(
+        &self,
+        hash: eth::TxId,
+    ) -> Result<domain::blockchain::Transaction, Error> {
         let (receipt, traces): (Option<TransactionReceipt>, GethTrace) = tokio::try_join!(
             self.web3.provider.get_transaction_receipt(hash.0),
             // Use unbuffered transport for the Debug API since not all providers support
@@ -143,13 +146,13 @@ fn into_domain(
     receipt: TransactionReceipt,
     trace: GethTrace,
     timestamp: u64,
-) -> anyhow::Result<eth::Transaction> {
+) -> anyhow::Result<domain::blockchain::Transaction> {
     let trace_calls = match trace {
         GethTrace::CallTracer(call_frame) => call_frame.into(),
         trace => bail!("unsupported trace call {trace:?}"),
     };
 
-    Ok(eth::Transaction {
+    Ok(domain::blockchain::Transaction {
         hash: receipt.transaction_hash.into(),
         from: receipt.from,
         block: receipt

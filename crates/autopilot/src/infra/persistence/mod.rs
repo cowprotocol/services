@@ -2,7 +2,10 @@ use {
     crate::{
         boundary,
         database::{Postgres, order_events::store_order_events},
-        domain::{self, settlement::transaction::EncodedTrade},
+        domain::{
+            self,
+            settlement::{SettlementEvent, TradeEvent, transaction::EncodedTrade},
+        },
         infra::persistence::dto::{AuctionId, RawAuctionData},
     },
     ::winner_selection::state::RankedItem,
@@ -709,7 +712,7 @@ impl Persistence {
     /// not yet populated in the database.
     pub async fn get_settlements_without_auction(
         &self,
-    ) -> Result<Vec<eth::SettlementEvent>, DatabaseError> {
+    ) -> Result<Vec<SettlementEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_without_auction"])
@@ -720,7 +723,7 @@ impl Persistence {
             .await?
             .into_iter()
             .map(|event| {
-                let event = eth::SettlementEvent {
+                let event = SettlementEvent {
                     block: u64::try_from(event.block_number)
                         .context("negative block")?
                         .into(),
@@ -736,8 +739,8 @@ impl Persistence {
     /// Returns the trade events that are associated with the settlement event
     pub async fn get_trades_for_settlement(
         &self,
-        settlement: &eth::SettlementEvent,
-    ) -> Result<Vec<eth::TradeEvent>, DatabaseError> {
+        settlement: &SettlementEvent,
+    ) -> Result<Vec<TradeEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_trades_for_settlement"])
@@ -754,7 +757,7 @@ impl Persistence {
         .await?
         .into_iter()
         .map(|event| {
-            let event = eth::TradeEvent {
+            let event = TradeEvent {
                 block: u64::try_from(event.block_number)
                     .context("negative block")?
                     .into(),
@@ -768,7 +771,7 @@ impl Persistence {
 
     pub async fn save_settlement(
         &self,
-        event: eth::SettlementEvent,
+        event: SettlementEvent,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()

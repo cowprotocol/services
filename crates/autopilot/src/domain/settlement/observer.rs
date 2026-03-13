@@ -82,7 +82,7 @@ impl Observer {
             .await;
     }
 
-    async fn post_process_settlement(&self, settlement: eth::SettlementEvent) -> Result<()> {
+    async fn post_process_settlement(&self, settlement: super::SettlementEvent) -> Result<()> {
         let settlement_data = self
             .fetch_auction_data_for_transaction(settlement.transaction)
             .await?;

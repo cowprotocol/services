@@ -132,6 +132,14 @@ impl Trade {
     }
 }
 
+/// A trade event emitted by a settlement smart contract.
+#[derive(Debug, Clone, Copy)]
+pub struct TradeEvent {
+    pub block: eth::BlockNo,
+    pub log_index: u64,
+    pub order_uid: model::order::OrderUid,
+}
+
 /// A trade filling an order that was part of the auction.
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
