@@ -33,6 +33,7 @@ use {
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
+    http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
@@ -43,7 +44,6 @@ use {
     },
     shared::{
         arguments::tracing_config,
-        http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -299,9 +299,9 @@ pub async fn run(
             block_stream: eth.current_block().clone(),
         },
         factory::Components {
-            http_factory: price_estimation::utils::http_client_factory::HttpClientFactory::new(
-                http_factory.timeout,
-            ),
+            http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
+                timeout: http_factory.timeout,
+            }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
@@ -357,10 +357,12 @@ pub async fn run(
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
-                .map(|price_estimator_driver| price_estimation::ExternalSolver {
-                    name: price_estimator_driver.name.clone(),
-                    url: price_estimator_driver.url.clone(),
-                })
+                .map(
+                    |price_estimator_driver| configs::price_estimation::ExternalSolver {
+                        name: price_estimator_driver.name.clone(),
+                        url: price_estimator_driver.url.clone(),
+                    },
+                )
                 .collect::<Vec<_>>(),
             api_native_price_estimator.clone(),
             gas_price_estimator.clone(),

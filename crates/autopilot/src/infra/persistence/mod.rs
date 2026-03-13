@@ -14,7 +14,7 @@ use {
     database::{
         events::EventIndex,
         leader_pg_lock::LeaderLock,
-        order_events::OrderEventLabel,
+        order_events::{OrderEventLabel, OrderFilterReason},
         order_execution::Asset,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
@@ -295,7 +295,7 @@ impl Persistence {
         label: boundary::OrderEventLabel,
     ) {
         let order_uids: Vec<_> = order_uids.into_iter().collect();
-        self.store_order_events_owned(order_uids, std::convert::identity, label);
+        self.store_order_events_owned(order_uids, std::convert::identity, label, None);
     }
 
     /// A variants of [`store_order_events`] where [`items`] is already an owned
@@ -307,6 +307,7 @@ impl Persistence {
         items: I,
         convert: F,
         label: boundary::OrderEventLabel,
+        reason: Option<OrderFilterReason>,
     ) where
         I: IntoIterator + Send + 'static,
         I::Item: Send,
@@ -318,7 +319,7 @@ impl Persistence {
                 let order_uids = items.into_iter().map(convert).collect();
                 match db.pool.acquire().await {
                     Ok(mut tx) => {
-                        store_order_events(&mut tx, order_uids, label, Utc::now()).await;
+                        store_order_events(&mut tx, order_uids, label, reason, Utc::now()).await;
                     }
                     Err(err) => {
                         tracing::error!(
@@ -824,6 +825,7 @@ impl Persistence {
                 &mut ex,
                 fee_breakdown.keys().cloned().collect(),
                 OrderEventLabel::Traded,
+                None,
                 Utc::now(),
             )
             .await;

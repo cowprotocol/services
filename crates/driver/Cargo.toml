@@ -44,6 +44,7 @@ event-indexing = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
+http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 itertools = { workspace = true }

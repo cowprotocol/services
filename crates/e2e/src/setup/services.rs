@@ -25,6 +25,7 @@ use {
             run_loop::RunLoopConfig,
         },
         order_quoting::{ExternalSolver, OrderQuoting},
+        price_estimation::{NativePriceEstimator, NativePriceEstimators},
         test_util::TestDefault,
     },
     ethrpc::Web3,
@@ -36,7 +37,6 @@ use {
         solver_competition_v2,
         trade::Trade,
     },
-    price_estimation::{NativePriceEstimator, NativePriceEstimators},
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
     std::{
@@ -385,14 +385,13 @@ impl<'a> Services<'a> {
             forwarder_contract: None,
         }];
 
-        let shared_native_price_config =
-            price_estimation::config::native_price::NativePriceConfig {
-                cache: price_estimation::config::native_price::CacheConfig {
-                    max_age: Duration::from_secs(2),
-                    ..Default::default()
-                },
+        let shared_native_price_config = configs::price_estimation::NativePriceConfig {
+            cache: configs::price_estimation::CacheConfig {
+                max_age: Duration::from_secs(2),
                 ..Default::default()
-            };
+            },
+            ..Default::default()
+        };
 
         // Create TOML config files
         let autopilot_config = Configuration {

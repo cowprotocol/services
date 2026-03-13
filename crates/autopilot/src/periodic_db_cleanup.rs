@@ -93,6 +93,7 @@ mod tests {
             order_uid: ByteArray([1; 56]),
             timestamp: now - chrono::Duration::milliseconds(300),
             label: OrderEventLabel::Created,
+            reason: None,
         };
         database::order_events::insert_order_event(&mut ex, &event_a)
             .await
@@ -101,6 +102,7 @@ mod tests {
             order_uid: ByteArray([2; 56]),
             timestamp: now - chrono::Duration::milliseconds(100),
             label: OrderEventLabel::Created,
+            reason: None,
         };
         database::order_events::insert_order_event(&mut ex, &event_b)
             .await
@@ -109,6 +111,7 @@ mod tests {
             order_uid: ByteArray([3; 56]),
             timestamp: now,
             label: OrderEventLabel::Created,
+            reason: None,
         };
         database::order_events::insert_order_event(&mut ex, &event_c)
             .await

@@ -1,7 +1,6 @@
 use {
     super::{
         Arguments,
-        NativePriceEstimator as NativePriceEstimatorSource,
         PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
@@ -12,19 +11,22 @@ use {
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
     crate::{
-        ExternalSolver,
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
-        config::native_price::NativePriceConfig,
         trade_verifier::{code_fetching::CachedCodeFetcher, tenderly_api::TenderlyCodeSimulator},
-        utils::http_client_factory::HttpClientFactory,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     bad_tokens::list_based::DenyListedTokens,
+    configs::price_estimation::{
+        ExternalSolver,
+        NativePriceConfig,
+        NativePriceEstimator as NativePriceEstimatorSource,
+    },
     contracts::alloy::WETH9,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,
+    http_client::HttpClientFactory,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,

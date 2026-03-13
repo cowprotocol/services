@@ -6,7 +6,6 @@ use {
     crate::{
         domain::{self, auction, eth, order, solution},
         infra,
-        util,
     },
     alloy::primitives::{Address, U256},
     std::fmt::{self, Debug, Formatter},
@@ -68,7 +67,10 @@ impl Debug for Call {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("Call")
             .field("to", &self.to)
-            .field("calldata", &util::fmt::Hex(&self.calldata))
+            .field(
+                "calldata",
+                &format_args!("{}", const_hex::encode_prefixed(&self.calldata)),
+            )
             .finish()
     }
 }

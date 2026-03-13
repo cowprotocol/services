@@ -152,8 +152,8 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
                     ExternalSolver::new("test_solver2", "http://localhost:11088/test_solver2"),
                 ]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
-                        price_estimation::NativePriceEstimator::forwarder(
+                    estimators: configs::price_estimation::NativePriceEstimators::new(vec![vec![
+                        configs::price_estimation::NativePriceEstimator::forwarder(
                             "http://0.0.0.0:9588".parse().unwrap(),
                         ),
                     ]]),

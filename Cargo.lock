@@ -1229,6 +1229,7 @@ dependencies = [
  "futures",
  "gas-price-estimation",
  "hex-literal",
+ "http-client",
  "humantime",
  "humantime-serde",
  "indexmap 2.13.0",
@@ -2374,6 +2375,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "humantime-serde",
+ "itertools 0.14.0",
  "price-estimation",
  "s3",
  "serde",
@@ -2985,6 +2987,7 @@ dependencies = [
  "futures",
  "gas-price-estimation",
  "hex-literal",
+ "http-client",
  "humantime",
  "humantime-serde",
  "itertools 0.14.0",
@@ -3833,6 +3836,16 @@ dependencies = [
  "http 1.4.0",
  "http-body 1.0.1",
  "pin-project-lite",
+]
+
+[[package]]
+name = "http-client"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "configs",
+ "humantime",
+ "reqwest 0.13.2",
 ]
 
 [[package]]
@@ -5126,6 +5139,7 @@ dependencies = [
  "futures",
  "gas-price-estimation",
  "hex-literal",
+ "http-client",
  "humantime",
  "humantime-serde",
  "mimalloc",
@@ -5430,6 +5444,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "contracts",
  "derive_more 1.0.0",
@@ -5437,6 +5452,7 @@ dependencies = [
  "futures",
  "gas-price-estimation",
  "hex-literal",
+ "http-client",
  "humantime",
  "humantime-serde",
  "itertools 0.14.0",
@@ -5924,6 +5940,7 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-price-estimation",
+ "http-client",
  "humantime",
  "mimalloc",
  "mockall",
@@ -6943,7 +6960,6 @@ dependencies = [
  "ethrpc",
  "futures",
  "glob",
- "hex",
  "hmac",
  "humantime-serde",
  "itertools 0.14.0",

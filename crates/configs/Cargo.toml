@@ -8,7 +8,7 @@ alloy = { workspace = true, features = ["signer-aws"] }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 humantime-serde = { workspace = true }
-price-estimation = { workspace = true }
+itertools = { workspace = true }
 s3 = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true, optional = true }

@@ -19,12 +19,14 @@ cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+configs = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
+http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 itertools = { workspace = true }
