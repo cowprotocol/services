@@ -1,7 +1,5 @@
 use {
-    crate::domain::{
-        liquidity::{self, uniswap},
-    },
+    crate::domain::liquidity::{self, uniswap},
     eth_domain_types as eth,
 };
 

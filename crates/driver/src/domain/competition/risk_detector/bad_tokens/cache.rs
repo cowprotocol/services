@@ -1,5 +1,5 @@
 use {
-    crate::domain::{competition::risk_detector::Quality},
+    crate::domain::competition::risk_detector::Quality,
     dashmap::DashMap,
     eth_domain_types as eth,
     std::{

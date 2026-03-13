@@ -1,8 +1,4 @@
-use {
-    crate::infra::Ethereum,
-    eth_domain_types as eth,
-    thiserror::Error,
-};
+use {crate::infra::Ethereum, eth_domain_types as eth, thiserror::Error};
 
 mod dto;
 

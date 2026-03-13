@@ -853,7 +853,7 @@ impl Blockchain {
     pub fn get_token(&self, token: &str) -> Address {
         match token {
             "WETH" => *self.weth.address(),
-            "ETH" => eth::ETH_TOKEN.0.0,
+            "ETH" => *eth::ETH_TOKEN,
             _ => *self.tokens.get(token).unwrap().address(),
         }
     }

@@ -47,12 +47,11 @@ pub mod risk_detector;
 pub mod solution;
 pub mod sorting;
 
-pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
-
 use {
-    crate::{infra::notify::liquidity_sources::LiquiditySourceNotifying},
-    eth_domain_types::BlockNo
+    crate::infra::notify::liquidity_sources::LiquiditySourceNotifying,
+    eth_domain_types::BlockNo,
 };
+pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;

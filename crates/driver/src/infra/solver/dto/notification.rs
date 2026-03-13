@@ -30,7 +30,7 @@ pub fn new(
             notify::Kind::ScoringFailed(scoring) => scoring.into(),
             notify::Kind::NonBufferableTokensUsed(tokens) => {
                 solvers_dto::notification::Kind::NonBufferableTokensUsed {
-                    tokens: tokens.into_iter().map(|token| token.0.0).collect(),
+                    tokens: tokens.into_iter().map(|token| *token).collect(),
                 }
             }
             notify::Kind::SolverAccountInsufficientBalance(required) => {
@@ -83,7 +83,7 @@ impl From<notify::ScoreKind> for solvers_dto::notification::Kind {
             }
             notify::ScoreKind::MissingPrice(token_address) => {
                 solvers_dto::notification::Kind::MissingPrice {
-                    token_address: token_address.0.0,
+                    token_address: *token_address,
                 }
             }
         }

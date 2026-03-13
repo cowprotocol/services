@@ -112,8 +112,8 @@ pub fn new(
                 }
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),
-                    sell_token: available.sell.token.0.0,
-                    buy_token: available.buy.token.0.0,
+                    sell_token: *available.sell.token,
+                    buy_token: *available.buy.token,
                     sell_amount: available.sell.amount.into(),
                     buy_amount: available.buy.amount.into(),
                     full_sell_amount: order.sell.amount.into(),
@@ -182,14 +182,14 @@ pub fn new(
                         solvers_dto::auction::ConstantProductPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.address,
-                            router: pool.router.0,
+                            router: *pool.router,
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .reserves
                                 .iter()
                                 .map(|asset| {
                                     (
-                                        asset.token.0.0,
+                                        *asset.token,
                                         solvers_dto::auction::ConstantProductReserve {
                                             balance: asset.amount.into(),
                                         },
@@ -204,10 +204,10 @@ pub fn new(
                     solvers_dto::auction::Liquidity::ConcentratedLiquidity(
                         solvers_dto::auction::ConcentratedLiquidityPool {
                             id: liquidity.id.0.to_string(),
-                            address: pool.address.0,
-                            router: pool.router.0,
+                            address: *pool.address,
+                            router: *pool.router,
                             gas_estimate: liquidity.gas.0,
-                            tokens: vec![pool.tokens.get().0.0.0, pool.tokens.get().1.0.0],
+                            tokens: vec![*pool.tokens.get().0, *pool.tokens.get().1],
                             sqrt_price: pool.sqrt_price.0,
                             liquidity: pool.liquidity.0,
                             tick: pool.tick.0,

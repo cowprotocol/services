@@ -1,7 +1,5 @@
 use {
-    crate::{
-        boundary,
-    },
+    crate::boundary,
     account_balances::{BalanceSimulator, SimulationError},
     alloy::{
         eips::eip1559::Eip1559Estimation,
@@ -123,7 +121,7 @@ impl Ethereum {
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
-            contracts.vault_relayer().0,
+            *contracts.vault_relayer(),
             Some(*contracts.vault().address()),
             balance_overrider.clone(),
         );

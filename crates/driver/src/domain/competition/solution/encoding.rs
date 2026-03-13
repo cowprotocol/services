@@ -2,10 +2,12 @@ use {
     super::{error::Math, interaction::Liquidity, settlement, slippage, trade::ClearingPrices},
     crate::{
         domain::{
-            self, competition::{
+            self,
+            competition::{
                 self,
                 order::{self, Partial},
-            }, liquidity
+            },
+            liquidity,
         },
         infra::{self, solver::ManageNativeToken},
     },
@@ -272,7 +274,7 @@ fn encode_flashloan_settlement(
             amount: flashloan.amount.0,
             borrower: flashloan.protocol_adapter,
             lender: flashloan.liquidity_provider,
-            token: flashloan.token.0.0,
+            token: *flashloan.token,
         })
         .collect();
 

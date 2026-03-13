@@ -1,14 +1,12 @@
 use {
-    crate::{
-        infra::{
-            blockchain,
-            config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
-            liquidity,
-            mempool,
-            notify,
-            simulator,
-            solver,
-        },
+    crate::infra::{
+        blockchain,
+        config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
+        liquidity,
+        mempool,
+        notify,
+        simulator,
+        solver,
     },
     eth_domain_types as eth,
     std::time::Duration,

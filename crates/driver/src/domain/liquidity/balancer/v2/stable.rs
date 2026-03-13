@@ -1,9 +1,6 @@
 use {
     super::{Fee, Id, ScalingFactor},
-    crate::{
-        boundary,
-        domain::liquidity,
-    },
+    crate::{boundary, domain::liquidity},
     eth_domain_types as eth,
     itertools::Itertools,
 };

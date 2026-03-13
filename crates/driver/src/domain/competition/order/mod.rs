@@ -1,6 +1,8 @@
 use {
     crate::{
-        domain, infra::{Ethereum, blockchain}, util
+        domain,
+        infra::{Ethereum, blockchain},
+        util,
     },
     alloy::primitives::FixedBytes,
     derive_more::{From, Into},

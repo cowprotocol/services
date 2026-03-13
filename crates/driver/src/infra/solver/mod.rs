@@ -435,8 +435,8 @@ impl Solver {
             .flat_map(|order| {
                 let hint = order.app_data.flashloan()?;
                 let flashloan = eth::Flashloan {
-                    liquidity_provider: hint.liquidity_provider.into(),
-                    protocol_adapter: hint.protocol_adapter.into(),
+                    liquidity_provider: hint.liquidity_provider,
+                    protocol_adapter: hint.protocol_adapter,
                     receiver: hint.receiver,
                     token: hint.token.into(),
                     amount: hint.amount.into(),

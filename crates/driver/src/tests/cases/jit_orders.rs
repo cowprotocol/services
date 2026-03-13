@@ -1,8 +1,6 @@
 use {
     crate::{
-        domain::{
-            competition::{order, order::Side},
-        },
+        domain::competition::{order, order::Side},
         tests::{
             self,
             cases::EtherExt,

@@ -1,7 +1,4 @@
-use {
-    alloy::primitives::Bytes, model::signature::EcdsaSignature,
-    eth_domain_types as eth,
-};
+use {alloy::primitives::Bytes, eth_domain_types as eth, model::signature::EcdsaSignature};
 
 /// Signature over the order data.
 #[derive(Debug, Clone)]

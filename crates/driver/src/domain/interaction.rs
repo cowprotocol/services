@@ -1,5 +1,7 @@
-use alloy::primitives::Bytes;
-use eth_domain_types::{Address, Ether};
+use {
+    alloy::primitives::Bytes,
+    eth_domain_types::{Address, Ether},
+};
 
 /// An onchain transaction which interacts with a smart contract.
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -4,7 +4,8 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{Ethereum, Mempool, simulator, solver::Timeouts}, crate::{
+    super::{Ethereum, Mempool, simulator, solver::Timeouts},
+    crate::{
         boundary,
         domain::{
             Liquidity,
@@ -20,10 +21,15 @@ use {
         },
         infra::solver,
         util::http,
-    }, eth_domain_types::{self as eth, Gas}, ethrpc::block_stream::BlockInfo, num::Saturating, std::{
+    },
+    eth_domain_types::{self as eth, Gas},
+    ethrpc::block_stream::BlockInfo,
+    num::Saturating,
+    std::{
         collections::{BTreeMap, HashSet},
         time::Duration,
-    }, url::Url
+    },
+    url::Url,
 };
 
 pub mod metrics;

@@ -1,8 +1,18 @@
 use {
-    super::competition::solution::settlement, crate::{
+    super::competition::solution::settlement,
+    crate::{
         domain::competition::solution::Settlement,
         infra::{self, Ethereum, observe},
-    }, alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall}, anyhow::Context, contracts::alloy::CowSettlementForwarder::CowSettlementForwarder, eth_domain_types::{self as eth, BlockNo, TxId, TxStatus}, ethrpc::block_stream::into_stream, futures::{FutureExt, StreamExt, future::select_ok}, num::Saturating, thiserror::Error, tracing::Instrument
+    },
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
+    anyhow::Context,
+    contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
+    eth_domain_types::{self as eth, BlockNo, TxId, TxStatus},
+    ethrpc::block_stream::into_stream,
+    futures::{FutureExt, StreamExt, future::select_ok},
+    num::Saturating,
+    thiserror::Error,
+    tracing::Instrument,
 };
 
 /// Factor by how much a transaction fee needs to be increased to override a
@@ -195,15 +205,15 @@ impl Mempools {
                     });
                 match receipt {
                     TxStatus::Executed { block_number } => return Ok(SubmissionSuccess {
-                        tx_hash: hash.clone(),
-                        submitted_at_block: submission_block.into(),
+                        tx_hash: hash,
+                        submitted_at_block: submission_block,
                         included_in_block: block_number,
                     }),
                     TxStatus::Reverted { block_number } => {
                         return Err(Error::Revert {
-                            tx_id: hash.clone(),
-                            submitted_at_block: submission_block.into(),
-                            reverted_at_block: block_number.into(),
+                            tx_id: hash,
+                            submitted_at_block: submission_block,
+                            reverted_at_block: block_number,
                         })
                     }
                     TxStatus::Pending => {
@@ -219,8 +229,8 @@ impl Mempools {
                                 .cancel(mempool, final_gas_price, signer, nonce)
                                 .await;
                             return Err(Error::Expired {
-                                tx_id: hash.clone(),
-                                submitted_at_block: submission_block.into(),
+                                tx_id: hash,
+                                submitted_at_block: submission_block,
                                 submission_deadline,
                             });
                         }
@@ -236,7 +246,7 @@ impl Mempools {
                                     .cancel(mempool, final_gas_price, signer, nonce)
                                     .await;
                                 return Err(Error::SimulationRevert {
-                                    submitted_at_block: submission_block.into(),
+                                    submitted_at_block: submission_block,
                                     reverted_at_block: block.number.into(),
                                 });
                             } else {
@@ -266,7 +276,7 @@ impl Mempools {
                 return Ok(SubmissionSuccess {
                     tx_hash: hash,
                     included_in_block: block_number,
-                    submitted_at_block: submission_block.into(),
+                    submitted_at_block: submission_block,
                 });
             }
         }

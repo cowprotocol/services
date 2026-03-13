@@ -11,7 +11,11 @@ pub use {
 use {
     alloy_primitives::Bytes,
     alloy_rpc_types::TransactionRequest,
-    derive_more::{From, Into, derive::Deref},
+    derive_more::{
+        From,
+        Into,
+        derive::Deref,
+    },
 };
 
 mod access_list;
@@ -25,13 +29,7 @@ mod token_amount;
 /// it does not implement the ERC20 interface, but this address is used by
 /// convention across the Ethereum ecosystem whenever ETH is treated like an
 /// ERC20 token.
-pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(Address::repeat_byte(0xee)));
-
-// TODO This type should probably use Ethereum::is_contract to verify during
-// construction that it does indeed point to a contract
-/// A smart contract address.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
-pub struct ContractAddress(pub Address);
+pub const ETH_TOKEN: TokenAddress = TokenAddress(Address::repeat_byte(0xee));
 
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
@@ -65,7 +63,7 @@ impl From<Address> for WrappedNativeToken {
 
 impl From<Address> for TokenAddress {
     fn from(value: Address) -> Self {
-        Self(value.into())
+        Self(value)
     }
 }
 
@@ -76,12 +74,6 @@ impl From<Address> for ContractAddress {
 }
 
 impl From<TokenAddress> for Address {
-    fn from(value: TokenAddress) -> Self {
-        value.0.into()
-    }
-}
-
-impl From<TokenAddress> for ContractAddress {
     fn from(value: TokenAddress) -> Self {
         value.0
     }

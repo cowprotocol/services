@@ -137,7 +137,7 @@ impl Fetcher {
             .iter()
             .map(|pair| {
                 let (a, b) = pair.get();
-                TokenPair::new(a.0.0, b.0.0).expect("a != b")
+                TokenPair::new(*a, *b).expect("a != b")
             })
             .collect();
 

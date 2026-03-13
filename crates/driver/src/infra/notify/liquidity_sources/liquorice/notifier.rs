@@ -86,8 +86,8 @@ mod utils {
     use {
         crate::domain::competition::solution::{self, Settlement},
         alloy::{primitives::Address, sol_types::SolCall},
-        eth_domain_types as eth,
         contracts::alloy::LiquoriceSettlement,
+        eth_domain_types as eth,
         std::collections::HashSet,
     };
 
