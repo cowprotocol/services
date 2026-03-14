@@ -6,7 +6,7 @@ use {
             competition::solution::Settlement,
             eth::{TxId, TxStatus},
         },
-        infra::{self, Ethereum, observe, solver::Solver},
+        infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},
     anyhow::Context,
@@ -44,14 +44,14 @@ impl Mempools {
     /// Publish a settlement to the mempools.
     pub async fn execute(
         &self,
-        solver: &Solver,
+        solver_address: eth::Address,
         settlement: &Settlement,
         submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
         let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
             async move {
                 let result = self
-                    .submit(mempool, solver, settlement, submission_deadline)
+                    .submit(mempool, solver_address, settlement, submission_deadline)
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
                 observe::mempool_executed(mempool, settlement, &result);
@@ -80,7 +80,7 @@ impl Mempools {
     async fn submit(
         &self,
         mempool: &infra::mempool::Mempool,
-        solver: &Solver,
+        solver_address: eth::Address ,
         settlement: &Settlement,
         submission_deadline: BlockNo,
     ) -> Result<SubmissionSuccess, Error> {
@@ -130,7 +130,7 @@ impl Mempools {
         // Fetch the nonce to avoid race conditions between concurrent
         // transactions (e.g., settlement tx and cancellation tx) from the same
         // solver address.
-        let nonce = mempool.get_nonce(solver.address()).await?;
+        let nonce = mempool.get_nonce(solver_address).await?;
 
         // estimate the gas price such that the tx should still be included
         // even if the gas price increases the maximum amount until the submission
@@ -146,7 +146,7 @@ impl Mempools {
         // if there is still a tx pending we also have to make sure we outbid that one
         // enough to make the node replace it in the mempool
         let replacement_gas_price = self
-            .minimum_replacement_gas_price(mempool, solver, nonce)
+            .minimum_replacement_gas_price(mempool, solver_address, nonce)
             .await;
         let final_gas_price = match &replacement_gas_price {
             Some(replacement_gas_price)
@@ -170,7 +170,7 @@ impl Mempools {
                 tx.clone(),
                 final_gas_price,
                 settlement.gas.limit,
-                solver,
+                solver_address,
                 nonce,
             )
             .await?;
@@ -210,7 +210,7 @@ impl Mempools {
                                 "exceeded submission deadline, cancelling"
                             );
                             let _ = self
-                                .cancel(mempool, final_gas_price, solver, nonce)
+                                .cancel(mempool, final_gas_price, solver_address, nonce)
                                 .await;
                             return Err(Error::Expired {
                                 tx_id: hash.clone(),
@@ -227,7 +227,7 @@ impl Mempools {
                                     "tx started failing in mempool, cancelling"
                                 );
                                 let _ = self
-                                    .cancel(mempool, final_gas_price, solver, nonce)
+                                    .cancel(mempool, final_gas_price, solver_address, nonce)
                                     .await;
                                 return Err(Error::SimulationRevert {
                                     submitted_at_block: submission_block,
@@ -273,12 +273,12 @@ impl Mempools {
         &self,
         mempool: &infra::mempool::Mempool,
         original_tx_gas_price: Eip1559Estimation,
-        solver: &Solver,
+        solver_address: eth::Address,
         nonce: u64,
     ) -> Result<TxId, Error> {
         let fallback_gas_price = original_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT);
         let replacement_gas_price = self
-            .minimum_replacement_gas_price(mempool, solver, nonce)
+            .minimum_replacement_gas_price(mempool, solver_address, nonce)
             .await;
 
         // the node is the ultimate source of truth to compute the minimum
@@ -290,8 +290,8 @@ impl Mempools {
         };
 
         let cancellation = eth::Tx {
-            from: solver.address(),
-            to: solver.address(),
+            from: solver_address,
+            to: solver_address,
             value: 0.into(),
             input: Default::default(),
             access_list: Default::default(),
@@ -309,7 +309,7 @@ impl Mempools {
                 cancellation,
                 final_gas_price,
                 CANCELLATION_GAS_AMOUNT.into(),
-                solver,
+                solver_address,
                 nonce,
             )
             .await
@@ -322,10 +322,10 @@ impl Mempools {
     async fn minimum_replacement_gas_price(
         &self,
         mempool: &infra::Mempool,
-        solver: &Solver,
+        solver_address: eth::Address,
         next_nonce: u64,
     ) -> Option<Eip1559Estimation> {
-        if let Some(last_submission) = mempool.last_submission(solver.address()) {
+        if let Some(last_submission) = mempool.last_submission(solver_address) {
             if last_submission.nonce == next_nonce {
                 Some(last_submission.gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
             } else {
@@ -337,7 +337,7 @@ impl Mempools {
             // This is only done as a backup since it can incur significant latency and
             // is generally not very widely supported.
             let pending_tx = mempool
-                .find_pending_tx_in_mempool(solver.address(), next_nonce)
+                .find_pending_tx_in_mempool(solver_address, next_nonce)
                 .await
                 .inspect_err(|err| tracing::debug!(?err, "could not inspect tx mempool"))
                 .ok()??;

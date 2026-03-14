@@ -122,7 +122,7 @@ impl Mempool {
         tx: eth::Tx,
         gas_price: Eip1559Estimation,
         gas_limit: eth::Gas,
-        solver: &infra::Solver,
+        solver_address: eth::Address,
         nonce: u64,
     ) -> Result<eth::TxId, mempools::Error> {
         let max_fee_per_gas = gas_price.max_fee_per_gas;
@@ -130,7 +130,7 @@ impl Mempool {
         let gas_limit = gas_limit.0.try_into().map_err(anyhow::Error::from)?;
 
         let tx_request = TransactionRequest::default()
-            .from(solver.address())
+            .from(solver_address)
             .to(tx.to)
             .nonce(nonce)
             .max_fee_per_gas(max_fee_per_gas)
@@ -153,16 +153,16 @@ impl Mempool {
                     ?nonce,
                     ?gas_price,
                     ?gas_limit,
-                    solver = ?solver.address(),
+                    solver = ?solver_address,
                     "successfully submitted tx to mempool"
                 );
                 self.last_submissions
-                    .insert(solver.address(), Submission { nonce, gas_price });
+                    .insert(solver_address, Submission { nonce, gas_price });
                 Ok(eth::TxId(*tx.tx_hash()))
             }
             Err(err) => {
                 // log pending tx in case we failed to replace a pending tx
-                let last_submission = self.last_submission(solver.address());
+                let last_submission = self.last_submission(solver_address);
 
                 tracing::debug!(
                     ?err,
@@ -170,7 +170,7 @@ impl Mempool {
                     ?nonce,
                     ?last_submission,
                     ?gas_limit,
-                    solver = ?solver.address(),
+                    solver = ?solver_address,
                     "failed to submit tx to mempool"
                 );
                 Err(mempools::Error::Other(err))

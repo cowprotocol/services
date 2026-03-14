@@ -53,23 +53,23 @@ pub struct WrapperCall {
 /// [`competition::Auction`]. See also [`settlement::Settlement`].
 #[derive(derive_more::Debug, Clone)]
 pub struct Solution {
-    id: Id,
-    trades: Vec<Trade>,
-    prices: Prices,
+    pub id: Id,
+    pub trades: Vec<Trade>,
+    pub prices: Prices,
     #[debug(ignore)]
-    pre_interactions: Vec<eth::Interaction>,
+    pub pre_interactions: Vec<eth::Interaction>,
     #[debug(ignore)]
-    interactions: Vec<Interaction>,
+    pub interactions: Vec<Interaction>,
     #[debug(ignore)]
-    post_interactions: Vec<eth::Interaction>,
+    pub post_interactions: Vec<eth::Interaction>,
     #[debug("{}", solver.name())]
-    solver: Solver,
+    pub solver: Solver,
     #[debug(ignore)]
-    weth: eth::WethAddress,
-    gas: Option<eth::Gas>,
-    flashloans: HashMap<order::Uid, Flashloan>,
+    pub weth: eth::WethAddress,
+    pub gas: Option<eth::Gas>,
+    pub flashloans: HashMap<order::Uid, Flashloan>,
     #[debug(ignore)]
-    wrappers: Vec<WrapperCall>,
+    pub wrappers: Vec<WrapperCall>,
 }
 
 impl Solution {

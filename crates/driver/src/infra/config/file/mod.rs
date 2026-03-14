@@ -757,7 +757,7 @@ impl Default for GasEstimatorType {
 }
 
 /// Defines various strategies to prioritize orders.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "kebab-case", tag = "strategy")]
 pub enum OrderPriorityStrategy {
     /// Strategy to prioritize orders based on external price.

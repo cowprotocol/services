@@ -20,14 +20,13 @@ use {
             tokens,
         },
     },
-    error::Error,
     futures::Future,
     observe::distributed_tracing::tracing_axum::{make_span, record_trace_id},
     shared::account_balances,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
-
+pub use error::Error;
 mod error;
 pub mod routes;
 

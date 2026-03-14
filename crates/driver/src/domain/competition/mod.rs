@@ -707,7 +707,7 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(&self.solver, &settlement, submission_deadline)
+            .execute(self.solver.address(), &settlement, submission_deadline)
             .await;
         notify::executed(
             &self.solver,
@@ -774,7 +774,7 @@ const MAX_SOLUTIONS_TO_MERGE: usize = 10;
 
 /// Creates a vector with all possible combinations of the given solutions.
 /// The result is sorted descending by score.
-fn merge(
+pub fn merge(
     solutions: impl Iterator<Item = Solution>,
     auction: &Auction,
     max_orders_per_merged_solution: usize,
@@ -811,12 +811,12 @@ fn merge(
     merged
 }
 
-struct SettleRequest {
-    auction_id: auction::Id,
-    solution_id: u64,
-    submission_deadline: BlockNo,
-    response_sender: oneshot::Sender<Result<Settled, Error>>,
-    tracing_span: tracing::Span,
+pub struct SettleRequest {
+    pub auction_id: auction::Id,
+    pub solution_id: u64,
+    pub submission_deadline: BlockNo,
+    pub response_sender: oneshot::Sender<Result<Settled, Error>>,
+    pub tracing_span: tracing::Span,
 }
 
 /// Solution information sent to the protocol by the driver before the solution
@@ -830,7 +830,7 @@ pub struct Solved {
     pub gas: Option<eth::Gas>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Amounts {
     pub side: order::Side,
     /// The sell token and limit sell amount of sell token.

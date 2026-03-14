@@ -46,7 +46,7 @@ pub struct Settlement {
     /// The gas parameters used by the settlement.
     pub gas: Gas,
     #[debug(ignore)]
-    solution: Solution,
+    pub solution: Solution,
 }
 
 #[derive(derive_more::Debug, Clone)]

@@ -1,6 +1,5 @@
 use {
-    super::notify,
-    crate::{
+    super::notify, crate::{
         domain::{
             competition::{
                 auction::{self, Auction},
@@ -19,24 +18,15 @@ use {
             persistence::{Persistence, S3},
         },
         util,
-    },
-    alloy::{
+    }, alloy::{
         consensus::SignableTransaction,
         network::TxSigner,
         primitives::Address,
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
-    },
-    anyhow::Result,
-    derive_more::{From, Into},
-    num::BigRational,
-    observe::tracing::tracing_headers,
-    reqwest::header::HeaderName,
-    std::{
+    }, anyhow::Result, derive_more::{From, Into}, num::BigRational, observe::tracing::tracing_headers, reqwest::header::HeaderName, std::{
         collections::HashMap,
         time::{Duration, Instant},
-    },
-    thiserror::Error,
-    tracing::{Instrument, instrument},
+    }, thiserror::Error, tracing::{Instrument, instrument}
 };
 
 pub mod dto;
