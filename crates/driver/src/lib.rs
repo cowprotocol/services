@@ -15,3 +15,11 @@ pub mod util;
 mod tests;
 
 pub use self::run::{run, start};
+
+pub use model;
+pub use app_data;
+pub use observe;
+pub use ethrpc;
+pub use serde_ext;
+pub use solvers_dto;
+pub use shared;
