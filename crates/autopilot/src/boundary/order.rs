@@ -1,5 +1,5 @@
 use {
-    crate::domain::{self},
+    crate::domain,
     eth_domain_types as eth,
     shared::remaining_amounts,
 };
