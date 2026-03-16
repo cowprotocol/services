@@ -1,23 +1,19 @@
+pub use configs::{
+    native_price_estimators::{ExternalSolver, NativePriceEstimator, NativePriceEstimators},
+    price_estimation::QuoteVerificationMode,
+};
 use {
-    crate::{
-        trade_finding::{Interaction, QuoteExecution},
-        trade_verifier::tenderly_api,
-        utils::{display_option, display_secret_option},
-    },
+    crate::trade_finding::{Interaction, QuoteExecution},
     alloy::primitives::{Address, U256},
     anyhow::Result,
-    bigdecimal::BigDecimal,
     futures::future::BoxFuture,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     number::nonzero::NonZeroU256,
-    rate_limit::{RateLimiter, Strategy},
-    reqwest::Url,
+    rate_limit::RateLimiter,
     serde::{Deserialize, Serialize},
     std::{
         cmp::{Eq, PartialEq},
-        fmt::{self, Display, Formatter},
         future::Future,
-        hash::Hash,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -26,6 +22,7 @@ use {
 
 mod buffered;
 pub mod competition;
+pub mod config;
 pub mod external;
 pub mod factory;
 pub mod gas;
@@ -36,210 +33,6 @@ pub mod sanitized;
 pub mod trade_finding;
 pub mod trade_verifier;
 pub mod utils;
-
-/// Shared price estimation configuration arguments.
-#[derive(clap::Parser)]
-#[group(skip)]
-pub struct Arguments {
-    #[clap(flatten)]
-    pub tenderly: tenderly_api::Arguments,
-
-    /// Configures the back off strategy for price estimators when requests take
-    /// too long. Requests issued while back off is active get dropped
-    /// entirely. Needs to be passed as
-    /// "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
-    /// back_off_growth_factor: f64 >= 1.0
-    /// min_back_off: Duration
-    /// max_back_off: Duration
-    #[clap(long, env, verbatim_doc_comment)]
-    pub price_estimation_rate_limiter: Option<Strategy>,
-
-    /// The amount in native tokens atoms to use for price estimation. Should be
-    /// reasonably large so that small pools do not influence the prices. If
-    /// not set a reasonable default is used based on network id.
-    #[clap(long, env)]
-    pub amount_to_estimate_prices_with: Option<alloy::primitives::U256>,
-
-    /// The API key for the 1Inch API.
-    #[clap(long, env)]
-    pub one_inch_api_key: Option<String>,
-
-    /// The base URL for the 1Inch API.
-    #[clap(long, env, default_value = "https://api.1inch.dev/")]
-    pub one_inch_url: Url,
-
-    /// The CoinGecko native price configuration
-    #[clap(flatten)]
-    pub coin_gecko: CoinGecko,
-
-    /// How inaccurate a quote must be before it gets discarded provided as a
-    /// factor.
-    /// E.g. a value of `0.01` means at most 1 percent of the sell or buy tokens
-    /// can be paid out of the settlement contract buffers.
-    #[clap(long, env, default_value = "1.")]
-    pub quote_inaccuracy_limit: BigDecimal,
-
-    /// How strict quote verification should be.
-    #[clap(
-        long,
-        env,
-        default_value = "unverified",
-        value_enum,
-        verbatim_doc_comment
-    )]
-    pub quote_verification: QuoteVerificationMode,
-
-    /// Default timeout for quote requests.
-    #[clap(
-        long,
-        env,
-        default_value = "5s",
-        value_parser = humantime::parse_duration,
-    )]
-    pub quote_timeout: Duration,
-
-    #[clap(flatten)]
-    pub balance_overrides: balance_overrides::Arguments,
-
-    /// Tokens for which quote verification should not be attempted. This is an
-    /// escape hatch when there is a very bad but verifiable liquidity source
-    /// that would win against a very good but unverifiable liquidity source
-    /// (e.g. private liquidity that exists but can't be verified).
-    #[clap(long, env, value_delimiter = ',')]
-    pub tokens_without_verification: Vec<Address>,
-
-    /// How much gas a single tx may consume at most. Any quote using more than
-    /// this will fail during the verification.
-    /// Defaults to the maximum transaction gas limit of ethereum introduced
-    /// in the Fusaka hardfork.
-    #[clap(long, env, default_value_t = 16777215)]
-    pub max_gas_per_tx: u64,
-}
-
-#[derive(clap::Parser)]
-pub struct CoinGecko {
-    /// The API key for the CoinGecko API.
-    #[clap(long, env)]
-    pub coin_gecko_api_key: Option<String>,
-
-    /// The base URL for the CoinGecko API.
-    #[clap(
-        long,
-        env,
-        default_value = "https://api.coingecko.com/api/v3/simple/token_price"
-    )]
-    pub coin_gecko_url: Url,
-
-    #[clap(flatten)]
-    pub coin_gecko_buffered: Option<CoinGeckoBuffered>,
-}
-
-#[derive(clap::Parser)]
-#[clap(group(
-    clap::ArgGroup::new("coin_gecko_buffered")
-    .requires_all(&[
-        "coin_gecko_debouncing_time",
-        "coin_gecko_broadcast_channel_capacity"
-    ])
-    .multiple(true)
-    .required(false),
-))]
-pub struct CoinGeckoBuffered {
-    /// An additional minimum delay to wait for collecting CoinGecko requests.
-    ///
-    /// The delay to start counting after receiving the first request.
-    #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
-    pub coin_gecko_debouncing_time: Option<Duration>,
-
-    /// Maximum capacity of the broadcast channel to store the CoinGecko native
-    /// prices results
-    #[clap(long, env, group = "coin_gecko_buffered")]
-    pub coin_gecko_broadcast_channel_capacity: Option<usize>,
-}
-
-/// Controls which level of quote verification gets applied.
-#[derive(Copy, Clone, Debug, clap::ValueEnum)]
-#[clap(rename_all = "kebab-case")]
-pub enum QuoteVerificationMode {
-    /// Quotes do not get verified.
-    Unverified,
-    /// Quotes get verified whenever possible and verified
-    /// quotes are preferred over unverified ones.
-    Prefer,
-    /// Quotes get discarded if they can't be verified.
-    /// Some scenarios like missing sell token balance are exempt.
-    EnforceWhenPossible,
-}
-
-impl Display for Arguments {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let Self {
-            tenderly,
-            price_estimation_rate_limiter,
-            amount_to_estimate_prices_with,
-            one_inch_api_key,
-            one_inch_url,
-            coin_gecko,
-            quote_inaccuracy_limit,
-            quote_verification,
-            quote_timeout,
-            balance_overrides,
-            tokens_without_verification,
-            max_gas_per_tx,
-        } = self;
-
-        write!(f, "{tenderly}")?;
-        display_option(
-            f,
-            "price_estimation_rate_limites",
-            price_estimation_rate_limiter,
-        )?;
-        display_option(
-            f,
-            "amount_to_estimate_prices_with: {}",
-            amount_to_estimate_prices_with,
-        )?;
-        display_secret_option(
-            f,
-            "one_inch_spot_price_api_key: {:?}",
-            one_inch_api_key.as_ref(),
-        )?;
-        writeln!(f, "one_inch_spot_price_api_url: {one_inch_url}")?;
-        display_secret_option(
-            f,
-            "coin_gecko_api_key: {:?}",
-            coin_gecko.coin_gecko_api_key.as_ref(),
-        )?;
-        writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
-        writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
-        writeln!(
-            f,
-            "coin_gecko_debouncing_time: {:?}",
-            coin_gecko
-                .coin_gecko_buffered
-                .as_ref()
-                .map(|coin_gecko_buffered| coin_gecko_buffered.coin_gecko_debouncing_time),
-        )?;
-        writeln!(
-            f,
-            "coin_gecko_broadcast_channel_capacity: {:?}",
-            coin_gecko.coin_gecko_buffered.as_ref().map(
-                |coin_gecko_buffered| coin_gecko_buffered.coin_gecko_broadcast_channel_capacity
-            ),
-        )?;
-        writeln!(f, "quote_inaccuracy_limit: {quote_inaccuracy_limit}")?;
-        writeln!(f, "quote_verification: {quote_verification:?}")?;
-        writeln!(f, "quote_timeout: {quote_timeout:?}")?;
-        write!(f, "{balance_overrides}")?;
-        writeln!(
-            f,
-            "tokens_without_verification: {tokens_without_verification:?}"
-        )?;
-        writeln!(f, "max_gas_per_tx: {max_gas_per_tx}")?;
-
-        Ok(())
-    }
-}
 
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
@@ -420,46 +213,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        clap::Parser,
-        configs::price_estimation::{ExternalSolver, NativePriceEstimator, NativePriceEstimators},
-        std::str::FromStr,
-    };
-
-    #[test]
-    fn string_repr_round_trip_native_price_estimators() {
-        // We use NativePriceEstimators as one of the types used in an Arguments object
-        // that derives clap::Parser. Clap parsing of an argument using
-        // default_value_t requires that std::fmt::Display roundtrips correctly with the
-        // Arg::value_parser or #[arg(value_enum)]:
-        // https://docs.rs/clap/latest/clap/_derive/index.html#arg-attributes
-
-        let parsed = |arg: &str| NativePriceEstimators::from_str(arg);
-        let stringified = |arg: &NativePriceEstimators| format!("{arg}");
-
-        for repr in [
-            &NativePriceEstimator::Driver(
-                ExternalSolver::from_str(
-                    "baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-                )
-                .unwrap(),
-            )
-            .to_string(),
-            &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
-            &NativePriceEstimator::Forwarder {
-                url: "http://localhost:9588".parse().unwrap(),
-            }
-            .to_string(),
-            "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;Driver|three|http://localhost:3333/,Driver|four|http://localhost:4444/",
-            &format!(
-                "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;{},Driver|four|http://localhost:4444/",
-                NativePriceEstimator::OneInchSpotPriceApi
-            ),
-        ] {
-            assert_eq!(stringified(&parsed(repr).unwrap()), repr);
-        }
-    }
+    use super::*;
 
     #[test]
     fn toml_deserialize_estimators_empty() {
@@ -529,63 +283,5 @@ mod tests {
     fn toml_deserialize_estimators_default() {
         let estimators = NativePriceEstimators::default();
         assert!(estimators.as_slice().is_empty());
-    }
-
-    #[test]
-    fn enable_coin_gecko_buffered() {
-        let args = vec![
-            "test", // Program name
-            "--coin-gecko-api-key",
-            "someapikey",
-            "--coin-gecko-url",
-            "https://api.coingecko.com/api/v3/simple/token_price",
-            "--coin-gecko-debouncing-time",
-            "300ms",
-            "--coin-gecko-broadcast-channel-capacity",
-            "50",
-        ];
-
-        let coin_gecko = CoinGecko::parse_from(args);
-
-        assert!(coin_gecko.coin_gecko_buffered.is_some());
-
-        let buffered = coin_gecko.coin_gecko_buffered.unwrap();
-        assert_eq!(
-            buffered.coin_gecko_debouncing_time.unwrap(),
-            Duration::from_millis(300)
-        );
-        assert_eq!(buffered.coin_gecko_broadcast_channel_capacity.unwrap(), 50);
-    }
-
-    #[test]
-    fn test_without_buffered_present() {
-        let args = vec![
-            "test", // Program name
-            "--coin-gecko-api-key",
-            "someapikey",
-            "--coin-gecko-url",
-            "https://api.coingecko.com/api/v3/simple/token_price",
-        ];
-
-        let coin_gecko = CoinGecko::parse_from(args);
-
-        assert!(coin_gecko.coin_gecko_buffered.is_none());
-    }
-
-    #[test]
-    fn test_invalid_partial_buffered_present() {
-        let args = vec![
-            "test", // Program name
-            "--coin-gecko-api-key",
-            "someapikey",
-            "--coin-gecko-url",
-            "https://api.coingecko.com/api/v3/simple/token_price",
-            "--coin-gecko-debouncing-time",
-            "300ms",
-        ];
-
-        let result = CoinGecko::try_parse_from(args);
-
-        assert!(result.is_err());
     }
 }
