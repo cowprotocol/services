@@ -38,6 +38,7 @@ use {
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
     price_estimation::{
+        config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::NativePriceEstimating,
         trade_verifier::code_fetching::CachedCodeFetcher,
@@ -244,7 +245,7 @@ pub async fn run(
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
+    let balance_overrider = config.price_estimation.balance_overrides.init(web3.clone());
 
     let balance_fetcher = account_balances::cached(
         &web3,
@@ -281,7 +282,7 @@ pub async fn run(
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
-        &args.price_estimation,
+        &config.price_estimation,
         &config.native_price_estimation.shared,
         factory::Network {
             web3: web3.clone(),
@@ -358,7 +359,7 @@ pub async fn run(
                 .price_estimation_drivers
                 .iter()
                 .map(
-                    |price_estimator_driver| configs::price_estimation::ExternalSolver {
+                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
                         name: price_estimator_driver.name.clone(),
                         url: price_estimator_driver.url.clone(),
                     },
@@ -453,8 +454,8 @@ pub async fn run(
             .unwrap(),
         },
         balance_fetcher.clone(),
-        args.price_estimation.quote_verification,
-        args.price_estimation.quote_timeout,
+        config.price_estimation.quote_verification,
+        config.price_estimation.quote_timeout,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
@@ -487,7 +488,7 @@ pub async fn run(
     let api_task = tokio::spawn(infra::api::serve(
         config.api_address,
         api_native_price_estimator,
-        args.price_estimation.quote_timeout,
+        config.price_estimation.quote_timeout,
         api_shutdown_receiver,
     ));
 

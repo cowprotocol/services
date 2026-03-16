@@ -1,6 +1,6 @@
 use {
-    crate::price_estimation::NativePriceEstimators,
-    serde::{Deserialize, Serialize},
+    crate::native_price_estimators::NativePriceEstimators,
+    serde::Deserialize,
     std::time::Duration,
 };
 
@@ -14,7 +14,8 @@ const fn default_native_price_prefetch_time() -> Duration {
 
 // Does not implement Default because `estimators` *cannot* be empty,
 // as such, we cannot provide a proper default value for this structure.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]
 pub struct NativePriceConfig {
     /// Which estimators to use to estimate token prices in terms of the chain's
@@ -45,7 +46,7 @@ pub struct NativePriceConfig {
     pub prefetch_time: Duration,
 
     #[serde(flatten)]
-    pub shared: crate::price_estimation::NativePriceConfig,
+    pub shared: crate::native_price::NativePriceConfig,
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -59,8 +60,8 @@ impl NativePriceConfig {
             api_estimators: Default::default(),
             cache_refresh_interval: default_native_price_cache_refresh(),
             prefetch_time: Duration::from_millis(500),
-            shared: crate::price_estimation::NativePriceConfig {
-                cache: crate::price_estimation::CacheConfig {
+            shared: crate::native_price::NativePriceConfig {
+                cache: crate::native_price::CacheConfig {
                     max_age: Duration::from_secs(2),
                     ..Default::default()
                 },
