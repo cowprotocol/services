@@ -3,8 +3,8 @@ use {
     crate::{
         boundary,
         domain::{
+            self,
             competition::{self, order},
-            eth,
             liquidity,
             time,
         },
@@ -16,6 +16,7 @@ use {
         util,
     },
     chrono::Utc,
+    eth_domain_types as eth,
     std::collections::{HashMap, HashSet},
 };
 
@@ -24,9 +25,9 @@ use {
 pub struct Quote {
     pub clearing_prices: HashMap<eth::Address, eth::U256>,
     #[debug(ignore)]
-    pub pre_interactions: Vec<eth::Interaction>,
+    pub pre_interactions: Vec<domain::Interaction>,
     #[debug(ignore)]
-    pub interactions: Vec<eth::Interaction>,
+    pub interactions: Vec<domain::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
@@ -298,14 +299,9 @@ impl Tokens {
 
 mod encode {
     use {
-        crate::domain::{
-            competition::solution,
-            eth::{
-                self,
-                allowance::{Approval, Required},
-            },
-        },
+        crate::domain::{self, competition::solution},
         alloy::primitives::Address,
+        eth_domain_types::allowance::{Approval, Required},
         num::rational::Ratio,
     };
 
@@ -314,7 +310,7 @@ mod encode {
     pub(super) fn interaction(
         interaction: &solution::Interaction,
         settlement: &Address,
-    ) -> Result<Vec<eth::Interaction>, solution::encoding::Error> {
+    ) -> Result<Vec<domain::Interaction>, solution::encoding::Error> {
         let slippage = solution::slippage::Parameters {
             relative: Ratio::new_raw(DEFAULT_QUOTE_SLIPPAGE_BPS.into(), 10_000.into()),
             max: None,
@@ -323,9 +319,9 @@ mod encode {
         };
 
         let encoded = match interaction {
-            solution::Interaction::Custom(interaction) => eth::Interaction {
+            solution::Interaction::Custom(interaction) => domain::Interaction {
                 value: interaction.value,
-                target: interaction.target.0,
+                target: *interaction.target,
                 call_data: interaction.call_data.clone(),
             },
             solution::Interaction::Liquidity(liquidity) => {

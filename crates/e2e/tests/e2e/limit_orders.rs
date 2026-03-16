@@ -18,11 +18,11 @@ use {
     },
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
-    driver::domain::eth::NonZeroU256,
     e2e::setup::{
         proxy::{OnRequest, ReverseProxy},
         *,
     },
+    eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},

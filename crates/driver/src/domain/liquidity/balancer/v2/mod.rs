@@ -1,6 +1,6 @@
 use {
-    crate::domain::eth,
     derive_more::{From, Into},
+    eth_domain_types as eth,
 };
 
 pub mod stable;

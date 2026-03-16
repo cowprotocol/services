@@ -1,14 +1,15 @@
 use {
     crate::{
         domain::{
+            self,
             competition::{self, solution::WrapperCall},
-            eth,
             liquidity,
         },
         infra::Solver,
     },
     alloy::primitives::Bytes,
     app_data::AppDataHash,
+    eth_domain_types as eth,
     itertools::Itertools,
     model::{
         DomainSeparator,
@@ -27,9 +28,9 @@ impl Solutions {
         self,
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
-        weth: eth::WethAddress,
+        weth: eth::WrappedNativeToken,
         solver: Solver,
-        flashloan_hints: &HashMap<competition::order::Uid, eth::Flashloan>,
+        flashloan_hints: &HashMap<competition::order::Uid, domain::flashloan::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
         let haircut_bps = solver.haircut_bps();
 
@@ -147,7 +148,7 @@ impl Solutions {
                     solution
                         .pre_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: Bytes::from(interaction.calldata),
@@ -224,7 +225,7 @@ impl Solutions {
                     solution
                         .post_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: interaction.calldata.into(),
@@ -237,7 +238,7 @@ impl Solutions {
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
                         // convert the flashloan info provided by the solver
-                        .map(|f| f.iter().map(|(order, loan)| (order.into(), loan.into())).collect())
+                        .map(|f| f.iter().map(|(order, loan)| (order.into(), loan.clone())).collect())
                         // or copy over the relevant flashloan hints from the solve request
                         .unwrap_or_else(|| solution.trades.iter()
                             .filter_map(|t| {
@@ -248,7 +249,7 @@ impl Solutions {
                                 let uid = competition::order::Uid::from(&trade.order);
                                 Some((
                                     uid,
-                                    flashloan_hints.get(&uid).cloned()?,
+                                    flashloan_hints.get(&uid)?.into(),
                                 ))
                             }).collect()),
                     solution.wrappers.iter().cloned().map(|w| WrapperCall {

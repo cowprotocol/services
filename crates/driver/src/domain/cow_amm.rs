@@ -1,8 +1,8 @@
 use {
-    crate::domain::eth,
     alloy::{primitives::Address, providers::DynProvider},
     contracts::alloy::cow_amm::CowAmmLegacyHelper,
     cow_amm::Amm,
+    eth_domain_types as eth,
     itertools::{
         Either::{Left, Right},
         Itertools,

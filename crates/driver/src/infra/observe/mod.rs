@@ -15,7 +15,6 @@ use {
                 Solved,
                 solution::{self, Settlement},
             },
-            eth::{self, Gas},
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
             time::{Deadline, Remaining},
@@ -23,7 +22,9 @@ use {
         infra::solver,
         util::http,
     },
+    eth_domain_types::{self as eth, Gas},
     ethrpc::block_stream::BlockInfo,
+    num::Saturating,
     std::{
         collections::{BTreeMap, HashSet},
         time::Duration,
@@ -404,7 +405,7 @@ pub fn mempool_executed(
             submitted_at_block,
             included_in_block,
             ..
-        }) => Some(("Success", &submitted_at_block.0, &included_in_block.0)),
+        }) => Some(("Success", submitted_at_block, included_in_block)),
         Err(mempools::Error::Revert {
             tx_id: _,
             submitted_at_block,
@@ -428,7 +429,7 @@ pub fn mempool_executed(
         metrics::get()
             .mempool_submission_results_blocks_passed
             .with_label_values(&[mempool.to_string().as_str(), label])
-            .inc_by(blocks_passed);
+            .inc_by(blocks_passed.0);
     }
 }
 
