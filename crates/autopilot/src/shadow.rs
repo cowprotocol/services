@@ -12,7 +12,6 @@ use {
         domain::{
             self,
             competition::{Bid, Score, Unscored, winner_selection},
-            eth::WrappedNativeToken,
         },
         infra::{
             self,
@@ -24,6 +23,7 @@ use {
     ::observe::metrics,
     ::winner_selection::state::RankedItem,
     anyhow::Context,
+    eth_domain_types::WrappedNativeToken,
     ethrpc::block_stream::CurrentBlockWatcher,
     itertools::Itertools,
     num::{CheckedSub, Saturating},

@@ -12,13 +12,11 @@
 
 use {
     crate::{
-        domain::{
-            eth,
-            settlement::{self, Settlement},
-        },
+        domain::settlement::{self, Settlement},
         infra,
     },
     anyhow::{Context, Result, anyhow},
+    eth_domain_types as eth,
     futures::StreamExt,
     rand::Rng,
     std::time::Duration,
@@ -84,7 +82,7 @@ impl Observer {
             .await;
     }
 
-    async fn post_process_settlement(&self, settlement: eth::SettlementEvent) -> Result<()> {
+    async fn post_process_settlement(&self, settlement: super::SettlementEvent) -> Result<()> {
         let settlement_data = self
             .fetch_auction_data_for_transaction(settlement.transaction)
             .await?;
