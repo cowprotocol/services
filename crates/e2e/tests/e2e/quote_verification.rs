@@ -376,9 +376,14 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     // The OpenZeppelin `ERC20Mintable` token uses a mapping in
     // the first (0'th) storage slot for balances.
     let token_overrides: configs::balance_overrides::TokenConfiguration = toml::from_str(&format!(
-        "[{:?}]\ntype = \"SolidityMapping\"\ntarget_contract = \"{:?}\"\nmap_slot = \"0x0\"",
+        r#"
+    [{:?}]
+    type = "SolidityMapping"
+    target_contract = "{:?}"
+    map_slot = "0x0"
+    "#,
         token.address(),
-        token.address(),
+        token.address()
     ))
     .unwrap();
     let orderbook_config = configs::orderbook::Configuration {
