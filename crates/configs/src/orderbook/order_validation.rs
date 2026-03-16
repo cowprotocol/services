@@ -3,11 +3,15 @@ use {
     std::time::Duration,
 };
 
+/// Policy controlling whether orders with identical buy and sell tokens are
+/// accepted.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SameTokensPolicy {
+    /// Reject orders where buy token equals sell token.
     #[default]
     Disallow,
+    /// Allow sell orders where buy token equals sell token.
     AllowSell,
     // Allow, TODO: Allow sell and buy orders with the same tokens
     // (https://github.com/cowprotocol/services/issues/3963)
@@ -33,6 +37,7 @@ const fn default_max_gas_per_order() -> u64 {
     8_000_000
 }
 
+/// Rules governing order validity periods, gas limits, and token policies.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct OrderValidationConfig {

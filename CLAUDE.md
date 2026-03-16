@@ -105,6 +105,7 @@ User signs order → Orderbook validates → Autopilot includes in auction
 - Spot format: `cargo +nightly fmt -- <path>` (never call stable `cargo fmt`)
 - Lint: `cargo clippy --locked --workspace --all-features --all-targets -- -D warnings`
 - Check format: `cargo +nightly fmt --all -- --check`
+- Only format **after** as a final step! — i.e. after checking compilation, running tests, etc.
 
 ### Local Development Environment
 - Start local PostgreSQL: `docker compose up -d`

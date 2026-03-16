@@ -59,6 +59,15 @@ impl Arguments {
     }
 }
 
+impl From<&configs::shared::CurrentBlockConfig> for Arguments {
+    fn from(config: &configs::shared::CurrentBlockConfig) -> Self {
+        Self {
+            block_stream_poll_interval: config.poll_interval,
+            node_ws_url: config.ws_url.clone(),
+        }
+    }
+}
+
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self {

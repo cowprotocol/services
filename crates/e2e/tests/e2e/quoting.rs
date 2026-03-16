@@ -82,7 +82,6 @@ async fn test(web3: Web3) {
     // Start API with 0.02% (2 bps) volume fee
     services
         .start_protocol_with_args(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
                 volume_fee: Some(configs::orderbook::VolumeFeeConfig {
@@ -324,31 +323,28 @@ async fn quote_timeout(web3: Web3) {
     const MAX_QUOTE_TIME_MS: u64 = 500;
 
     services
-        .start_api(
-            vec![],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_quoter",
-                )]),
-                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
-                        vec![
-                            configs::native_price_estimators::NativePriceEstimator::driver(
-                                "test_quoter".to_string(),
-                                "http://localhost:11088/test_solver".parse().unwrap(),
-                            ),
-                        ],
-                    ]),
-                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
-                },
-                price_estimation: configs::price_estimation::PriceEstimation {
-                    quote_timeout: Duration::from_millis(MAX_QUOTE_TIME_MS),
-                    ..configs::orderbook::Configuration::test_default().price_estimation
-                },
-                ..configs::orderbook::Configuration::test_default()
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_quoter",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
+                            "test_quoter".to_string(),
+                            "http://localhost:11088/test_solver".parse().unwrap(),
+                        ),
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
-        )
+            price_estimation: configs::price_estimation::PriceEstimation {
+                quote_timeout: Duration::from_millis(MAX_QUOTE_TIME_MS),
+                ..configs::orderbook::Configuration::test_default().price_estimation
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     mock_solver.configure_solution_async(Arc::new(|| {
@@ -486,16 +482,20 @@ async fn volume_fee(web3: Web3) {
     // in bucket)
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec![format!(
-                    "--volume-fee-bucket-overrides=0.0005:{};{}",
-                    onchain.contracts().weth.address(),
-                    override_token.address()
-                )],
-                ..Default::default()
-            },
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
+                shared: configs::shared::SharedConfig {
+                    volume_fee_bucket_overrides: vec![configs::shared::TokenBucketFeeOverride {
+                        tokens: [
+                            *onchain.contracts().weth.address(),
+                            *override_token.address(),
+                        ]
+                        .into_iter()
+                        .collect(),
+                        factor: FeeFactor::new(0.0005),
+                    }],
+                    ..Default::default()
+                },
                 volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
                     // Set a past effective timestamp to ensure the fee is applied

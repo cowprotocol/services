@@ -97,7 +97,6 @@ async fn single_limit_order_test(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![],
             Configuration {
                 order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
                     "test_solver",
@@ -108,16 +107,13 @@ async fn single_limit_order_test(web3: Web3) {
         )
         .await;
     services
-        .start_api(
-            vec![],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_solver",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..configs::orderbook::Configuration::test_default()
-            },
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     // Place order
