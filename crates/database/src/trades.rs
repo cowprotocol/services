@@ -21,13 +21,13 @@ pub struct TradesQueryRow {
     pub auction_id: Option<AuctionId>,
 }
 
-pub fn trades<'a>(
-    ex: &'a mut PgConnection,
-    owner_filter: Option<&'a Address>,
-    order_uid_filter: Option<&'a OrderUid>,
+pub fn trades(
+    ex: &mut PgConnection,
+    owner_filter: Option<Address>,
+    order_uid_filter: Option<OrderUid>,
     offset: i64,
     limit: i64,
-) -> instrument::Instrumented<BoxStream<'a, Result<TradesQueryRow, sqlx::Error>>> {
+) -> instrument::Instrumented<BoxStream<'_, Result<TradesQueryRow, sqlx::Error>>> {
     const COMMON_QUERY: &str = r#"
 SELECT
     t.block_number,
@@ -228,8 +228,8 @@ mod tests {
 
     async fn assert_trades(
         db: &mut PgConnection,
-        owner_filter: Option<&Address>,
-        order_uid_filter: Option<&OrderUid>,
+        owner_filter: Option<Address>,
+        order_uid_filter: Option<OrderUid>,
         expected: &[TradesQueryRow],
     ) {
         // Use large limit to get all trades
@@ -307,7 +307,7 @@ mod tests {
         }
 
         let now = std::time::Instant::now();
-        trades(&mut db, Some(&ByteArray([2u8; 20])), None, 0, 100)
+        trades(&mut db, Some(ByteArray([2u8; 20])), None, 0, 100)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
@@ -342,19 +342,19 @@ mod tests {
 
         assert_trades(
             &mut db,
-            Some(&owners[0]),
+            Some(owners[0]),
             None,
             std::slice::from_ref(&trade_0),
         )
         .await;
         assert_trades(
             &mut db,
-            Some(&owners[1]),
+            Some(owners[1]),
             None,
             std::slice::from_ref(&trade_1),
         )
         .await;
-        assert_trades(&mut db, Some(&owners[2]), None, &[]).await;
+        assert_trades(&mut db, Some(owners[2]), None, &[]).await;
 
         let onchain_order = OnchainOrderPlacement {
             order_uid: ByteArray(order_ids[0].0),
@@ -367,7 +367,7 @@ mod tests {
             .unwrap();
         assert_trades(
             &mut db,
-            Some(&owners[3]),
+            Some(owners[3]),
             None,
             std::slice::from_ref(&trade_0),
         )
@@ -382,7 +382,7 @@ mod tests {
         insert_onchain_order(&mut db, &event_index_1, &onchain_order)
             .await
             .unwrap();
-        assert_trades(&mut db, Some(&owners[3]), None, &[trade_0]).await;
+        assert_trades(&mut db, Some(owners[3]), None, &[trade_0]).await;
     }
 
     #[tokio::test]
@@ -408,9 +408,9 @@ mod tests {
         let trade_1 =
             add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None, None).await;
 
-        assert_trades(&mut db, None, Some(&order_ids[0]), &[trade_0]).await;
-        assert_trades(&mut db, None, Some(&order_ids[1]), &[trade_1]).await;
-        assert_trades(&mut db, None, Some(&order_ids[2]), &[]).await;
+        assert_trades(&mut db, None, Some(order_ids[0]), &[trade_0]).await;
+        assert_trades(&mut db, None, Some(order_ids[1]), &[trade_1]).await;
+        assert_trades(&mut db, None, Some(order_ids[2]), &[]).await;
     }
 
     #[tokio::test]
@@ -428,8 +428,8 @@ mod tests {
         };
         add_trade(&mut db, owners[0], order_ids[0], event_index, None, None).await;
         // Trade exists in DB but no matching order
-        assert_trades(&mut db, None, Some(&order_ids[0]), &[]).await;
-        assert_trades(&mut db, Some(&owners[0]), None, &[]).await;
+        assert_trades(&mut db, None, Some(order_ids[0]), &[]).await;
+        assert_trades(&mut db, Some(owners[0]), None, &[]).await;
     }
 
     // Testing Trades with settlements
@@ -708,7 +708,7 @@ mod tests {
         expected_trades.sort_by_key(|trade| std::cmp::Reverse(trade.block_number));
 
         // Test limit: get first 2 trades (blocks 4 and 3 in DESC order)
-        let result = trades(&mut db, Some(&owner), None, 0, 2)
+        let result = trades(&mut db, Some(owner), None, 0, 2)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
@@ -718,7 +718,7 @@ mod tests {
         assert_eq!(result[1], expected_trades[1]); // block 3
 
         // Test offset: skip first 2, get next 2 (blocks 2 and 1 in DESC order)
-        let result = trades(&mut db, Some(&owner), None, 2, 2)
+        let result = trades(&mut db, Some(owner), None, 2, 2)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
@@ -728,7 +728,7 @@ mod tests {
         assert_eq!(result[1], expected_trades[3]); // block 1
 
         // Test offset beyond available trades
-        let result = trades(&mut db, Some(&owner), None, 10, 2)
+        let result = trades(&mut db, Some(owner), None, 10, 2)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
@@ -736,7 +736,7 @@ mod tests {
         assert_eq!(result.len(), 0);
 
         // Test large limit returns all available trades in DESC order
-        let result = trades(&mut db, Some(&owner), None, 0, 100)
+        let result = trades(&mut db, Some(owner), None, 0, 100)
             .into_inner()
             .try_collect::<Vec<_>>()
             .await
