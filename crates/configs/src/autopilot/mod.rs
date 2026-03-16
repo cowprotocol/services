@@ -16,6 +16,7 @@ use {
         http_client::HttpClient,
         order_quoting::OrderQuoting,
         price_estimation::PriceEstimation,
+        shared::SharedConfig,
     },
     alloy::primitives::Address,
     anyhow::{anyhow, ensure},
@@ -63,6 +64,9 @@ const fn default_max_auction_age() -> Duration {
 // as new ones get added in the config will fail parsing if extra fields are present
 #[serde(rename_all = "kebab-case", /* deny_unknown_fields */)]
 pub struct Configuration {
+    #[serde(flatten)]
+    pub shared: SharedConfig,
+
     pub drivers: Vec<Solver>,
 
     /// Describes how the protocol fees should be calculated.
@@ -199,6 +203,7 @@ impl Configuration {
         use crate::test_util::TestDefault;
 
         Self {
+            shared: Default::default(),
             drivers: vec![],
             fee_policies: Default::default(),
             trusted_tokens: Default::default(),
@@ -229,6 +234,7 @@ impl Configuration {
         use crate::test_util::TestDefault;
 
         Self {
+            shared: Default::default(),
             drivers: vec![Solver::test(name, solver_address)],
             fee_policies: Default::default(),
             trusted_tokens: Default::default(),

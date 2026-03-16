@@ -16,7 +16,6 @@ use {
     },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
-    clap::Parser,
     configs::{
         autopilot::{
             Configuration,
@@ -39,12 +38,7 @@ use {
     },
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
-    std::{
-        collections::{HashMap, hash_map::Entry},
-        ops::DerefMut,
-        str::FromStr,
-        time::Duration,
-    },
+    std::{ops::DerefMut, str::FromStr, time::Duration},
     tokio::task::JoinHandle,
 };
 
@@ -134,45 +128,24 @@ impl<'a> Services<'a> {
         ServicesBuilder::new()
     }
 
-    fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
-        [
-            "--block-stream-poll-interval=1s".to_string(),
-            format!("--node-ws-url={NODE_WS_HOST}"),
-            "--simulation-node-url=http://localhost:8545".to_string(),
-            format!(
-                "--hooks-contract-address={:?}",
-                self.contracts.hooks.address()
-            ),
-        ]
-        .into_iter()
-    }
-
-    fn autopilot_arguments(&self) -> impl Iterator<Item = String> + use<> {
-        self.api_autopilot_arguments()
-    }
-
-    fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> + use<> {
-        [
-            "--network-block-interval=1s".to_string(),
-            format!(
-                "--settlement-contract-address={:?}",
-                self.contracts.gp_settlement.address()
-            ),
-            format!(
-                "--balances-contract-address={:?}",
-                self.contracts.balances.address()
-            ),
-            format!(
-                "--signatures-contract-address={:?}",
-                self.contracts.signatures.address()
-            ),
-            format!("--native-token-address={:?}", self.contracts.weth.address()),
-            format!(
-                "--balancer-v2-vault-address={:?}",
-                self.contracts.balancer_vault.address()
-            ),
-        ]
-        .into_iter()
+    fn shared_config(&self) -> configs::shared::SharedConfig {
+        configs::shared::SharedConfig {
+            current_block: configs::shared::CurrentBlockConfig {
+                poll_interval: Some(Duration::from_secs(1)),
+                ws_url: Some(NODE_WS_HOST.parse().unwrap()),
+            },
+            simulation_node_url: Some("http://localhost:8545".parse().unwrap()),
+            contracts: configs::shared::ContractAddresses {
+                settlement: Some(*self.contracts.gp_settlement.address()),
+                balances: Some(*self.contracts.balances.address()),
+                signatures: Some(*self.contracts.signatures.address()),
+                native_token: Some(*self.contracts.weth.address()),
+                hooks: Some(*self.contracts.hooks.address()),
+                balancer_v2_vault: Some(*self.contracts.balancer_vault.address()),
+            },
+            network_block_interval: Some(Duration::from_secs(1)),
+            ..Default::default()
+        }
     }
 
     /// Start the autopilot service in a background task.
@@ -184,7 +157,7 @@ impl<'a> Services<'a> {
     pub async fn start_autopilot_with_shutdown_controller(
         &self,
         solve_deadline: Option<Duration>,
-        extra_args: Vec<String>,
+        _extra_args: Vec<String>,
         config: configs::autopilot::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
@@ -197,6 +170,11 @@ impl<'a> Services<'a> {
             .collect::<Vec<_>>();
 
         let config = configs::autopilot::Configuration {
+            shared: configs::shared::SharedConfig {
+                volume_fee_bucket_overrides: config.shared.volume_fee_bucket_overrides.clone(),
+                enable_sell_equals_buy_volume_fee: config.shared.enable_sell_equals_buy_volume_fee,
+                ..self.shared_config()
+            },
             ethflow: EthflowConfig {
                 contracts: ethflow_contracts,
                 ..config.ethflow
@@ -208,20 +186,7 @@ impl<'a> Services<'a> {
             ..config
         };
 
-        let (_autopilot_config_file, autopilot_config_arg) = config.to_cli_args();
-
-        let args = ["autopilot".to_string(), autopilot_config_arg]
-            .into_iter()
-            .chain(self.api_autopilot_solver_arguments())
-            .chain(self.autopilot_arguments())
-            .chain(extra_args)
-            .collect();
-        let args = ignore_overwritten_cli_params(args);
-
-        let args = autopilot::arguments::CliArguments::try_parse_from(args)
-            .map_err(|err| err.to_string())
-            .unwrap();
-        let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
+        let join_handle = tokio::task::spawn(autopilot::run(config, control));
         self.wait_until_autopilot_ready().await;
 
         join_handle
@@ -251,20 +216,19 @@ impl<'a> Services<'a> {
     /// Wait until the service is responsive.
     pub async fn start_api(
         &self,
-        extra_args: Vec<String>,
+        _extra_args: Vec<String>,
         config: configs::orderbook::Configuration,
     ) {
-        let (_config_file, config_arg) = config.to_cli_args();
-        let args: Vec<_> = ["orderbook".to_string(), config_arg]
-            .into_iter()
-            .chain(self.api_autopilot_solver_arguments())
-            .chain(self.api_autopilot_arguments())
-            .chain(extra_args)
-            .collect();
-        let args = ignore_overwritten_cli_params(args);
+        let config = configs::orderbook::Configuration {
+            shared: configs::shared::SharedConfig {
+                volume_fee_bucket_overrides: config.shared.volume_fee_bucket_overrides.clone(),
+                enable_sell_equals_buy_volume_fee: config.shared.enable_sell_equals_buy_volume_fee,
+                ..self.shared_config()
+            },
+            ..config
+        };
 
-        let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(orderbook::run(args, config));
+        tokio::task::spawn(orderbook::run(config));
 
         Self::wait_for_api_to_come_up().await;
     }
@@ -1074,32 +1038,3 @@ pub async fn ensure_e2e_readonly_user() {
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;
-
-/// Clap does not allow you to overwrite CLI arguments easily. This
-/// function loops over all provided arguments and only keeps the
-/// last one if there are multiples.
-fn ignore_overwritten_cli_params(mut params: Vec<String>) -> Vec<String> {
-    let mut defined_args = HashMap::new();
-    params.reverse(); // reverse to give later params higher priority
-    params.retain(move |param| {
-        let Some((arg, value)) = param.split_once('=') else {
-            return true; // keep anything we can't parse (e.g. program name)
-        };
-        match defined_args.entry(arg.to_string()) {
-            Entry::Occupied(val) => {
-                tracing::info!(
-                    ignored = ?param,
-                    kept = format!("{arg}={}", val.get()),
-                    "ignoring overwritten CLI argument"
-                );
-                false
-            }
-            Entry::Vacant(slot) => {
-                slot.insert(value.to_string());
-                true
-            }
-        }
-    });
-    params.reverse(); // reverse to restore original order again
-    params
-}

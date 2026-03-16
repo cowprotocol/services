@@ -1075,26 +1075,37 @@ async fn volume_fee_overrides(web3: Web3) {
         order_class: ConfigFeePolicyOrderClass::Any,
     };
 
-    // Bucket overrides (comma-separated, checked in order, first match wins):
+    // Bucket overrides (checked in order, first match wins):
     // - 2-token pair: USDC-DAI has 0.05% fee (checked first, has precedence)
     // - Stablecoins: USDC, DAI, USDT have 0% fee (checked second)
-    let volume_fee_bucket_config = format!(
-        "--volume-fee-bucket-overrides=0.0005:{};{},0:{};{};{}",
-        token_usdc.address(),
-        token_dai.address(),
-        token_usdc.address(),
-        token_dai.address(),
-        token_usdt.address()
-    );
+    let volume_fee_bucket_overrides = vec![
+        configs::shared::TokenBucketFeeOverride {
+            tokens: [*token_usdc.address(), *token_dai.address()]
+                .into_iter()
+                .collect(),
+            factor: FeeFactor::new(0.0005),
+        },
+        configs::shared::TokenBucketFeeOverride {
+            tokens: [
+                *token_usdc.address(),
+                *token_dai.address(),
+                *token_usdt.address(),
+            ]
+            .into_iter()
+            .collect(),
+            factor: FeeFactor::new(0.0),
+        },
+    ];
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![volume_fee_bucket_config.clone()],
-                api: vec![volume_fee_bucket_config],
-            },
+            Default::default(),
             Configuration {
+                shared: configs::shared::SharedConfig {
+                    volume_fee_bucket_overrides: volume_fee_bucket_overrides.clone(),
+                    ..Default::default()
+                },
                 drivers: vec![Solver::test("test_solver", solver.address())],
                 fee_policies: FeePoliciesConfig {
                     policies: vec![default_volume_fee],
@@ -1103,6 +1114,10 @@ async fn volume_fee_overrides(web3: Web3) {
                 ..Configuration::test_no_drivers()
             },
             configs::orderbook::Configuration {
+                shared: configs::shared::SharedConfig {
+                    volume_fee_bucket_overrides,
+                    ..Default::default()
+                },
                 volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.01)), // Default 1% volume fee
                     effective_from_timestamp: None,

@@ -11,17 +11,25 @@ use {
             order_validation::OrderValidationConfig,
         },
         price_estimation::PriceEstimation,
+        shared::SharedConfig,
     },
     alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
-    std::path::Path,
+    std::{
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+        path::Path,
+    },
 };
 
 pub mod ipfs;
 pub mod native_price;
 pub mod order_validation;
+
+const fn default_bind_address() -> SocketAddr {
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 8080))
+}
 
 const fn default_app_data_size_limit() -> usize {
     8192
@@ -43,6 +51,13 @@ pub struct VolumeFeeConfig {
 #[serde(rename_all = "kebab-case" /* deny_unknown_fields */)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 pub struct Configuration {
+    #[serde(default)]
+    pub shared: SharedConfig,
+
+    /// Bind address for the Orderbook.
+    #[serde(default = "default_bind_address")]
+    pub bind_address: SocketAddr,
+
     /// Configuration for the order validation system.
     #[serde(default)]
     pub order_validation: OrderValidationConfig,
@@ -117,6 +132,7 @@ pub mod test_util {
                 Configuration,
                 default_active_order_competition_threshold,
                 default_app_data_size_limit,
+                default_bind_address,
                 native_price::NativePriceConfig,
             },
             test_util::TestDefault,
@@ -154,6 +170,8 @@ pub mod test_util {
             use crate::test_util::TestDefault;
 
             Self {
+                shared: Default::default(),
+                bind_address: default_bind_address(),
                 order_validation: Default::default(),
                 banned_users: Default::default(),
                 ipfs: Default::default(),
@@ -293,6 +311,8 @@ mod tests {
     #[test]
     fn roundtrip_serialization() {
         let config = Configuration {
+            shared: Default::default(),
+            bind_address: default_bind_address(),
             order_validation: OrderValidationConfig {
                 min_order_validity_period: Duration::from_secs(120),
                 max_order_validity_period: Duration::from_secs(7200),

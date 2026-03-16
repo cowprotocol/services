@@ -486,16 +486,21 @@ async fn volume_fee(web3: Web3) {
     // in bucket)
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec![format!(
-                    "--volume-fee-bucket-overrides=0.0005:{};{}",
-                    onchain.contracts().weth.address(),
-                    override_token.address()
-                )],
-                ..Default::default()
-            },
+            Default::default(),
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
+                shared: configs::shared::SharedConfig {
+                    volume_fee_bucket_overrides: vec![configs::shared::TokenBucketFeeOverride {
+                        tokens: [
+                            *onchain.contracts().weth.address(),
+                            *override_token.address(),
+                        ]
+                        .into_iter()
+                        .collect(),
+                        factor: FeeFactor::new(0.0005),
+                    }],
+                    ..Default::default()
+                },
                 volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
                     // Set a past effective timestamp to ensure the fee is applied
