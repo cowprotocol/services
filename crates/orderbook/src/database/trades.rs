@@ -45,17 +45,19 @@ impl TradeRetrieving for Postgres {
 
         let mut ex = self.pool.acquire().await?;
         // For v1 API, return all results without pagination (use large default values)
-        let trades = database::trades::trades(
+        let future = database::trades::trades(
             &mut ex,
-            filter.owner.map(|owner| ByteArray(owner.0.0)).as_ref(),
-            filter.order_uid.map(|uid| ByteArray(uid.0)).as_ref(),
+            filter.owner.map(|owner| ByteArray(owner.0.0)),
+            filter.order_uid.map(|uid| ByteArray(uid.0)),
             0,
             i64::MAX,
         )
         .into_inner()
         .map_err(anyhow::Error::from)
-        .try_collect::<Vec<TradesQueryRow>>()
-        .await?;
+        .try_collect::<Vec<TradesQueryRow>>();
+        let trades = tokio::time::timeout(std::time::Duration::from_secs(30), future)
+            .await
+            .context("timeout")??;
         timer.stop_and_record();
 
         let auction_order_uids = trades
@@ -100,10 +102,10 @@ impl TradeRetrievingPaginated for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let trades = database::trades::trades(
+        let future = database::trades::trades(
             &mut ex,
-            filter.owner.map(|owner| ByteArray(owner.0.0)).as_ref(),
-            filter.order_uid.map(|uid| ByteArray(uid.0)).as_ref(),
+            filter.owner.map(|owner| ByteArray(owner.0.0)),
+            filter.order_uid.map(|uid| ByteArray(uid.0)),
             filter
                 .offset
                 .try_into()
@@ -115,8 +117,10 @@ impl TradeRetrievingPaginated for Postgres {
         )
         .into_inner()
         .map_err(anyhow::Error::from)
-        .try_collect::<Vec<TradesQueryRow>>()
-        .await?;
+        .try_collect::<Vec<TradesQueryRow>>();
+        let trades = tokio::time::timeout(std::time::Duration::from_secs(30), future)
+            .await
+            .context("timeout")??;
         timer.stop_and_record();
 
         let auction_order_uids = trades
