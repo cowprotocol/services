@@ -508,7 +508,6 @@ impl Solver {
                     );
                     state.called = true;
                     axum::response::Json(json!({
-                        "type": "solutions",
                         "solutions": solutions_json,
                     }))
                 },

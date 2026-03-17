@@ -103,7 +103,6 @@ async fn weighted() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -248,7 +247,6 @@ async fn weighted_v3plus() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -410,7 +408,6 @@ async fn stable() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [
                 {
                     "id": 0,
@@ -587,7 +584,6 @@ async fn composable_stable_v4() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [
                 {
                     "id": 0,

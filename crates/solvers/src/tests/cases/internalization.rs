@@ -83,7 +83,6 @@ async fn trusted_token() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -198,7 +197,6 @@ async fn untrusted_sell_token() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {
@@ -313,7 +311,6 @@ async fn insufficient_balance() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {

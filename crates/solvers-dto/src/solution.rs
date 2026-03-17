@@ -28,7 +28,7 @@ pub enum SolverErrorCode {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(untagged)]
 pub enum SolverResponse {
     Solutions { solutions: Vec<Solution> },
     Error { error: SolverError },
@@ -270,7 +270,6 @@ mod tests {
         assert_eq!(
             value,
             json!({
-                "type": "solutions",
                 "solutions": [],
             })
         );
@@ -306,7 +305,6 @@ mod tests {
             assert_eq!(
                 value,
                 json!({
-                    "type": "error",
                     "error": {
                         "code": expected_code,
                         "message": "custom message",

@@ -200,7 +200,6 @@ async fn sell() {
     assert_eq!(
         solution,
         json!({
-           "type": "solutions",
            "solutions":[
               {
                  "gas":410141,
@@ -310,7 +309,7 @@ async fn buy_disabled() {
         .await;
 
     // Buy order is not supported when enable-buy-orders is false (default).
-    assert_eq!(solution, json!({ "type": "solutions", "solutions": [] }),);
+    assert_eq!(solution, json!({ "solutions": [] }),);
 }
 
 #[tokio::test]
@@ -506,7 +505,6 @@ api-passphrase = 'pass'
     assert_eq!(
         solution,
         json!({
-           "type": "solutions",
            "solutions":[
               {
                  "gas":410141,
@@ -754,7 +752,6 @@ async fn sell_twice() {
     assert_eq!(
         solution,
         json!({
-           "type": "solutions",
            "solutions":[
               {
                  "gas":410141,
@@ -1014,7 +1011,6 @@ async fn sell_twice_parallel() {
     assert_eq!(
         solution1,
         json!({
-           "type": "solutions",
            "solutions":[
               {
                  "gas":410141,

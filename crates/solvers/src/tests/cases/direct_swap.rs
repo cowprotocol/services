@@ -83,7 +83,6 @@ async fn test() {
     assert_eq!(
         solution,
         json!({
-            "type": "solutions",
             "solutions": [{
                 "id": 0,
                 "prices": {

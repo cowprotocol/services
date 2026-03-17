@@ -104,7 +104,6 @@ async fn sell() {
     assert_eq!(
         solution,
         json!({
-           "type": "solutions",
            "solutions":[
               {
                  "gas": 410141,
@@ -214,5 +213,5 @@ async fn buy_not_supported() {
         .await;
 
     // Buy orders are not supported by Bitget.
-    assert_eq!(solution, json!({ "type": "solutions", "solutions": [] }),);
+    assert_eq!(solution, json!({ "solutions": [] }),);
 }
