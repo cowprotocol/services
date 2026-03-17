@@ -226,7 +226,6 @@ impl TradeVerifier {
                 );
                 return Ok(estimate);
             }
-            tracing::error!("Verification failed {err:?}");
         };
 
         let mut summary = SettleOutput::from_swap(output?, query.kind, &tokens)?;

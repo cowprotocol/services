@@ -487,7 +487,6 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
         .unwrap();
     assert!(response.verified);
 
-    tracing::error!("FAIL STARTS HERE");
     // with balance overrides we can even verify quotes for the 0 address
     // which is used when no wallet is connected in the frontend
     let response = services
