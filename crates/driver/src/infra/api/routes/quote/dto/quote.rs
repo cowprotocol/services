@@ -1,5 +1,6 @@
 use {
-    crate::domain::{self, competition::solution::encoding::codec, eth, quote},
+    crate::domain::{self, competition::solution::encoding::codec, quote},
+    eth_domain_types as eth,
     model::{
         order::{BuyTokenDestination, SellTokenSource},
         signature::SigningScheme,
@@ -54,8 +55,8 @@ struct Interaction {
     call_data: Vec<u8>,
 }
 
-impl From<eth::Interaction> for Interaction {
-    fn from(interaction: eth::Interaction) -> Self {
+impl From<domain::Interaction> for Interaction {
+    fn from(interaction: domain::Interaction) -> Self {
         Self {
             target: interaction.target,
             value: interaction.value.into(),

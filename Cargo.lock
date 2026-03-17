@@ -1224,6 +1224,7 @@ dependencies = [
  "dashmap",
  "database",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "event-indexing",
  "futures",
@@ -1861,9 +1862,12 @@ dependencies = [
  "async-trait",
  "cached",
  "clap",
+ "configs",
  "contracts",
  "ethrpc",
  "maplit",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -2373,10 +2377,10 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "bigdecimal",
  "chrono",
  "humantime-serde",
- "itertools 0.14.0",
- "price-estimation",
+ "rate-limit",
  "s3",
  "serde",
  "serde_json",
@@ -2982,6 +2986,7 @@ dependencies = [
  "cow-amm",
  "dashmap",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "event-indexing",
  "futures",
@@ -3059,6 +3064,7 @@ dependencies = [
  "cow-amm",
  "database",
  "driver",
+ "eth-domain-types",
  "ethrpc",
  "futures",
  "hex-literal",
@@ -3197,6 +3203,18 @@ dependencies = [
  "cfg-if",
  "home",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "eth-domain-types"
+version = "0.1.0"
+dependencies = [
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-rpc-types",
+ "derive_more 1.0.0",
+ "num",
+ "number",
 ]
 
 [[package]]
@@ -5877,12 +5895,15 @@ name = "rate-limit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "configs",
  "futures",
- "humantime",
+ "humantime-serde",
  "observe",
  "prometheus",
  "prometheus-metric-storage",
  "reqwest 0.13.2",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -6954,6 +6975,7 @@ dependencies = [
  "chain",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "contracts",
  "derive_more 1.0.0",

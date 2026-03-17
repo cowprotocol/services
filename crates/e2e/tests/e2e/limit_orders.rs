@@ -18,11 +18,11 @@ use {
     },
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
-    driver::domain::eth::NonZeroU256,
     e2e::setup::{
         proxy::{OnRequest, ReverseProxy},
         *,
     },
+    eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -516,12 +516,14 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                     "http://localhost:11088/test_solver",
                 )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::price_estimation::NativePriceEstimators::new(vec![vec![
-                        configs::price_estimation::NativePriceEstimator::driver(
-                            "test_quoter".to_string(),
-                            "http://localhost:11088/test_solver".parse().unwrap(),
-                        ),
-                    ]]),
+                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                        vec![
+                            configs::native_price_estimators::NativePriceEstimator::driver(
+                                "test_quoter".to_string(),
+                                "http://localhost:11088/test_solver".parse().unwrap(),
+                            ),
+                        ],
+                    ]),
                     ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
                 ..configs::orderbook::Configuration::test_default()

@@ -15,7 +15,6 @@ use {
         ERC20,
         support::{Balances, Signatures},
     },
-    driver::domain::eth::NonZeroU256,
     e2e::setup::{
         DeployedContracts,
         OnchainComponents,
@@ -27,6 +26,7 @@ use {
         run_test,
         wait_for_condition,
     },
+    eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},

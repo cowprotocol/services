@@ -1,5 +1,6 @@
 use {
     super::Strategy,
+    crate::StrategyExt,
     alloy_eips::BlockId,
     alloy_primitives::{Address, B256, TxKind, U256, keccak256},
     alloy_provider::ext::DebugApi,

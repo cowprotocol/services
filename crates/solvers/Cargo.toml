@@ -21,6 +21,7 @@ bytes-hex = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["serde"] }
 clap = { workspace = true, features = ["derive", "env"] }
+configs = { workspace = true }
 const-hex = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }

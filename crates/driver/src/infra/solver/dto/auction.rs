@@ -1,16 +1,18 @@
 use {
     crate::{
         domain::{
+            self,
+            Flashloan,
             competition::{
                 self,
                 order::{self, Side, fees, signature::Scheme},
             },
-            eth::{self},
             liquidity,
         },
         infra::{config::file::FeeHandler, solver::ManageNativeToken},
     },
     app_data::AppDataHash,
+    eth_domain_types as eth,
     model::order::{BuyTokenDestination, SellTokenSource},
     number::conversions::rational_to_big_decimal,
     std::collections::HashMap,
@@ -22,10 +24,10 @@ pub type WrapperCalls = HashMap<order::Uid, Vec<solvers_dto::auction::WrapperCal
 pub fn new(
     auction: &competition::Auction,
     liquidity: &[liquidity::Liquidity],
-    weth: eth::WethAddress,
+    weth: eth::WrappedNativeToken,
     fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
-    flashloan_hints: &HashMap<order::Uid, eth::Flashloan>,
+    flashloan_hints: &HashMap<order::Uid, Flashloan>,
     wrappers: &WrapperCalls,
     deadline: chrono::DateTime<chrono::Utc>,
 ) -> solvers_dto::auction::Auction {
@@ -112,8 +114,8 @@ pub fn new(
                 }
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),
-                    sell_token: available.sell.token.0.0,
-                    buy_token: available.buy.token.0.0,
+                    sell_token: *available.sell.token,
+                    buy_token: *available.buy.token,
                     sell_amount: available.sell.amount.into(),
                     buy_amount: available.buy.amount.into(),
                     full_sell_amount: order.sell.amount.into(),
@@ -182,14 +184,14 @@ pub fn new(
                         solvers_dto::auction::ConstantProductPool {
                             id: liquidity.id.0.to_string(),
                             address: pool.address,
-                            router: pool.router.0,
+                            router: *pool.router,
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .reserves
                                 .iter()
                                 .map(|asset| {
                                     (
-                                        asset.token.0.0,
+                                        *asset.token,
                                         solvers_dto::auction::ConstantProductReserve {
                                             balance: asset.amount.into(),
                                         },
@@ -204,10 +206,10 @@ pub fn new(
                     solvers_dto::auction::Liquidity::ConcentratedLiquidity(
                         solvers_dto::auction::ConcentratedLiquidityPool {
                             id: liquidity.id.0.to_string(),
-                            address: pool.address.0,
-                            router: pool.router.0,
+                            address: *pool.address,
+                            router: *pool.router,
                             gas_estimate: liquidity.gas.0,
-                            tokens: vec![pool.tokens.get().0.0.0, pool.tokens.get().1.0.0],
+                            tokens: vec![*pool.tokens.get().0, *pool.tokens.get().1],
                             sqrt_price: pool.sqrt_price.0,
                             liquidity: pool.liquidity.0,
                             tick: pool.tick.0,
@@ -357,7 +359,7 @@ fn fee_policy_from_domain(value: fees::FeePolicy) -> solvers_dto::auction::FeePo
     }
 }
 
-fn interaction_from_domain(value: eth::Interaction) -> solvers_dto::auction::InteractionData {
+fn interaction_from_domain(value: domain::Interaction) -> solvers_dto::auction::InteractionData {
     solvers_dto::auction::InteractionData {
         target: value.target,
         value: value.value.0,

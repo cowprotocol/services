@@ -1,6 +1,6 @@
 use {
-    crate::domain::eth,
     chain::Chain,
+    eth_domain_types as eth,
     ethrpc::block_stream::CurrentBlockWatcher,
     reqwest::ClientBuilder,
     std::time::Duration,

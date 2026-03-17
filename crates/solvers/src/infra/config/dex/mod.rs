@@ -26,7 +26,7 @@ pub struct Config {
     pub minimum_surplus: MinimumSurplusLimits,
     pub concurrent_requests: NonZeroUsize,
     pub smallest_partial_fill: eth::Ether,
-    pub rate_limiting_strategy: rate_limit::Strategy,
+    pub rate_limiting_strategy: configs::rate_limit::Strategy,
     pub gas_offset: eth::Gas,
     pub block_stream: Option<CurrentBlockWatcher>,
     pub internalize_interactions: bool,

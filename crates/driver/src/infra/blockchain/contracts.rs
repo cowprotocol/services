@@ -1,5 +1,4 @@
 use {
-    crate::domain::eth,
     chain::Chain,
     contracts::alloy::{
         BalancerV2Vault,
@@ -8,6 +7,7 @@ use {
         WETH9,
         support::Balances,
     },
+    eth_domain_types as eth,
     ethrpc::Web3,
     std::collections::HashMap,
 };
@@ -100,8 +100,10 @@ impl Contracts {
         // TODO: use `address_for()` once contracts are deployed
         let flashloan_router = addresses
             .flashloan_router
-            .or_else(|| FlashLoanRouter::deployment_address(&chain.id()).map(eth::ContractAddress))
-            .map(|address| FlashLoanRouter::Instance::new(address.0, web3.provider.clone()));
+            .or_else(|| {
+                FlashLoanRouter::deployment_address(&chain.id()).map(eth::ContractAddress::from)
+            })
+            .map(|address| FlashLoanRouter::Instance::new(*address, web3.provider.clone()));
 
         Ok(Self {
             settlement,
@@ -137,7 +139,7 @@ impl Contracts {
         &self.weth
     }
 
-    pub fn weth_address(&self) -> eth::WethAddress {
+    pub fn weth_address(&self) -> eth::WrappedNativeToken {
         (*self.weth.address()).into()
     }
 

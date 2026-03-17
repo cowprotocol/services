@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         domain::{
-            eth,
+            self,
             liquidity::{self, balancer},
         },
         infra::{self, blockchain::Ethereum},
@@ -16,6 +16,7 @@ use {
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
     },
+    eth_domain_types as eth,
     ethrpc::block_stream::CurrentBlockWatcher,
     event_indexing::block_retriever::BlockRetrieving,
     liquidity_sources::balancer_v2::{
@@ -44,24 +45,24 @@ fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
+) -> domain::Interaction {
     let handler = balancer_v2::SettlementHandler::new(
         pool.id.0,
         // Note that this code assumes `receiver == sender`. This assumption is
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
         *receiver,
-        pool.vault.0,
+        *pool.vault,
     );
 
     let interaction = handler.swap(
-        TokenAmount::new(input.0.token.0.0, input.0.amount.0),
-        TokenAmount::new(output.0.token.0.0, output.0.amount.0),
+        TokenAmount::new(*input.0.token, input.0.amount.0),
+        TokenAmount::new(*output.0.token, output.0.amount.0),
     );
 
     let (target, value, call_data) = interaction.encode_swap();
 
-    eth::Interaction {
+    domain::Interaction {
         target,
         value: value.into(),
         call_data: call_data.0.to_vec().into(),
@@ -101,7 +102,7 @@ async fn init_liquidity(
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
-        vault: BalancerV2Vault::Instance::new(config.vault.0, web3.provider.clone()),
+        vault: BalancerV2Vault::Instance::new(*config.vault, web3.provider.clone()),
         factories: [
             config
                 .weighted

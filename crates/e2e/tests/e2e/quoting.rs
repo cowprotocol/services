@@ -345,20 +345,26 @@ async fn quote_timeout(web3: Web3) {
 
     services
         .start_api(
-            vec![format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms")],
+            vec![],
             configs::orderbook::Configuration {
                 order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
                     "test_quoter",
                     "http://localhost:11088/test_quoter",
                 )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::price_estimation::NativePriceEstimators::new(vec![vec![
-                        configs::price_estimation::NativePriceEstimator::driver(
-                            "test_quoter".to_string(),
-                            "http://localhost:11088/test_solver".parse().unwrap(),
-                        ),
-                    ]]),
+                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                        vec![
+                            configs::native_price_estimators::NativePriceEstimator::driver(
+                                "test_quoter".to_string(),
+                                "http://localhost:11088/test_solver".parse().unwrap(),
+                            ),
+                        ],
+                    ]),
                     ..configs::orderbook::native_price::NativePriceConfig::test_default()
+                },
+                price_estimation: configs::price_estimation::PriceEstimation {
+                    quote_timeout: Duration::from_millis(MAX_QUOTE_TIME_MS),
+                    ..configs::orderbook::Configuration::test_default().price_estimation
                 },
                 ..configs::orderbook::Configuration::test_default()
             },

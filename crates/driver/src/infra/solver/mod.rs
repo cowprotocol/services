@@ -2,13 +2,13 @@ use {
     super::notify,
     crate::{
         domain::{
+            self,
             competition::{
                 auction::{self, Auction},
                 order,
                 risk_detector,
                 solution::{self, Solution},
             },
-            eth,
             liquidity,
             time::Remaining,
         },
@@ -28,6 +28,7 @@ use {
     },
     anyhow::Result,
     derive_more::{From, Into},
+    eth_domain_types as eth,
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
     reqwest::header::HeaderName,
@@ -433,7 +434,10 @@ impl Solver {
         }
     }
 
-    fn assemble_flashloan_hints(&self, auction: &Auction) -> HashMap<order::Uid, eth::Flashloan> {
+    fn assemble_flashloan_hints(
+        &self,
+        auction: &Auction,
+    ) -> HashMap<order::Uid, domain::flashloan::Flashloan> {
         if !self.config.flashloans_enabled {
             return Default::default();
         }
@@ -443,7 +447,7 @@ impl Solver {
             .iter()
             .flat_map(|order| {
                 let hint = order.app_data.flashloan()?;
-                let flashloan = eth::Flashloan {
+                let flashloan = domain::flashloan::Flashloan {
                     liquidity_provider: hint.liquidity_provider.into(),
                     protocol_adapter: hint.protocol_adapter.into(),
                     receiver: hint.receiver,

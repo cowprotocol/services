@@ -1,9 +1,7 @@
 use {
-    crate::{
-        domain::eth,
-        infra::{Ethereum, blockchain},
-    },
+    crate::infra::{Ethereum, blockchain},
     anyhow::Result,
+    eth_domain_types as eth,
     ethrpc::block_stream::{self, CurrentBlockWatcher},
     futures::{FutureExt, StreamExt},
     itertools::Itertools,

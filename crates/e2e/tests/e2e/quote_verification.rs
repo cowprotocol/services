@@ -3,9 +3,14 @@ use {
         primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
     },
-    balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
+    balance_overrides::{BalanceOverrides, BalanceOverriding},
     bigdecimal::{BigDecimal, Zero},
-    configs::{autopilot::Configuration, test_util::TestDefault},
+    configs::{
+        autopilot::Configuration,
+        balance_overrides::Strategy,
+        price_estimation::BalanceOverridesConfig,
+        test_util::TestDefault,
+    },
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
@@ -368,21 +373,37 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    services
-        .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec![
-                    // The OpenZeppelin `ERC20Mintable` token uses a mapping in
-                    // the first (0'th) storage slot for balances.
-                    format!("--quote-token-balance-overrides={:?}@0", token.address()),
-                    // We don't configure the WETH token and instead rely on
-                    // auto-detection for balance overrides.
-                    "--quote-autodetect-token-balance-overrides=true".to_string(),
-                ],
+    // The OpenZeppelin `ERC20Mintable` token uses a mapping in
+    // the first (0'th) storage slot for balances.
+    let token_overrides: configs::balance_overrides::TokenConfiguration = toml::from_str(&format!(
+        r#"
+    [{:?}]
+    type = "SolidityMapping"
+    target_contract = "{:?}"
+    map_slot = "0x0"
+    "#,
+        token.address(),
+        token.address()
+    ))
+    .unwrap();
+    let orderbook_config = configs::orderbook::Configuration {
+        price_estimation: configs::price_estimation::PriceEstimation {
+            balance_overrides: BalanceOverridesConfig {
+                token_overrides,
+                // We don't configure the WETH token and instead rely on
+                // auto-detection for balance overrides.
+                autodetect: true,
                 ..Default::default()
             },
+            ..configs::orderbook::Configuration::test_default().price_estimation
+        },
+        ..configs::orderbook::Configuration::test_default()
+    };
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs::default(),
             Configuration::test("test_solver", solver.address()),
-            configs::orderbook::Configuration::test_default(),
+            orderbook_config,
             solver,
         )
         .await;
@@ -522,12 +543,18 @@ async fn usdt_quote_verification(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec!["--quote-autodetect-token-balance-overrides=true".to_string()],
-                ..Default::default()
-            },
+            ExtraServiceArgs::default(),
             Configuration::test("test_solver", solver.address()),
-            configs::orderbook::Configuration::test_default(),
+            configs::orderbook::Configuration {
+                price_estimation: configs::price_estimation::PriceEstimation {
+                    balance_overrides: BalanceOverridesConfig {
+                        autodetect: true,
+                        ..Default::default()
+                    },
+                    ..configs::orderbook::Configuration::test_default().price_estimation
+                },
+                ..configs::orderbook::Configuration::test_default()
+            },
             solver,
         )
         .await;
