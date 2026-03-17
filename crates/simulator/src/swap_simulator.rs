@@ -1,7 +1,19 @@
 use {
-    crate::encoding::{EncodedSettlement, EncodedTrade, Interaction, Interactions, encode_trade},
-    alloy_primitives::{Address, U256, address},
-    alloy_rpc_types::{TransactionRequest, state::StateOverride},
+    crate::encoding::{
+        EncodedSettlement,
+        EncodedTrade,
+        Interaction,
+        InteractionEncoding,
+        Interactions,
+        WrapperCall,
+        encode_trade,
+        encode_wrapper_settlement,
+    },
+    alloy_primitives::{Address, U256, address, map::AddressMap},
+    alloy_rpc_types::{
+        TransactionRequest,
+        state::{AccountOverride, StateOverride},
+    },
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, anyhow},
     balance_overrides::BalanceOverriding,
@@ -40,6 +52,7 @@ pub struct Query {
     pub solver: Address,
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
+    pub wrappers: Vec<WrapperCall>,
 }
 
 #[derive(Clone)]
@@ -57,6 +70,7 @@ pub struct SwapSimulator {
 pub struct EncodedSwap {
     pub settlement: EncodedSettlement,
     pub overrides: StateOverride,
+    pub wrappers: Vec<WrapperCall>,
     pub solver: Address,
     pub receiver: Address,
 }
@@ -136,6 +150,7 @@ impl SwapSimulator {
             solver: query.tx_origin.unwrap_or(query.solver),
             receiver: query.receiver,
             overrides,
+            wrappers: query.wrappers,
         })
     }
 
@@ -146,9 +161,14 @@ impl SwapSimulator {
     pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<SwapSimulation> {
         let block = *self.current_block.borrow();
         let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
-        let calldata = swap.settlement.into_settle_call();
-        let overrides = swap.overrides;
 
+        let (to, calldata) = if swap.wrappers.len() > 0 {
+            encode_wrapper_settlement(&swap.wrappers, swap.settlement.into_settle_call())
+        } else {
+            (swap.solver, swap.settlement.into_settle_call())
+        };
+
+        let overrides = swap.overrides;
         let swap = solver
             .swap(
                 *self.settlement.address(),
@@ -157,7 +177,7 @@ impl SwapSimulator {
                 calldata,
             )
             .from(swap.solver)
-            .to(swap.solver)
+            .to(to)//swap.solver)
             .gas(self.gas_limit)
             .gas_price(
                 u128::try_from(block.gas_price.saturating_mul(U256::from(2)))

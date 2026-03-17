@@ -14,6 +14,7 @@ use {
     num::CheckedDiv,
     number::{conversions::big_rational_to_u256, u256_ext::U256Ext},
     serde::{Deserialize, Serialize},
+    simulator::encoding::InteractionEncoding,
     std::{collections::HashMap, ops::Mul},
     thiserror::Error,
 };
@@ -214,9 +215,11 @@ impl Interaction {
             call_data: self.data.clone(),
         }
     }
+}
 
-    pub fn encode(self) -> simulator::encoding::EncodedInteraction {
-        simulator::encoding::Interaction::from(self).encode()
+impl InteractionEncoding for Interaction {
+    fn encode(&self) -> simulator::encoding::EncodedInteraction {
+        simulator::encoding::Interaction::from(self.clone()).encode()
     }
 }
 

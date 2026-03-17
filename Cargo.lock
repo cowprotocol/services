@@ -5181,6 +5181,7 @@ dependencies = [
  "serde_with",
  "shared",
  "signature-validator",
+ "simulator",
  "sqlx",
  "strum",
  "tempfile",

@@ -112,6 +112,11 @@ pub struct Configuration {
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Configures if the gas limit for orders simulation. If set to None, the
+    /// endpoint is disabled.
+    #[serde(default)]
+    pub order_simulation_gas_limit: Option<u64>,
 }
 
 impl Configuration {
@@ -194,6 +199,7 @@ pub mod test_util {
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
                 price_estimation: TestDefault::test_default(),
+                order_simulation_gas_limit: Default::default(),
             }
         }
     }
@@ -354,6 +360,7 @@ mod tests {
             database: TestDefault::test_default(),
             http_client: Default::default(),
             price_estimation: Default::default(),
+            order_simulation_gas_limit: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

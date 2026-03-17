@@ -209,7 +209,7 @@ impl Api for TenderlyApi {
     }
 }
 
-fn prepare_request(
+pub fn prepare_request(
     chain_id: String,
     tx: &TransactionRequest,
     overrides: StateOverride,

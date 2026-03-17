@@ -2,7 +2,6 @@ use {
     super::{Estimate, Verification},
     crate::{
         trade_finding::{
-            Interaction,
             QuoteExecution,
             TradeKind,
             external::dto::{self, Side},
@@ -39,7 +38,7 @@ use {
         nonzero::NonZeroU256,
     },
     simulator::{
-        encoding::{EncodedTrade, encode_trade},
+        encoding::{EncodedTrade, InteractionEncoding, encode_trade},
         swap_simulator::{EncodedSwap, SwapSimulator},
         tenderly::{self},
     },
@@ -151,6 +150,7 @@ impl TradeVerifier {
             solver: solver_address,
             tokens: tokens.clone(),
             clearing_prices,
+            wrappers: Default::default(),
         };
 
         tracing::debug!(?query, "SWAP SIMULATION QUERY");
@@ -168,8 +168,7 @@ impl TradeVerifier {
                 .iter()
                 // pre_interactions introduced by the solver
                 .chain(trade.pre_interactions())
-                .cloned()
-                .map(Interaction::encode)
+                .map(InteractionEncoding::encode)
                 .collect::<Vec<_>>();
 
         // Join custom pre_interactions

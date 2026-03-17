@@ -355,6 +355,13 @@ impl Root {
             backend: None,
         }
     }
+
+    pub fn wrappers(&self) -> &[WrapperCall] {
+        self.metadata
+            .as_ref()
+            .map(|metadata| metadata.wrappers.as_slice())
+            .unwrap_or_default()
+    }
 }
 
 /// Caches whether a given app data document contains wrappers, keyed by

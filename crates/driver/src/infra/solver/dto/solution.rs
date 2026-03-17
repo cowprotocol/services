@@ -2,7 +2,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{self, solution::WrapperCall},
+            competition::{self},
             liquidity,
         },
         infra::Solver,
@@ -15,6 +15,7 @@ use {
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
+    simulator::encoding::WrapperCall,
     std::{collections::HashMap, str::FromStr},
 };
 
@@ -254,7 +255,7 @@ impl Solutions {
                             }).collect()),
                     solution.wrappers.iter().cloned().map(|w| WrapperCall {
                         address: w.address,
-                        data: w.data,
+                        data: w.data.into(),
                     }).collect(),
                 )
                 .map_err(|err| match err {

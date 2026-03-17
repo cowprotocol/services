@@ -53,6 +53,7 @@ reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+simulator = { workspace = true }
 shared = { workspace = true }
 signature-validator = { workspace = true }
 sqlx = { workspace = true }
