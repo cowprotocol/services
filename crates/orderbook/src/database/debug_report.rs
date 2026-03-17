@@ -60,11 +60,14 @@ impl Postgres {
         let proposed_solutions =
             solver_competition_v2::find_solutions_for_order(&mut conn, &db_uid).await?;
         let executions = order_execution::read_by_order_uid(&mut conn, &db_uid).await?;
-        let trades: Vec<DbTradesQueryRow> = trades::trades(&mut conn, None, Some(&db_uid), 0, 100)
+        let future = trades::trades(&mut conn, None, Some(db_uid), 0, 100)
             .into_inner()
-            .try_collect()
-            .await
-            .context("failed to fetch trades")?;
+            .try_collect();
+        let trades: Vec<DbTradesQueryRow> =
+            tokio::time::timeout(std::time::Duration::from_secs(30), future)
+                .await
+                .context("timeout")?
+                .context("failed to fetch trades")?;
 
         let auction_ids: Vec<AuctionId> =
             auction::fetch_auction_ids_by_order_uid(&mut conn, &db_uid).await?;
