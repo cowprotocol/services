@@ -94,7 +94,7 @@ impl std::fmt::Debug for TenderlyConfig {
             .field("url", &self.url)
             .field("dashboard", &self.dashboard)
             .field("save", &self.save)
-            .field("save_if_fails", &self.save)
+            .field("save_if_fails", &self.save_if_fails)
             .finish()
     }
 }
