@@ -1,6 +1,5 @@
 use {
     crate::encoding::{
-        self,
         EncodedSettlement,
         EncodedTrade,
         Interaction,
@@ -47,7 +46,6 @@ pub struct Query {
     pub interactions: Vec<Interaction>,
     /// These interactions will be executed after the trade.
     pub post_interactions: Vec<Interaction>,
-    pub jit_orders: Vec<encoding::JitOrder>,
     pub solver: Address,
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,

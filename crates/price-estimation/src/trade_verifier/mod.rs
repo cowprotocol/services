@@ -142,7 +142,6 @@ impl TradeVerifier {
             buy_token_destination: verification.buy_token_destination,
             from: verification.from,
             tx_origin: trade.tx_origin(),
-            // Keep as post-processing step
             pre_interactions: verification
                 .pre_interactions
                 .iter()
@@ -159,8 +158,6 @@ impl TradeVerifier {
                 .cloned()
                 .map(Into::into)
                 .collect(),
-            // Keep as post processing step
-            jit_orders: trade.jit_orders().cloned().map(Into::into).collect(),
             solver: trade.solver(),
             tokens: tokens.clone(),
             clearing_prices,

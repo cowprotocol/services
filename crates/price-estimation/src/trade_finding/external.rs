@@ -197,30 +197,6 @@ impl From<dto::Interaction> for Interaction {
     }
 }
 
-impl From<dto::JitOrder> for simulator::encoding::JitOrder {
-    fn from(value: dto::JitOrder) -> Self {
-        Self {
-            app_data: value.app_data,
-            buy_token: value.buy_token,
-            sell_token: value.sell_token,
-            sell_amount: value.sell_amount,
-            buy_amount: value.buy_amount,
-            executed_amount: value.executed_amount,
-            receiver: value.receiver,
-            valid_to: value.valid_to,
-            side: match value.side {
-                dto::Side::Buy => simulator::encoding::Side::Buy,
-                dto::Side::Sell => simulator::encoding::Side::Sell,
-            },
-            buy_token_destination: value.buy_token_destination,
-            sell_token_source: value.sell_token_source,
-            partially_fillable: value.partially_fillable,
-            signature: value.signature,
-            signing_scheme: value.signing_scheme,
-        }
-    }
-}
-
 #[async_trait::async_trait]
 impl TradeFinding for ExternalTradeFinder {
     #[instrument(skip_all)]
