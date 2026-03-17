@@ -15,6 +15,7 @@ use {
         database::DatabasePoolConfig,
         http_client::HttpClient,
         order_quoting::OrderQuoting,
+        price_estimation::PriceEstimation,
     },
     alloy::primitives::Address,
     anyhow::{anyhow, ensure},
@@ -154,6 +155,11 @@ pub struct Configuration {
 
     // Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
+
+    /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
+    /// 1inch, quote verification, balance overrides, etc.).
+    #[serde(default)]
+    pub price_estimation: PriceEstimation,
 }
 
 impl Configuration {
@@ -215,6 +221,7 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
+            price_estimation: TestDefault::test_default(),
         }
     }
 
@@ -244,6 +251,7 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
+            price_estimation: TestDefault::test_default(),
         }
     }
 
@@ -278,7 +286,7 @@ mod tests {
                 fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass, UpcomingFeePolicies},
                 solver::Account,
             },
-            price_estimation::{ExternalSolver, NativePriceEstimator},
+            native_price_estimators::{ExternalSolver, NativePriceEstimator},
         },
         alloy::primitives::address,
         std::time::Duration,

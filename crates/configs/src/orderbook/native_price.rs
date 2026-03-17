@@ -1,12 +1,13 @@
 use {
-    crate::price_estimation::{
-        NativePriceConfig as SharedNativePriceConfig,
-        NativePriceEstimators,
+    crate::{
+        native_price::NativePriceConfig as SharedNativePriceConfig,
+        native_price_estimators::NativePriceEstimators,
     },
-    serde::{Deserialize, Serialize},
+    serde::Deserialize,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]
 pub struct NativePriceConfig {
     /// Which estimators to use to estimate token prices in terms of the chain's
@@ -25,7 +26,7 @@ pub struct NativePriceConfig {
 impl NativePriceConfig {
     /// The orderbook forwards native price requests to the autopilot.
     pub fn test_default() -> Self {
-        use crate::price_estimation::NativePriceEstimator;
+        use crate::native_price_estimators::NativePriceEstimator;
         Self {
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::forwarder(
                 "http://localhost:12088".parse().unwrap(),
@@ -38,7 +39,7 @@ impl NativePriceConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::native_price_estimators::NativePriceEstimator};
 
     #[test]
     fn deserialize_defaults() {
@@ -70,8 +71,6 @@ mod tests {
 
     #[test]
     fn roundtrip_serialization() {
-        use crate::price_estimation::NativePriceEstimator;
-
         let config = NativePriceConfig {
             estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),
             fallback_estimators: Some(NativePriceEstimators::new(vec![vec![

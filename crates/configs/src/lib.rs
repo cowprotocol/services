@@ -1,13 +1,17 @@
 pub mod autopilot;
+pub mod balance_overrides;
 pub mod banned_users;
 pub mod database;
 pub(crate) mod deserialize_env;
 pub mod fee_factor;
 pub mod gas_price_estimation;
 pub mod http_client;
+pub mod native_price;
+pub mod native_price_estimators;
 pub mod order_quoting;
 pub mod orderbook;
 pub mod price_estimation;
+pub mod rate_limit;
 pub mod simulator;
 
 #[cfg(any(test, feature = "test-util"))]

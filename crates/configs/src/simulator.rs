@@ -51,7 +51,7 @@ pub enum SimulatorKind {
 }
 
 /// Tenderly API arguments.
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Default, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct TenderlyConfig {
     /// The Tenderly user associated with the API key.
@@ -83,6 +83,29 @@ pub struct TenderlyConfig {
     /// Save the transaction even in the case of failure.
     #[serde(default)]
     pub save_if_fails: bool,
+}
+
+impl std::fmt::Debug for TenderlyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TenderlyConfig")
+            .field("user", &self.user)
+            .field("project", &self.project)
+            .field("api_key", &"<REDACTED>")
+            .field("url", &self.url)
+            .field("dashboard", &self.dashboard)
+            .field("save", &self.save)
+            .field("save_if_fails", &self.save)
+            .finish()
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
+impl crate::test_util::TestDefault for TenderlyConfig {
+    fn test_default() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

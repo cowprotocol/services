@@ -10,6 +10,7 @@ use {
             native_price::NativePriceConfig,
             order_validation::OrderValidationConfig,
         },
+        price_estimation::PriceEstimation,
     },
     alloy::primitives::Address,
     anyhow::anyhow,
@@ -84,6 +85,11 @@ pub struct Configuration {
 
     // Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
+
+    /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
+    /// 1inch, quote verification, balance overrides, etc.).
+    #[serde(default)]
+    pub price_estimation: PriceEstimation,
 }
 
 impl Configuration {
@@ -162,6 +168,7 @@ pub mod test_util {
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
+                price_estimation: TestDefault::test_default(),
             }
         }
     }
@@ -172,8 +179,8 @@ mod tests {
     use {
         super::*,
         crate::{
+            native_price_estimators::{NativePriceEstimator, NativePriceEstimators},
             orderbook::order_validation::SameTokensPolicy,
-            price_estimation::{NativePriceEstimator, NativePriceEstimators},
             test_util::TestDefault,
         },
         std::time::Duration,
@@ -319,6 +326,7 @@ mod tests {
             order_quoting: TestDefault::test_default(),
             database: TestDefault::test_default(),
             http_client: Default::default(),
+            price_estimation: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

@@ -120,8 +120,8 @@ impl TenderlyApi for TenderlyHttpApi {
 
 /// Instrumented Tenderly HTTP API.
 pub struct Instrumented {
-    inner: TenderlyHttpApi,
-    name: String,
+    pub(crate) inner: TenderlyHttpApi,
+    pub(crate) name: String,
 }
 
 #[async_trait::async_trait]
