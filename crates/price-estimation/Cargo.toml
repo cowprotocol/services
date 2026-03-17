@@ -43,10 +43,10 @@ rate-limit = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["query"] }
 rust_decimal = { workspace = true, features = ["maths"] }
-simulator = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+simulator = { workspace = true }
 thiserror = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true }

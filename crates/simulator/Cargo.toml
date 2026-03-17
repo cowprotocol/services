@@ -6,9 +6,6 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-anyhow = { workspace = true }
-app-data = { workspace = true }
-async-trait = { workspace = true }
 alloy-contract = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
@@ -16,6 +13,9 @@ alloy-provider = { workspace = true }
 alloy-rpc-types = { workspace = true }
 alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
+anyhow = { workspace = true }
+app-data = { workspace = true }
+async-trait = { workspace = true }
 balance-overrides = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }
