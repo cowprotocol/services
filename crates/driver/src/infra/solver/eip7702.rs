@@ -28,9 +28,20 @@ pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     for solver in solvers {
         let config = solver.config();
         if config.submission_accounts.is_empty() {
+            anyhow::ensure!(
+                !config.propose_all_solutions,
+                "solver '{}': propose-all-solutions requires at least one submission-account \
+                 (EIP-7702 parallel submission must be enabled)",
+                config.name,
+            );
             continue;
         }
-        if matches!(config.account, super::Account::Address(_)) {
+        if matches!(config.account, super::Account::Address(_))
+            || config
+                .submission_accounts
+                .iter()
+                .all(|a| matches!(a, super::Account::Address(_)))
+        {
             tracing::debug!(solver = %config.name, "read-only mode, skipping EIP-7702 setup");
             continue;
         }

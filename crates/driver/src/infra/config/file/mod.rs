@@ -321,6 +321,14 @@ struct SolverConfig {
     /// Address of the deployed CowSettlementForwarder contract for EIP-7702
     /// delegation. Required when `submission_accounts` is non-empty.
     forwarder_contract: Option<eth::Address>,
+
+    /// If enabled the driver proposes all valid solutions to the autopilot
+    /// instead of only the single best-scoring one. This allows the autopilot's
+    /// combinatorial auction to pick the optimal set of winners across parallel
+    /// submissions. Requires `submission-accounts` to be configured; the driver
+    /// will refuse to start otherwise. Disabled by default.
+    #[serde(default)]
+    propose_all_solutions: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

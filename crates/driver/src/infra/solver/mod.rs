@@ -219,6 +219,9 @@ pub struct Config {
     /// Address of the deployed CowSettlementForwarder contract for EIP-7702
     /// delegation. Required when `submission_accounts` is non-empty.
     pub forwarder_contract: Option<eth::Address>,
+    /// If true the driver proposes all valid solutions instead of only the
+    /// best-scoring one.
+    pub propose_all_solutions: bool,
 }
 
 impl Solver {
@@ -323,6 +326,10 @@ impl Solver {
     /// Address of the CowSettlementForwarder contract for EIP-7702 delegation.
     pub fn forwarder_contract(&self) -> Option<eth::Address> {
         self.config.forwarder_contract
+    }
+
+    pub fn propose_all_solutions(&self) -> bool {
+        self.config.propose_all_solutions
     }
 
     /// Make a POST request instructing the solver to solve an auction.

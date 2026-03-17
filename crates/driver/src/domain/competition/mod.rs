@@ -526,6 +526,11 @@ impl Competition {
             return Ok(vec![]);
         }
 
+        // When multi-solution proposals are disabled keep only the best one.
+        if !self.solver.propose_all_solutions() {
+            scored.truncate(1);
+        }
+
         // Cache all settlements so they can be revealed/settled later.
         {
             let mut lock = self.settlements.lock().unwrap();
