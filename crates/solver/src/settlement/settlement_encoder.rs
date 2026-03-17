@@ -9,11 +9,8 @@ use {
         order::{Order, OrderClass, OrderKind},
     },
     number::u256_ext::U256Ext,
-    shared::{
-        encoded_settlement::EncodedSettlement,
-        http_solver::model::InternalizationStrategy,
-        interaction::Interaction,
-    },
+    shared::{http_solver::model::InternalizationStrategy, interaction::Interaction},
+    simulator::encoding::EncodedSettlement,
     std::{
         collections::{HashMap, HashSet},
         iter,

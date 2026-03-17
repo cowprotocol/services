@@ -147,37 +147,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         }
     };
 }
-/*
-fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
-    let mut simulator = match &config.simulator {
-        Some(infra::simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
-            simulator::tenderly::Config {
-                url: tenderly.url.to_owned(),
-                api_key: tenderly.api_key.to_owned(),
-                user: tenderly.user.to_owned(),
-                project: tenderly.project.to_owned(),
-                save: tenderly.save,
-                save_if_fails: tenderly.save_if_fails,
-            },
-            eth.to_owned(),
-        ),
-        Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(
-            simulator::enso::Config {
-                url: enso.url.to_owned(),
-                network_block_interval: enso.network_block_interval.to_owned(),
-            },
-            eth.to_owned(),
-        ),
-        None => Simulator::ethereum(eth.to_owned()),
-    };
-    if config.disable_access_list_simulation {
-        simulator.disable_access_lists()
-    }
-    if let Some(gas) = config.disable_gas_simulation {
-        simulator.disable_gas(gas)
-    }
-    simulator
-}*/
 
 fn simulator(
     config: &infra::Config,

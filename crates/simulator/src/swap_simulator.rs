@@ -5,7 +5,6 @@ use {
         EncodedTrade,
         Interaction,
         encode_interactions,
-        encode_jit_orders,
         encode_trade,
     },
     alloy_primitives::{Address, Bytes, U256, address, map::AddressMap},
@@ -65,6 +64,13 @@ pub struct SwapSimulator {
     pub gas_limit: u64,
 }
 
+pub struct EncodedSwap {
+    pub settlement: EncodedSettlement,
+    pub overrides: StateOverride,
+    pub solver: Address,
+    pub receiver: Address,
+}
+
 // Look into driver encoding logic for wrappers
 pub struct SwapSimulation {
     pub tx: TransactionRequest,
@@ -97,48 +103,7 @@ impl SwapSimulator {
         })
     }
 
-    pub async fn fake_settlement(&self, query: Query) -> Result<EncodedSettlement> {
-        self.encode_settlement(query).await
-    }
-
-    pub async fn simulate_swap(
-        &self,
-        encoded_settlement: EncodedSettlement,
-    ) -> Result<SwapSimulation> {
-        let block = self.current_block.borrow().clone();
-        let solver = Solver::Instance::new(encoded_settlement.solver, self.web3.provider.clone());
-        let swap = solver
-            .swap(
-                *self.settlement.address(),
-                encoded_settlement.tokens.clone(),
-                encoded_settlement.receiver,
-                dbg!(encoded_settlement.into_settle_call()),
-            )
-            .from(encoded_settlement.solver)
-            .to(encoded_settlement.solver)
-            .gas(self.gas_limit)
-            .gas_price(
-                u128::try_from(block.gas_price.saturating_mul(U256::from(2)))
-                    .map_err(|err| anyhow!(err))
-                    .context("converting gas price to u128")?,
-            );
-        let tx = swap.clone().into_transaction_request();
-        let result = swap
-            .call()
-            .overrides(encoded_settlement.overrides.clone())
-            .await
-            .map_err(|err| anyhow!(err))
-            .context("failed to simulate swap");
-
-        Ok(SwapSimulation {
-            tx,
-            overrides: encoded_settlement.overrides,
-            result,
-        })
-    }
-
-    #[expect(clippy::too_many_arguments)]
-    async fn encode_settlement(&self, mut query: Query) -> Result<EncodedSettlement> {
+    pub async fn fake_swap(&self, mut query: Query) -> Result<EncodedSwap> {
         let overrides = self.prepare_state_overrides(&mut query).await?;
         let mut trade_interactions = encode_interactions(query.interactions.iter());
         if query.out_token == BUY_ETH_ADDRESS {
@@ -160,32 +125,62 @@ impl SwapSimulator {
             tracing::trace!("adding unwrap interaction for paying out ETH");
         }
 
-        let fake_trade = encode_fake_trade(&query)?;
-        let mut trades = vec![fake_trade];
-        trades.extend(encode_jit_orders(
-            &query.jit_orders,
-            &query.tokens,
-            &self.domain_separator,
-        )?);
-
         // let user_interactions = query.pre_interactions.iter().cloned();
         let pre_interactions: Vec<_> = query.pre_interactions.iter().cloned()
             // .chain(trade.pre_interactions().cloned())
             .chain([self.trade_setup_interaction(&query)])
             .collect();
 
-        Ok(EncodedSettlement {
-            tokens: query.tokens.to_vec(),
-            clearing_prices: query.clearing_prices.to_vec(),
-            trades,
-            interactions: [
-                encode_interactions(&pre_interactions),
-                trade_interactions,
-                encode_interactions(&query.post_interactions),
-            ],
+        Ok(EncodedSwap {
+            settlement: EncodedSettlement {
+                tokens: query.tokens.to_vec(),
+                clearing_prices: query.clearing_prices.to_vec(),
+                trades: vec![encode_fake_trade(&query)?],
+                interactions: [
+                    encode_interactions(&pre_interactions),
+                    trade_interactions,
+                    encode_interactions(&query.post_interactions),
+                ],
+            },
             solver: query.tx_origin.unwrap_or(query.solver),
             receiver: query.receiver,
             overrides,
+        })
+    }
+
+    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<SwapSimulation> {
+        let block = *self.current_block.borrow();
+        let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
+        let calldata = swap.settlement.into_settle_call();
+        let overrides = swap.overrides;
+
+        let swap = solver
+            .swap(
+                *self.settlement.address(),
+                swap.settlement.tokens.clone(),
+                swap.receiver,
+                calldata,
+            )
+            .from(swap.solver)
+            .to(swap.solver)
+            .gas(self.gas_limit)
+            .gas_price(
+                u128::try_from(block.gas_price.saturating_mul(U256::from(2)))
+                    .map_err(|err| anyhow!(err))
+                    .context("converting gas price to u128")?,
+            );
+        let tx = swap.clone().into_transaction_request();
+        let result = swap
+            .call()
+            .overrides(overrides.clone())
+            .await
+            .map_err(|err| anyhow!(err))
+            .context("failed to simulate swap");
+
+        Ok(SwapSimulation {
+            tx,
+            overrides,
+            result,
         })
     }
 

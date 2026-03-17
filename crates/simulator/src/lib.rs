@@ -36,7 +36,7 @@ impl Simulator {
     ) -> Self {
         let eth = eth.with_metric_label("tenderlySimulator".into());
         Self {
-            inner: Inner::Tenderly(tenderly::Tenderly::new(&config, eth.clone(), http_factory)),
+            inner: Inner::Tenderly(tenderly::Tenderly::new(config, eth.clone(), http_factory)),
             eth,
             disable_access_lists: false,
             disable_gas: None,
@@ -57,7 +57,7 @@ impl Simulator {
         let eth = eth.with_metric_label("ensoSimulator".into());
         Self {
             inner: Inner::Enso(enso::Enso::new(
-                &config,
+                config,
                 eth.chain(),
                 eth.current_block().clone(),
             )),

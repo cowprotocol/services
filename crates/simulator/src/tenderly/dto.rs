@@ -132,6 +132,25 @@ pub struct StateObject {
     pub storage: Option<B256Map<B256>>,
 }
 
+impl TryFrom<alloy_rpc_types::eth::state::AccountOverride> for StateObject {
+    type Error = anyhow::Error;
+
+    fn try_from(
+        value: alloy_rpc_types::eth::state::AccountOverride,
+    ) -> std::result::Result<Self, Self::Error> {
+        anyhow::ensure!(
+            value.nonce.is_none() && value.state.is_none(),
+            "full state and nonce overrides not supported on Tenderly",
+        );
+
+        Ok(StateObject {
+            balance: value.balance,
+            code: value.code,
+            storage: value.state_diff,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SimulationKind {

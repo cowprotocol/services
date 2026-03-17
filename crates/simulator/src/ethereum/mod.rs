@@ -102,10 +102,10 @@ impl Ethereum {
             .create_access_list(&tx)
             .pending()
             .await
-            .map_err(|err| Error::Rpc(err))?;
+            .map_err(Error::Rpc)?;
         Ok(access_list
             .ensure_ok()
-            .map_err(|err| Error::AccessList(err))?
+            .map_err(Error::AccessList)?
             .access_list
             .into())
     }
@@ -126,7 +126,7 @@ impl Ethereum {
             .estimate_gas(tx)
             .pending()
             .await
-            .map_err(|err| Error::Rpc(err))?
+            .map_err(Error::Rpc)?
             .into();
 
         Ok(estimated_gas)

@@ -12,7 +12,6 @@ use {
     url::Url,
 };
 
-pub mod api;
 pub mod dto;
 
 const API_URL: &str = "https://api.tenderly.co/api";

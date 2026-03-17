@@ -16,7 +16,6 @@ impl Contracts {
         let settlement = GPv2Settlement::Instance::new(
             addresses
                 .settlement
-                .map(Into::into)
                 .or_else(|| GPv2Settlement::deployment_address(&chain.id()))
                 .unwrap(),
             web3.provider.clone(),
@@ -24,7 +23,6 @@ impl Contracts {
         let weth = WETH9::Instance::new(
             addresses
                 .weth
-                .map(Into::into)
                 .or_else(|| WETH9::deployment_address(&chain.id()))
                 .unwrap(),
             web3.provider.clone(),

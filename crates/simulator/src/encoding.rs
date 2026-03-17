@@ -1,13 +1,10 @@
 use {
     alloy_primitives::{Address, B256, Bytes, U256},
-    alloy_rpc_types::state::StateOverride,
     alloy_sol_types::SolCall,
-    anyhow::{Context, Result},
     app_data::AppDataHash,
     contracts::alloy::GPv2Settlement,
     derive_more::Debug,
     model::{
-        DomainSeparator,
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, SigningScheme},
@@ -37,9 +34,6 @@ pub struct EncodedSettlement {
     pub clearing_prices: Vec<U256>,
     pub trades: Vec<EncodedTrade>,
     pub interactions: [Vec<EncodedInteraction>; 3],
-    pub overrides: StateOverride,
-    pub solver: Address,
-    pub receiver: Address,
 }
 
 impl EncodedSettlement {
@@ -170,83 +164,6 @@ fn order_flags(order: &OrderData, signature: &Signature) -> U256 {
         SigningScheme::PreSign => 0b11,
     } << 5;
     U256::from(result)
-}
-
-pub fn encode_jit_orders(
-    jit_orders: &[JitOrder],
-    tokens: &[Address],
-    domain_separator: &DomainSeparator,
-) -> Result<Vec<EncodedTrade>> {
-    jit_orders
-        .iter()
-        .map(|jit_order| {
-            let order_data = OrderData {
-                sell_token: jit_order.sell_token,
-                buy_token: jit_order.buy_token,
-                receiver: Some(jit_order.receiver),
-                sell_amount: jit_order.sell_amount,
-                buy_amount: jit_order.buy_amount,
-                valid_to: jit_order.valid_to,
-                app_data: jit_order.app_data,
-                fee_amount: U256::ZERO,
-                kind: match &jit_order.side {
-                    Side::Buy => OrderKind::Buy,
-                    Side::Sell => OrderKind::Sell,
-                },
-                partially_fillable: jit_order.partially_fillable,
-                sell_token_balance: jit_order.sell_token_source,
-                buy_token_balance: jit_order.buy_token_destination,
-            };
-            let (owner, signature) =
-                recover_jit_order_owner(jit_order, &order_data, domain_separator)?;
-
-            Ok(encode_trade(
-                &order_data,
-                &signature,
-                owner,
-                // the tokens set length is small so the linear search is acceptable
-                tokens
-                    .iter()
-                    .position(|token| *token == jit_order.sell_token)
-                    .context("missing jit order sell token index")?,
-                tokens
-                    .iter()
-                    .position(|token| *token == jit_order.buy_token)
-                    .context("missing jit order buy token index")?,
-                jit_order.executed_amount,
-            ))
-        })
-        .collect::<Result<Vec<EncodedTrade>>>()
-}
-
-/// Recovers the owner and signature from a `JitOrder`.
-fn recover_jit_order_owner(
-    jit_order: &JitOrder,
-    order_data: &OrderData,
-    domain_separator: &DomainSeparator,
-) -> Result<(Address, Signature)> {
-    let (owner, signature) = match jit_order.signing_scheme {
-        SigningScheme::Eip1271 => {
-            let (owner, signature) = jit_order.signature.split_at(20);
-            let owner = Address::from_slice(owner);
-            let signature = Signature::from_bytes(jit_order.signing_scheme, signature)?;
-            (owner, signature)
-        }
-        SigningScheme::PreSign => {
-            let owner = Address::from_slice(&jit_order.signature);
-            let signature = Signature::from_bytes(jit_order.signing_scheme, Vec::new().as_slice())?;
-            (owner, signature)
-        }
-        _ => {
-            let signature = Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
-            let owner = signature
-                .recover(domain_separator, &order_data.hash_struct())?
-                .context("could not recover the owner")?
-                .signer;
-            (owner, signature)
-        }
-    };
-    Ok((owner, signature))
 }
 
 /// Data for a raw GPv2 interaction.
