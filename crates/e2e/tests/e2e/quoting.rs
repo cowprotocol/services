@@ -523,12 +523,14 @@ async fn quote_custom_solver_errors(web3: Web3) {
                     "http://localhost:11088/test_quoter",
                 )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![vec![
-                        configs::native_price_estimators::NativePriceEstimator::driver(
-                            "test_quoter".to_string(),
-                            "http://localhost:11088/test_quoter".parse().unwrap(),
-                        ),
-                    ]]),
+                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                        vec![
+                            configs::native_price_estimators::NativePriceEstimator::driver(
+                                "test_quoter".to_string(),
+                                "http://localhost:11088/test_quoter".parse().unwrap(),
+                            ),
+                        ],
+                    ]),
                     ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
                 ..configs::orderbook::Configuration::test_default()
@@ -648,12 +650,14 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                     "http://localhost:11088/test_quoter",
                 )]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![vec![
-                        configs::native_price_estimators::NativePriceEstimator::driver(
-                            "test_quoter".to_string(),
-                            "http://localhost:11088/test_quoter".parse().unwrap(),
-                        ),
-                    ]]),
+                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                        vec![
+                            configs::native_price_estimators::NativePriceEstimator::driver(
+                                "test_quoter".to_string(),
+                                "http://localhost:11088/test_quoter".parse().unwrap(),
+                            ),
+                        ],
+                    ]),
                     ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
                 ..configs::orderbook::Configuration::test_default()
@@ -764,18 +768,20 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                     ),
                 ]),
                 native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![vec![
-                        configs::native_price_estimators::NativePriceEstimator::driver(
-                            "custom_solver".to_string(),
-                            "http://localhost:11088/custom_solver".parse().unwrap(),
-                        ),
-                        configs::native_price_estimators::NativePriceEstimator::driver(
-                            "no_liquidity_solver".to_string(),
-                            "http://localhost:11088/no_liquidity_solver"
-                                .parse()
-                                .unwrap(),
-                        ),
-                    ]]),
+                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                        vec![
+                            configs::native_price_estimators::NativePriceEstimator::driver(
+                                "custom_solver".to_string(),
+                                "http://localhost:11088/custom_solver".parse().unwrap(),
+                            ),
+                            configs::native_price_estimators::NativePriceEstimator::driver(
+                                "no_liquidity_solver".to_string(),
+                                "http://localhost:11088/no_liquidity_solver"
+                                    .parse()
+                                    .unwrap(),
+                            ),
+                        ],
+                    ]),
                     ..configs::orderbook::native_price::NativePriceConfig::test_default()
                 },
                 ..configs::orderbook::Configuration::test_default()
