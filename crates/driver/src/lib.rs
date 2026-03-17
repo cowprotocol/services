@@ -16,6 +16,7 @@ mod tests;
 
 pub use self::run::{run, start};
 
+pub use contracts;
 pub use model;
 pub use app_data;
 pub use observe;

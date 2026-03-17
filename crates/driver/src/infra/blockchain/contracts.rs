@@ -48,7 +48,7 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub(super) async fn new(
+    pub async fn new(
         web3: &Web3,
         chain: Chain,
         addresses: Addresses,
