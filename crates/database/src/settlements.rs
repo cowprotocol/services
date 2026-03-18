@@ -42,7 +42,7 @@ FROM settlements
 WHERE auction_id IS NULL
 ORDER BY block_number ASC
     "#;
-    sqlx::query_as(QUERY).fetch_all(ex).await
+    sqlx::query_as(QUERY).fetch_all_with_timeout(ex).await
 }
 
 #[instrument(skip_all)]
@@ -124,7 +124,7 @@ mod tests {
     ) -> Result<Vec<TransactionHash>, sqlx::Error> {
         const QUERY: &str = "SELECT tx_hash FROM settlements";
         sqlx::query_scalar::<_, TransactionHash>(QUERY)
-            .fetch_all(ex)
+            .fetch_all_with_timeout(ex)
             .await
     }
 

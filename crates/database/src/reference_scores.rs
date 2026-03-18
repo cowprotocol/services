@@ -40,7 +40,10 @@ pub async fn fetch(
     auction_id: AuctionId,
 ) -> Result<Vec<Score>, sqlx::Error> {
     const QUERY: &str = r#"SELECT * FROM reference_scores WHERE auction_id = $1"#;
-    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 #[cfg(test)]

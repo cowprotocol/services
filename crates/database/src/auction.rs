@@ -1,5 +1,9 @@
 use {
-    crate::{Address, OrderUid, timeout::QueryTimeout},
+    crate::{
+        Address,
+        OrderUid,
+        timeout::{QueryAsTimeoutExt, QueryTimeoutExt},
+    },
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, types::JsonValue},
 };
@@ -89,7 +93,10 @@ pub async fn fetch_multiple(
     ids: &[AuctionId],
 ) -> Result<Vec<Auction>, sqlx::Error> {
     const QUERY: &str = r#"SELECT * FROM competition_auctions WHERE id = ANY($1) ORDER BY id"#;
-    sqlx::query_as(QUERY).bind(ids).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(ids)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 pub async fn get_order_uids(
@@ -128,7 +135,10 @@ pub async fn fetch_auction_ids_by_order_uid(
 ) -> Result<Vec<AuctionId>, sqlx::Error> {
     const QUERY: &str =
         "SELECT auction_id FROM auction_orders WHERE order_uid = $1 ORDER BY auction_id";
-    let rows: Vec<(AuctionId,)> = sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await?;
+    let rows: Vec<(AuctionId,)> = sqlx::query_as(QUERY)
+        .bind(order_uid)
+        .fetch_all_with_timeout(ex)
+        .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 

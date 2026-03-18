@@ -1,7 +1,13 @@
 use {
-    crate::{Address, OrderUid, TransactionHash, auction::AuctionId, events::EventIndex},
+    crate::{
+        Address,
+        OrderUid,
+        TransactionHash,
+        auction::AuctionId,
+        events::EventIndex,
+        timeout::QueryAsTimeoutExt,
+    },
     bigdecimal::BigDecimal,
-    futures::stream::BoxStream,
     sqlx::PgConnection,
     tracing::{Instrument, info_span, instrument},
 };
@@ -27,7 +33,7 @@ pub fn trades<'a>(
     order_uid_filter: Option<&'a OrderUid>,
     offset: i64,
     limit: i64,
-) -> instrument::Instrumented<BoxStream<'a, Result<TradesQueryRow, sqlx::Error>>> {
+) -> instrument::Instrumented<impl Future<Output = Result<Vec<TradesQueryRow>, sqlx::Error>>> {
     const COMMON_QUERY: &str = r#"
 SELECT
     t.block_number,
@@ -89,7 +95,7 @@ LEFT OUTER JOIN LATERAL (
         .bind(order_uid_filter)
         .bind(limit)
         .bind(offset)
-        .fetch(ex)
+        .fetch_all_with_timeout(ex)
         .instrument(info_span!("trades"))
 }
 
@@ -124,7 +130,7 @@ AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
     sqlx::query_as(QUERY)
         .bind(settlement.block_number)
         .bind(settlement.log_index)
-        .fetch_all(ex)
+        .fetch_all_with_timeout(ex)
         .await
 }
 
@@ -165,7 +171,6 @@ mod tests {
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
             orders::Order,
         },
-        futures::TryStreamExt,
         sqlx::Connection,
     };
 
@@ -235,7 +240,6 @@ mod tests {
         // Use large limit to get all trades
         let mut filtered = trades(db, owner_filter, order_uid_filter, 0, 1000)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         filtered.sort_by_key(|t| (t.block_number, t.log_index));
@@ -309,7 +313,6 @@ mod tests {
         let now = std::time::Instant::now();
         trades(&mut db, Some(&ByteArray([2u8; 20])), None, 0, 100)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         let elapsed = now.elapsed();
@@ -710,7 +713,6 @@ mod tests {
         // Test limit: get first 2 trades (blocks 4 and 3 in DESC order)
         let result = trades(&mut db, Some(&owner), None, 0, 2)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 2);
@@ -720,7 +722,6 @@ mod tests {
         // Test offset: skip first 2, get next 2 (blocks 2 and 1 in DESC order)
         let result = trades(&mut db, Some(&owner), None, 2, 2)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 2);
@@ -730,7 +731,6 @@ mod tests {
         // Test offset beyond available trades
         let result = trades(&mut db, Some(&owner), None, 10, 2)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 0);
@@ -738,7 +738,6 @@ mod tests {
         // Test large limit returns all available trades in DESC order
         let result = trades(&mut db, Some(&owner), None, 0, 100)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 5);

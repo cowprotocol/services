@@ -61,7 +61,10 @@ pub async fn get_many_by_uid<'a>(
 ) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
     const QUERY: &str =
         const_format::concatcp!("SELECT ", SELECT, " FROM ", FROM, " WHERE o.uid = ANY($1)");
-    sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(order_uids)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 #[instrument(skip_all)]
@@ -80,13 +83,16 @@ pub async fn get_by_tx(
         t.block_number = (SELECT block_number FROM settlement) AND
         -- BETWEEN is inclusive
         t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM \
-         settlement) 
+         settlement)
         AND NOT EXISTS (
             SELECT 1 FROM orders ord
             WHERE ord.uid = o.uid)
         ",
     );
-    sqlx::query_as(QUERY).bind(tx_hash).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(tx_hash)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 /// 1:1 mapping to the `jit_orders` table, used to store orders.
@@ -141,7 +147,7 @@ pub async fn insert(ex: &mut PgConnection, jit_orders: &[JitOrder]) -> Result<()
             signing_scheme,
             sell_token_balance,
             buy_token_balance
-        ) 
+        )
         "#,
     );
 

@@ -71,7 +71,10 @@ pub async fn fetch_by_factory_address(
 ) -> Result<Vec<CowAmm>, sqlx::Error> {
     const QUERY: &str = "SELECT * FROM cow_amms WHERE factory_address = $1";
 
-    let cow_amms = sqlx::query_as(QUERY).bind(address).fetch_all(ex).await?;
+    let cow_amms = sqlx::query_as(QUERY)
+        .bind(address)
+        .fetch_all_with_timeout(ex)
+        .await?;
 
     Ok(cow_amms)
 }

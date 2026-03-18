@@ -87,7 +87,10 @@ FROM settlement_executions
 WHERE auction_id = ANY($1)
 ORDER BY auction_id, start_timestamp
     "#;
-    sqlx::query_as(QUERY).bind(auction_ids).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(auction_ids)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 #[cfg(test)]
@@ -274,7 +277,10 @@ mod tests {
     ) -> Result<Vec<super::SettlementExecution>, sqlx::Error> {
         const QUERY: &str = r#"SELECT * FROM settlement_executions WHERE auction_id = $1;"#;
 
-        sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+        sqlx::query_as(QUERY)
+            .bind(auction_id)
+            .fetch_all_with_timeout(ex)
+            .await
     }
 
     /// In the DB we use `timestampz` which doesn't store nanoseconds, so we

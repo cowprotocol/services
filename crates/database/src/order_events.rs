@@ -174,7 +174,7 @@ pub async fn get_all(
     const QUERY: &str = r#"SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp ASC"#;
     sqlx::query_as(QUERY)
         .bind(ByteArray(order.0))
-        .fetch_all(ex)
+        .fetch_all_with_timeout(ex)
         .await
 }
 
@@ -258,7 +258,7 @@ mod tests {
                 ORDER BY timestamp
             "#;
         sqlx::query_as::<_, OrderEvent>(QUERY)
-            .fetch_all(ex)
+            .fetch_all_with_timeout(ex)
             .await
             .unwrap()
     }

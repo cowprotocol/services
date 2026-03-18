@@ -84,7 +84,7 @@ pub async fn fetch_all(
     query_builder.push("ORDER BY fp.application_order");
 
     let query = query_builder.build_query_as::<FeePolicy>();
-    let rows = query.fetch_all(ex).await?;
+    let rows = query.fetch_all_with_timeout(ex).await?;
     let mut result: HashMap<(AuctionId, OrderUid), Vec<FeePolicy>> = HashMap::new();
     for row in rows {
         let key = (row.auction_id, row.order_uid);
@@ -100,7 +100,10 @@ pub async fn fetch_by_order_uid(
 ) -> Result<Vec<FeePolicy>, sqlx::Error> {
     const QUERY: &str =
         "SELECT * FROM fee_policies WHERE order_uid = $1 ORDER BY auction_id, application_order";
-    sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(order_uid)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 #[cfg(test)]

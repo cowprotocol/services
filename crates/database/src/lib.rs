@@ -28,10 +28,7 @@ pub mod trades;
 use {
     byte_array::ByteArray,
     sqlx::{Executor, PgPool},
-    std::{
-        sync::{LazyLock, OnceLock},
-        time::Duration,
-    },
+    std::{sync::OnceLock, time::Duration},
 };
 
 // Design:

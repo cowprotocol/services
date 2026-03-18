@@ -72,7 +72,10 @@ FROM order_execution
 WHERE order_uid = $1
 ORDER BY auction_id
     "#;
-    sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(order_uid)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 /// Fetch protocol fees for all keys in the filter
@@ -113,7 +116,7 @@ pub async fn executed_protocol_fees(
         pub protocol_fee_amounts: Vec<BigDecimal>,
     }
     let query = query_builder.build_query_as::<ProtocolFees>();
-    let rows: Vec<ProtocolFees> = query.fetch_all(ex).await?;
+    let rows: Vec<ProtocolFees> = query.fetch_all_with_timeout(ex).await?;
 
     let mut fees = HashMap::new();
     for row in rows {
