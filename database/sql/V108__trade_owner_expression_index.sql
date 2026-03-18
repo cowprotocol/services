@@ -6,7 +6,7 @@
 -- the owner slice of the uid.
 -- Indexing the `block_number` and `log_index` is needed for postgres
 -- to actually use this index in the account trades query.
-CREATE INDEX trades_order_uid_owner ON trades (
+CREATE INDEX CONCURRENTLY IF NOT EXISTS trades_order_uid_owner ON trades (
     substring(order_uid, 33, 20),
     block_number DESC,
     log_index DESC
