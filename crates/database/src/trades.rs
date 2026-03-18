@@ -86,8 +86,8 @@ LEFT OUTER JOIN LATERAL (
         // trades on top than fetch all trades and then join the jit
         // orders on top.
         " FROM jit_orders o",
-        SETTLEMENT_JOIN,
         " JOIN trades t ON o.uid = t.order_uid",
+        SETTLEMENT_JOIN,
         " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
@@ -97,6 +97,8 @@ LEFT OUTER JOIN LATERAL (
         " LIMIT $3",
         " OFFSET $4",
     );
+
+    dbg!(QUERY);
 
     sqlx::query_as(QUERY)
         .bind(owner_filter)
