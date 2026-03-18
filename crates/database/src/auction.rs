@@ -1,5 +1,5 @@
 use {
-    crate::{Address, OrderUid},
+    crate::{Address, OrderUid, timeout::QueryTimeout},
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, types::JsonValue},
 };
@@ -39,7 +39,11 @@ INSERT INTO auctions (id, json)
 VALUES ($1, $2::jsonb);
     "#;
 
-    sqlx::query(QUERY).bind(id).bind(json).execute(ex).await?;
+    sqlx::query(QUERY)
+        .bind(id)
+        .bind(json)
+        .execute_with_timeout(ex)
+        .await?;
     Ok(())
 }
 
