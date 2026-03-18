@@ -314,6 +314,7 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                             "SolverDeserializeError"
                         }
                         quote::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
+                        quote::Error::Solver(solver::Error::CustomError(_)) => "SolverCustomError",
                         quote::Error::Boundary(_) => "Unknown",
                         quote::Error::Encoding(_) => "Encoding",
                     },
@@ -450,6 +451,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
+        competition::Error::Solver(solver::Error::CustomError(_)) => "SolverCustomError",
         competition::Error::SubmissionError => "SubmissionError",
         competition::Error::TooManyPendingSettlements => "TooManyPendingSettlements",
         competition::Error::NoValidOrdersFound => "NoValidOrdersFound",
