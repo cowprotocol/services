@@ -241,7 +241,7 @@ pub fn tx(
     Ok(eth::Tx {
         from: solution.solver().address(),
         to,
-        input: calldata.into(),
+        input: calldata,
         value: Ether::zero(),
         access_list: Default::default(),
     })

@@ -261,12 +261,12 @@ pub fn encode_wrapper_settlement(
     settle_calldata: Bytes,
 ) -> (Address, Bytes) {
     // Encode wrapper metadata
-    let wrapper_data = encode_wrapper_data(&wrappers);
+    let wrapper_data = encode_wrapper_data(wrappers);
 
     // Create wrappedSettleCall
     let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
-        settleData: settle_calldata.into(),
-        wrapperData: wrapper_data.into(),
+        settleData: settle_calldata,
+        wrapperData: wrapper_data,
     }
     .abi_encode();
 

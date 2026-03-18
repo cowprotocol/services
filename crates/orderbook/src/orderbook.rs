@@ -244,6 +244,7 @@ pub struct Orderbook {
 }
 
 impl Orderbook {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         domain_separator: DomainSeparator,
         settlement_contract: Address,
@@ -646,7 +647,7 @@ impl OrderSimulator {
         let Some(app_data) = &order.metadata.full_app_data else {
             anyhow::bail!("App data is not known for order {}", order.metadata.uid)
         };
-        let app_data = serde_json::from_str::<app_data::Root>(&app_data)?;
+        let app_data = serde_json::from_str::<app_data::Root>(app_data)?;
         // TODO: Handle sell and buy differently
         let in_amount = order.data.sell_amount;
         let out_amount = order.data.buy_amount;

@@ -162,7 +162,7 @@ impl SwapSimulator {
         let block = *self.current_block.borrow();
         let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
 
-        let (to, calldata) = if swap.wrappers.len() > 0 {
+        let (to, calldata) = if !swap.wrappers.is_empty() {
             encode_wrapper_settlement(&swap.wrappers, swap.settlement.into_settle_call())
         } else {
             (swap.solver, swap.settlement.into_settle_call())
