@@ -214,6 +214,10 @@ impl Interaction {
             call_data: self.data.clone(),
         }
     }
+
+    pub fn encode(self) -> simulator::encoding::EncodedInteraction {
+        simulator::encoding::Interaction::from(self).encode()
+    }
 }
 
 impl From<InteractionData> for Interaction {

@@ -1,7 +1,6 @@
 pub mod encoding;
 pub mod enso;
 pub mod ethereum;
-pub mod infra;
 pub mod swap_simulator;
 pub mod tenderly;
 mod utils;

@@ -29,11 +29,33 @@ pub type EncodedTrade = (
 );
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Interactions {
+    pub pre: Vec<EncodedInteraction>,
+    pub main: Vec<EncodedInteraction>,
+    pub post: Vec<EncodedInteraction>,
+}
+
+impl Interactions {
+    pub fn into_array(self) -> [Vec<EncodedInteraction>; 3] {
+        [self.pre, self.main, self.post]
+    }
+}
+
+impl IntoIterator for Interactions {
+    type IntoIter = std::array::IntoIter<Vec<EncodedInteraction>, 3>;
+    type Item = Vec<EncodedInteraction>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        [self.pre, self.main, self.post].into_iter()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncodedSettlement {
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
     pub trades: Vec<EncodedTrade>,
-    pub interactions: [Vec<EncodedInteraction>; 3],
+    pub interactions: Interactions,
 }
 
 impl EncodedSettlement {
@@ -41,7 +63,7 @@ impl EncodedSettlement {
         GPv2Settlement::GPv2Settlement::settleCall {
             tokens: self.tokens.clone(),
             clearingPrices: self.clearing_prices.clone(),
-            interactions: self.interactions.clone().map(|interactions| {
+            interactions: self.interactions.clone().into_array().map(|interactions| {
                 interactions
                     .into_iter()
                     .map(|i| GPv2Settlement::GPv2Interaction::Data {

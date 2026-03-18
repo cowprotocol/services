@@ -1,12 +1,6 @@
 use {
-    crate::encoding::{
-        EncodedSettlement,
-        EncodedTrade,
-        Interaction,
-        encode_interactions,
-        encode_trade,
-    },
-    alloy_primitives::{Address, Bytes, U256, address, map::AddressMap},
+    crate::encoding::{EncodedSettlement, EncodedTrade, Interaction, Interactions, encode_trade},
+    alloy_primitives::{Address, U256, address, map::AddressMap},
     alloy_rpc_types::{
         TransactionRequest,
         state::{AccountOverride, StateOverride},
@@ -29,23 +23,27 @@ use {
     std::sync::Arc,
 };
 
+/// Query for the Swap Simulator to prepare a fake settlement with
+/// Contains the minimum data required to encode a fake settlement
 pub struct Query {
+    /// The input token, transferred into settlement contract
     pub in_token: Address,
-    pub out_token: Address,
-    pub kind: OrderKind,
     pub in_amount: NonZeroU256,
+    /// The output token, transferred out of settlemetn contract
+    pub out_token: Address,
     pub out_amount: U256,
+    pub kind: OrderKind,
     pub receiver: Address,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub from: Address,
     pub tx_origin: Option<Address>,
     /// These interactions will be executed before the trade.
-    pub pre_interactions: Vec<Interaction>,
+    // pub pre_interactions: Vec<Interaction>,
     /// Interactions needed to produce the expected trade amount.
-    pub interactions: Vec<Interaction>,
+    // pub interactions: Vec<Interaction>,
     /// These interactions will be executed after the trade.
-    pub post_interactions: Vec<Interaction>,
+    // pub post_interactions: Vec<Interaction>,
     pub solver: Address,
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
@@ -101,9 +99,16 @@ impl SwapSimulator {
         })
     }
 
+    /// Creates a fake swap based on the provided query
+    /// The result can be further post processed depending on the needs
+    ///
+    /// It can then be simulated with SwapSimulator::simulate_swap
     pub async fn fake_swap(&self, mut query: Query) -> Result<EncodedSwap> {
         let overrides = self.prepare_state_overrides(&mut query).await?;
-        let mut trade_interactions = encode_interactions(query.interactions.iter());
+
+        let pre_interactions = vec![self.trade_setup_interaction(&query).encode()];
+        let mut interactions = vec![];
+
         if query.out_token == BUY_ETH_ADDRESS {
             // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
             // does not have to emit unwraps to pay out `ETH` in a trade.
@@ -113,7 +118,7 @@ impl SwapSimulator {
                 OrderKind::Sell => query.out_amount,
                 OrderKind::Buy => query.in_amount.get(),
             };
-            trade_interactions.push((
+            interactions.push((
                 self.native_token,
                 U256::ZERO,
                 WETH9::WETH9::withdrawCall { wad: buy_amount }
@@ -123,22 +128,16 @@ impl SwapSimulator {
             tracing::trace!("adding unwrap interaction for paying out ETH");
         }
 
-        // let user_interactions = query.pre_interactions.iter().cloned();
-        let pre_interactions: Vec<_> = query.pre_interactions.iter().cloned()
-            // .chain(trade.pre_interactions().cloned())
-            .chain([self.trade_setup_interaction(&query)])
-            .collect();
-
         Ok(EncodedSwap {
             settlement: EncodedSettlement {
                 tokens: query.tokens.to_vec(),
                 clearing_prices: query.clearing_prices.to_vec(),
                 trades: vec![encode_fake_trade(&query)?],
-                interactions: [
-                    encode_interactions(&pre_interactions),
-                    trade_interactions,
-                    encode_interactions(&query.post_interactions),
-                ],
+                interactions: Interactions {
+                    pre: pre_interactions,
+                    main: interactions,
+                    post: vec![],
+                },
             },
             solver: query.tx_origin.unwrap_or(query.solver),
             receiver: query.receiver,
@@ -198,9 +197,7 @@ impl SwapSimulator {
             overrides.insert(
                 authenticator,
                 AccountOverride {
-                    code: Some(Bytes::from(
-                        AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.to_vec(),
-                    )),
+                    code: Some(AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone()),
                     ..Default::default()
                 },
             );

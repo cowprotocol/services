@@ -2,6 +2,7 @@ use {
     super::{Estimate, Verification},
     crate::{
         trade_finding::{
+            Interaction,
             QuoteExecution,
             TradeKind,
             external::dto::{self, Side},
@@ -142,22 +143,6 @@ impl TradeVerifier {
             buy_token_destination: verification.buy_token_destination,
             from: verification.from,
             tx_origin: trade.tx_origin(),
-            pre_interactions: verification
-                .pre_interactions
-                .iter()
-                // pre_interactions introduced by the solver
-                .chain(trade.pre_interactions())
-                .cloned()
-                .map(Into::into)
-                .collect(),
-            // Interactions introduced by the solver
-            interactions: trade.interactions().cloned().map(Into::into).collect(),
-            post_interactions: verification
-                .post_interactions
-                .iter()
-                .cloned()
-                .map(Into::into)
-                .collect(),
             solver: trade.solver(),
             tokens: tokens.clone(),
             clearing_prices,
@@ -170,6 +155,43 @@ impl TradeVerifier {
             .map_err(Error::SimulationFailed)?;
 
         swap.overrides.extend(overrides);
+
+        let mut pre_interactions = verification
+                .pre_interactions
+                .iter()
+                // pre_interactions introduced by the solver
+                .chain(trade.pre_interactions())
+                .cloned()
+                .map(Interaction::encode)
+                .collect::<Vec<_>>();
+
+        // Interactions introduced by the solver
+        let interactions = trade
+            .interactions()
+            .cloned()
+            .map(Interaction::encode)
+            .collect::<Vec<_>>();
+        let post_interactions = verification
+            .post_interactions
+            .iter()
+            .cloned()
+            .map(Interaction::encode)
+            .collect::<Vec<_>>();
+
+        // Join custom pre_interactions
+        pre_interactions.extend(swap.settlement.interactions.pre.into_iter());
+        swap.settlement.interactions.pre = pre_interactions;
+        swap.settlement.interactions.main = interactions
+            .into_iter()
+            .chain(swap.settlement.interactions.main)
+            .collect();
+        swap.settlement.interactions.post = swap
+            .settlement
+            .interactions
+            .post
+            .into_iter()
+            .chain(post_interactions)
+            .collect();
 
         add_balance_queries(&mut swap, query, &verification);
 
@@ -528,9 +550,9 @@ fn add_balance_queries(swap: &mut EncodedSwap, query: &PriceQuery, verification:
     let interaction = (swap.solver, U256::ZERO, query_balance_call.into());
 
     // query balance query at the end of pre-interactions
-    swap.settlement.interactions[0].push(interaction.clone());
+    swap.settlement.interactions.pre.push(interaction.clone());
     // query balance right after we payed out all `buy_token`
-    swap.settlement.interactions[2].insert(0, interaction);
+    swap.settlement.interactions.post.insert(0, interaction);
 }
 
 /// Analyzed output of `Solver::settle` smart contract call.
