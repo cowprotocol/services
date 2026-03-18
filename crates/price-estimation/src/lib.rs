@@ -48,15 +48,20 @@ pub enum PriceEstimationError {
     #[error("Rate limited")]
     RateLimited,
 
+    /// Token can only be traded during specific time windows (e.g. xStocks/Ondo
+    /// RWA tokens).
     #[error("{message}")]
     TradingOutsideAllowedWindow { message: String },
 
+    /// Token is temporarily suspended from trading by the solver.
     #[error("{message}")]
     TokenTemporarilySuspended { message: String },
 
+    /// Insufficient liquidity to fill the requested trade size.
     #[error("{message}")]
     InsufficientLiquidity { message: String },
 
+    /// Solver returned a custom error that doesn't map to a known variant.
     #[error("{message}")]
     CustomSolverError { message: String },
 

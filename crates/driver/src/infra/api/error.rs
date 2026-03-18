@@ -8,7 +8,7 @@ use {
     std::borrow::Cow,
 };
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 enum Kind {
     QuotingFailed,
@@ -74,7 +74,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             axum::http::StatusCode::BAD_REQUEST,
             axum::Json(Error {
                 kind: value,
-                description: description.to_string().into(),
+                description: description.into(),
             }),
         )
     }
@@ -214,17 +214,7 @@ mod tests {
             };
 
             let (kind, message) = map_custom_solver_error(&custom_err);
-            assert!(matches!(
-                (kind, expected_kind),
-                (
-                    Kind::TradingOutsideAllowedWindow,
-                    Kind::TradingOutsideAllowedWindow
-                ) | (
-                    Kind::TokenTemporarilySuspended,
-                    Kind::TokenTemporarilySuspended
-                ) | (Kind::InsufficientLiquidity, Kind::InsufficientLiquidity)
-                    | (Kind::CustomSolverError, Kind::CustomSolverError)
-            ));
+            assert_eq!(kind, expected_kind);
             assert_eq!(message, expected_message);
         }
     }
