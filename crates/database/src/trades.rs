@@ -28,7 +28,7 @@ pub fn trades<'a>(
     offset: i64,
     limit: i64,
 ) -> instrument::Instrumented<BoxStream<'a, Result<TradesQueryRow, sqlx::Error>>> {
-    const COMMON_QUERY: &str = r#"
+    const SELECT: &str = r#"
 SELECT
     t.block_number,
     t.log_index,
@@ -40,8 +40,9 @@ SELECT
     o.buy_token,
     o.sell_token,
     settlement.tx_hash,
-    settlement.auction_id
-FROM trades t
+    settlement.auction_id"#;
+
+    const SETTLEMENT_JOIN: &str = r#"
 LEFT OUTER JOIN LATERAL (
     SELECT tx_hash, auction_id FROM settlements s
     WHERE s.block_number = t.block_number
@@ -52,28 +53,41 @@ LEFT OUTER JOIN LATERAL (
 
     const QUERY: &str = const_format::concatcp!(
         "(",
-        COMMON_QUERY,
+        SELECT,
+        " FROM trades t",
+        SETTLEMENT_JOIN,
         " JOIN orders o ON o.uid = t.order_uid",
-        " WHERE ($1 IS NULL OR o.owner = $1)",
-        " AND ($2 IS NULL OR o.uid = $2)",
+        // the uid already contains the owner address and we have
+        // an index on this expression so this is very efficient
+        " WHERE ($1 IS NULL OR substring(t.order_uid, 33, 20) = $1)",
+        " AND ($2 IS NULL OR t.uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
         " UNION ",
         "(",
-        COMMON_QUERY,
+        SELECT,
+        " FROM trades t",
+        SETTLEMENT_JOIN,
         " JOIN orders o ON o.uid = t.order_uid",
         " LEFT OUTER JOIN onchain_placed_orders onchain_o",
-        " ON onchain_o.uid = t.order_uid",
-        " WHERE onchain_o.sender = $1",
-        " AND ($2 IS NULL OR o.uid = $2)",
+        "    ON onchain_o.uid = t.order_uid",
+        " WHERE ($1 IS NULL OR onchain_o.sender = $1)",
+        " AND ($2 IS NULL OR t.uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
         " UNION ",
         "(",
-        COMMON_QUERY,
-        " JOIN jit_orders o ON o.uid = t.order_uid",
+        SELECT,
+        // note that we invert the join order here because there are
+        // very few jit orders so for accounts with many trades
+        // it's a lot more efficient to fetch all jit orders and join
+        // trades on top than fetch all trades and then join the jit
+        // orders on top.
+        " FROM jit_orders o",
+        SETTLEMENT_JOIN,
+        " JOIN trades t ON o.uid = t.order_uid",
         " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
