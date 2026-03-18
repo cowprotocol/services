@@ -108,7 +108,83 @@ impl From<TradeError> for PriceEstimationError {
             TradeError::UnsupportedOrderType(order_type) => Self::UnsupportedOrderType(order_type),
             TradeError::DeadlineExceeded => Self::EstimatorInternal(anyhow!("timeout")),
             TradeError::RateLimited => Self::RateLimited,
+            TradeError::TradingOutsideAllowedWindow { message } => {
+                Self::TradingOutsideAllowedWindow { message }
+            }
+            TradeError::TokenTemporarilySuspended { message } => {
+                Self::TokenTemporarilySuspended { message }
+            }
+            TradeError::InsufficientLiquidity { message } => {
+                Self::InsufficientLiquidity { message }
+            }
+            TradeError::CustomSolverError { message } => Self::CustomSolverError { message },
             TradeError::Other(err) => Self::EstimatorInternal(err),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_custom_trade_errors_to_price_estimation_errors() {
+        let cases = [
+            (
+                TradeError::TradingOutsideAllowedWindow {
+                    message: "window".to_string(),
+                },
+                "window",
+                0,
+            ),
+            (
+                TradeError::TokenTemporarilySuspended {
+                    message: "suspended".to_string(),
+                },
+                "suspended",
+                1,
+            ),
+            (
+                TradeError::InsufficientLiquidity {
+                    message: "insufficient".to_string(),
+                },
+                "insufficient",
+                2,
+            ),
+            (
+                TradeError::CustomSolverError {
+                    message: "custom".to_string(),
+                },
+                "custom",
+                3,
+            ),
+        ];
+
+        for (input, expected_message, expected_variant) in cases {
+            let mapped: PriceEstimationError = input.into();
+            match expected_variant {
+                0 => assert!(matches!(
+                    mapped,
+                    PriceEstimationError::TradingOutsideAllowedWindow { message }
+                    if message == expected_message
+                )),
+                1 => assert!(matches!(
+                    mapped,
+                    PriceEstimationError::TokenTemporarilySuspended { message }
+                    if message == expected_message
+                )),
+                2 => assert!(matches!(
+                    mapped,
+                    PriceEstimationError::InsufficientLiquidity { message }
+                    if message == expected_message
+                )),
+                3 => assert!(matches!(
+                    mapped,
+                    PriceEstimationError::CustomSolverError { message }
+                    if message == expected_message
+                )),
+                _ => unreachable!(),
+            }
         }
     }
 }

@@ -27,10 +27,6 @@ servers:
     url: "https://api.cow.fi/polygon"
   - description: Polygon (Staging)
     url: "https://barn.api.cow.fi/polygon"
-  - description: Lens (Prod)
-    url: "https://api.cow.fi/lens"
-  - description: Lens (Staging)
-    url: "https://barn.api.cow.fi/lens"
   - description: Linea (Prod)
     url: "https://api.cow.fi/linea"
   - description: Linea (Staging)
