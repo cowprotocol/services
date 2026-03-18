@@ -28,18 +28,21 @@ pub struct Metadata {
 pub struct Fetcher(Arc<Inner>);
 
 impl Fetcher {
-    pub fn new(eth: &Ethereum) -> Self {
+    pub fn new(eth: &Ethereum, disable_balances: bool) -> Self {
         let eth = eth.with_metric_label("tokenInfos".into());
-        let block_stream = eth.current_block().clone();
         let inner = Arc::new(Inner {
             eth,
             cache: RwLock::new(HashMap::new()),
             requests: BoxRequestSharing::labelled("token_info".into()),
+            disable_balances,
         });
-        tokio::task::spawn(
-            update_task(block_stream, Arc::downgrade(&inner))
-                .instrument(tracing::info_span!("token_fetcher")),
-        );
+        if !disable_balances {
+            let block_stream = inner.eth.current_block().clone();
+            tokio::task::spawn(
+                update_task(block_stream, Arc::downgrade(&inner))
+                    .instrument(tracing::info_span!("token_fetcher")),
+            );
+        }
         Self(inner)
     }
 
@@ -124,6 +127,7 @@ struct Inner {
     eth: Ethereum,
     cache: RwLock<HashMap<eth::TokenAddress, Metadata>>,
     requests: BoxRequestSharing<eth::TokenAddress, Option<(eth::TokenAddress, Metadata)>>,
+    disable_balances: bool,
 }
 
 impl Inner {
@@ -190,6 +194,23 @@ impl Inner {
     }
 
     async fn get(&self, addresses: &[eth::TokenAddress]) -> HashMap<eth::TokenAddress, Metadata> {
+        if self.disable_balances {
+            return addresses
+                .iter()
+                .filter(|address| address.0.0 != BUY_ETH_ADDRESS)
+                .map(|address| {
+                    (
+                        *address,
+                        Metadata {
+                            decimals: None,
+                            symbol: None,
+                            balance: 0.into(),
+                        },
+                    )
+                })
+                .collect();
+        }
+
         let to_fetch: Vec<_> = {
             let cache = self.cache.read().unwrap();
 

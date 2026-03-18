@@ -97,6 +97,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             config.simulation_bad_token_max_age,
             &eth,
         ),
+        disable_balances: config.disable_balances,
         eth,
         addr: args.addr,
         addr_sender,

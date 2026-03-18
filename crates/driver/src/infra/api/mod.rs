@@ -40,6 +40,7 @@ pub struct Api {
     pub mempools: Mempools,
     pub addr: SocketAddr,
     pub bad_token_detector: risk_detector::bad_tokens::Detector,
+    pub disable_balances: bool,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -61,7 +62,7 @@ impl Api {
             self.eth.current_block().clone(),
         );
 
-        let tokens = tokens::Fetcher::new(&self.eth);
+        let tokens = tokens::Fetcher::new(&self.eth, self.disable_balances);
         let fetcher = Arc::new(domain::competition::DataAggregator::new(
             self.eth.clone(),
             app_data_retriever.clone(),
