@@ -243,7 +243,7 @@ pub fn encode_interactions<'a>(
     interactions.into_iter().map(|i| i.encode()).collect()
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WrapperCall {
     pub address: Address,
     pub data: Bytes,

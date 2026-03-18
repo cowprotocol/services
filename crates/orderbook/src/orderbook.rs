@@ -648,9 +648,10 @@ impl OrderSimulator {
             anyhow::bail!("App data is not known for order {}", order.metadata.uid)
         };
         let app_data = serde_json::from_str::<app_data::Root>(app_data)?;
-        // TODO: Handle sell and buy differently
-        let in_amount = order.data.sell_amount;
-        let out_amount = order.data.buy_amount;
+        let (in_amount, out_amount) = match order.data.kind {
+            OrderKind::Sell => (order.data.sell_amount, order.data.buy_amount),
+            OrderKind::Buy => (order.data.buy_amount, order.data.sell_amount),
+        };
 
         let tokens = vec![order.data.sell_token, order.data.buy_token];
         let clearing_prices = match order.data.kind {
