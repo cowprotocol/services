@@ -70,9 +70,9 @@ LEFT OUTER JOIN LATERAL (
         " FROM trades t",
         SETTLEMENT_JOIN,
         " JOIN orders o ON o.uid = t.order_uid",
-        " LEFT OUTER JOIN onchain_placed_orders onchain_o",
+        " JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
-        " WHERE onchain_o.sender = $1",
+        " WHERE ($1 IS NULL OR onchain_o.sender = $1)",
         " AND ($2 IS NULL OR t.order_uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
@@ -97,8 +97,6 @@ LEFT OUTER JOIN LATERAL (
         " LIMIT $3",
         " OFFSET $4",
     );
-
-    dbg!(QUERY);
 
     sqlx::query_as(QUERY)
         .bind(owner_filter)
@@ -370,8 +368,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // 4 users with 1 order each
-        let users_and_orders = generate_owners_and_order_ids(&[1, 1, 1, 1]).await;
+        let users_and_orders = generate_owners_and_order_ids(&[1, 1, 1, 1, 1]).await;
 
         let event_index_0 = EventIndex {
             block_number: 0,
@@ -418,40 +415,33 @@ mod tests {
         assert_trades(&mut db, Some(&users_and_orders[2].0), None, &[]).await;
 
         let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(users_and_orders[3].1[0].0),
-            sender: users_and_orders[3].0,
+            order_uid: users_and_orders[3].1[0],
+            sender: users_and_orders[4].0,
             placement_error: None,
         };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &onchain_order)
+        let event_index_2 = EventIndex {
+            block_number: 0,
+            log_index: 2,
+        };
+        let trade_2 = add_order_and_trade(
+            &mut db,
+            users_and_orders[3].0,
+            users_and_orders[3].1[0],
+            event_index_2,
+            None,
+            None,
+        )
+        .await;
+        insert_onchain_order(&mut db, &event_index_2, &onchain_order)
             .await
             .unwrap();
         assert_trades(
             &mut db,
-            Some(&users_and_orders[3].0),
+            Some(&users_and_orders[4].0),
             None,
-            std::slice::from_ref(&trade_0),
+            std::slice::from_ref(&trade_2),
         )
         .await;
-
-        add_order_and_trade(
-            &mut db,
-            users_and_orders[3].0,
-            users_and_orders[3].1[0],
-            event_index_1,
-            None,
-            None,
-        )
-        .await;
-        let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(users_and_orders[3].1[0].0),
-            sender: users_and_orders[3].0,
-            placement_error: None,
-        };
-        insert_onchain_order(&mut db, &event_index_1, &onchain_order)
-            .await
-            .unwrap();
-        assert_trades(&mut db, Some(&users_and_orders[3].0), None, &[trade_0]).await;
     }
 
     #[tokio::test]
