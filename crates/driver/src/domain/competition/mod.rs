@@ -707,7 +707,7 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(self.solver.address(), &settlement, submission_deadline)
+            .execute(self.solver.account(), &settlement, submission_deadline)
             .await;
         notify::executed(
             &self.solver,
