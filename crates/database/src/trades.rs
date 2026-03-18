@@ -60,7 +60,7 @@ LEFT OUTER JOIN LATERAL (
         // the uid already contains the owner address and we have
         // an index on this expression so this is very efficient
         " WHERE ($1 IS NULL OR substring(t.order_uid, 33, 20) = $1)",
-        " AND ($2 IS NULL OR t.uid = $2)",
+        " AND ($2 IS NULL OR t.order_uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
@@ -73,7 +73,7 @@ LEFT OUTER JOIN LATERAL (
         " LEFT OUTER JOIN onchain_placed_orders onchain_o",
         "    ON onchain_o.uid = t.order_uid",
         " WHERE ($1 IS NULL OR onchain_o.sender = $1)",
-        " AND ($2 IS NULL OR t.uid = $2)",
+        " AND ($2 IS NULL OR t.order_uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
