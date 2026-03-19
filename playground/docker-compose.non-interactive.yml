@@ -91,7 +91,7 @@ services:
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
       - ../:/src
-      - ./orderbook.toml:/orderbook.toml
+      - ./configs/orderbook.toml:/orderbook.toml
     depends_on:
       - db-migrations
     ports:
@@ -125,7 +125,7 @@ services:
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
-      - ./autopilot.toml:/autopilot.toml
+      - ./configs/autopilot.toml:/autopilot.toml
     depends_on:
       orderbook:
         condition: service_started
@@ -152,7 +152,7 @@ services:
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
-      - ./driver.toml:/driver.toml
+      - ./configs/driver.toml:/driver.toml
     ports:
       - 9000:80 # API & metrics
       - 6671:6669 # tokio console
@@ -177,7 +177,7 @@ services:
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
     volumes:
-      - ./baseline.toml:/baseline.toml
+      - ./configs/baseline.toml:/baseline.toml
     ports:
       - 9001:80 # API & metrics
       - 6672:6669 # tokio console
