@@ -3,7 +3,6 @@
 
 use {
     alloy::primitives::Address,
-    anyhow::{Context, Result, ensure},
     configs::fee_factor::FeeFactor,
     gas_price_estimation::GasEstimatorType,
     observe::TracingConfig,
@@ -11,10 +10,8 @@ use {
         collections::HashSet,
         fmt::{self, Display, Formatter},
         num::NonZeroU32,
-        str::FromStr,
         time::Duration,
     },
-    url::Url,
 };
 
 #[macro_export]
@@ -100,104 +97,6 @@ impl Display for DatabasePoolConfig {
     }
 }
 
-#[derive(clap::Parser)]
-#[group(skip)]
-pub struct Arguments {
-    #[clap(flatten)]
-    pub ethrpc: crate::web3::Arguments,
-
-    #[clap(flatten)]
-    pub current_block: crate::current_block::Arguments,
-
-    #[clap(flatten)]
-    pub logging: LoggingArguments,
-
-    #[clap(flatten)]
-    pub tracing: TracingArguments,
-
-    /// The Ethereum node URL to connect to.
-    #[clap(long, env, default_value = "http://localhost:8545")]
-    pub node_url: Url,
-
-    /// An Ethereum node URL that supports `eth_call`s with state overrides to
-    /// be used for simulations.
-    #[clap(long, env)]
-    pub simulation_node_url: Option<Url>,
-
-    /// The expected chain ID that the services are expected to run against.
-    /// This can be optionally specified in order to check at startup whether
-    /// the connected nodes match to detect misconfigurations.
-    #[clap(long, env)]
-    pub chain_id: Option<u64>,
-
-    /// Which gas estimators to use. Multiple estimators are used in sequence if
-    /// a previous one fails. Individual estimators support different
-    /// networks. `EthGasStation`: supports mainnet.
-    /// `GasNow`: supports mainnet.
-    /// `Web3`: supports every network.
-    /// `Native`: supports every network.
-    #[clap(
-        long,
-        env,
-        default_value = "Web3",
-        use_value_delimiter = true,
-        value_parser = clap::value_parser!(GasEstimatorType)
-    )]
-    pub gas_estimators: Vec<GasEstimatorType>,
-
-    /// The time between new blocks on the network.
-    #[clap(long, env, value_parser = humantime::parse_duration)]
-    pub network_block_interval: Option<Duration>,
-
-    /// Override address of the settlement contract.
-    #[clap(long, env)]
-    pub settlement_contract_address: Option<Address>,
-
-    /// Override address of the Balances contract.
-    #[clap(long, env)]
-    pub balances_contract_address: Option<Address>,
-
-    /// Override address of the Signatures contract.
-    #[clap(long, env)]
-    pub signatures_contract_address: Option<Address>,
-
-    /// Override address of the settlement contract.
-    #[clap(long, env)]
-    pub native_token_address: Option<Address>,
-
-    /// Override the address of the `HooksTrampoline` contract used for
-    /// trampolining custom order interactions. If not specified, the default
-    /// contract deployment for the current network will be used.
-    #[clap(long, env)]
-    pub hooks_contract_address: Option<Address>,
-
-    /// Override address of the balancer vault contract.
-    #[clap(long, env)]
-    pub balancer_v2_vault_address: Option<Address>,
-
-    /// Custom volume fees for token buckets.
-    /// Format: "factor:token1;token2;..." (e.g.,
-    /// "0:0xA0b86...;0x6B175...;0xdAC17...") Orders where BOTH tokens are
-    /// in the bucket will use the custom fee. Useful for
-    /// stablecoin-to-stablecoin trades or specific token pairs (2-token
-    /// buckets). Multiple buckets can be separated by commas.
-    #[clap(long, env, value_delimiter = ',')]
-    pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
-
-    /// Enable volume fees for trades where sell token equals buy token.
-    /// By default, volume fees are NOT applied to same-token trades.
-    #[clap(long, env)]
-    pub enable_sell_equals_buy_volume_fee: bool,
-}
-
-pub fn display_secret_option<T>(
-    f: &mut Formatter<'_>,
-    name: &str,
-    option: Option<&T>,
-) -> std::fmt::Result {
-    display_option(f, name, &option.as_ref().map(|_| "SECRET"))
-}
-
 pub fn display_option(
     f: &mut Formatter<'_>,
     name: &str,
@@ -210,104 +109,6 @@ pub fn display_option(
     }
 }
 
-pub fn display_list<T>(
-    f: &mut Formatter<'_>,
-    name: &str,
-    iter: impl IntoIterator<Item = T>,
-) -> std::fmt::Result
-where
-    T: Display,
-{
-    write!(f, "{name}: [")?;
-    for (i, t) in iter.into_iter().enumerate() {
-        if i != 0 {
-            f.write_str(", ")?;
-        }
-        write!(f, "{t}")?;
-    }
-    writeln!(f, "]")?;
-    Ok(())
-}
-
-// We have a custom Display implementation so that we can log the arguments on
-// start up without leaking any potentially secret values.
-impl Display for Arguments {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let Self {
-            ethrpc,
-            current_block,
-            logging,
-            node_url,
-            chain_id,
-            simulation_node_url,
-            gas_estimators,
-            network_block_interval,
-            settlement_contract_address,
-            balances_contract_address,
-            signatures_contract_address,
-            native_token_address,
-            hooks_contract_address,
-            balancer_v2_vault_address,
-            tracing,
-            volume_fee_bucket_overrides,
-            enable_sell_equals_buy_volume_fee,
-        } = self;
-
-        write!(f, "{ethrpc}")?;
-        write!(f, "{current_block}")?;
-        write!(f, "{logging}")?;
-        writeln!(f, "node_url: {node_url}")?;
-        display_option(f, "chain_id", chain_id)?;
-        display_option(f, "simulation_node_url", simulation_node_url)?;
-        writeln!(f, "gas_estimators: {gas_estimators:?}")?;
-        display_option(
-            f,
-            "network_block_interval",
-            &network_block_interval.map(|duration| duration.as_secs_f32()),
-        )?;
-        display_option(
-            f,
-            "settlement_contract_address",
-            &settlement_contract_address.map(|a| format!("{a:?}")),
-        )?;
-        display_option(
-            f,
-            "balances_contract_address",
-            &balances_contract_address.map(|a| format!("{a:?}")),
-        )?;
-        display_option(
-            f,
-            "signatures_contract_address",
-            &signatures_contract_address.map(|a| format!("{a:?}")),
-        )?;
-        display_option(
-            f,
-            "native_token_address",
-            &native_token_address.map(|a| format!("{a:?}")),
-        )?;
-        display_option(
-            f,
-            "hooks_contract_address",
-            &hooks_contract_address.map(|a| format!("{a:?}")),
-        )?;
-        display_option(
-            f,
-            "balancer_v2_vault_address",
-            &balancer_v2_vault_address.map(|a| format!("{a:?}")),
-        )?;
-        write!(f, "{tracing:?}")?;
-        writeln!(
-            f,
-            "volume_fee_bucket_overrides: {volume_fee_bucket_overrides:?}"
-        )?;
-        writeln!(
-            f,
-            "enable_sell_equals_buy_volume_fee: {enable_sell_equals_buy_volume_fee}"
-        )?;
-        Ok(())
-    }
-}
-
 /// Helper type for parsing token bucket fee overrides from strings
 #[derive(Debug, Clone)]
 pub struct TokenBucketFeeOverride {
@@ -315,107 +116,21 @@ pub struct TokenBucketFeeOverride {
     pub factor: FeeFactor,
 }
 
-impl FromStr for TokenBucketFeeOverride {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (factor_str, tokens_str) = s.split_once(':').with_context(|| {
-            format!(
-                "invalid bucket override format: expected 'factor:token1;token2;...', got '{}'",
-                s
-            )
-        })?;
-        let factor = factor_str
-            .parse::<f64>()
-            .context("failed to parse fee factor")?
-            .try_into()
-            .context("fee factor out of range")?;
-        let tokens: HashSet<Address> = tokens_str
-            .split(';')
-            .map(|token| {
-                token
-                    .parse::<Address>()
-                    .with_context(|| format!("failed to parse token address '{}'", token))
-            })
-            .collect::<Result<HashSet<Address>>>()?;
-
-        ensure!(
-            tokens.len() >= 2,
-            "bucket override must contain at least 2 tokens, got {}",
-            tokens.len()
-        );
-
-        Ok(TokenBucketFeeOverride { tokens, factor })
+pub fn gas_estimator_type_from_config(
+    config: &configs::shared::GasEstimatorType,
+) -> GasEstimatorType {
+    match config {
+        configs::shared::GasEstimatorType::Web3 => GasEstimatorType::Web3,
+        configs::shared::GasEstimatorType::Driver { url } => GasEstimatorType::Driver(url.clone()),
+        configs::shared::GasEstimatorType::Alloy => GasEstimatorType::Alloy,
     }
 }
 
-#[cfg(test)]
-mod test {
-    use {super::*, alloy::primitives::address};
-
-    #[test]
-    fn parse_token_bucket_fee_override() {
-        // Valid inputs with 2 tokens (minimum required)
-        let valid_two_tokens = "0.5:0x0000000000000000000000000000000000000001;\
-                                0x0000000000000000000000000000000000000002";
-        let result = TokenBucketFeeOverride::from_str(valid_two_tokens).unwrap();
-        assert_eq!(result.factor.get(), 0.5);
-        assert_eq!(result.tokens.len(), 2);
-        assert!(
-            result
-                .tokens
-                .contains(&address!("0000000000000000000000000000000000000001"))
-        );
-        assert!(
-            result
-                .tokens
-                .contains(&address!("0000000000000000000000000000000000000002"))
-        );
-
-        // Valid inputs with 3 tokens
-        let valid_three_tokens = "0.123:0x0000000000000000000000000000000000000001;\
-                                  0x0000000000000000000000000000000000000002;\
-                                  0x0000000000000000000000000000000000000003";
-        let result = TokenBucketFeeOverride::from_str(valid_three_tokens).unwrap();
-        assert_eq!(result.factor.get(), 0.123);
-        assert_eq!(result.tokens.len(), 3);
-        // Invalid: only 1 token (need at least 2)
-        assert!(
-            TokenBucketFeeOverride::from_str("0.5:0x0000000000000000000000000000000000000001")
-                .is_err()
-        );
-        // Invalid: wrong format (no colon)
-        assert!(
-            TokenBucketFeeOverride::from_str("0.5,0x0000000000000000000000000000000000000001")
-                .is_err()
-        );
-        // Invalid: too many parts
-        assert!(
-            TokenBucketFeeOverride::from_str(
-                "0.5:0x0000000000000000000000000000000000000001:extra"
-            )
-            .is_err()
-        );
-        // Invalid: fee factor out of range
-        assert!(
-            TokenBucketFeeOverride::from_str("1.5:0x0000000000000000000000000000000000000001")
-                .is_err()
-        );
-        assert!(
-            TokenBucketFeeOverride::from_str("-0.1:0x0000000000000000000000000000000000000001")
-                .is_err()
-        );
-        // Invalid: not a number for fee factor
-        assert!(
-            TokenBucketFeeOverride::from_str("abc:0x0000000000000000000000000000000000000001")
-                .is_err()
-        );
-        // Invalid: bad token address
-        assert!(
-            TokenBucketFeeOverride::from_str(
-                "0.5:notanaddress,0x0000000000000000000000000000000000000002"
-            )
-            .is_err()
-        );
+impl From<&configs::shared::TokenBucketFeeOverride> for TokenBucketFeeOverride {
+    fn from(config: &configs::shared::TokenBucketFeeOverride) -> Self {
+        Self {
+            tokens: config.tokens.clone(),
+            factor: config.factor,
+        }
     }
 }

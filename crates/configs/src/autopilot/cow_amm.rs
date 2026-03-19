@@ -10,7 +10,6 @@ pub struct CowAmmGroupConfig {
     pub contracts: Vec<CowAmmConfig>,
 
     /// Archive node URL used to index CoW AMMs.
-    #[serde(default)]
     pub archive_node_url: Option<Url>,
 }
 

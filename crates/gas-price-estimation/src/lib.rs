@@ -20,7 +20,6 @@ use {
     alloy_provider::Provider,
     anyhow::Result,
     ethrpc::Web3,
-    std::str::FromStr,
     tracing::instrument,
     url::Url,
 };
@@ -50,20 +49,6 @@ pub enum GasEstimatorType {
     Web3,
     Driver(Url),
     Alloy,
-}
-
-impl FromStr for GasEstimatorType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "web3" => Ok(GasEstimatorType::Web3),
-            "alloy" => Ok(GasEstimatorType::Alloy),
-            _ => Url::parse(s).map(GasEstimatorType::Driver).map_err(|e| {
-                format!("expected 'web3', 'alloy', or a valid driver URL; got {s:?}: {e}")
-            }),
-        }
-    }
 }
 
 #[instrument(skip_all)]

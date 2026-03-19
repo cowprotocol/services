@@ -14,6 +14,7 @@ const fn default_native_price_prefetch_time() -> Duration {
 
 // Does not implement Default because `estimators` *cannot* be empty,
 // as such, we cannot provide a proper default value for this structure.
+/// Native price estimation configuration.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]
@@ -45,6 +46,7 @@ pub struct NativePriceConfig {
     )]
     pub prefetch_time: Duration,
 
+    /// Shared native price settings (cache, approximation tokens, etc.).
     #[serde(flatten)]
     pub shared: crate::native_price::NativePriceConfig,
 }

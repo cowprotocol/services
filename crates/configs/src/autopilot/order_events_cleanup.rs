@@ -11,6 +11,7 @@ fn default_cleanup_threshold() -> Duration {
     Duration::from_secs(2592000) // 30d
 }
 
+/// Periodic cleanup settings for the `order_events` database table.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct OrderEventsCleanupConfig {

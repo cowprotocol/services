@@ -25,6 +25,7 @@ const fn default_global_query_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
+/// PostgreSQL connection pool settings.
 #[derive(serde::Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

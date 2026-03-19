@@ -10,8 +10,11 @@ use {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Solver {
+    /// Human-readable solver name (used in logs and metrics).
     pub name: String,
+    /// Base URL of the solver's driver API.
     pub url: Url,
+    /// Account used to submit settlement transactions on-chain.
     #[serde(flatten)]
     pub submission_account: Account,
 }
@@ -32,17 +35,18 @@ impl Display for Solver {
     }
 }
 
+/// How the solver's on-chain submission key is specified.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Account {
-    /// AWS KMS is used to retrieve the solver public key
+    /// AWS KMS is used to retrieve the solver public key.
     #[serde(deserialize_with = "deserialize_arn")]
     Kms(Arn),
-    /// Solver public key
+    /// Solver public key specified directly.
     Address(Address),
 }
 
-// Wrapper type for AWS ARN identifiers
+/// Wrapper type for AWS KMS ARN identifiers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct Arn(pub String);
 

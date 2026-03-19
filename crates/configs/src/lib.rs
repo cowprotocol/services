@@ -11,6 +11,7 @@ pub mod order_quoting;
 pub mod orderbook;
 pub mod price_estimation;
 pub mod rate_limit;
+pub mod shared;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util {

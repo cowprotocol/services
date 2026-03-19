@@ -48,7 +48,6 @@ async fn debug_order(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs::default(),
             configs::autopilot::Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration::test_default(),
             solver,
@@ -195,7 +194,6 @@ async fn debug_order_filter_reason(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs::default(),
             configs::autopilot::Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration::test_default(),
             solver,
