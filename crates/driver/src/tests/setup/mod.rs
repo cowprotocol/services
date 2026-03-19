@@ -361,6 +361,11 @@ pub struct Solver {
     merge_solutions: bool,
     /// Haircut in basis points (0-10000) for conservative bidding.
     haircut_bps: u32,
+    /// Whether the driver proposes all valid solutions instead of just the
+    /// best one.
+    propose_all_solutions: bool,
+    /// Additional submission accounts for EIP-7702 parallel settlement.
+    submission_accounts: Vec<eth::Address>,
 }
 
 #[derive(Debug, Clone)]
@@ -388,6 +393,8 @@ pub fn test_solver() -> Solver {
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
         haircut_bps: 0,
+        propose_all_solutions: false,
+        submission_accounts: vec![],
     }
 }
 
@@ -432,6 +439,16 @@ impl Solver {
             haircut_bps,
             ..self
         }
+    }
+
+    pub fn propose_all_solutions(mut self) -> Self {
+        self.propose_all_solutions = true;
+        self
+    }
+
+    pub fn submission_account(mut self, address: eth::Address) -> Self {
+        self.submission_accounts.push(address);
+        self
     }
 }
 
@@ -1244,7 +1261,7 @@ impl<'a> Solve<'a> {
 }
 
 impl SolveOk<'_> {
-    fn solutions(&self) -> Vec<serde_json::Value> {
+    pub fn solutions(&self) -> Vec<serde_json::Value> {
         #[derive(serde::Deserialize)]
         struct Body {
             solutions: Vec<serde_json::Value>,
@@ -1264,9 +1281,8 @@ impl SolveOk<'_> {
             .to_owned()
     }
 
-    /// Extracts the first solution from the response. This is expected to be
-    /// always valid if there is a valid solution, as we expect from driver to
-    /// not send multiple solutions (yet).
+    /// Extracts the first solution from the response. Asserts that exactly one
+    /// solution was returned (i.e. `propose-all-solutions` is disabled).
     pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
