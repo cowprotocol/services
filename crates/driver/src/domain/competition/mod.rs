@@ -705,11 +705,6 @@ impl Competition {
             });
         }
 
-        let nonce = self
-            .mempools
-            .nonce(self.solver.account())
-            .await
-            .map_err(|_| Error::SubmissionError)?;
         let executed = self
             .mempools
             .execute(self.solver.account(), &settlement, submission_deadline)
