@@ -422,6 +422,7 @@ pub struct OrderQuoter {
     quote_verification: QuoteVerificationMode,
     default_quote_timeout: std::time::Duration,
     min_gas_amount_for_unverified_quotes: u64,
+    max_gas_amount_for_unverified_quotes: u64,
 }
 
 impl OrderQuoter {
@@ -436,7 +437,14 @@ impl OrderQuoter {
         quote_verification: QuoteVerificationMode,
         default_quote_timeout: std::time::Duration,
         min_gas_amount_for_unverified_quotes: u64,
+        max_gas_amount_for_unverified_quotes: u64,
     ) -> Self {
+        assert!(
+            max_gas_amount_for_unverified_quotes == 0
+                || (min_gas_amount_for_unverified_quotes <= max_gas_amount_for_unverified_quotes),
+            "gas floor ({min_gas_amount_for_unverified_quotes}) exceeds gas ceiling \
+             ({max_gas_amount_for_unverified_quotes}) for unverified quotes"
+        );
         Self {
             price_estimator,
             native_price_estimator,
@@ -448,7 +456,23 @@ impl OrderQuoter {
             quote_verification,
             default_quote_timeout,
             min_gas_amount_for_unverified_quotes,
+            max_gas_amount_for_unverified_quotes,
         }
+    }
+
+    fn clamp_gas_for_unverified_quote(&self, gas: u64, verified: bool) -> u64 {
+        if verified {
+            return gas;
+        }
+        let min = self.min_gas_amount_for_unverified_quotes;
+        let max = self.max_gas_amount_for_unverified_quotes;
+        let lower = if min > 0 { min } else { u64::MIN };
+        let upper = if max > 0 { max } else { u64::MAX };
+        let clamped = gas.clamp(lower, upper);
+        if clamped != gas {
+            tracing::debug!(gas, clamped, min, max, "clamped gas for unverified quote");
+        }
+        clamped
     }
 
     async fn compute_quote_data(
@@ -499,19 +523,8 @@ impl OrderQuoter {
                 buy_amount_after_fee: buy_amount,
             } => (trade_estimate.out_amount, buy_amount.get()),
         };
-        let gas_amount = if !trade_estimate.verified
-            && self.min_gas_amount_for_unverified_quotes > 0
-            && trade_estimate.gas < self.min_gas_amount_for_unverified_quotes
-        {
-            tracing::debug!(
-                original_gas = trade_estimate.gas,
-                floor = self.min_gas_amount_for_unverified_quotes,
-                "applying minimum gas floor to unverified quote"
-            );
-            self.min_gas_amount_for_unverified_quotes
-        } else {
-            trade_estimate.gas
-        };
+        let gas_amount =
+            self.clamp_gas_for_unverified_quote(trade_estimate.gas, trade_estimate.verified);
         let fee_parameters = FeeParameters {
             gas_amount: gas_amount as _,
             gas_price: effective_gas_price as f64,
@@ -956,6 +969,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1097,6 +1111,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1233,6 +1248,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1332,6 +1348,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
@@ -1406,6 +1423,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
@@ -1468,6 +1486,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         assert_eq!(
@@ -1552,6 +1571,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         assert_eq!(
@@ -1638,6 +1658,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         assert_eq!(
@@ -1712,6 +1733,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
@@ -1744,6 +1766,7 @@ mod tests {
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
@@ -1809,7 +1832,7 @@ mod tests {
             native
         };
 
-        let quoter = |verified: bool, min_gas_floor: u64| {
+        let quoter = |verified: bool, min_gas: u64, max_gas: u64| {
             let mut storage = MockQuoteStoring::new();
             storage.expect_save().returning(|_| Ok(1));
             OrderQuoter {
@@ -1822,27 +1845,59 @@ mod tests {
                 quote_verification: QuoteVerificationMode::Unverified,
                 balance_fetcher: mock_balance_fetcher(),
                 default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-                min_gas_amount_for_unverified_quotes: min_gas_floor,
+                min_gas_amount_for_unverified_quotes: min_gas,
+                max_gas_amount_for_unverified_quotes: max_gas,
             }
         };
 
         // Unverified quote with floor > gas: floor should apply.
-        let quote = quoter(false, 500_000)
+        let quote = quoter(false, 500_000, 0)
             .calculate_quote(parameters.clone())
             .await
             .unwrap();
         assert_eq!(quote.data.fee_parameters.gas_amount, 500_000.);
 
         // Verified quote with floor > gas: floor should NOT apply.
-        let quote = quoter(true, 500_000)
+        let quote = quoter(true, 500_000, 0)
             .calculate_quote(parameters.clone())
             .await
             .unwrap();
         assert_eq!(quote.data.fee_parameters.gas_amount, 100_000.);
 
         // Unverified quote with floor = 0: no floor applied.
-        let quote = quoter(false, 0).calculate_quote(parameters).await.unwrap();
+        let quote = quoter(false, 0, 0)
+            .calculate_quote(parameters.clone())
+            .await
+            .unwrap();
         assert_eq!(quote.data.fee_parameters.gas_amount, 100_000.);
+
+        // Unverified quote with ceiling < gas: ceiling should apply.
+        let quote = quoter(false, 0, 50_000)
+            .calculate_quote(parameters.clone())
+            .await
+            .unwrap();
+        assert_eq!(quote.data.fee_parameters.gas_amount, 50_000.);
+
+        // Verified quote with ceiling < gas: ceiling should NOT apply.
+        let quote = quoter(true, 0, 50_000)
+            .calculate_quote(parameters.clone())
+            .await
+            .unwrap();
+        assert_eq!(quote.data.fee_parameters.gas_amount, 100_000.);
+
+        // Unverified quote with ceiling = 0: no ceiling applied.
+        let quote = quoter(false, 0, 0)
+            .calculate_quote(parameters.clone())
+            .await
+            .unwrap();
+        assert_eq!(quote.data.fee_parameters.gas_amount, 100_000.);
+
+        // Both floor and ceiling set: gas gets clamped to range.
+        let quote = quoter(false, 200_000, 300_000)
+            .calculate_quote(parameters)
+            .await
+            .unwrap();
+        assert_eq!(quote.data.fee_parameters.gas_amount, 200_000.);
     }
 
     #[test]
