@@ -9,11 +9,8 @@ use {
         encode_trade,
         encode_wrapper_settlement,
     },
-    alloy_primitives::{Address, U256, address, map::AddressMap},
-    alloy_rpc_types::{
-        TransactionRequest,
-        state::{AccountOverride, StateOverride},
-    },
+    alloy_primitives::{Address, U256, address},
+    alloy_rpc_types::{TransactionRequest, state::StateOverride},
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, anyhow},
     balance_overrides::BalanceOverriding,
@@ -162,22 +159,29 @@ impl SwapSimulator {
         let block = *self.current_block.borrow();
         let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
 
-        let (to, calldata) = if !swap.wrappers.is_empty() {
+        // For wrapped settlements, the Solver contract must call the first wrapper
+        // (not the settlement directly). The wrapper then chains to the settlement.
+        // For non-wrapped settlements, the Solver calls the settlement contract
+        // directly. The transaction always targets the solver contract (never
+        // the wrapper directly).
+        let (settlement_target, calldata) = if !swap.wrappers.is_empty() {
             encode_wrapper_settlement(&swap.wrappers, swap.settlement.into_settle_call())
         } else {
-            (swap.solver, swap.settlement.into_settle_call())
+            (
+                *self.settlement.address(),
+                swap.settlement.into_settle_call(),
+            )
         };
 
         let overrides = swap.overrides;
         let swap = solver
             .swap(
-                *self.settlement.address(),
+                settlement_target,
                 swap.settlement.tokens.clone(),
                 swap.receiver,
                 calldata,
             )
             .from(swap.solver)
-            .to(to)//swap.solver)
             .gas(self.gas_limit)
             .gas_price(
                 u128::try_from(block.gas_price.saturating_mul(U256::from(2)))

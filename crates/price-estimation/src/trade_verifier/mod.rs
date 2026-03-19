@@ -166,7 +166,7 @@ impl TradeVerifier {
         let mut pre_interactions = verification
                 .pre_interactions
                 .iter()
-                // pre_interactions introduced by the solver
+                // pre_interactions introduced by the solverW
                 .chain(trade.pre_interactions())
                 .map(InteractionEncoding::encode)
                 .collect::<Vec<_>>();
@@ -176,7 +176,7 @@ impl TradeVerifier {
         swap.settlement.interactions.pre = pre_interactions;
 
         // Interactions introduced by the solver
-        let interactions = trade.interactions().cloned().map(Interaction::encode);
+        let interactions = trade.interactions().map(InteractionEncoding::encode);
         swap.settlement.interactions.main = interactions
             .into_iter()
             .chain(swap.settlement.interactions.main)
@@ -185,8 +185,7 @@ impl TradeVerifier {
         let post_interactions = verification
             .post_interactions
             .iter()
-            .cloned()
-            .map(Interaction::encode);
+            .map(InteractionEncoding::encode);
         swap.settlement.interactions.post = swap
             .settlement
             .interactions
