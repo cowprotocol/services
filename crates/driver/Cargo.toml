@@ -39,6 +39,7 @@ const-hex = { workspace = true }
 cow-amm = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
+eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
 futures = { workspace = true }

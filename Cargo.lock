@@ -2987,6 +2987,7 @@ dependencies = [
  "cow-amm",
  "dashmap",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "event-indexing",
  "futures",
@@ -3064,6 +3065,7 @@ dependencies = [
  "cow-amm",
  "database",
  "driver",
+ "eth-domain-types",
  "ethrpc",
  "futures",
  "hex-literal",
@@ -7032,6 +7034,7 @@ dependencies = [
  "number",
  "serde",
  "serde-ext",
+ "serde_json",
  "serde_with",
 ]
 

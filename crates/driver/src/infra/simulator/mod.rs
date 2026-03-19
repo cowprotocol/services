@@ -1,8 +1,6 @@
 use {
-    crate::{
-        domain::eth,
-        infra::blockchain::{self, Ethereum},
-    },
+    crate::infra::blockchain::{self, Ethereum},
+    eth_domain_types as eth,
     observe::future::Measure,
 };
 
@@ -157,7 +155,7 @@ pub enum SimulatorError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("block: {block:?},  err: {err:?}, tx: {tx:?}")]
+#[error("block: {block},  err: {err:?}, tx: {tx:?}")]
 pub struct RevertError {
     pub err: SimulatorError,
     pub tx: eth::Tx,

@@ -1,8 +1,5 @@
 use {
-    crate::{
-        boundary,
-        domain::{eth, eth::U256},
-    },
+    crate::{boundary, domain::blockchain::TxStatus},
     account_balances::{BalanceSimulator, SimulationError},
     alloy::{
         eips::eip1559::Eip1559Estimation,
@@ -14,6 +11,7 @@ use {
     anyhow::anyhow,
     balance_overrides::{BalanceOverrides, BalanceOverriding},
     chain::Chain,
+    eth_domain_types::{self as eth, U256},
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::Eip1559EstimationExt,
     shared::web3,
@@ -123,7 +121,7 @@ impl Ethereum {
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
-            contracts.vault_relayer().0,
+            *contracts.vault_relayer(),
             Some(*contracts.vault().address()),
             balance_overrider.clone(),
         );
@@ -259,7 +257,7 @@ impl Ethereum {
     }
 
     /// Returns the transaction's on-chain inclusion status.
-    pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
+    pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<TxStatus, Error> {
         self.web3
             .provider
             .get_transaction_receipt(tx_hash.0)
@@ -272,15 +270,15 @@ impl Ethereum {
                     },
                 ) = result
                 else {
-                    return eth::TxStatus::Pending;
+                    return TxStatus::Pending;
                 };
 
                 if receipt.status() {
-                    eth::TxStatus::Executed {
+                    TxStatus::Executed {
                         block_number: eth::BlockNo(block_number),
                     }
                 } else {
-                    eth::TxStatus::Reverted {
+                    TxStatus::Reverted {
                         block_number: eth::BlockNo(block_number),
                     }
                 }

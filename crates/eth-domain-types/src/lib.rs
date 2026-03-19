@@ -93,12 +93,28 @@ pub struct Asset {
 #[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default)]
 pub struct BlockNo(pub u64);
 
+impl std::fmt::Display for BlockNo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Adding blocks to a block number.
 impl std::ops::Add<u64> for BlockNo {
     type Output = BlockNo;
 
     fn add(self, rhs: u64) -> Self::Output {
         Self(self.0 + rhs)
+    }
+}
+
+impl num::Saturating for BlockNo {
+    fn saturating_add(self, v: Self) -> Self {
+        Self(self.0.saturating_add(v.0))
+    }
+
+    fn saturating_sub(self, v: Self) -> Self {
+        Self(self.0.saturating_sub(v.0))
     }
 }
 

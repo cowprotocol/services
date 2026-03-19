@@ -2,10 +2,11 @@ use {
     crate::{
         boundary::Result,
         domain::{
-            eth,
+            self,
             liquidity::{self, balancer},
         },
     },
+    eth_domain_types as eth,
     solver::liquidity::{StablePoolOrder, balancer_v2},
 };
 
@@ -69,7 +70,7 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
+) -> domain::Interaction {
     super::to_interaction(
         &super::Pool {
             vault: pool.vault,

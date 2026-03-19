@@ -12,19 +12,17 @@ use {
         order::{self, Side},
         trade::CustomClearingPrices,
     },
-    crate::domain::{
-        competition::{
-            PriceLimits,
-            auction,
-            order::FeePolicy,
-            solution::{
-                error,
-                fee::{self, adjust_quote_to_order_limits},
-            },
+    crate::domain::competition::{
+        PriceLimits,
+        auction,
+        order::FeePolicy,
+        solution::{
+            error,
+            fee::{self, adjust_quote_to_order_limits},
         },
-        eth,
     },
     alloy::primitives::ruint::UintTryFrom,
+    eth_domain_types as eth,
     number::u256_ext::U256Ext,
 };
 

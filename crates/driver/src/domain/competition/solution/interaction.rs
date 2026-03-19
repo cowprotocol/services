@@ -1,6 +1,7 @@
 use {
-    crate::domain::{self, eth, liquidity},
+    crate::domain::{self, liquidity},
     alloy::primitives::Bytes,
+    eth_domain_types as eth,
 };
 
 /// Interaction with a smart contract which is needed to execute this solution
