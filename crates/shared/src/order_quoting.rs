@@ -421,6 +421,7 @@ pub struct OrderQuoter {
     balance_fetcher: Arc<dyn BalanceFetching>,
     quote_verification: QuoteVerificationMode,
     default_quote_timeout: std::time::Duration,
+    min_gas_amount_for_unverified_quotes: u64,
 }
 
 impl OrderQuoter {
@@ -434,6 +435,7 @@ impl OrderQuoter {
         balance_fetcher: Arc<dyn BalanceFetching>,
         quote_verification: QuoteVerificationMode,
         default_quote_timeout: std::time::Duration,
+        min_gas_amount_for_unverified_quotes: u64,
     ) -> Self {
         Self {
             price_estimator,
@@ -445,6 +447,7 @@ impl OrderQuoter {
             balance_fetcher,
             quote_verification,
             default_quote_timeout,
+            min_gas_amount_for_unverified_quotes,
         }
     }
 
@@ -496,8 +499,21 @@ impl OrderQuoter {
                 buy_amount_after_fee: buy_amount,
             } => (trade_estimate.out_amount, buy_amount.get()),
         };
+        let gas_amount = if !trade_estimate.verified
+            && self.min_gas_amount_for_unverified_quotes > 0
+            && trade_estimate.gas < self.min_gas_amount_for_unverified_quotes
+        {
+            tracing::debug!(
+                original_gas = trade_estimate.gas,
+                floor = self.min_gas_amount_for_unverified_quotes,
+                "applying minimum gas floor to unverified quote"
+            );
+            self.min_gas_amount_for_unverified_quotes
+        } else {
+            trade_estimate.gas
+        };
         let fee_parameters = FeeParameters {
-            gas_amount: trade_estimate.gas as _,
+            gas_amount: gas_amount as _,
             gas_price: effective_gas_price as f64,
             sell_token_price,
         };
@@ -939,6 +955,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1079,6 +1096,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1214,6 +1232,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1312,6 +1331,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
@@ -1385,6 +1405,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
@@ -1446,6 +1467,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         assert_eq!(
@@ -1529,6 +1551,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         assert_eq!(
@@ -1614,6 +1637,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         assert_eq!(
@@ -1687,6 +1711,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
@@ -1718,6 +1743,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            min_gas_amount_for_unverified_quotes: 0,
         };
 
         assert!(matches!(
