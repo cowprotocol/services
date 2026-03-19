@@ -3,6 +3,7 @@ use {
         fmt::Debug,
         num::{NonZeroU32, NonZeroUsize},
         str::FromStr,
+        time::Duration,
     },
     url::Url,
 };
@@ -18,6 +19,10 @@ fn default_db_write_url() -> Url {
 
 const fn default_insert_batch_size() -> NonZeroUsize {
     NonZeroUsize::new(500).expect("value should be greater than 0")
+}
+
+const fn default_global_query_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 #[derive(serde::Deserialize)]
@@ -52,6 +57,10 @@ pub struct DatabasePoolConfig {
     /// The number of order events to insert in a single batch.
     #[serde(default = "default_insert_batch_size")]
     pub insert_batch_size: NonZeroUsize,
+
+    /// Timeout for database read queries. Defaults to 30 seconds.
+    #[serde(default = "default_global_query_timeout", with = "humantime_serde")]
+    pub global_query_timeout: Duration,
 }
 
 impl Default for DatabasePoolConfig {
@@ -61,6 +70,7 @@ impl Default for DatabasePoolConfig {
             read_url: Default::default(),
             max_connections: default_db_max_connections(),
             insert_batch_size: default_insert_batch_size(),
+            global_query_timeout: default_global_query_timeout(),
         }
     }
 }
@@ -72,6 +82,7 @@ impl Debug for DatabasePoolConfig {
             .field("read_url", &"REDACTED")
             .field("max_connections", &self.max_connections)
             .field("insert_batch_size", &self.insert_batch_size)
+            .field("global_query_timeout", &self.global_query_timeout)
             .finish()
     }
 }

@@ -1,5 +1,5 @@
 use {
-    crate::{OrderUid, auction::AuctionId},
+    crate::{OrderUid, auction::AuctionId, timeout::QueryAsTimeoutExt},
     sqlx::{PgConnection, QueryBuilder},
     std::collections::HashMap,
     tracing::instrument,

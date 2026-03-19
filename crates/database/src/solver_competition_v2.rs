@@ -12,7 +12,7 @@ use {
         TransactionHash,
         auction::AuctionId,
         orders::OrderKind,
-        timeout::QueryAsTimeoutExt,
+        timeout::{QueryAsTimeoutExt, QueryScalarTimeoutExt},
     },
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
@@ -84,7 +84,7 @@ pub async fn load_by_tx_hash(
     "#;
     let auction_id = sqlx::query_scalar(FETCH_AUCTION_ID)
         .bind(tx_hash)
-        .fetch_optional(ex.deref_mut())
+        .fetch_optional_with_timeout(ex.deref_mut())
         .await?;
     let Some(auction_id) = auction_id else {
         return Ok(None);
@@ -103,7 +103,7 @@ pub async fn load_latest(
         LIMIT 1;
     "#;
     let auction_id: Option<i64> = sqlx::query_scalar(FETCH_AUCTION_ID)
-        .fetch_optional(ex.deref_mut())
+        .fetch_optional_with_timeout(ex.deref_mut())
         .await?;
     let Some(auction_id) = auction_id else {
         return Ok(None);
@@ -123,7 +123,7 @@ pub async fn load_by_id(
     "#;
     let auction: Option<Auction> = sqlx::query_as(FETCH_AUCTION)
         .bind(id)
-        .fetch_optional(ex.deref_mut())
+        .fetch_optional_with_timeout(ex.deref_mut())
         .await?;
     let Some(auction) = auction else {
         return Ok(None);
@@ -607,7 +607,7 @@ mod tests {
 
         let proposed_jit_orders =
             sqlx::query("SELECT order_uid FROM proposed_jit_orders ORDER BY order_uid")
-                .fetch_all_with_timeout(db.deref_mut())
+                .fetch_all(db.deref_mut())
                 .await
                 .unwrap()
                 .into_iter()

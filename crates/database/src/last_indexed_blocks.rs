@@ -1,4 +1,5 @@
 use {
+    crate::timeout::QueryScalarTimeoutExt,
     sqlx::{Executor, PgConnection},
     tracing::instrument,
 };
@@ -31,7 +32,7 @@ WHERE contract = $1;
 
     sqlx::query_scalar(QUERY)
         .bind(contract)
-        .fetch_optional(ex)
+        .fetch_optional_with_timeout(ex)
         .await
 }
 

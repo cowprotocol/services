@@ -1,5 +1,5 @@
 use {
-    crate::{Address, PgTransaction, TransactionHash},
+    crate::{Address, PgTransaction, TransactionHash, timeout::QueryAsTimeoutExt},
     sqlx::{Executor, PgConnection},
     tracing::instrument,
 };
@@ -21,7 +21,7 @@ WHERE
         .bind(auction_id)
         .bind(solver)
         .bind(solution_uid)
-        .fetch_optional(ex)
+        .fetch_optional_with_timeout(ex)
         .await
 }
 
@@ -124,7 +124,7 @@ mod tests {
     ) -> Result<Vec<TransactionHash>, sqlx::Error> {
         const QUERY: &str = "SELECT tx_hash FROM settlements";
         sqlx::query_scalar::<_, TransactionHash>(QUERY)
-            .fetch_all_with_timeout(ex)
+            .fetch_all(ex)
             .await
     }
 

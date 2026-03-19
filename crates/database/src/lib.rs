@@ -23,12 +23,12 @@ pub mod solver_competition;
 pub mod solver_competition_v2;
 pub mod surplus_capturing_jit_order_owners;
 mod timeout;
+pub use timeout::init_global_query_timeout;
 pub mod trades;
 
 use {
     byte_array::ByteArray,
     sqlx::{Executor, PgPool},
-    std::{sync::OnceLock, time::Duration},
 };
 
 // Design:
@@ -48,9 +48,6 @@ use {
 // transaction gets dropped it is rolled back. This allows postgres tests to run
 // in parallel and makes clearing all tables at the beginning of a
 // test obsolete.
-
-pub const DEFAULT_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
-pub static GLOBAL_QUERY_TIMEOUT: OnceLock<Duration> = OnceLock::new();
 
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 

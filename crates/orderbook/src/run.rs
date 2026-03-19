@@ -66,6 +66,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .await
         .expect("failed to load configuration file");
     tracing::info!("file configuration:\n{:#?}", config);
+    database::init_global_query_timeout(config.database.global_query_timeout);
     run(args, config).await;
 }
 

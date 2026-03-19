@@ -1,5 +1,5 @@
 use {
-    crate::{Address, PgTransaction, TransactionHash},
+    crate::{Address, PgTransaction, TransactionHash, timeout::QueryAsTimeoutExt},
     sqlx::{Executor, PgConnection, QueryBuilder},
     tracing::instrument,
 };

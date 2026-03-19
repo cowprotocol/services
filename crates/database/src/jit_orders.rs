@@ -5,6 +5,7 @@ use {
         OrderUid,
         TransactionHash,
         orders::{self, BuyTokenDestination, OrderKind, SellTokenSource, SigningScheme},
+        timeout::QueryAsTimeoutExt,
     },
     sqlx::{
         PgConnection,
@@ -51,7 +52,10 @@ SELECT,
 " FROM ", FROM,
 " WHERE o.uid = $1 ",
         );
-    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(uid)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 #[instrument(skip_all)]

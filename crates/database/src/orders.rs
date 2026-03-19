@@ -6,6 +6,7 @@ use {
         TransactionHash,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
+        timeout::{QueryAsTimeoutExt, QueryScalarTimeoutExt},
     },
     futures::stream::BoxStream,
     sqlx::{
@@ -224,7 +225,10 @@ pub async fn read_order(
 SELECT * FROM ORDERS
 WHERE uid = $1
     "#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(id)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
@@ -437,7 +441,10 @@ pub async fn read_quote(
 SELECT * FROM order_quotes
 WHERE order_uid = $1
 "#;
-    sqlx::query_as(query).bind(id).fetch_optional(ex).await
+    sqlx::query_as(query)
+        .bind(id)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 #[instrument(skip_all)]
@@ -671,7 +678,10 @@ pub async fn single_full_order_with_quote(
         FULL_ORDER_WITH_QUOTE,
         " WHERE o.uid = $1"
     );
-    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(uid)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 #[instrument(skip_all)]
@@ -965,7 +975,7 @@ pub async fn latest_settlement_block(ex: &mut PgConnection) -> Result<i64, sqlx:
 SELECT COALESCE(MAX(block_number), 0)
 FROM settlements
     "#;
-    sqlx::query_scalar(QUERY).fetch_one(ex).await
+    sqlx::query_scalar(QUERY).fetch_one_with_timeout(ex).await
 }
 
 #[derive(Debug, sqlx::FromRow)]

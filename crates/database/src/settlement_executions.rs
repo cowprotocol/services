@@ -1,5 +1,5 @@
 use {
-    crate::{Address, auction::AuctionId},
+    crate::{Address, auction::AuctionId, timeout::QueryAsTimeoutExt},
     chrono::{DateTime, Utc},
     sqlx::PgConnection,
     tracing::instrument,

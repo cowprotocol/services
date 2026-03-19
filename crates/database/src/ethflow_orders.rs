@@ -1,5 +1,5 @@
 use {
-    crate::{OrderUid, PgTransaction, TransactionHash},
+    crate::{OrderUid, PgTransaction, TransactionHash, timeout::QueryAsTimeoutExt},
     sqlx::{Executor, PgConnection},
     std::time::Duration,
     tracing::instrument,
@@ -71,7 +71,10 @@ pub async fn read_order(
         LEFT JOIN ethflow_refunds ON ethflow_orders.uid = ethflow_refunds.order_uid
         WHERE uid = $1
     "#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(id)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 #[derive(Debug, Clone, Default)]

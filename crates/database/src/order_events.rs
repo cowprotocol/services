@@ -2,7 +2,7 @@
 //! This information gets used to compuate service level indicators.
 
 use {
-    crate::{OrderUid, byte_array::ByteArray},
+    crate::{OrderUid, byte_array::ByteArray, timeout::QueryAsTimeoutExt},
     chrono::Utc,
     sqlx::{PgConnection, PgPool, types::chrono::DateTime},
     std::fmt::Display,
@@ -162,7 +162,7 @@ pub async fn get_latest(
         r#"SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp DESC LIMIT 1"#;
     sqlx::query_as(QUERY)
         .bind(ByteArray(order.0))
-        .fetch_optional(ex)
+        .fetch_optional_with_timeout(ex)
         .await
 }
 

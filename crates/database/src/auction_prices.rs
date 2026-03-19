@@ -2,7 +2,7 @@
 //! `competition_auctions` table. But it can't currently be removed, since the
 //! solver team is still using it.
 use {
-    crate::{Address, PgTransaction, auction::AuctionId},
+    crate::{Address, PgTransaction, auction::AuctionId, timeout::QueryAsTimeoutExt},
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
@@ -77,8 +77,10 @@ ORDER BY auction_id DESC
 LIMIT 1
     "#;
 
-    let auction_price: Option<AuctionPrice> =
-        sqlx::query_as(QUERY).bind(token).fetch_optional(ex).await?;
+    let auction_price: Option<AuctionPrice> = sqlx::query_as(QUERY)
+        .bind(token)
+        .fetch_optional_with_timeout(ex)
+        .await?;
     Ok(auction_price.map(|ap| ap.price))
 }
 

@@ -1,9 +1,5 @@
 use {
-    crate::{
-        Address,
-        OrderUid,
-        timeout::{QueryAsTimeoutExt, QueryTimeoutExt},
-    },
+    crate::{Address, OrderUid, timeout::QueryAsTimeoutExt},
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, types::JsonValue},
 };
@@ -19,14 +15,14 @@ FROM auctions
 ORDER BY id DESC
 LIMIT 1
     ;"#;
-    sqlx::query_as(QUERY).fetch_optional(ex).await
+    sqlx::query_as(QUERY).fetch_optional_with_timeout(ex).await
 }
 
 pub async fn get_next_auction_id(ex: &mut PgConnection) -> Result<AuctionId, sqlx::Error> {
     const QUERY: &str =
         r#"SELECT nextval(pg_get_serial_sequence('auctions', 'id'))::bigint as next_id;"#;
 
-    let (id,) = sqlx::query_as(QUERY).fetch_one(ex).await?;
+    let (id,) = sqlx::query_as(QUERY).fetch_one_with_timeout(ex).await?;
     Ok(id)
 }
 
@@ -43,11 +39,7 @@ INSERT INTO auctions (id, json)
 VALUES ($1, $2::jsonb);
     "#;
 
-    sqlx::query(QUERY)
-        .bind(id)
-        .bind(json)
-        .execute_with_timeout(ex)
-        .await?;
+    sqlx::query(QUERY).bind(id).bind(json).execute(ex).await?;
     Ok(())
 }
 
@@ -85,7 +77,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 
 pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auction>, sqlx::Error> {
     const QUERY: &str = r#"SELECT * FROM competition_auctions WHERE id = $1;"#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(id)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 pub async fn fetch_multiple(
@@ -106,7 +101,7 @@ pub async fn get_order_uids(
     const QUERY: &str = r#"SELECT order_uids FROM competition_auctions WHERE id = $1;"#;
     let record: Option<(Vec<OrderUid>,)> = sqlx::query_as(QUERY)
         .bind(auction_id)
-        .fetch_optional(ex)
+        .fetch_optional_with_timeout(ex)
         .await?;
     Ok(record.map(|(order_uids,)| order_uids))
 }
