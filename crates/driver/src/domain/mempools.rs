@@ -413,12 +413,14 @@ impl Mempools {
             "submitting settlement tx"
         );
         let hash = mempool
-            .submit(
+            .submit_till_block(
                 tx.clone(),
                 final_gas_price,
                 settlement.gas.limit,
                 solver_account.clone(),
                 nonce,
+                current_block,
+                submission_deadline,
             )
             .await?;
 

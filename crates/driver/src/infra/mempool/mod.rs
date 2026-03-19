@@ -4,8 +4,14 @@ use {
         domain::{eth, mempools},
         infra::{self, solver::Account},
     }, alloy::{
-        consensus::Transaction, eips::{BlockNumberOrTag, eip1559::Eip1559Estimation}, network::TxSigner, primitives::Address, providers::{Provider, ext::TxPoolApi}, rpc::types::TransactionRequest
-    }, anyhow::Context, dashmap::DashMap, std::sync::Arc, url::Url
+        consensus::{Transaction, TxEnvelope},
+        eips::{BlockNumberOrTag, Encodable2718, eip1559::Eip1559Estimation},
+        network::{Ethereum, NetworkWallet, TxSigner},
+        primitives::{Address, Bytes, keccak256},
+        providers::{Provider, ext::TxPoolApi},
+        rpc::types::TransactionRequest,
+        signers::Signer,
+    }, anyhow::Context, const_hex::encode_prefixed, dashmap::DashMap, serde_json::json, std::sync::Arc, url::Url
 };
 
 #[derive(Debug, Clone)]
@@ -168,6 +174,139 @@ impl Mempool {
                 Err(mempools::Error::Other(err))
             }
         }
+    }
+
+
+    pub async fn submit_till_block(
+        &self,
+        tx: eth::Tx,
+        gas_price: Eip1559Estimation,
+        gas_limit: eth::Gas,
+        solver_account: solver::Account,
+        nonce: u64,
+        current_block: u64,
+        target_block: u64,
+    ) -> Result<eth::TxId, mempools::Error> {
+        let max_fee_per_gas = gas_price.max_fee_per_gas;
+        let max_priority_fee_per_gas = gas_price.max_priority_fee_per_gas;
+        let gas_limit = gas_limit.0.try_into().map_err(anyhow::Error::from)?;
+
+        let tx_request = TransactionRequest::default()
+            .from(solver_account.address())
+            .to(tx.to)
+            .nonce(nonce)
+            .max_fee_per_gas(max_fee_per_gas)
+            .max_priority_fee_per_gas(max_priority_fee_per_gas)
+            .gas_limit(gas_limit)
+            .input(tx.input.into())
+            .value(tx.value.0)
+            .access_list(tx.access_list.into());
+
+        let envelope: TxEnvelope = NetworkWallet::<Ethereum>::sign_request(
+            &self.transport.wallet,
+            tx_request,
+        )
+        .await
+            .map_err(anyhow::Error::from)
+            .context("failed to sign relay transaction")
+            .map_err(mempools::Error::Other)?;
+        let hash = eth::TxId(*envelope.tx_hash());
+        let raw_tx = Bytes::from(envelope.encoded_2718());
+
+        if target_block <= current_block {
+            return Err(mempools::Error::Other(anyhow::anyhow!(
+                "target block is in the past"
+            )));
+        }
+
+        let mut submitted = false;
+        let mut last_error = None;
+        for block in (current_block + 1)..=target_block {
+            match self
+                .send_relay_bundle(&solver_account, hash.clone(), raw_tx.clone(), block)
+                .await
+            {
+                Ok(()) => submitted = true,
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        ?hash,
+                        ?nonce,
+                        target_block = block,
+                        solver = ?solver_account.address(),
+                        "failed to submit tx bundle to relay"
+                    );
+                    last_error = Some(err);
+                }
+            }
+        }
+
+        if !submitted {
+            return Err(mempools::Error::Other(last_error.unwrap_or_else(|| {
+                anyhow::anyhow!("relay rejected bundle submission")
+            })));
+        }
+
+        tracing::debug!(
+            ?nonce,
+            ?gas_price,
+            ?gas_limit,
+            target_block,
+            solver = ?solver_account.address(),
+            "successfully submitted tx bundle to relay"
+        );
+        self.last_submissions
+            .insert(solver_account.address(), Submission { nonce, gas_price });
+        Ok(hash)
+    }
+
+    async fn send_relay_bundle(
+        &self,
+        solver_account: &solver::Account,
+        tx_hash: eth::TxId,
+        raw_tx: Bytes,
+        target_block: u64,
+    ) -> anyhow::Result<()> {
+        let body = json!({
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": "eth_sendBundle",
+            "params": [{
+                "txs": [raw_tx],
+                "blockNumber": format!("0x{:x}", target_block),
+                "droppingTxHashes": [tx_hash.0],
+            }]
+        });
+        let body_str = serde_json::to_string(&body).unwrap();
+        let body_hash = encode_prefixed(keccak256(body_str.as_bytes()));
+        let signature = match solver_account {
+            solver::Account::PrivateKey(signer) => signer.sign_message(body_hash.as_bytes()).await?,
+            solver::Account::Kms(signer) => signer.sign_message(body_hash.as_bytes()).await?,
+            solver::Account::Address(_) => {
+                return Err(anyhow::anyhow!("address-only solver account cannot sign relay bundles"));
+            }
+        };
+        let flashbots_header_value = format!(
+            "{}:{}",
+            solver_account.address(),
+            encode_prefixed(signature.as_bytes())
+        );
+        let response: serde_json::Value = reqwest::Client::new()
+            .post(self.config.url.clone())
+            .header("Content-Type", "application/json")
+            .header("X-Flashbots-Signature", flashbots_header_value)
+            .json(&body)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        if let Some(error) = response.get("error") {
+            return Err(anyhow::anyhow!("relay returned error: {error}"));
+        }
+
+        tracing::info!(?tx_hash, target_block, relay = %self.config.url, ?response, "relay accepted bundle");
+        Ok(())
     }
 
     /// Queries the mempool for a pending transaction of the given solver and
