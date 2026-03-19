@@ -439,6 +439,12 @@ impl OrderQuoter {
         min_gas_amount_for_unverified_quotes: u64,
         max_gas_amount_for_unverified_quotes: u64,
     ) -> Self {
+        assert!(
+            max_gas_amount_for_unverified_quotes == 0
+                || (min_gas_amount_for_unverified_quotes <= max_gas_amount_for_unverified_quotes),
+            "gas floor ({min_gas_amount_for_unverified_quotes}) exceeds gas ceiling \
+             ({max_gas_amount_for_unverified_quotes}) for unverified quotes"
+        );
         Self {
             price_estimator,
             native_price_estimator,
