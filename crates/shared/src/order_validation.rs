@@ -217,12 +217,10 @@ fn validate_same_sell_and_buy_token(
     order: &PreOrderData,
     native_token: &Address,
 ) -> Result<(), PartialValidationError> {
-    // Check for orders selling wrapped native token for native token.
-    if &order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS {
-        return Err(PartialValidationError::SameBuyAndSellToken);
-    }
+    let same_token = order.sell_token == order.buy_token
+        || (&order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS);
 
-    if order.sell_token != order.buy_token {
+    if !same_token {
         return Ok(());
     }
 
@@ -1075,6 +1073,7 @@ mod tests {
     #[tokio::test]
     async fn pre_validate_err() {
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let native_token_address = *native_token.address();
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1201,6 +1200,17 @@ mod tests {
                     valid_to: legit_valid_to,
                     buy_token: Address::with_last_byte(2),
                     sell_token: Address::with_last_byte(2),
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::SameBuyAndSellToken)
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to,
+                    buy_token: BUY_ETH_ADDRESS,
+                    sell_token: native_token_address,
                     ..Default::default()
                 })
                 .await,
@@ -1365,6 +1375,35 @@ mod tests {
                     .await
             )
             .is_ok()
+        );
+
+        let native_order = || PreOrderData {
+            buy_token: BUY_ETH_ADDRESS,
+            sell_token: *native_token.address(),
+            valid_to: time::now_in_epoch_seconds()
+                + validity_configuration.min.as_secs() as u32
+                + 2,
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    kind: OrderKind::Buy,
+                    ..native_order()
+                })
+                .await,
+            Err(PartialValidationError::SameBuyAndSellToken)
+        ));
+
+        assert!(
+            validator
+                .partial_validate(PreOrderData {
+                    kind: OrderKind::Sell,
+                    ..native_order()
+                })
+                .await
+                .is_ok()
         );
     }
 
