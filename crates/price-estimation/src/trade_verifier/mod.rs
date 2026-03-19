@@ -153,6 +153,8 @@ impl TradeVerifier {
             clearing_prices,
         };
 
+        tracing::debug!(?query, "SWAP SIMULATION QUERY");
+
         let mut swap = self
             .simulator
             .fake_swap(simulator_query)
@@ -203,7 +205,12 @@ impl TradeVerifier {
                 &self.simulator.domain_separator,
             )?);
         }
+
+        tracing::debug!(?swap, "SWAP SIMULATION");
+
         let output = self.simulator.simulate_swap(swap).await?;
+
+        tracing::debug!(?output, "SWAP SIMULATION OUTPUT");
 
         if let Some(tenderly) = &self.tenderly
             && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)

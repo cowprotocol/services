@@ -53,6 +53,7 @@ pub struct SwapSimulator {
     pub gas_limit: u64,
 }
 
+#[derive(Debug)]
 pub struct EncodedSwap {
     pub settlement: EncodedSettlement,
     pub overrides: StateOverride,
@@ -60,7 +61,7 @@ pub struct EncodedSwap {
     pub receiver: Address,
 }
 
-// Look into driver encoding logic for wrappers
+#[derive(Debug)]
 pub struct SwapSimulation {
     pub tx: TransactionRequest,
     pub overrides: StateOverride,
