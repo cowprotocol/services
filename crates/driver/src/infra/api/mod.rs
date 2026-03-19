@@ -62,7 +62,11 @@ impl Api {
             self.eth.current_block().clone(),
         );
 
-        let tokens = tokens::Fetcher::new(&self.eth, self.disable_balances);
+        let tokens = if self.disable_balances {
+            tokens::Fetcher::disabled()
+        } else {
+            tokens::Fetcher::new(&self.eth)
+        };
         let fetcher = Arc::new(domain::competition::DataAggregator::new(
             self.eth.clone(),
             app_data_retriever.clone(),
