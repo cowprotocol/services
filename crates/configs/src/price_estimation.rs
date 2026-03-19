@@ -1,6 +1,6 @@
 use {
     crate::{balance_overrides, rate_limit::Strategy},
-    alloy::primitives::{map::HashSet, Address, U256},
+    alloy::primitives::{Address, U256, map::HashSet},
     bigdecimal::BigDecimal,
     serde::Deserialize,
     std::{str::FromStr, time::Duration},

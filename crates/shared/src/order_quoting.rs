@@ -458,29 +458,15 @@ impl OrderQuoter {
         if verified {
             return gas;
         }
-        let original_gas = gas;
-        let mut gas = gas;
-        if self.min_gas_amount_for_unverified_quotes > 0
-            && gas < self.min_gas_amount_for_unverified_quotes
-        {
-            tracing::debug!(
-                original_gas,
-                floor = self.min_gas_amount_for_unverified_quotes,
-                "applying minimum gas floor to unverified quote"
-            );
-            gas = self.min_gas_amount_for_unverified_quotes;
+        let min = self.min_gas_amount_for_unverified_quotes;
+        let max = self.max_gas_amount_for_unverified_quotes;
+        let lower = if min > 0 { min } else { u64::MIN };
+        let upper = if max > 0 { max } else { u64::MAX };
+        let clamped = gas.clamp(lower, upper);
+        if clamped != gas {
+            tracing::debug!(gas, clamped, min, max, "clamped gas for unverified quote");
         }
-        if self.max_gas_amount_for_unverified_quotes > 0
-            && gas > self.max_gas_amount_for_unverified_quotes
-        {
-            tracing::debug!(
-                original_gas,
-                ceiling = self.max_gas_amount_for_unverified_quotes,
-                "applying maximum gas ceiling to unverified quote"
-            );
-            gas = self.max_gas_amount_for_unverified_quotes;
-        }
-        gas
+        clamped
     }
 
     async fn compute_quote_data(
