@@ -23,9 +23,9 @@ pub mod solver_competition;
 pub mod solver_competition_v2;
 pub mod surplus_capturing_jit_order_owners;
 mod timeout;
-pub use timeout::init_global_query_timeout;
 pub mod trades;
 
+pub use timeout::init_global_query_timeout;
 use {
     byte_array::ByteArray,
     sqlx::{Executor, PgPool},
