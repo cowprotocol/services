@@ -10,6 +10,7 @@ fn default_max_cache_size() -> NonZeroUsize {
     NonZeroUsize::new(10000).unwrap()
 }
 
+/// Addresses banned from creating orders, with a local cache.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BannedUsersConfig {

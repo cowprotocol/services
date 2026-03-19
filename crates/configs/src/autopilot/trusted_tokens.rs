@@ -9,6 +9,7 @@ fn default_update_interval() -> Duration {
     Duration::from_secs(3600) // 1h
 }
 
+/// Tokens that the settlement contract is allowed to internalize.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct TrustedTokensConfig {

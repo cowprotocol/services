@@ -480,7 +480,6 @@ async fn single_replace_order_test(web3: Web3) {
     };
     services
         .start_protocol_with_args(
-            ExtraServiceArgs::default(),
             configs::autopilot::Configuration::test("test_solver", solver.address()),
             orderbook_config,
             solver.clone(),

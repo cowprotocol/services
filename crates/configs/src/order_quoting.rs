@@ -10,6 +10,7 @@ const fn default_standard_offchain_quote_validity() -> Duration {
     Duration::from_mins(1)
 }
 
+/// Reference to an external solver used for price estimation during quoting.
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]
@@ -18,7 +19,7 @@ pub struct ExternalSolver {
     pub url: Url,
 }
 
-// The following arguments are used to configure the order creation process.
+/// Configuration for the order quoting / creation process.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]

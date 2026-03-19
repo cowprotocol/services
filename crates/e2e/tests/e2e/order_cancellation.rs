@@ -73,7 +73,6 @@ async fn order_cancellation(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![],
             // Empty drivers to prevent settlement — this test places multiple
             // orders and asserts exact auction counts, which would race with the
             // solver settling them.
@@ -87,16 +86,13 @@ async fn order_cancellation(web3: Web3) {
         )
         .await;
     services
-        .start_api(
-            vec![],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..configs::orderbook::Configuration::test_default()
-            },
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     onchain.mint_block().await;

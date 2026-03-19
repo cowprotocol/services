@@ -3,6 +3,7 @@ use {
     configs::{
         autopilot::{Configuration, run_loop::RunLoopConfig},
         order_quoting::{ExternalSolver, OrderQuoting},
+        shared::SharedConfig,
         test_util::TestDefault,
     },
     e2e::setup::{
@@ -98,23 +99,20 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             enable_leader_lock: true,
             ..leader_config.run_loop
         },
-        ..leader_config
-    };
-
-    let leader_config = Configuration {
+        shared: SharedConfig {
+            gas_estimators: vec![TestDefault::test_default()],
+            ..leader_config.shared
+        },
         order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
             "test_quoter",
             "http://localhost:11088/test_solver",
         )]),
+
         ..leader_config
     };
+
     let autopilot_leader = services
-        .start_autopilot_with_shutdown_controller(
-            None,
-            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
-            leader_config,
-            control,
-        )
+        .start_autopilot_with_shutdown_controller(None, leader_config, control)
         .await;
 
     let follower_config = Configuration::test("test_solver2", solver2.address());
@@ -125,45 +123,37 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
             enable_leader_lock: true,
             ..follower_config.run_loop
         },
-        ..follower_config
-    };
-
-    let follower_config = Configuration {
         order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
             "test_quoter",
             "http://localhost:11088/test_solver2",
         )]),
+        shared: SharedConfig {
+            gas_estimators: vec![TestDefault::test_default()],
+            ..follower_config.shared
+        },
         ..follower_config
     };
-    let _autopilot_follower = services
-        .start_autopilot(
-            None,
-            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
-            follower_config,
-        )
-        .await;
+
+    let _autopilot_follower = services.start_autopilot(None, follower_config).await;
 
     services
-        .start_api(
-            vec![],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![
-                    ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver1"),
-                    ExternalSolver::new("test_solver2", "http://localhost:11088/test_solver2"),
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![
+                ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver1"),
+                ExternalSolver::new("test_solver2", "http://localhost:11088/test_solver2"),
+            ]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::forwarder(
+                            "http://0.0.0.0:9588".parse().unwrap(),
+                        ),
+                    ],
                 ]),
-                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
-                        vec![
-                            configs::native_price_estimators::NativePriceEstimator::forwarder(
-                                "http://0.0.0.0:9588".parse().unwrap(),
-                            ),
-                        ],
-                    ]),
-                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
-                },
-                ..configs::orderbook::Configuration::test_default()
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
-        )
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     let order = || {
