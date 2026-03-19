@@ -71,7 +71,7 @@ pub struct EncodedSwap {
 pub struct SwapSimulation {
     pub tx: TransactionRequest,
     pub overrides: StateOverride,
-    pub result: Result<Solver::Solver::swapReturn>,
+    pub result: Result<Solver::Solver::swapReturn, anyhow::Error>,
 }
 
 impl SwapSimulator {
