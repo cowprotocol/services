@@ -613,16 +613,31 @@ impl Orderbook {
         Ok(status)
     }
 
-    pub async fn simulate_order(&self, uid: &OrderUid) -> Result<Option<OrderSimulation>> {
+    pub async fn simulate_order(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<Option<OrderSimulation>, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
-            anyhow::bail!("Order simulation is not enabled")
+            return Err(OrderSimulationError::NotEnabled);
         };
-        let Some(order) = self.get_order(uid).await? else {
+        let Some(order) = self
+            .get_order(uid)
+            .await
+            .map_err(OrderSimulationError::Other)?
+        else {
             return Ok(None);
         };
 
-        let swap = order_simulator.encode_order(&order).await?;
-        Ok(Some(order_simulator.simulate_swap(swap).await?))
+        let swap = order_simulator
+            .encode_order(&order)
+            .await
+            .map_err(OrderSimulationError::Other)?;
+        Ok(Some(
+            order_simulator
+                .simulate_swap(swap)
+                .await
+                .map_err(OrderSimulationError::Other)?,
+        ))
     }
 }
 
@@ -743,6 +758,14 @@ impl From<LoadSolverCompetitionError> for OrderStatusError {
             LoadSolverCompetitionError::Other(err) => Self::Other(err),
         }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum OrderSimulationError {
+    #[error("order simulation is not enabled")]
+    NotEnabled,
+    #[error("simulation could not be created for order")]
+    Other(anyhow::Error),
 }
 
 #[async_trait::async_trait]

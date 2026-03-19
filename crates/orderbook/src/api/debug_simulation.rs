@@ -1,5 +1,5 @@
 use {
-    crate::api::AppState,
+    crate::{api::AppState, orderbook::OrderSimulationError},
     axum::{
         extract::{Path, State},
         http::StatusCode,
@@ -37,7 +37,12 @@ pub async fn debug_simulation_handler(
             super::error("NotFound", "order not found"),
         )
             .into_response(),
-        Err(err) => {
+        Err(OrderSimulationError::NotEnabled) => (
+            StatusCode::NOT_IMPLEMENTED,
+            super::error("NotImplemented", "order simulation endpoint is not enabled"),
+        )
+            .into_response(),
+        Err(OrderSimulationError::Other(err)) => {
             tracing::error!(?err, "failed to create simulation for order");
             crate::api::internal_error_reply()
         }
