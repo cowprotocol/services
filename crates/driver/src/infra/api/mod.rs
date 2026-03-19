@@ -40,7 +40,7 @@ pub struct Api {
     pub mempools: Mempools,
     pub addr: SocketAddr,
     pub bad_token_detector: risk_detector::bad_tokens::Detector,
-    pub disable_balances: bool,
+    pub disable_settlement_balance_fetcher: bool,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -62,7 +62,7 @@ impl Api {
             self.eth.current_block().clone(),
         );
 
-        let tokens = if self.disable_balances {
+        let tokens = if self.disable_settlement_balance_fetcher {
             tokens::Fetcher::disabled()
         } else {
             tokens::Fetcher::new(&self.eth)

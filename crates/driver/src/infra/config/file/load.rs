@@ -391,6 +391,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
-        disable_balances: config.disable_balances,
+        disable_settlement_balance_fetcher: config.disable_settlement_balance_fetcher,
     }
 }
