@@ -80,12 +80,18 @@ LEFT OUTER JOIN LATERAL (
         " UNION ",
         // Note that we apply 2 tricks here:
         // 1. we invert the join order (join `trades` onto `jit_orders` instead
-        // of `jit_orders` onto `trades`). This is because there are VERY few
-        // jit_orders so we know this way is faster.
-        // 2. we explicitly use a MATERIALIZED CTE to force the query planner's
-        // hand. Otherwise it still thinks in some cases that a linear scan
-        // through the `trades` table is faster than using the `owner` index on
-        // the `jit_orders` table.
+        // of `jit_orders` onto `trades`). For cases where 1 account has MANY
+        // trades joining `jit_orders` onto the trades means fetching data for
+        // MANY `jit_orders`. But given that `jit_orders` are rare inverting the
+        // join order means we only fetch few or no `jit_orders` at all when
+        // looking them up by `owner`.
+        // 2. we explicitly use a MATERIALIZED CTE to force the query planner
+        // to follow this lookup order. Without using `MATERIALIZED` the query
+        // planner can "inline" this sub-query and which can lead to incorrect
+        // optimization decisions.
+        // Specifically NOT using `MATERIALIZED` can lead to the query
+        // planner doing full scans on the `trades` table instead of searching
+        // via the `owner` index on the `jit_orders` table.
         "(",
         " WITH jit AS MATERIALIZED (",
         "   SELECT uid, owner, buy_token, sell_token",
@@ -190,8 +196,8 @@ mod tests {
         sqlx::Connection,
     };
 
-    // Generates 1 unique user and the provided number of unique orders
-    // for that user.
+    /// Generates 1 unique user and the provided number of unique orders
+    /// for that user.
     async fn generate_owners_and_order_ids(
         orders_for_user: &[usize],
     ) -> Vec<(Address, Vec<OrderUid>)> {
