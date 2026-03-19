@@ -15,8 +15,8 @@ use {
         fee_factor::FeeFactor,
         test_util::TestDefault,
     },
-    driver::domain::eth::NonZeroU256,
     e2e::{assert_approximately_eq, setup::*},
+    eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
         fee_policy::FeePolicy,

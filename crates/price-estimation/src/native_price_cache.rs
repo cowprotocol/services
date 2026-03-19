@@ -140,7 +140,11 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
         Err(PriceEstimationError::ProtocolInternal(_)) | Err(PriceEstimationError::RateLimited) => {
             false
         }
-        Err(PriceEstimationError::UnsupportedOrderType(_)) => {
+        Err(PriceEstimationError::UnsupportedOrderType(_))
+        | Err(PriceEstimationError::TradingOutsideAllowedWindow { .. })
+        | Err(PriceEstimationError::TokenTemporarilySuspended { .. })
+        | Err(PriceEstimationError::InsufficientLiquidity { .. })
+        | Err(PriceEstimationError::CustomSolverError { .. }) => {
             tracing::error!(?result, "Unexpected error in native price cache");
             false
         }
@@ -1098,5 +1102,45 @@ mod tests {
                 .unwrap();
             assert_eq!(price.to_i64().unwrap(), 2);
         }
+    }
+
+    #[test]
+    fn should_cache_filters_custom_solver_errors() {
+        let custom_errors = [
+            PriceEstimationError::TradingOutsideAllowedWindow {
+                message: "window".to_string(),
+            },
+            PriceEstimationError::TokenTemporarilySuspended {
+                message: "suspended".to_string(),
+            },
+            PriceEstimationError::InsufficientLiquidity {
+                message: "insufficient".to_string(),
+            },
+            PriceEstimationError::CustomSolverError {
+                message: "custom".to_string(),
+            },
+        ];
+
+        for err in &custom_errors {
+            assert!(!should_cache(&Err(err.clone())));
+        }
+    }
+
+    #[test]
+    fn should_cache_keeps_expected_entries() {
+        assert!(should_cache(&Ok(1.0)));
+        assert!(should_cache(&Err(PriceEstimationError::NoLiquidity)));
+        assert!(should_cache(&Err(PriceEstimationError::UnsupportedToken {
+            token: Address::new([0; 20]),
+            reason: "unsupported".to_string(),
+        })));
+        assert!(should_cache(&Err(PriceEstimationError::EstimatorInternal(
+            anyhow!("estimator")
+        ))));
+
+        assert!(!should_cache(&Err(PriceEstimationError::RateLimited)));
+        assert!(!should_cache(&Err(PriceEstimationError::ProtocolInternal(
+            anyhow!("protocol")
+        ))));
     }
 }

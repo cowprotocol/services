@@ -1,8 +1,8 @@
 //! Data transfer objects for interacting with the Enso Trade Simulator API.
 
 use {
-    crate::domain::eth,
     alloy::rpc::types::AccessList,
+    eth_domain_types as eth,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };

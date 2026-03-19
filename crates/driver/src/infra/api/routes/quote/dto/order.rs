@@ -1,5 +1,6 @@
 use {
-    crate::domain::{competition, eth, quote},
+    crate::domain::{competition, quote},
+    eth_domain_types as eth,
     serde::Deserialize,
     serde_with::serde_as,
 };

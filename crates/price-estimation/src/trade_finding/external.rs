@@ -182,6 +182,18 @@ impl From<dto::Error> for PriceEstimationError {
     fn from(value: dto::Error) -> Self {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
+            "TradingOutsideAllowedWindow" => Self::TradingOutsideAllowedWindow {
+                message: value.description,
+            },
+            "TokenTemporarilySuspended" => Self::TokenTemporarilySuspended {
+                message: value.description,
+            },
+            "InsufficientLiquidity" => Self::InsufficientLiquidity {
+                message: value.description,
+            },
+            "CustomSolverError" => Self::CustomSolverError {
+                message: value.description,
+            },
             _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
         }
     }
@@ -194,6 +206,96 @@ impl From<dto::Interaction> for Interaction {
             value: interaction.value,
             data: interaction.call_data,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_known_custom_error_kinds() {
+        let cases = [
+            (
+                "TradingOutsideAllowedWindow",
+                "window closed",
+                "TradingOutsideAllowedWindow",
+            ),
+            (
+                "TokenTemporarilySuspended",
+                "token suspended",
+                "TokenTemporarilySuspended",
+            ),
+            (
+                "InsufficientLiquidity",
+                "not enough liquidity",
+                "InsufficientLiquidity",
+            ),
+            (
+                "CustomSolverError",
+                "custom solver reason",
+                "CustomSolverError",
+            ),
+            ("QuotingFailed", "ignored", "QuotingFailed"),
+        ];
+
+        for (kind, description, expected) in cases {
+            let error = dto::Error {
+                kind: kind.to_string(),
+                description: description.to_string(),
+            };
+
+            let mapped = PriceEstimationError::from(error);
+            match expected {
+                "TradingOutsideAllowedWindow" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::TradingOutsideAllowedWindow { message }
+                        if message == description
+                    ));
+                }
+                "TokenTemporarilySuspended" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::TokenTemporarilySuspended { message }
+                        if message == description
+                    ));
+                }
+                "InsufficientLiquidity" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::InsufficientLiquidity { message }
+                        if message == description
+                    ));
+                }
+                "CustomSolverError" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::CustomSolverError { message }
+                        if message == description
+                    ));
+                }
+                "QuotingFailed" => {
+                    assert!(matches!(mapped, PriceEstimationError::NoLiquidity));
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn maps_unknown_error_kind_to_estimator_internal() {
+        let error = dto::Error {
+            kind: "SomeFutureKind".to_string(),
+            description: "driver sent unknown error kind".to_string(),
+        };
+
+        let mapped = PriceEstimationError::from(error);
+        assert!(matches!(
+            mapped,
+            PriceEstimationError::EstimatorInternal(err)
+            if err.to_string() == "driver sent unknown error kind"
+        ));
     }
 }
 

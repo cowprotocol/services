@@ -2,12 +2,13 @@ use {
     crate::{
         boundary::{self, Result},
         domain::{
-            eth,
+            self,
             liquidity::{self, uniswap},
         },
         infra::{self, blockchain::Ethereum},
     },
     contracts::alloy::IUniswapLikeRouter,
+    eth_domain_types as eth,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     liquidity_sources::uniswap_v2::{
         pair_provider::PairProvider,
@@ -85,17 +86,17 @@ pub fn to_interaction(
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
-) -> eth::Interaction {
-    let handler = uniswap_v2::Inner::new(pool.router.0, *receiver);
+) -> domain::Interaction {
+    let handler = uniswap_v2::Inner::new(*pool.router, *receiver);
 
     let interaction = handler.settle(
-        TokenAmount::new(input.0.token.into(), input.0.amount),
-        TokenAmount::new(output.0.token.into(), output.0.amount),
+        TokenAmount::new(*input.0.token, input.0.amount),
+        TokenAmount::new(*output.0.token, output.0.amount),
     );
 
     let (target, value, call_data) = interaction.encode_swap();
 
-    eth::Interaction {
+    domain::Interaction {
         target,
         value: value.into(),
         call_data: call_data.0.to_vec().into(),
@@ -121,7 +122,7 @@ where
     R: PoolReading + Send + Sync + 'static,
     F: FnOnce(Web3, PairProvider) -> R,
 {
-    let router = IUniswapLikeRouter::Instance::new(config.router.0, eth.web3().provider.clone());
+    let router = IUniswapLikeRouter::Instance::new(*config.router, eth.web3().provider.clone());
     let settlement = eth.contracts().settlement().clone();
     let pool_fetcher = {
         let factory = router.factory().call().await?;

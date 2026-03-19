@@ -4,12 +4,10 @@
 /// private submission networks are used.
 use {
     super::Error,
-    crate::{
-        domain::eth,
-        infra::{config::file::GasEstimatorType, mempool},
-    },
+    crate::infra::{config::file::GasEstimatorType, mempool},
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::anyhow,
+    eth_domain_types as eth,
     ethrpc::Web3,
     gas_price_estimation::{
         GasPriceEstimating,

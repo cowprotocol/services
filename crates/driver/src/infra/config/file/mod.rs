@@ -1,7 +1,8 @@
 pub use load::load;
 use {
-    crate::{domain::eth, infra},
+    crate::infra,
     alloy::{eips::BlockNumberOrTag, primitives::Address},
+    eth_domain_types as eth,
     gas_price_estimation::configurable_alloy::{default_past_blocks, default_reward_percentile},
     number::serialization::HexOrDecimalU256,
     reqwest::Url,

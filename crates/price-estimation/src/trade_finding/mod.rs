@@ -250,6 +250,23 @@ pub enum TradeError {
     #[error("Rate limited")]
     RateLimited,
 
+    /// Token can only be traded during specific time windows (e.g. xStocks/Ondo
+    /// RWA tokens).
+    #[error("{message}")]
+    TradingOutsideAllowedWindow { message: String },
+
+    /// Token is temporarily suspended from trading by the solver.
+    #[error("{message}")]
+    TokenTemporarilySuspended { message: String },
+
+    /// Insufficient liquidity to fill the requested trade size.
+    #[error("{message}")]
+    InsufficientLiquidity { message: String },
+
+    /// Solver returned a custom error that doesn't map to a known variant.
+    #[error("{message}")]
+    CustomSolverError { message: String },
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -265,6 +282,18 @@ impl From<PriceEstimationError> for TradeError {
                 Self::UnsupportedOrderType(format!("{token:#x}"))
             }
             PriceEstimationError::RateLimited => Self::RateLimited,
+            PriceEstimationError::TradingOutsideAllowedWindow { message } => {
+                Self::TradingOutsideAllowedWindow { message }
+            }
+            PriceEstimationError::TokenTemporarilySuspended { message } => {
+                Self::TokenTemporarilySuspended { message }
+            }
+            PriceEstimationError::InsufficientLiquidity { message } => {
+                Self::InsufficientLiquidity { message }
+            }
+            PriceEstimationError::CustomSolverError { message } => {
+                Self::CustomSolverError { message }
+            }
             PriceEstimationError::EstimatorInternal(err)
             | PriceEstimationError::ProtocolInternal(err) => Self::Other(err),
         }
@@ -280,6 +309,18 @@ impl Clone for TradeError {
             }
             Self::DeadlineExceeded => Self::DeadlineExceeded,
             Self::RateLimited => Self::RateLimited,
+            Self::TradingOutsideAllowedWindow { message } => Self::TradingOutsideAllowedWindow {
+                message: message.clone(),
+            },
+            Self::TokenTemporarilySuspended { message } => Self::TokenTemporarilySuspended {
+                message: message.clone(),
+            },
+            Self::InsufficientLiquidity { message } => Self::InsufficientLiquidity {
+                message: message.clone(),
+            },
+            Self::CustomSolverError { message } => Self::CustomSolverError {
+                message: message.clone(),
+            },
             Self::Other(err) => Self::Other(crate::utils::clone_anyhow_error(err)),
         }
     }
@@ -300,7 +341,7 @@ pub fn map_interactions_data<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::PriceEstimationError};
 
     #[test]
     fn test_debug_interaction() {
@@ -317,5 +358,89 @@ mod tests {
             "Interaction { target: 0x0000000000000000000000000000000000000000, value: 1, data: \
              0x010203040506 }"
         )
+    }
+
+    #[test]
+    fn maps_custom_price_estimation_errors_to_trade_errors() {
+        let cases = [
+            (
+                PriceEstimationError::TradingOutsideAllowedWindow {
+                    message: "window".to_string(),
+                },
+                "window",
+                0,
+            ),
+            (
+                PriceEstimationError::TokenTemporarilySuspended {
+                    message: "suspended".to_string(),
+                },
+                "suspended",
+                1,
+            ),
+            (
+                PriceEstimationError::InsufficientLiquidity {
+                    message: "insufficient".to_string(),
+                },
+                "insufficient",
+                2,
+            ),
+            (
+                PriceEstimationError::CustomSolverError {
+                    message: "custom".to_string(),
+                },
+                "custom",
+                3,
+            ),
+        ];
+
+        for (input, expected_message, expected_variant) in cases {
+            let mapped: TradeError = input.into();
+            match expected_variant {
+                0 => assert!(matches!(
+                    mapped,
+                    TradeError::TradingOutsideAllowedWindow { message }
+                    if message == expected_message
+                )),
+                1 => assert!(matches!(
+                    mapped,
+                    TradeError::TokenTemporarilySuspended { message }
+                    if message == expected_message
+                )),
+                2 => assert!(matches!(
+                    mapped,
+                    TradeError::InsufficientLiquidity { message }
+                    if message == expected_message
+                )),
+                3 => assert!(matches!(
+                    mapped,
+                    TradeError::CustomSolverError { message }
+                    if message == expected_message
+                )),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn clone_preserves_trade_error_custom_messages() {
+        let cases = [
+            TradeError::TradingOutsideAllowedWindow {
+                message: "window".to_string(),
+            },
+            TradeError::TokenTemporarilySuspended {
+                message: "suspended".to_string(),
+            },
+            TradeError::InsufficientLiquidity {
+                message: "insufficient".to_string(),
+            },
+            TradeError::CustomSolverError {
+                message: "custom".to_string(),
+            },
+        ];
+
+        for err in cases {
+            let cloned = err.clone();
+            assert_eq!(cloned.to_string(), err.to_string());
+        }
     }
 }
