@@ -8,7 +8,12 @@ use {
         },
         infra::{self, Ethereum, observe, solver},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, network::TxSigner},
+    alloy::{
+        consensus::Transaction,
+        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
+        network::TxSigner,
+        providers::Provider,
+    },
     anyhow::Context,
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
@@ -41,10 +46,33 @@ impl Mempools {
         }
     }
 
+    pub async fn nonce(&self, solver_account: solver::Account) -> Result<u64, Error> {
+        let address = solver_account.address();
+        // A single settlement fanout must use one canonical nonce source.
+        let nonce_block_number = self
+            .mempools
+            .first()
+            .and_then(|mempool| mempool.config().nonce_block_number);
+        let call = self.ethereum.web3().provider.get_transaction_count(address);
+
+        match nonce_block_number {
+            Some(BlockNumberOrTag::Latest) => call.latest(),
+            Some(BlockNumberOrTag::Earliest) => call.earliest(),
+            Some(BlockNumberOrTag::Finalized) => call.finalized(),
+            Some(BlockNumberOrTag::Number(number)) => call.number(number),
+            Some(BlockNumberOrTag::Pending) => call.pending(),
+            Some(BlockNumberOrTag::Safe) => call.safe(),
+            None => call,
+        }
+        .await
+        .map_err(|err| Error::Other(anyhow::Error::from(err).context("failed to fetch nonce")))
+    }
+
     /// Publish a settlement to the mempools.
     pub async fn execute(
         &self,
         solver_account: solver::Account,
+        nonce: u64,
         settlement: &Settlement,
         submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
@@ -52,7 +80,13 @@ impl Mempools {
             let solver_account = solver_account.clone();
             async move {
                 let result = self
-                    .submit(mempool, solver_account, settlement, submission_deadline)
+                    .submit(
+                        mempool,
+                        solver_account,
+                        nonce,
+                        settlement,
+                        submission_deadline,
+                    )
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
                 observe::mempool_executed(mempool, settlement, &result);
@@ -82,6 +116,7 @@ impl Mempools {
         &self,
         mempool: &infra::mempool::Mempool,
         solver_account: solver::Account,
+        nonce: u64,
         settlement: &Settlement,
         submission_deadline: BlockNo,
     ) -> Result<SubmissionSuccess, Error> {
@@ -127,11 +162,6 @@ impl Mempools {
         } else {
             tracing::trace!("skipping tx simulation because mempool does not mine reverting txs");
         }
-
-        // Fetch the nonce to avoid race conditions between concurrent
-        // transactions (e.g., settlement tx and cancellation tx) from the same
-        // solver address.
-        let nonce = mempool.get_nonce(solver_account.clone().address()).await?;
 
         // estimate the gas price such that the tx should still be included
         // even if the gas price increases the maximum amount until the submission
