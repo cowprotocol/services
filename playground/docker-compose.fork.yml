@@ -76,7 +76,7 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin orderbook -- --config configs/${ENV}/orderbook.toml",
+        "run --bin orderbook -- --config playground/configs/orderbook.toml",
       ]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -106,7 +106,7 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin autopilot -- --config configs/${ENV}/autopilot.toml",
+        "run --bin autopilot -- --config playground/configs/autopilot.toml",
       ]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -138,7 +138,7 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin driver -- --config configs/${ENV}/driver.toml",
+        "run --bin driver -- --config playground/configs/driver.toml",
       ]
     environment:
       - ETHRPC=http://chain:8545
@@ -170,7 +170,7 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml",
+        "run --bin solvers -- baseline --config playground/configs/baseline.toml",
       ]
     environment:
       - ADDR=0.0.0.0:80
