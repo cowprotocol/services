@@ -1,6 +1,6 @@
 use {
     crate::{balance_overrides, rate_limit::Strategy},
-    alloy::primitives::{Address, U256, map::HashSet},
+    alloy::primitives::{map::HashSet, Address, U256},
     bigdecimal::BigDecimal,
     serde::Deserialize,
     std::{str::FromStr, time::Duration},
@@ -93,8 +93,9 @@ pub struct PriceEstimation {
     /// Maximum gas amount for unverified quotes. When an unverified quote
     /// reports more gas than this, the ceiling is used instead. Verified
     /// quotes are unaffected. Defaults to 0 (disabled).
-    /// This is a hack to aleviate tsolver issues where they report trillinos in
-    /// gas for RWA tokens.
+    ///
+    /// This is a hack to alleviate tsolver issues where they report extremely
+    /// high gas for RWA tokens.
     #[serde(default)]
     pub max_gas_amount_for_unverified_quotes: u64,
 
