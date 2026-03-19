@@ -90,6 +90,15 @@ pub struct PriceEstimation {
     #[serde(default)]
     pub min_gas_amount_for_unverified_quotes: u64,
 
+    /// Maximum gas amount for unverified quotes. When an unverified quote
+    /// reports more gas than this, the ceiling is used instead. Verified
+    /// quotes are unaffected. Defaults to 0 (disabled).
+    ///
+    /// This is a hack to alleviate tsolver issues where they report extremely
+    /// high gas for RWA tokens.
+    #[serde(default)]
+    pub max_gas_amount_for_unverified_quotes: u64,
+
     /// Tenderly configuration (URL, project & API key).
     pub tenderly: Option<TenderlyConfig>,
 
@@ -115,6 +124,7 @@ impl Default for PriceEstimation {
             tokens_without_verification: Default::default(),
             max_gas_per_tx: default_max_gas_per_tx(),
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: 0,
         }
     }
 }
@@ -336,6 +346,7 @@ mod tests {
         assert_eq!(config.balance_overrides.cache_size, 1000);
         assert!(config.tokens_without_verification.is_empty());
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 0);
+        assert_eq!(config.max_gas_amount_for_unverified_quotes, 0);
     }
 
     #[test]
@@ -347,6 +358,7 @@ mod tests {
         tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         amount-to-estimate-prices-with = "1000000000000000000"
         min-gas-amount-for-unverified-quotes = 400000
+        max-gas-amount-for-unverified-quotes = 800000
 
         [price-estimation-rate-limiter]
         back-off-growth-factor = 2.0
@@ -409,6 +421,7 @@ mod tests {
         assert_eq!(config.balance_overrides.cache_size, 500);
         assert_eq!(config.tokens_without_verification.len(), 1);
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 400_000);
+        assert_eq!(config.max_gas_amount_for_unverified_quotes, 800_000);
     }
 
     #[test]
