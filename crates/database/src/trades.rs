@@ -78,18 +78,25 @@ LEFT OUTER JOIN LATERAL (
         " LIMIT $3 + $4",
         ")",
         " UNION ",
+        // Note that we apply 2 tricks here:
+        // 1. we invert the join order (join `trades` onto `jit_orders` instead
+        // of `jit_orders` onto `trades`). This is because there are VERY few
+        // jit_orders so we know this way is faster.
+        // 2. we explicitly use a MATERIALIZED CTE to force the query planner's
+        // hand. Otherwise it still thinks in some cases that a linear scan
+        // through the `trades` table is faster than using the `owner` index on
+        // the `jit_orders` table.
         "(",
+        " WITH jit AS MATERIALIZED (",
+        "   SELECT uid, owner, buy_token, sell_token",
+        "   FROM jit_orders",
+        "   WHERE ($1 IS NULL OR owner = $1)",
+        "   AND ($2 IS NULL OR uid = $2)",
+        ")",
         SELECT,
-        // note that we invert the join order here because there are
-        // very few jit orders so for accounts with many trades
-        // it's a lot more efficient to fetch all jit orders and join
-        // trades on top than fetch all trades and then join the jit
-        // orders on top.
-        " FROM jit_orders o",
+        " FROM jit o",
         " JOIN trades t ON o.uid = t.order_uid",
         SETTLEMENT_JOIN,
-        " WHERE ($1 IS NULL OR o.owner = $1)",
-        " AND ($2 IS NULL OR o.uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
