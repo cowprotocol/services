@@ -40,6 +40,8 @@ pub enum Kind {
     SolverAccountInsufficientBalance(RequiredEther),
     /// Result of winning solver trying to settle the transaction onchain.
     Settled(Settlement),
+    ///
+    Settling,
     /// Some aspect of the driver logic failed preventing the solution from
     /// participating in the auction.
     DriverError(String),

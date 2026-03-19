@@ -54,6 +54,7 @@ pub enum Kind {
         #[serde_as(as = "HexOrDecimalU256")]
         required: U256,
     },
+    Settling,
     Success {
         transaction: B256,
     },

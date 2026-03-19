@@ -44,6 +44,7 @@ pub fn new(
             notify::Kind::DriverError(reason) => {
                 solvers_dto::notification::Kind::DriverError { reason }
             }
+            notify::Kind::Settling => solvers_dto::notification::Kind::Settling,
             notify::Kind::Settled(kind) => match kind {
                 notify::Settlement::Success(hash) => solvers_dto::notification::Kind::Success {
                     transaction: hash.0,
