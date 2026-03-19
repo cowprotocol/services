@@ -16,7 +16,7 @@ use {
     },
     anyhow::Context,
     ethrpc::block_stream::into_stream,
-    futures::{FutureExt, StreamExt, future::select_ok},
+    futures::{FutureExt, StreamExt, future::{join_all, select_ok}},
     thiserror::Error,
     tracing::Instrument,
 };
@@ -103,9 +103,9 @@ impl Mempools {
         solver_account: solver::Account,
         nonce: u64,
         settlement: &Settlement,
-        submission_deadline: BlockNo,
-    ) -> Result<eth::TxId, Error> {
-        let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
+        target_block: BlockNo,
+    ) -> Result<Vec<Result<SubmissionSuccess, Error>>, Error> {
+        let results = join_all(self.mempools.iter().map(|mempool| {
             let solver_account = solver_account.clone();
             async move {
                 let result = self
@@ -114,7 +114,7 @@ impl Mempools {
                         solver_account,
                         nonce,
                         settlement,
-                        submission_deadline,
+                        target_block,
                     )
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
@@ -123,9 +123,9 @@ impl Mempools {
             }
             .boxed()
         }))
-        .await?;
+        .await;
 
-        Ok(submission.tx_hash)
+        Ok(results)
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
