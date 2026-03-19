@@ -1,8 +1,9 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::PriceEstimationError,
-    alloy::primitives::{Address, U256, uint},
+    alloy::primitives::{Address, U256},
     anyhow::Context,
+    contracts::alloy::{ERC20, IERC4626},
     ethrpc::AlloyProvider,
     futures::{FutureExt, future::BoxFuture},
     num::ToPrimitive,
@@ -10,18 +11,11 @@ use {
     std::{sync::Arc, time::Duration},
 };
 
-alloy::sol! {
-    #[sol(rpc)]
-    interface IERC4626 {
-        function asset() external view returns (address assetTokenAddress);
-        function convertToAssets(uint256 shares) external view returns (uint256 assets);
-    }
-}
-
 /// Estimates the native price of EIP-4626 vault tokens by:
 /// 1. Calling `asset()` to find the underlying token
-/// 2. Calling `convertToAssets(1e18)` to find the conversion rate
-/// 3. Delegating to an inner estimator for the underlying token's native price
+/// 2. Calling `decimals()` to determine the vault's precision
+/// 3. Calling `convertToAssets(10^decimals)` to find the conversion rate
+/// 4. Delegating to an inner estimator for the underlying token's native price
 pub struct Eip4626 {
     inner: Arc<dyn NativePriceEstimating>,
     provider: AlloyProvider,
@@ -33,7 +27,8 @@ impl Eip4626 {
     }
 
     async fn estimate(&self, token: Address, timeout: Duration) -> NativePriceEstimateResult {
-        let vault = IERC4626::new(token, self.provider.clone());
+        let vault = IERC4626::Instance::new(token, self.provider.clone());
+        let erc20 = ERC20::Instance::new(token, self.provider.clone());
 
         let asset: Address = vault.asset().call().await.map_err(|e| {
             PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
@@ -41,22 +36,26 @@ impl Eip4626 {
             ))
         })?;
 
-        // Use 1e18 shares as the reference amount. This works correctly for
-        // vaults with 18 decimals. For other decimals the rate is still a
-        // reasonable approximation since convertToAssets is linear.
-        let shares = uint!(1_000_000_000_000_000_000_U256);
+        let decimals: u8 = erc20.decimals().call().await.map_err(|e| {
+            PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                "failed to call decimals() on {token}: {e}"
+            ))
+        })?;
+
+        let shares = U256::from(10u64).pow(U256::from(decimals));
+
         let assets: U256 = vault.convertToAssets(shares).call().await.map_err(|e| {
             PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                 "failed to call convertToAssets() on {token}: {e}"
             ))
         })?;
 
+        let asset_price = self.inner.estimate_native_price(asset, timeout).await?;
+
         let rate = (u256_to_big_rational(&assets) / u256_to_big_rational(&shares))
             .to_f64()
             .context("conversion rate is not representable as f64")
             .map_err(PriceEstimationError::EstimatorInternal)?;
-
-        let asset_price = self.inner.estimate_native_price(asset, timeout).await?;
 
         Ok(asset_price * rate)
     }
@@ -81,22 +80,14 @@ mod tests {
 
     #[test]
     fn rate_math() {
-        // 1 vault share = 1.5 underlying tokens (e.g. rebasing vault)
-        let shares = uint!(1_000_000_000_000_000_000_U256);
-        let assets = uint!(1_500_000_000_000_000_000_U256);
+        // 6-decimal vault where 1 share = 1.5 underlying tokens
+        let decimals = 6u8;
+        let shares = U256::from(10u64).pow(U256::from(decimals));
+        let assets = U256::from(1_500_000u64); // 1.5 * 10^6
         let rate = (u256_to_big_rational(&assets) / u256_to_big_rational(&shares))
             .to_f64()
             .unwrap();
         assert!((rate - 1.5).abs() < 1e-9);
-    }
-
-    #[tokio::test]
-    async fn delegates_to_inner_on_error() {
-        let mut inner = MockNativePriceEstimating::new();
-        inner
-            .expect_estimate_native_price()
-            .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
-        let _ = inner;
     }
 
     /// Requires a live node; run with:

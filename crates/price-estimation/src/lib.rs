@@ -55,17 +55,20 @@ impl<'de> Deserialize<'de> for NativePriceEstimators {
                 &"expected native price estimator stages to be configured",
             ));
         }
-        match estimators
-            .iter()
-            .enumerate()
-            .find_map(|(n, stage)| stage.is_empty().then_some(n))
-        {
-            Some(n) => Err(serde::de::Error::invalid_length(
-                0,
-                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
-            )),
-            None => Ok(Self(estimators)),
+        for (n, stage) in estimators.iter().enumerate() {
+            if stage.is_empty() {
+                return Err(serde::de::Error::invalid_length(
+                    0,
+                    &format!("stage {} is empty, all stages must not be empty", n).as_str(),
+                ));
+            }
+            if matches!(stage.last(), Some(NativePriceEstimator::Eip4626)) {
+                return Err(serde::de::Error::custom(format!(
+                    "stage {n}: Eip4626 must be followed by another estimator"
+                )));
+            }
         }
+        Ok(Self(estimators))
     }
 }
 
@@ -117,9 +120,9 @@ pub enum NativePriceEstimator {
     OneInchSpotPriceApi,
     CoinGecko,
     /// Prices EIP-4626 vault tokens by looking up the underlying `asset()` and
-    /// applying `convertToAssets()` as a conversion rate. The inner estimator
-    /// is used to price the underlying asset.
-    Eip4626(Box<NativePriceEstimator>),
+    /// applying `convertToAssets()` as a conversion rate. At construction time,
+    /// wraps the next estimator in the configuration list.
+    Eip4626,
 }
 
 impl NativePriceEstimator {
@@ -139,7 +142,7 @@ impl Display for NativePriceEstimator {
             NativePriceEstimator::Forwarder { url } => format!("Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
             NativePriceEstimator::CoinGecko => "CoinGecko".into(),
-            NativePriceEstimator::Eip4626(inner) => format!("Eip4626|{inner}"),
+            NativePriceEstimator::Eip4626 => "Eip4626".into(),
         };
         write!(f, "{formatter}")
     }
@@ -199,10 +202,7 @@ impl FromStr for NativePriceEstimator {
                     .parse()
                     .context("Forwarder price estimator invalid URL")?,
             }),
-            "Eip4626" => Ok(NativePriceEstimator::Eip4626(Box::new(
-                NativePriceEstimator::from_str(args)
-                    .context("Eip4626 inner estimator failed to parse")?,
-            ))),
+            "Eip4626" => Ok(NativePriceEstimator::Eip4626),
             _ => Err(anyhow::anyhow!("unsupported native price estimator: {}", s)),
         }
     }

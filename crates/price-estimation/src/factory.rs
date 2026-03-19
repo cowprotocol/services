@@ -169,9 +169,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    async fn create_native_estimator(
+    async fn create_native_estimator<'b>(
         &mut self,
         source: &NativePriceEstimatorSource,
+        rest: &mut impl Iterator<Item = &'b NativePriceEstimatorSource>,
         weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
@@ -266,10 +267,20 @@ impl<'a> PriceEstimatorFactory<'a> {
 
                 Ok((name, coin_gecko))
             }
-            // Eip4626 wraps another estimator and is handled at the call site
-            // to avoid recursive async fn.
-            NativePriceEstimatorSource::Eip4626(_) => {
-                unreachable!("Eip4626 is handled before calling create_native_estimator")
+            NativePriceEstimatorSource::Eip4626 => {
+                let next = rest
+                    .next()
+                    .context("Eip4626 must be followed by another estimator in the same stage")?;
+                let (inner_name, inner) =
+                    Box::pin(self.create_native_estimator(next, rest, weth)).await?;
+                let name = format!("Eip4626|{inner_name}");
+                Ok((
+                    name.clone(),
+                    Arc::new(InstrumentedPriceEstimator::new(
+                        native::Eip4626::new(inner, self.network.web3.provider.clone()),
+                        name,
+                    )),
+                ))
             }
         }
     }
@@ -370,21 +381,12 @@ impl<'a> PriceEstimatorFactory<'a> {
         let mut estimators = Vec::with_capacity(native.len());
         for stage in native.iter() {
             let mut stages = Vec::with_capacity(stage.len());
-            for source in stage {
-                let entry = if let NativePriceEstimatorSource::Eip4626(inner_source) = source {
-                    let name = format!("Eip4626|{inner_source}");
-                    let (_, inner) = self.create_native_estimator(inner_source, weth).await?;
-                    (
-                        name.clone(),
-                        Arc::new(InstrumentedPriceEstimator::new(
-                            native::Eip4626::new(inner, self.network.web3.provider.clone()),
-                            name,
-                        )) as Arc<dyn NativePriceEstimating>,
-                    )
-                } else {
-                    self.create_native_estimator(source, weth).await?
-                };
-                stages.push(entry);
+            let mut iter = stage.iter();
+            while let Some(source) = iter.next() {
+                stages.push(
+                    self.create_native_estimator(source, &mut iter, weth)
+                        .await?,
+                );
             }
             estimators.push(stages);
         }

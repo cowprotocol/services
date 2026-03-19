@@ -14,6 +14,7 @@ mod cors;
 mod cow_amm;
 mod database;
 mod deprecated_endpoints;
+mod eip4626;
 mod eth_integration;
 mod eth_safe;
 mod ethflow;

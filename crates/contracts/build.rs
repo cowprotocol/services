@@ -603,6 +603,7 @@ fn main() {
         ]))
         .add_contract(Contract::new("CoWSwapOnchainOrders"))
         .add_contract(Contract::new("ERC1271SignatureValidator"))
+        .add_contract(Contract::new("IERC4626"))
         // Used in the gnosis/solvers repo for the balancer solver
         .add_contract(Contract::new("BalancerQueries").with_networks(networks![
             // <https://etherscan.io/tx/0x30799534f3a0ab8c7fa492b88b56e9354152ffaddad15415184a3926c0dd9b09>
