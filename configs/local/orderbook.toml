@@ -1,4 +1,0 @@
-eip1271-skip-creation-validation = true
-
-[order-quoting]
-price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]
