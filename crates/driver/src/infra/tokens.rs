@@ -23,22 +23,31 @@ pub struct Metadata {
 }
 
 #[derive(Clone)]
-pub struct Fetcher(Arc<Inner>);
+pub enum Fetcher {
+    /// Fetches token metadata and settlement contract balances from the node.
+    Rpc(Arc<Inner>),
+    /// Returns zero balances without making any RPC calls.
+    Disabled,
+}
 
 impl Fetcher {
     pub fn new(eth: &Ethereum) -> Self {
         let eth = eth.with_metric_label("tokenInfos".into());
-        let block_stream = eth.current_block().clone();
         let inner = Arc::new(Inner {
             eth,
             cache: RwLock::new(HashMap::new()),
             requests: BoxRequestSharing::labelled("token_info".into()),
         });
+        let block_stream = inner.eth.current_block().clone();
         tokio::task::spawn(
             update_task(block_stream, Arc::downgrade(&inner))
                 .instrument(tracing::info_span!("token_fetcher")),
         );
-        Self(inner)
+        Self::Rpc(inner)
+    }
+
+    pub fn disabled() -> Self {
+        Self::Disabled
     }
 
     /// Returns the `Metadata` for the given tokens. Note that the result will
@@ -48,7 +57,23 @@ impl Fetcher {
         &self,
         addresses: &[eth::TokenAddress],
     ) -> HashMap<eth::TokenAddress, Metadata> {
-        self.0.get(addresses).await
+        match self {
+            Self::Rpc(inner) => inner.get(addresses).await,
+            Self::Disabled => addresses
+                .iter()
+                .filter(|address| address.0.0 != BUY_ETH_ADDRESS)
+                .map(|address| {
+                    (
+                        *address,
+                        Metadata {
+                            decimals: None,
+                            symbol: None,
+                            balance: 0.into(),
+                        },
+                    )
+                })
+                .collect(),
+        }
     }
 }
 
@@ -118,7 +143,7 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
 }
 
 /// Provides metadata of tokens.
-struct Inner {
+pub struct Inner {
     eth: Ethereum,
     cache: RwLock<HashMap<eth::TokenAddress, Metadata>>,
     requests: BoxRequestSharing<eth::TokenAddress, Option<(eth::TokenAddress, Metadata)>>,

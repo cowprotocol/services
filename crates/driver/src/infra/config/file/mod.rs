@@ -86,6 +86,12 @@ struct Config {
     #[serde(default)]
     flashloans_enabled: bool,
 
+    /// Skip settlement contract token balance fetching (background and
+    /// on-demand). Balances default to 0. Useful for local testing to
+    /// avoid RPC calls.
+    #[serde(default)]
+    disable_settlement_balance_fetcher: bool,
+
     #[serde_as(as = "HexOrDecimalU256")]
     tx_gas_limit: eth::U256,
 }
