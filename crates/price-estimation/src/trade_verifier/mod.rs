@@ -20,7 +20,7 @@ use {
     bigdecimal::BigDecimal,
     contracts::alloy::{
         GPv2Settlement,
-        support::{Solver, Spardose, Trader},
+        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
     ethrpc::Web3,
     model::{
@@ -165,26 +165,22 @@ impl TradeVerifier {
                 .map(Interaction::encode)
                 .collect::<Vec<_>>();
 
-        // Interactions introduced by the solver
-        let interactions = trade
-            .interactions()
-            .cloned()
-            .map(Interaction::encode)
-            .collect::<Vec<_>>();
-        let post_interactions = verification
-            .post_interactions
-            .iter()
-            .cloned()
-            .map(Interaction::encode)
-            .collect::<Vec<_>>();
-
         // Join custom pre_interactions
-        pre_interactions.extend(swap.settlement.interactions.pre.into_iter());
+        pre_interactions.extend(swap.settlement.interactions.pre);
         swap.settlement.interactions.pre = pre_interactions;
+
+        // Interactions introduced by the solver
+        let interactions = trade.interactions().cloned().map(Interaction::encode);
         swap.settlement.interactions.main = interactions
             .into_iter()
             .chain(swap.settlement.interactions.main)
             .collect();
+
+        let post_interactions = verification
+            .post_interactions
+            .iter()
+            .cloned()
+            .map(Interaction::encode);
         swap.settlement.interactions.post = swap
             .settlement
             .interactions
@@ -439,6 +435,27 @@ impl TradeVerifier {
             balance: Some(U256::MAX / U256::from(2)),
             ..Default::default()
         };
+
+        // If the trade requires a special tx.origin we also need to fake the
+        // authenticator.
+        if trade
+            .tx_origin()
+            .is_some_and(|origin| origin != trade.solver())
+        {
+            let authenticator = self
+                .settlement
+                .authenticator()
+                .call()
+                .await
+                .context("could not fetch authenticator")?;
+            overrides.insert(
+                authenticator,
+                AccountOverride {
+                    code: Some(AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone()),
+                    ..Default::default()
+                },
+            );
+        }
 
         overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 

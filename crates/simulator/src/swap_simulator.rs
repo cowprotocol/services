@@ -1,18 +1,11 @@
 use {
     crate::encoding::{EncodedSettlement, EncodedTrade, Interaction, Interactions, encode_trade},
-    alloy_primitives::{Address, U256, address, map::AddressMap},
-    alloy_rpc_types::{
-        TransactionRequest,
-        state::{AccountOverride, StateOverride},
-    },
+    alloy_primitives::{Address, U256, address},
+    alloy_rpc_types::{TransactionRequest, state::StateOverride},
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, anyhow},
     balance_overrides::BalanceOverriding,
-    contracts::alloy::{
-        GPv2Settlement,
-        WETH9,
-        support::{AnyoneAuthenticator, Solver},
-    },
+    contracts::alloy::{GPv2Settlement, WETH9, support::Solver},
     eth_domain_types::NonZeroU256,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
@@ -103,8 +96,8 @@ impl SwapSimulator {
     /// The result can be further post processed depending on the needs
     ///
     /// It can then be simulated with SwapSimulator::simulate_swap
-    pub async fn fake_swap(&self, mut query: Query) -> Result<EncodedSwap> {
-        let overrides = self.prepare_state_overrides(&mut query).await?;
+    pub async fn fake_swap(&self, query: Query) -> Result<EncodedSwap> {
+        let overrides = StateOverride::default();
 
         let pre_interactions = vec![self.trade_setup_interaction(&query).encode()];
         let mut interactions = vec![];
@@ -145,6 +138,10 @@ impl SwapSimulator {
         })
     }
 
+    /// Simulates a solver call to settlement contract with the provided swap
+    /// data. The swap call result is contained in the returned
+    /// SwapSimulation struct, along with the original TransactionRequest
+    /// and State overrides (if needed to be logged, or processed elsewhere)
     pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<SwapSimulation> {
         let block = *self.current_block.borrow();
         let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
@@ -166,6 +163,10 @@ impl SwapSimulator {
                     .map_err(|err| anyhow!(err))
                     .context("converting gas price to u128")?,
             );
+
+        // Save the transaction request, so the caller can inspect it.
+        // For example, to create a tenderly API request and provide the ability to
+        // simulate it.
         let tx = swap.clone().into_transaction_request();
         let result = swap
             .call()
@@ -181,37 +182,12 @@ impl SwapSimulator {
         })
     }
 
-    /// Configures all the state overrides that are needed to mock the given
-    /// trade.
-    async fn prepare_state_overrides(&self, query: &mut Query) -> Result<StateOverride> {
-        let mut overrides = AddressMap::default();
-        // If the trade requires a special tx.origin we also need to fake the
-        // authenticator.
-        if query.tx_origin.is_some_and(|origin| origin != query.solver) {
-            let authenticator = self
-                .settlement
-                .authenticator()
-                .call()
-                .await
-                .context("could not fetch authenticator")?;
-            overrides.insert(
-                authenticator,
-                AccountOverride {
-                    code: Some(AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone()),
-                    ..Default::default()
-                },
-            );
-        }
-
-        Ok(overrides)
-    }
-
+    /// Create interaction that sets up the trade right before transfering
+    /// funds. This interaction does nothing if the user-provided
+    /// pre-interactions already set everything up (e.g. approvals,
+    /// balances). That way we can correctly verify quotes with or without
+    /// these user pre-interactions with helpful error messages.
     fn trade_setup_interaction(&self, query: &Query) -> Interaction {
-        // Execute interaction to set up trade right before transfering funds.
-        // This interaction does nothing if the user-provided pre-interactions
-        // already set everything up (e.g. approvals, balances). That way we can
-        // correctly verify quotes with or without these user pre-interactions
-        // with helpful error messages.
         let sell_amount = match query.kind {
             OrderKind::Sell => query.in_amount.get(),
             OrderKind::Buy => query.out_amount,
@@ -233,11 +209,11 @@ impl SwapSimulator {
     }
 }
 
+/// Encodes a trade with the most disadvantageous in and out amounts possible
+/// (while taking possible overflows into account). Should the trader not
+/// receive the amount promised by the [`Trade`] the simulation will still work
+/// and the actual [`Trade::out_amount`] can be computed afterwards.
 fn encode_fake_trade(query: &Query) -> Result<EncodedTrade> {
-    // Configure the most disadvantageous trade possible (while taking possible
-    // overflows into account). Should the trader not receive the amount promised by
-    // the [`Trade`] the simulation will still work and we can compute the actual
-    // [`Trade::out_amount`] afterwards.
     let (sell_amount, buy_amount) = match query.kind {
         OrderKind::Sell => (query.in_amount.get(), U256::ZERO),
         OrderKind::Buy => (
