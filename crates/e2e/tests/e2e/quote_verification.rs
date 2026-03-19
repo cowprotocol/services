@@ -412,7 +412,6 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     };
     services
         .start_protocol_with_args(
-            ExtraServiceArgs::default(),
             Configuration::test("test_solver", solver.address()),
             orderbook_config,
             solver,
@@ -554,7 +553,6 @@ async fn usdt_quote_verification(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs::default(),
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
                 price_estimation: configs::price_estimation::PriceEstimation {

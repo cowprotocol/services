@@ -1,5 +1,6 @@
 use {alloy::primitives::Address, serde::Deserialize};
 
+/// Configuration for eth-flow order indexing and processing.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -12,7 +13,6 @@ pub struct EthflowConfig {
 
     /// Timestamp at which we should start indexing eth-flow contract events.
     /// Ignored if events already exist in the database for a later date.
-    #[serde(default)]
     pub indexing_start: Option<u64>,
 
     /// Skip syncing past events (useful for local deployments).

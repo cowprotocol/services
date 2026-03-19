@@ -20,6 +20,7 @@ const fn default_insert_batch_size() -> NonZeroUsize {
     NonZeroUsize::new(500).expect("value should be greater than 0")
 }
 
+/// PostgreSQL connection pool settings.
 #[derive(serde::Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

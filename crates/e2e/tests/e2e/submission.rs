@@ -163,7 +163,6 @@ async fn test_submit_same_sell_and_buy_token_order_without_quote(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {
@@ -279,7 +278,6 @@ async fn test_execute_same_sell_and_buy_token(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {

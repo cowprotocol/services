@@ -16,6 +16,7 @@ use {
         http_client::HttpClient,
         order_quoting::OrderQuoting,
         price_estimation::PriceEstimation,
+        shared::SharedConfig,
     },
     alloy::primitives::Address,
     anyhow::{anyhow, ensure},
@@ -57,12 +58,16 @@ const fn default_max_auction_age() -> Duration {
 // Does not implement Default because `native_price_estimation` *cannot* have
 // empty `estimators`, as such, we cannot provide a proper default value for
 // this structure.
+/// Top-level autopilot service configuration.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
-// NOTE: cannot add deny_unknown_fields during the config migration
-// as new ones get added in the config will fail parsing if extra fields are present
-#[serde(rename_all = "kebab-case", /* deny_unknown_fields */)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Configuration {
+    /// Shared settings (node URL, gas estimators, logging, etc.).
+    #[serde(flatten)]
+    pub shared: SharedConfig,
+
+    /// Solver drivers to dispatch auctions to.
     pub drivers: Vec<Solver>,
 
     /// Describes how the protocol fees should be calculated.
@@ -99,7 +104,6 @@ pub struct Configuration {
     /// Run the autopilot in shadow mode by specifying an upstream CoW protocol
     /// deployment to pull auctions from. The autopilot performs solver
     /// competition and logs the winner without executing settlements.
-    #[serde(default)]
     pub shadow: Option<Url>,
 
     /// Address to bind the metrics server.
@@ -153,7 +157,7 @@ pub struct Configuration {
     #[serde(default)]
     pub http_client: HttpClient,
 
-    // Configurations for the order creation process.
+    /// Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
 
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
@@ -199,6 +203,7 @@ impl Configuration {
         use crate::test_util::TestDefault;
 
         Self {
+            shared: Default::default(),
             drivers: vec![],
             fee_policies: Default::default(),
             trusted_tokens: Default::default(),
@@ -229,6 +234,7 @@ impl Configuration {
         use crate::test_util::TestDefault;
 
         Self {
+            shared: Default::default(),
             drivers: vec![Solver::test(name, solver_address)],
             fee_policies: Default::default(),
             trusted_tokens: Default::default(),

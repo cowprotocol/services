@@ -42,13 +42,11 @@ pub struct PriceEstimation {
     /// Configures the back off strategy for price estimators when requests take
     /// too long. Requests issued while back off is active get dropped
     /// entirely.
-    #[serde(default)]
     pub price_estimation_rate_limiter: Option<Strategy>,
 
     /// The amount in native token atoms to use for price estimation. Should be
     /// reasonably large so that small pools do not influence the prices. If
     /// not set, a reasonable default is used based on network id.
-    #[serde(default)]
     pub amount_to_estimate_prices_with: Option<U256>,
 
     /// How inaccurate a quote must be before it gets discarded, provided as a
@@ -97,11 +95,9 @@ pub struct PriceEstimation {
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
 
     /// The CoinGecko native price configuration.
-    #[serde(default)]
     pub coin_gecko: Option<CoinGeckoConfig>,
 
     /// 1-inch API connection settings (URL & key).
-    #[serde(default)]
     pub one_inch: Option<OneInchApi>,
 }
 
@@ -158,7 +154,6 @@ pub struct CoinGeckoConfig {
     #[serde(default = "default_coin_gecko_url")]
     pub url: Url,
 
-    #[serde(default)]
     pub buffered: Option<CoinGeckoBufferedConfig>,
 }
 

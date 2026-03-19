@@ -6,6 +6,7 @@ use {
     serde::Deserialize,
 };
 
+/// Orderbook-specific native price estimation configuration.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]
@@ -18,6 +19,7 @@ pub struct NativePriceConfig {
     /// are down.
     pub fallback_estimators: Option<NativePriceEstimators>,
 
+    /// Shared native price settings (cache, approximation tokens, etc.).
     #[serde(flatten)]
     pub shared: SharedNativePriceConfig,
 }

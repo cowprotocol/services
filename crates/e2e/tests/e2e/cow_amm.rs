@@ -190,7 +190,6 @@ async fn cow_amm_jit(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![],
             Configuration {
                 order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
                     "test_solver",
@@ -201,16 +200,13 @@ async fn cow_amm_jit(web3: Web3) {
         )
         .await;
     services
-        .start_api(
-            vec![],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_solver",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..configs::orderbook::Configuration::test_default()
-            },
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     // Derive the order's valid_to from the blockchain because the cow amm enforces
@@ -571,7 +567,6 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     services
         .start_autopilot(
             None,
-            vec![],
             Configuration {
                 drivers: vec![
                     Solver::test("test_solver", solver.address()),
@@ -594,16 +589,13 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
         )
         .await;
     services
-        .start_api(
-            vec![],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_solver",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..configs::orderbook::Configuration::test_default()
-            },
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     onchain.mint_block().await;
@@ -855,7 +847,6 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![],
             Configuration {
                 order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
                     "mock_solver",
@@ -866,16 +857,13 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         )
         .await;
     services
-        .start_api(
-            vec![],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "mock_solver",
-                    "http://localhost:11088/mock_solver",
-                )]),
-                ..configs::orderbook::Configuration::test_default()
-            },
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "mock_solver",
+                "http://localhost:11088/mock_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     // Get the current block timestamp

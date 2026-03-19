@@ -176,7 +176,6 @@ async fn erc1271_gas_limit(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            Default::default(),
             configs::autopilot::Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
                 order_validation: OrderValidationConfig {
