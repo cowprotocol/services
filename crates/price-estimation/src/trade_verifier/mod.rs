@@ -116,6 +116,11 @@ impl TradeVerifier {
         let overrides = self
             .prepare_state_overrides(&mut verification, query, trade)
             .await?;
+
+        // Use `tx_origin` if response indicates that a special address is needed for
+        // the simulation to pass. Otherwise just use the solver address.
+        let solver_address = trade.tx_origin().unwrap_or(trade.solver());
+
         let (tokens, clearing_prices) = match trade {
             TradeKind::Legacy(_) => {
                 let tokens = vec![query.sell_token, query.buy_token];
@@ -143,7 +148,7 @@ impl TradeVerifier {
             buy_token_destination: verification.buy_token_destination,
             from: verification.from,
             tx_origin: trade.tx_origin(),
-            solver: trade.solver(),
+            solver: solver_address,
             tokens: tokens.clone(),
             clearing_prices,
         };
@@ -199,8 +204,6 @@ impl TradeVerifier {
             )?);
         }
         let output = self.simulator.simulate_swap(swap).await?;
-
-        tracing::warn!("SWAP SIMULATED");
 
         if let Some(tenderly) = &self.tenderly
             && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)
@@ -472,7 +475,6 @@ impl TradeVerifying for TradeVerifier {
         verification: &Verification,
         trade: TradeKind,
     ) -> Result<Estimate> {
-        tracing::error!(?query, ?verification, ?trade, "TRADE VERIFICATION");
         let out_amount = trade
             .out_amount(
                 &query.buy_token,
