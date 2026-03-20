@@ -238,6 +238,7 @@ Quotes that an order was created with. These quotes get stored persistently and 
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
+- order_quotes_creation_timestamp: btree(`creation_timestamp`)
 
 ### orders
 
