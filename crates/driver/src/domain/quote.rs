@@ -1,5 +1,5 @@
 use {
-    super::competition::{auction, solution},
+    super::competition::{auction, risk_detector, solution},
     crate::{
         boundary,
         domain::{
@@ -131,6 +131,7 @@ impl Order {
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
+        risk_detector: &risk_detector::Detector,
     ) -> Result<Quote, Error> {
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
@@ -144,6 +145,12 @@ impl Order {
         let auction = self
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
+        let auction = risk_detector
+            .filter_unsupported_orders_in_auction(auction)
+            .await;
+        if auction.orders.is_empty() {
+            return Err(QuotingFailed::UnsupportedToken.into());
+        }
         let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::try_new(
             eth,
@@ -382,6 +389,8 @@ pub enum QuotingFailed {
     NoSolutions,
     #[error("math error computing custom prices")]
     Math,
+    #[error("token is unsupported by this solver")]
+    UnsupportedToken,
 }
 
 #[derive(Debug, thiserror::Error)]
