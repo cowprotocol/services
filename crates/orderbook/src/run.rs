@@ -359,8 +359,6 @@ pub async fn run(config: Configuration) {
             balance_fetcher.clone(),
             verification,
             config.price_estimation.quote_timeout,
-            config.price_estimation.min_gas_amount_for_unverified_quotes,
-            config.price_estimation.max_gas_amount_for_unverified_quotes,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);

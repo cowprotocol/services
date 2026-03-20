@@ -470,8 +470,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         balance_fetcher.clone(),
         config.price_estimation.quote_verification,
         config.price_estimation.quote_timeout,
-        config.price_estimation.min_gas_amount_for_unverified_quotes,
-        config.price_estimation.max_gas_amount_for_unverified_quotes,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(

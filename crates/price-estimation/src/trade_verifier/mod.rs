@@ -75,6 +75,8 @@ pub struct TradeVerifier {
     settlement: GPv2Settlement::Instance,
     quote_inaccuracy_limit: BigRational,
     tokens_without_verification: HashSet<Address>,
+    min_gas_amount_for_unverified_quotes: u32,
+    max_gas_amount_for_unverified_quotes: u32,
 }
 
 impl TradeVerifier {
@@ -91,7 +93,14 @@ impl TradeVerifier {
         settlement: Address,
         quote_inaccuracy_limit: BigDecimal,
         tokens_without_verification: HashSet<Address>,
+        min_gas_amount_for_unverified_quotes: u32,
+        max_gas_amount_for_unverified_quotes: u32,
     ) -> Result<Self> {
+        assert!(
+            min_gas_amount_for_unverified_quotes <= max_gas_amount_for_unverified_quotes,
+            "gas floor ({min_gas_amount_for_unverified_quotes}) exceeds gas ceiling \
+             ({max_gas_amount_for_unverified_quotes}) for unverified quotes"
+        );
         let settlement_contract =
             GPv2Settlement::GPv2Settlement::new(settlement, web3.provider.clone());
         Ok(Self {
@@ -102,6 +111,8 @@ impl TradeVerifier {
             settlement: settlement_contract,
             quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
             tokens_without_verification,
+            min_gas_amount_for_unverified_quotes,
+            max_gas_amount_for_unverified_quotes,
         })
     }
 
@@ -486,16 +497,23 @@ impl TradeVerifying for TradeVerifier {
 
         let unverified_result = trade
             .gas_estimate()
-            .map(|gas| Estimate {
-                out_amount,
-                gas,
-                solver: trade.solver(),
-                verified: false,
-                execution: QuoteExecution {
-                    interactions: map_interactions_data(trade.interactions()),
-                    pre_interactions: map_interactions_data(trade.pre_interactions()),
-                    jit_orders: trade.jit_orders().cloned().collect(),
-                },
+            .map(|gas| {
+                let gas = gas.clamp(
+                    self.min_gas_amount_for_unverified_quotes as u64,
+                    self.max_gas_amount_for_unverified_quotes as u64,
+                );
+
+                Estimate {
+                    out_amount,
+                    gas,
+                    solver: trade.solver(),
+                    verified: false,
+                    execution: QuoteExecution {
+                        interactions: map_interactions_data(trade.interactions()),
+                        pre_interactions: map_interactions_data(trade.pre_interactions()),
+                        jit_orders: trade.jit_orders().cloned().collect(),
+                    },
+                }
             })
             .context("solver provided no gas estimate");
 
