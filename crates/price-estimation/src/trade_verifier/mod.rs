@@ -75,8 +75,8 @@ pub struct TradeVerifier {
     settlement: GPv2Settlement::Instance,
     quote_inaccuracy_limit: BigRational,
     tokens_without_verification: HashSet<Address>,
-    min_gas_amount_for_unverified_quotes: u64,
-    max_gas_amount_for_unverified_quotes: u64,
+    min_gas_amount_for_unverified_quotes: u32,
+    max_gas_amount_for_unverified_quotes: u32,
 }
 
 impl TradeVerifier {
@@ -93,8 +93,8 @@ impl TradeVerifier {
         settlement: Address,
         quote_inaccuracy_limit: BigDecimal,
         tokens_without_verification: HashSet<Address>,
-        min_gas_amount_for_unverified_quotes: u64,
-        max_gas_amount_for_unverified_quotes: u64,
+        min_gas_amount_for_unverified_quotes: u32,
+        max_gas_amount_for_unverified_quotes: u32,
     ) -> Result<Self> {
         assert!(
             min_gas_amount_for_unverified_quotes <= max_gas_amount_for_unverified_quotes,
@@ -499,8 +499,8 @@ impl TradeVerifying for TradeVerifier {
             .gas_estimate()
             .map(|gas| {
                 let gas = gas.clamp(
-                    self.min_gas_amount_for_unverified_quotes,
-                    self.max_gas_amount_for_unverified_quotes,
+                    self.min_gas_amount_for_unverified_quotes as u64,
+                    self.max_gas_amount_for_unverified_quotes as u64,
                 );
 
                 Estimate {

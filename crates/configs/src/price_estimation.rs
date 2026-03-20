@@ -88,16 +88,16 @@ pub struct PriceEstimation {
     /// solvers underestimate in unverified quotes, leading to fees that don't
     /// cover execution gas and causing small orders to expire unfilled.
     #[serde(default)]
-    pub min_gas_amount_for_unverified_quotes: u64,
+    pub min_gas_amount_for_unverified_quotes: u32,
 
     /// Maximum gas amount for unverified quotes. When an unverified quote
     /// reports more gas than this, the ceiling is used instead. Verified
-    /// quotes are unaffected. Defaults to u64::MAX (disabled).
+    /// quotes are unaffected. Defaults to u32::MAX (disabled).
     ///
     /// This is a hack to alleviate tsolver issues where they report extremely
     /// high gas for RWA tokens.
     #[serde(default = "default_max_gas_amount_for_unverified_quotes")]
-    pub max_gas_amount_for_unverified_quotes: u64,
+    pub max_gas_amount_for_unverified_quotes: u32,
 
     /// Tenderly configuration (URL, project & API key).
     #[serde(default)]
@@ -125,7 +125,7 @@ impl Default for PriceEstimation {
             tokens_without_verification: Default::default(),
             max_gas_per_tx: default_max_gas_per_tx(),
             min_gas_amount_for_unverified_quotes: 0,
-            max_gas_amount_for_unverified_quotes: u64::MAX,
+            max_gas_amount_for_unverified_quotes: u32::MAX,
         }
     }
 }
@@ -252,8 +252,8 @@ fn default_one_inch_url() -> Url {
     Url::from_str("https://api.1inch.dev/").expect("url should be valid")
 }
 
-fn default_max_gas_amount_for_unverified_quotes() -> u64 {
-    u64::MAX
+fn default_max_gas_amount_for_unverified_quotes() -> u32 {
+    u32::MAX
 }
 
 #[derive(Deserialize)]
@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(config.balance_overrides.cache_size, 1000);
         assert!(config.tokens_without_verification.is_empty());
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 0);
-        assert_eq!(config.max_gas_amount_for_unverified_quotes, u64::MAX);
+        assert_eq!(config.max_gas_amount_for_unverified_quotes, u32::MAX);
     }
 
     #[test]
