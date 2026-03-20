@@ -5,13 +5,13 @@ use {
     },
     anyhow::{Context, Result},
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::support::{AnyoneAuthenticator, Solver, Trader},
+    contracts::alloy::support::{AnyoneAuthenticator, Trader},
     model::{
         order::{Order, OrderKind},
         order_simulator::OrderSimulation,
     },
     simulator::{
-        encoding::{EncodedInteraction, InteractionEncoding},
+        encoding::InteractionEncoding,
         swap_simulator::{EncodedSwap, Query, SwapSimulator},
     },
 };

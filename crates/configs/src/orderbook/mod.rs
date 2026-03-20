@@ -147,7 +147,7 @@ pub mod test_util {
                 default_bind_address,
                 native_price::NativePriceConfig,
             },
-            price_estimation::{BalanceOverridesConfig, PriceEstimation, default_max_gas_per_tx},
+            price_estimation::{PriceEstimation, default_max_gas_per_tx},
             test_util::TestDefault,
         },
         std::path::Path,

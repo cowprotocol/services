@@ -2,14 +2,12 @@ use {
     crate::encoding::{
         EncodedSettlement,
         EncodedTrade,
-        Interaction,
-        InteractionEncoding,
         Interactions,
         WrapperCall,
         encode_trade,
         encode_wrapper_settlement,
     },
-    alloy_primitives::{Address, Bytes, U256, address},
+    alloy_primitives::{Address, Bytes, U256},
     alloy_provider::Provider,
     alloy_rpc_types::{TransactionRequest, state::StateOverride},
     alloy_sol_types::SolCall,
@@ -79,8 +77,6 @@ pub struct SwapSimulation<O> {
 }
 
 impl SwapSimulator {
-    const SPARDOSE: Address = address!("0000000000000000000000000000000000020000");
-
     pub async fn new(
         balance_overrides: Arc<dyn BalanceOverriding>,
         settlement: Address,
