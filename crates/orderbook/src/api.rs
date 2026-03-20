@@ -30,6 +30,7 @@ use {
 mod cancel_order;
 mod cancel_orders;
 mod debug_order;
+mod debug_simulation;
 mod get_app_data;
 mod get_auction;
 mod get_native_price;
@@ -264,6 +265,11 @@ pub fn handle_all_routes(
             "GET",
             "/api/v1/debug/order/{uid}",
             get(debug_order::debug_order_handler),
+        ),
+        (
+            "GET",
+            "/api/v1/debug/simulation/{uid}",
+            get(debug_simulation::debug_simulation_handler),
         ),
         // V2 routes
         // /solver_competition routes (specific before parameterized)

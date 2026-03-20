@@ -197,21 +197,33 @@ pub struct Interaction {
     pub data: Vec<u8>,
 }
 
-impl Interaction {
-    pub fn encode(&self) -> EncodedInteraction {
-        (
-            self.target,
-            self.value,
-            Bytes::copy_from_slice(self.data.as_slice()),
-        )
-    }
+pub trait InteractionEncoding {
+    fn encode(&self) -> EncodedInteraction;
+}
 
+impl Interaction {
     pub fn to_interaction_data(&self) -> InteractionData {
         InteractionData {
             target: self.target,
             value: self.value,
             call_data: self.data.clone(),
         }
+    }
+}
+
+impl InteractionEncoding for Interaction {
+    fn encode(&self) -> EncodedInteraction {
+        (
+            self.target,
+            self.value,
+            Bytes::copy_from_slice(self.data.as_slice()),
+        )
+    }
+}
+
+impl InteractionEncoding for InteractionData {
+    fn encode(&self) -> EncodedInteraction {
+        Interaction::from(self.clone()).encode()
     }
 }
 
@@ -229,4 +241,62 @@ pub fn encode_interactions<'a>(
     interactions: impl IntoIterator<Item = &'a Interaction>,
 ) -> Vec<EncodedInteraction> {
     interactions.into_iter().map(|i| i.encode()).collect()
+}
+
+#[derive(Clone, Debug)]
+pub struct WrapperCall {
+    pub address: Address,
+    pub data: Bytes,
+}
+
+/// Encodes a settlement transaction that uses wrapper contracts.
+///
+/// Takes the base settlement calldata and wraps it in a wrappedSettleCall
+/// with encoded wrapper metadata. Since wrappers are a chain, the wrapper
+/// address to call is also processed by this function.
+///
+/// Returns (first_wrapper_address, wrapped_calldata)
+pub fn encode_wrapper_settlement(
+    wrappers: &[WrapperCall],
+    settle_calldata: Bytes,
+) -> (Address, Bytes) {
+    // Encode wrapper metadata
+    let wrapper_data = encode_wrapper_data(wrappers);
+
+    // Create wrappedSettleCall
+    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+        settleData: settle_calldata,
+        wrapperData: wrapper_data,
+    }
+    .abi_encode();
+
+    (wrappers[0].address, calldata.into())
+}
+
+/// Encodes wrapper metadata for wrapper settlement calls.
+///
+/// The format is:
+/// - For wrappers after the first: 20 bytes (address)
+/// - For each wrapper: 2 bytes (data length as u16 in native endian) + data
+///
+/// More information about wrapper encoding:
+/// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
+///
+/// Note: The first wrapper address is omitted from the encoded data since it's
+/// already used as the transaction target.
+pub fn encode_wrapper_data(wrappers: &[WrapperCall]) -> Bytes {
+    let mut wrapper_data = Vec::new();
+
+    for (index, w) in wrappers.iter().enumerate() {
+        // Skip first wrapper's address (it's the transaction target)
+        if index != 0 {
+            wrapper_data.extend(w.address.as_slice());
+        }
+
+        // Encode data length as u16 in native endian, then the data itself
+        wrapper_data.extend((w.data.len() as u16).to_be_bytes().to_vec());
+        wrapper_data.extend(w.data.clone());
+    }
+
+    wrapper_data.into()
 }

@@ -13,7 +13,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
@@ -112,6 +112,11 @@ pub struct Configuration {
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Configures if the gas limit for orders simulation. If set to None, the
+    /// endpoint is disabled.
+    #[serde(default)]
+    pub order_simulation_gas_limit: Option<U256>,
 }
 
 impl Configuration {
@@ -142,8 +147,10 @@ pub mod test_util {
                 default_bind_address,
                 native_price::NativePriceConfig,
             },
+            price_estimation::PriceEstimation,
             test_util::TestDefault,
         },
+        alloy::primitives::U256,
         std::path::Path,
     };
 
@@ -193,7 +200,17 @@ pub mod test_util {
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
-                price_estimation: TestDefault::test_default(),
+                price_estimation: PriceEstimation {
+                    balance_overrides: crate::price_estimation::BalanceOverridesConfig {
+                        autodetect: true,
+                        ..Default::default()
+                    },
+                    ..TestDefault::test_default()
+                },
+                // Enable order simulation for testing
+                order_simulation_gas_limit: Some(
+                    U256::try_from(16777215).expect("u64 can be converted to U256"),
+                ),
             }
         }
     }
@@ -218,6 +235,7 @@ mod tests {
         active-order-competition-threshold = 10
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
+        order-simulation-gas-limit = "123456789"
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
@@ -252,6 +270,10 @@ mod tests {
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
+        assert_eq!(
+            config.order_simulation_gas_limit,
+            Some(U256::from(123456789u64))
+        );
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
@@ -354,6 +376,7 @@ mod tests {
             database: TestDefault::test_default(),
             http_client: Default::default(),
             price_estimation: Default::default(),
+            order_simulation_gas_limit: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
