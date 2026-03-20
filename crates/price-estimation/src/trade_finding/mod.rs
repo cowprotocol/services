@@ -6,7 +6,7 @@ pub mod trade_estimator;
 
 use {
     crate::{PriceEstimationError, Query},
-    alloy::primitives::{Address, U256},
+    alloy::primitives::{Address, Bytes, U256},
     anyhow::{Context, Result},
     derive_more::Debug,
     external::dto,
@@ -215,15 +215,15 @@ impl Interaction {
             call_data: self.data.clone(),
         }
     }
-
-    pub fn encode(self) -> simulator::encoding::EncodedInteraction {
-        simulator::encoding::Interaction::from(self).encode()
-    }
 }
 
 impl InteractionEncoding for Interaction {
     fn encode(&self) -> simulator::encoding::EncodedInteraction {
-        simulator::encoding::Interaction::from(self.clone()).encode()
+        (
+            self.target,
+            self.value,
+            Bytes::copy_from_slice(self.data.as_slice()),
+        )
     }
 }
 

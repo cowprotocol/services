@@ -73,7 +73,6 @@ impl OrderSimulator {
                 })
                 .collect(),
         };
-        tracing::error!(?query, "Order simulator");
 
         let mut swap = self.simulator.fake_swap(&query).await?;
         add_interactions(&mut swap, order);

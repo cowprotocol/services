@@ -9,8 +9,6 @@ use {
     },
     number::units::EthUnit,
     reqwest::StatusCode,
-    simulator::tenderly::log_simulation_request,
-    url::Url,
 };
 
 #[tokio::test]

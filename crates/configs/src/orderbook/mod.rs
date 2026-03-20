@@ -231,6 +231,7 @@ mod tests {
         active-order-competition-threshold = 10
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
+        order-simulation-gas-limit = "123456789"
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
@@ -265,6 +266,7 @@ mod tests {
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
+        assert_eq!(config.order_simulation_gas_limit, Some(123456789));
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
