@@ -13,7 +13,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
@@ -116,7 +116,7 @@ pub struct Configuration {
     /// Configures if the gas limit for orders simulation. If set to None, the
     /// endpoint is disabled.
     #[serde(default)]
-    pub order_simulation_gas_limit: Option<u64>,
+    pub order_simulation_gas_limit: Option<U256>,
 }
 
 impl Configuration {
@@ -147,7 +147,7 @@ pub mod test_util {
                 default_bind_address,
                 native_price::NativePriceConfig,
             },
-            price_estimation::{PriceEstimation, default_max_gas_per_tx},
+            price_estimation::PriceEstimation,
             test_util::TestDefault,
         },
         std::path::Path,
@@ -206,7 +206,7 @@ pub mod test_util {
                     },
                     ..TestDefault::test_default()
                 },
-                order_simulation_gas_limit: Some(default_max_gas_per_tx()),
+                order_simulation_gas_limit: None,
             }
         }
     }
@@ -266,7 +266,10 @@ mod tests {
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
-        assert_eq!(config.order_simulation_gas_limit, Some(123456789));
+        assert_eq!(
+            config.order_simulation_gas_limit,
+            Some(U256::from(123456789u64))
+        );
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,

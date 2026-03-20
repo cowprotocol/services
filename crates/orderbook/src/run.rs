@@ -420,7 +420,7 @@ pub async fn run(config: Configuration) {
                 *native_token.address(),
                 current_block_stream.clone(),
                 web3,
-                gas_limit,
+                gas_limit.try_into().expect("gas_limit must fit in u64"),
             )
             .await
             .expect("failed to create SwapSimulator"),
