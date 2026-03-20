@@ -5,7 +5,7 @@ use {
     },
     anyhow::{Context, Result},
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::support::{AnyoneAuthenticator, Solver},
+    contracts::alloy::support::{AnyoneAuthenticator, Solver, Trader},
     model::{
         order::{Order, OrderKind},
         order_simulator::OrderSimulation,
@@ -83,7 +83,7 @@ impl OrderSimulator {
     }
 
     pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<OrderSimulation> {
-        let result = self.simulator.simulate_swap(swap).await?;
+        let result = self.simulator.simulate_settle_call(swap).await?;
 
         let request = simulator::tenderly::dto::Request {
             transaction_index: None,
@@ -122,18 +122,40 @@ impl OrderSimulator {
         );
 
         // Set up fake solver.
-        let solver_override = AccountOverride {
+        /*let solver_override = AccountOverride {
             code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone()),
             // Allow solver simulations to proceed even if the real account holds no ETH.
             // The number is obscenely large, but not max to avoid potential overflows.
             // We had this set to eth(1), but some simulations require more than that on non-ETH
-            // netowrks e.g. polygon so it led to reverts.
+            // networks e.g. polygon so it led to reverts.
             balance: Some(U256::MAX / U256::from(2)),
             ..Default::default()
         };
-        swap.overrides.insert(query.solver, solver_override);
+        swap.overrides.insert(query.solver, solver_override);*/
+        swap.overrides.insert(
+            query.solver,
+            AccountOverride {
+                // Allow solver simulations to proceed even if the real account holds no ETH.
+                // The number is obscenely large, but not max to avoid potential overflows.
+                // We had this set to eth(1), but some simulations require more than that on non-ETH
+                // networks e.g. polygon so it led to reverts.
+                balance: Some(U256::MAX / U256::from(2)),
+                ..Default::default()
+            },
+        );
 
-        // Fund the settlement contract with enough buy tokens to pay out
+        // Override trader address with Trader bytecode so EIP-1271 signature
+        // verification works for EOA traders (settlement calls isValidSignature
+        // on the trader address, which would revert for plain EOAs).
+        swap.overrides.insert(
+            query.from,
+            AccountOverride {
+                code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone()),
+                ..Default::default()
+            },
+        );
+
+        // Fund the settlement contract with enough out tokens to pay out
         self.simulator
             .balance_overrides
             .state_override(BalanceOverrideRequest {
@@ -149,21 +171,20 @@ impl OrderSimulator {
 }
 
 fn add_interactions(swap: &mut EncodedSwap, order: &Order) {
-    let pre_interactions: Vec<EncodedInteraction> = order
+    let pre_interactions = order
         .interactions
         .pre
         .iter()
-        .map(InteractionEncoding::encode)
-        .collect();
-    let post_interactions: Vec<EncodedInteraction> = order
-        .interactions
-        .post
-        .iter()
-        .map(InteractionEncoding::encode)
-        .collect();
+        .map(InteractionEncoding::encode);
     swap.settlement.interactions.pre = pre_interactions
         .into_iter()
         .chain(std::mem::take(&mut swap.settlement.interactions.pre))
         .collect();
+
+    let post_interactions = order
+        .interactions
+        .post
+        .iter()
+        .map(InteractionEncoding::encode);
     swap.settlement.interactions.post.extend(post_interactions);
 }

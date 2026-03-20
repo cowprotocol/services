@@ -9,12 +9,17 @@ use {
         encode_trade,
         encode_wrapper_settlement,
     },
-    alloy_primitives::{Address, U256, address},
+    alloy_primitives::{Address, Bytes, U256, address},
+    alloy_provider::Provider,
     alloy_rpc_types::{TransactionRequest, state::StateOverride},
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, anyhow},
     balance_overrides::BalanceOverriding,
-    contracts::alloy::{GPv2Settlement, WETH9, support::Solver},
+    contracts::alloy::{
+        GPv2Settlement,
+        WETH9,
+        support::Solver::{self, Solver::swapReturn},
+    },
     eth_domain_types::NonZeroU256,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
@@ -67,10 +72,10 @@ pub struct EncodedSwap {
 }
 
 // Look into driver encoding logic for wrappers
-pub struct SwapSimulation {
+pub struct SwapSimulation<O> {
     pub tx: TransactionRequest,
     pub overrides: StateOverride,
-    pub result: Result<Solver::Solver::swapReturn, anyhow::Error>,
+    pub result: Result<O, anyhow::Error>,
 }
 
 impl SwapSimulator {
@@ -105,7 +110,8 @@ impl SwapSimulator {
     pub async fn fake_swap(&self, query: &Query) -> Result<EncodedSwap> {
         let overrides = StateOverride::default();
 
-        let pre_interactions = vec![self.trade_setup_interaction(query).encode()];
+        // let pre_interactions = vec![self.trade_setup_interaction(query).encode()];
+        let pre_interactions = vec![];
         let mut interactions = vec![];
 
         if query.out_token == BUY_ETH_ADDRESS {
@@ -149,10 +155,13 @@ impl SwapSimulator {
     /// data. The swap call result is contained in the returned
     /// SwapSimulation struct, along with the original TransactionRequest
     /// and State overrides (if needed to be logged, or processed elsewhere)
-    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<SwapSimulation> {
+    pub async fn simulate_swap_with_solver(
+        &self,
+        swap: EncodedSwap,
+    ) -> Result<SwapSimulation<swapReturn>> {
         let block = *self.current_block.borrow();
         let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
-
+        let overrides = swap.overrides;
         // For wrapped settlements, the Solver contract must call the first wrapper
         // (not the settlement directly). The wrapper then chains to the settlement.
         // For non-wrapped settlements, the Solver calls the settlement contract
@@ -166,8 +175,6 @@ impl SwapSimulator {
                 swap.settlement.into_settle_call(),
             )
         };
-
-        let overrides = swap.overrides;
         let swap = solver
             .swap(
                 settlement_target,
@@ -201,30 +208,45 @@ impl SwapSimulator {
         })
     }
 
-    /// Create interaction that sets up the trade right before transfering
-    /// funds. This interaction does nothing if the user-provided
-    /// pre-interactions already set everything up (e.g. approvals,
-    /// balances). That way we can correctly verify quotes with or without
-    /// these user pre-interactions with helpful error messages.
-    fn trade_setup_interaction(&self, query: &Query) -> Interaction {
-        let sell_amount = match query.kind {
-            OrderKind::Sell => query.in_amount.get(),
-            OrderKind::Buy => query.out_amount,
+    pub async fn simulate_settle_call(&self, swap: EncodedSwap) -> Result<SwapSimulation<Bytes>> {
+        let block = *self.current_block.borrow();
+        // For wrapped settlements, the Solver contract must call the first wrapper
+        // (not the settlement directly). The wrapper then chains to the settlement.
+        // For non-wrapped settlements, the Solver calls the settlement contract
+        // directly. The transaction always targets the solver contract (never
+        // the wrapper directly).
+        let (settlement_target, calldata) = if !swap.wrappers.is_empty() {
+            encode_wrapper_settlement(&swap.wrappers, swap.settlement.into_settle_call())
+        } else {
+            (
+                *self.settlement.address(),
+                swap.settlement.into_settle_call(),
+            )
         };
-        let setup_call = Solver::Solver::ensureTradePreconditionsCall {
-            trader: query.from,
-            settlementContract: *self.settlement.address(),
-            sellToken: query.in_token,
-            sellAmount: sell_amount,
-            nativeToken: self.native_token,
-            spardose: Self::SPARDOSE,
-        }
-        .abi_encode();
-        Interaction {
-            target: query.solver,
-            value: U256::ZERO,
-            data: setup_call,
-        }
+
+        let overrides = swap.overrides;
+        let tx = TransactionRequest {
+            from: Some(swap.solver),
+            to: Some(settlement_target.into()),
+            input: calldata.into(),
+            gas: Some(self.gas_limit),
+            ..Default::default()
+        };
+
+        let result = self
+            .web3
+            .provider
+            .call(tx.clone())
+            .overrides(overrides.clone())
+            .block(block.number.into())
+            .await
+            .map_err(|err| anyhow::anyhow!("{:?}", err));
+
+        Ok(SwapSimulation {
+            tx,
+            overrides,
+            result,
+        })
     }
 }
 

@@ -2,6 +2,7 @@ use {
     super::{Estimate, Verification},
     crate::{
         trade_finding::{
+            Interaction,
             QuoteExecution,
             TradeKind,
             external::dto::{self, Side},
@@ -170,6 +171,9 @@ impl TradeVerifier {
                 .collect::<Vec<_>>();
 
         // Join custom pre_interactions
+        pre_interactions.extend([self
+            .trade_setup_interaction(out_amount, &verification, &query)
+            .encode()]);
         pre_interactions.extend(swap.settlement.interactions.pre);
         swap.settlement.interactions.pre = pre_interactions;
 
@@ -201,7 +205,7 @@ impl TradeVerifier {
                 &self.simulator.domain_separator,
             )?);
         }
-        let output = self.simulator.simulate_swap(swap).await?;
+        let output = self.simulator.simulate_swap_with_solver(swap).await?;
 
         if let Some(tenderly) = &self.tenderly
             && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)
@@ -461,6 +465,38 @@ impl TradeVerifier {
         overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 
         Ok(overrides)
+    }
+
+    /// Create interaction that sets up the trade right before transfering
+    /// funds. This interaction does nothing if the user-provided
+    /// pre-interactions already set everything up (e.g. approvals,
+    /// balances). That way we can correctly verify quotes with or without
+    /// these user pre-interactions with helpful error messages.
+    fn trade_setup_interaction(
+        &self,
+        out_amount: &U256,
+        verification: &Verification,
+        query: &PriceQuery,
+        trade: &TradeKind,
+    ) -> Interaction {
+        let sell_amount = match query.kind {
+            OrderKind::Sell => query.in_amount.get(),
+            OrderKind::Buy => *out_amount,
+        };
+        let setup_call = Solver::Solver::ensureTradePreconditionsCall {
+            trader: verification.from,
+            settlementContract: *self.settlement.address(),
+            sellToken: query.sell_token,
+            sellAmount: sell_amount,
+            nativeToken: self.simulator.native_token,
+            spardose: Self::SPARDOSE,
+        }
+        .abi_encode();
+        Interaction {
+            target: trade.solver(),
+            value: U256::ZERO,
+            data: setup_call,
+        }
     }
 }
 
