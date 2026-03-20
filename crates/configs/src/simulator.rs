@@ -43,6 +43,7 @@ fn default_ethrpc_max_concurrent_requests() -> usize {
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub enum SimulatorKind {
     #[default]
     Ethereum,
