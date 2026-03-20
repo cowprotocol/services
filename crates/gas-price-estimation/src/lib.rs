@@ -7,18 +7,18 @@ pub mod priority;
 
 use {
     crate::{
-        configurable_alloy::{
-            ConfigurableGasPriceEstimator,
-            EstimatorConfig,
-            default_past_blocks,
-            default_reward_percentile,
-        },
+        configurable_alloy::ConfigurableGasPriceEstimator,
         eth_node::NodeGasPriceEstimator,
         priority::PriorityGasPriceEstimating,
     },
     alloy_eips::eip1559::{Eip1559Estimation, calc_effective_gas_price},
     alloy_provider::Provider,
     anyhow::Result,
+    configs::gas_price_estimation::{
+        EstimatorConfig,
+        default_past_blocks,
+        default_reward_percentile,
+    },
     ethrpc::Web3,
     tracing::instrument,
     url::Url,

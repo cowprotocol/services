@@ -8,10 +8,8 @@ use {
             competition::{self, order},
         },
         infra::{
-            Simulator,
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
-            simulator,
             solver::{ManageNativeToken, Solver},
         },
     },
@@ -22,6 +20,7 @@ use {
     itertools::Itertools,
     num::{BigRational, One},
     number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+    simulator::{self, Simulator},
     solvers_dto::solution::Flashloan,
     std::{
         collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},

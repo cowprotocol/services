@@ -367,7 +367,8 @@ pub mod tests {
         handler.encode(execution, &mut encoder).unwrap();
         let [_, interactions, _] = encoder
             .finish(InternalizationStrategy::SkipInternalizableInteraction)
-            .interactions;
+            .interactions
+            .into_array();
         assert_eq!(
             interactions,
             [ZeroExInteraction {

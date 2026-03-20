@@ -100,7 +100,8 @@ pub struct PriceEstimation {
     pub max_gas_amount_for_unverified_quotes: u64,
 
     /// Tenderly configuration (URL, project & API key).
-    pub tenderly: Option<TenderlyConfig>,
+    #[serde(default)]
+    pub tenderly: Option<crate::simulator::TenderlyConfig>,
 
     /// The CoinGecko native price configuration.
     pub coin_gecko: Option<CoinGeckoConfig>,
@@ -139,45 +140,6 @@ impl crate::test_util::TestDefault for PriceEstimation {
             quote_timeout: Duration::from_secs(10),
             quote_verification: QuoteVerificationMode::EnforceWhenPossible,
             ..Default::default()
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct TenderlyConfig {
-    /// The Tenderly user associated with the API key.
-    #[serde(default)]
-    pub user: String,
-
-    /// The Tenderly project associated with the API key.
-    #[serde(default)]
-    pub project: String,
-
-    /// Tenderly requires an API key to work. Optional since Tenderly could be
-    /// skipped in access lists estimators.
-    #[serde(default)]
-    pub api_key: String,
-}
-
-impl std::fmt::Debug for TenderlyConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TenderlyConfig")
-            .field("user", &self.user)
-            .field("project", &self.project)
-            .field("api_key", &"<REDACTED>")
-            .finish()
-    }
-}
-
-#[cfg(any(test, feature = "test-util"))]
-impl crate::test_util::TestDefault for TenderlyConfig {
-    fn test_default() -> Self {
-        Self {
-            user: "test-user".to_string(),
-            project: "test-project".to_string(),
-            api_key: "test-api-key".to_string(),
         }
     }
 }
@@ -451,7 +413,7 @@ mod tests {
                 api_key: "secret".to_string(),
                 ..TestDefault::test_default()
             }),
-            tenderly: Some(TenderlyConfig {
+            tenderly: Some(crate::simulator::TenderlyConfig {
                 api_key: "secret".to_string(),
                 ..TestDefault::test_default()
             }),

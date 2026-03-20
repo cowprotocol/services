@@ -10,25 +10,10 @@ use {
     alloy_eips::{BlockId, BlockNumberOrTag, eip1559::Eip1559Estimation},
     alloy_provider::{Provider, utils::eip1559_default_estimator},
     anyhow::{Context, Result},
+    configs::gas_price_estimation::EstimatorConfig,
     ethrpc::AlloyProvider,
     tracing::instrument,
 };
-
-#[derive(Debug, Clone, Copy)]
-pub struct EstimatorConfig {
-    /// Number of blocks to look back for fee history
-    pub past_blocks: u64,
-    /// Percentile of rewards to use for priority fee estimation
-    pub reward_percentile: f64,
-}
-
-pub fn default_past_blocks() -> u64 {
-    10
-}
-
-pub fn default_reward_percentile() -> f64 {
-    20.0
-}
 
 /// A configurable EIP-1559 gas price estimator.
 ///

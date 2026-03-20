@@ -12,11 +12,9 @@ use {
         },
         infra::{
             self,
-            Simulator,
             blockchain::Ethereum,
             notify,
             observe::{self, metrics},
-            simulator::{RevertError, SimulatorError},
             solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
@@ -27,6 +25,7 @@ use {
     eth_domain_types as eth,
     futures::{FutureExt, StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
+    simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -549,7 +548,7 @@ impl Competition {
                 let mut stream =
                     ethrpc::block_stream::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
-                    if let Err(infra::simulator::Error::Revert(err)) =
+                    if let Err(simulator::Error::Revert(err)) =
                         self.simulate_settlement(&settlement).await
                     {
                         observe::winner_voided(self.solver.name(), block, &err, has_haircut);
@@ -564,7 +563,7 @@ impl Competition {
                                 &self.solver,
                                 auction.id(),
                                 settlement.solution(),
-                                &infra::simulator::Error::Revert(err),
+                                &simulator::Error::Revert(err),
                                 true,
                             );
                         }
@@ -935,14 +934,11 @@ impl Competition {
     }
 
     /// Returns whether the settlement can be executed or would revert.
-    async fn simulate_settlement(
-        &self,
-        settlement: &Settlement,
-    ) -> Result<(), infra::simulator::Error> {
+    async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
         let tx = settlement.transaction(settlement::Internalization::Enable);
         let gas_needed_for_tx = self.simulator.gas(tx).await?;
         if gas_needed_for_tx > settlement.gas.limit {
-            return Err(infra::simulator::Error::Revert(RevertError {
+            return Err(simulator::Error::Revert(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
                 tx: tx.clone(),
                 block: self.eth.current_block().borrow().number.into(),
