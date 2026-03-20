@@ -149,25 +149,6 @@ impl TenderlyApi {
             name,
         }
     }
-
-    fn log(&self, simulation: dto::Request) -> Result<()> {
-        let simulation_url =
-            crate::utils::join_url(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
-        let body = serde_json::to_string(&simulation)?;
-
-        #[rustfmt::skip]
-        tracing::debug!(
-            "resimulate by setting TENDERLY_API_KEY environment variable and running: \
-            curl -X POST -H \"X-ACCESS-KEY: $TENDERLY_API_KEY\" -H \"Content-Type: application/json\" --data '{body}' {simulation_endpoint} \
-            | jq -r \".simulation.id\" \
-            | read SIMULATION_ID; \
-            echo {simulation_url} \
-            | xargs xdg-open",
-            simulation_endpoint = self.simulation_endpoint
-        );
-
-        Ok(())
-    }
 }
 
 #[async_trait::async_trait]
@@ -183,7 +164,7 @@ impl Api for TenderlyApi {
             save_if_fails: Some(true),
             ..prepare_request(self.chain_id.clone(), &tx, overrides, block)?
         };
-        self.log(request)
+        log_simulation_request(&self.simulation_endpoint, &self.dashboard, request)
     }
 
     async fn simulate(&self, request: dto::Request) -> Result<dto::Response> {
@@ -241,6 +222,28 @@ pub fn prepare_request(
         access_list: tx.access_list.as_ref().map(Into::into),
         ..Default::default()
     })
+}
+
+pub fn log_simulation_request(
+    simulation_endpoint: &Url,
+    dashboard: &Url,
+    simulation: dto::Request,
+) -> Result<()> {
+    let simulation_url = crate::utils::join_url(dashboard, "simulator/$SIMULATION_ID").to_string();
+    let body = serde_json::to_string(&simulation)?;
+
+    #[rustfmt::skip]
+    tracing::debug!(
+        "resimulate by setting TENDERLY_API_KEY environment variable and running: \
+        curl -X POST -H \"X-ACCESS-KEY: $TENDERLY_API_KEY\" -H \"Content-Type: application/json\" --data '{body}' {simulation_endpoint} \
+        | jq -r \".simulation.id\" \
+        | read SIMULATION_ID; \
+        echo {simulation_url} \
+        | xargs xdg-open",
+        simulation_url = simulation_url
+    );
+
+    Ok(())
 }
 
 #[derive(Debug)]

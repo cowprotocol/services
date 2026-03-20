@@ -1,6 +1,7 @@
 use {
     alloy_primitives::{Address, B256, U256, map::B256Map},
     eth_domain_types as eth,
+    model::order_simulator::{self, TenderlyRequest},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
@@ -36,6 +37,103 @@ pub struct Request {
     pub state_objects: Option<HashMap<Address, StateObject>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_list: Option<AccessList>,
+}
+
+impl From<Request> for TenderlyRequest {
+    fn from(value: Request) -> Self {
+        Self {
+            network_id: value.network_id,
+            block_number: value.block_number,
+            transaction_index: value.transaction_index,
+            from: value.from,
+            to: value.to,
+            input: value.input,
+            gas: value.gas,
+            gas_price: value.gas_price,
+            value: value.value,
+            simulation_kind: value.simulation_kind.map(|kind| match kind {
+                SimulationKind::Full => order_simulator::SimulationKind::Full,
+                SimulationKind::Quick => order_simulator::SimulationKind::Quick,
+            }),
+            save: value.save,
+            save_if_fails: value.save_if_fails,
+            generate_access_list: value.generate_access_list,
+            state_objects: value.state_objects.map(|state_objects| {
+                state_objects
+                    .into_iter()
+                    .map(|(key, state_object)| {
+                        (
+                            key,
+                            order_simulator::StateObject {
+                                balance: state_object.balance,
+                                code: state_object.code,
+                                storage: state_object.storage,
+                            },
+                        )
+                    })
+                    .collect()
+            }),
+            access_list: value.access_list.map(|access_list| {
+                access_list
+                    .0
+                    .into_iter()
+                    .map(|item| order_simulator::AccessListItem {
+                        address: item.address,
+                        storage_keys: item.storage_keys,
+                    })
+                    .collect()
+            }),
+        }
+    }
+}
+
+impl From<TenderlyRequest> for Request {
+    fn from(value: TenderlyRequest) -> Self {
+        Self {
+            network_id: value.network_id,
+            block_number: value.block_number,
+            transaction_index: value.transaction_index,
+            from: value.from,
+            to: value.to,
+            input: value.input,
+            gas: value.gas,
+            gas_price: value.gas_price,
+            value: value.value,
+            simulation_kind: value.simulation_kind.map(|kind| match kind {
+                order_simulator::SimulationKind::Full => SimulationKind::Full,
+                order_simulator::SimulationKind::Quick => SimulationKind::Quick,
+            }),
+            save: value.save,
+            save_if_fails: value.save_if_fails,
+            generate_access_list: value.generate_access_list,
+            state_objects: value.state_objects.map(|state_objects| {
+                state_objects
+                    .into_iter()
+                    .map(|(key, state_object)| {
+                        (
+                            key,
+                            StateObject {
+                                balance: state_object.balance,
+                                code: state_object.code,
+                                storage: state_object.storage,
+                            },
+                        )
+                    })
+                    .collect()
+            }),
+            access_list: value.access_list.map(|access_list| {
+                AccessList(
+                    access_list
+                        .into_iter()
+                        .map(|item| AccessListItem {
+                            address: item.address,
+                            storage_keys: item.storage_keys,
+                        })
+                        .collect(),
+                )
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

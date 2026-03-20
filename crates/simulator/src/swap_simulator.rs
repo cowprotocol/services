@@ -27,6 +27,7 @@ use {
 
 /// Query for the Swap Simulator to prepare a fake settlement with
 /// Contains the minimum data required to encode a fake settlement
+#[derive(Debug)]
 pub struct Query {
     /// The input token, transferred into settlement contract
     pub in_token: Address,
@@ -101,7 +102,7 @@ impl SwapSimulator {
     /// The result can be further post processed depending on the needs
     ///
     /// It can then be simulated with SwapSimulator::simulate_swap
-    pub async fn fake_swap(&self, query: Query) -> Result<EncodedSwap> {
+    pub async fn fake_swap(&self, query: &Query) -> Result<EncodedSwap> {
         let overrides = StateOverride::default();
 
         let pre_interactions = vec![self.trade_setup_interaction(&query).encode()];
@@ -140,7 +141,7 @@ impl SwapSimulator {
             solver: query.tx_origin.unwrap_or(query.solver),
             receiver: query.receiver,
             overrides,
-            wrappers: query.wrappers,
+            wrappers: query.wrappers.clone(),
         })
     }
 

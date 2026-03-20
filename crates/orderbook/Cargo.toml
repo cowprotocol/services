@@ -23,6 +23,7 @@ app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bad-tokens = { workspace = true }
+balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
 chain = { workspace = true }

@@ -155,7 +155,7 @@ impl TradeVerifier {
 
         let mut swap = self
             .simulator
-            .fake_swap(simulator_query)
+            .fake_swap(&simulator_query)
             .await
             .map_err(Error::SimulationFailed)?;
 

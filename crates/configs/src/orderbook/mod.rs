@@ -147,6 +147,7 @@ pub mod test_util {
                 default_bind_address,
                 native_price::NativePriceConfig,
             },
+            price_estimation::default_max_gas_per_tx,
             test_util::TestDefault,
         },
         std::path::Path,
@@ -199,7 +200,7 @@ pub mod test_util {
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
                 price_estimation: TestDefault::test_default(),
-                order_simulation_gas_limit: Default::default(),
+                order_simulation_gas_limit: Some(default_max_gas_per_tx()),
             }
         }
     }

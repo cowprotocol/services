@@ -5,6 +5,7 @@ use {
             trades::{TradeFilter, TradeRetrieving},
         },
         dto,
+        order_simulator::OrderSimulator,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     alloy::primitives::{Address, B256},
@@ -20,11 +21,11 @@ use {
             OrderCancellation,
             OrderCreation,
             OrderCreationAppData,
-            OrderKind,
             OrderStatus,
             OrderUid,
             SignedOrderCancellations,
         },
+        order_simulator::OrderSimulation,
         quote::QuoteId,
         solver_competition::{self, SolverCompetitionAPI},
     },
@@ -38,10 +39,6 @@ use {
             ValidationError,
             is_order_outside_market_price,
         },
-    },
-    simulator::{
-        encoding::{EncodedInteraction, InteractionEncoding},
-        swap_simulator::{EncodedSwap, SwapSimulator},
     },
     std::{borrow::Cow, sync::Arc},
     strum::Display,
@@ -638,108 +635,6 @@ impl Orderbook {
                 .await
                 .map_err(OrderSimulationError::Other)?,
         ))
-    }
-}
-
-pub struct OrderSimulation {
-    pub tenderly_request: simulator::tenderly::dto::Request,
-    pub error: Option<anyhow::Error>,
-}
-pub struct OrderSimulator {
-    simulator: SwapSimulator,
-    chain_id: String,
-}
-
-impl OrderSimulator {
-    pub fn new(simulator: SwapSimulator, chain_id: String) -> Self {
-        Self {
-            simulator,
-            chain_id,
-        }
-    }
-
-    pub async fn encode_order(&self, order: &Order) -> Result<EncodedSwap> {
-        let Some(app_data) = &order.metadata.full_app_data else {
-            anyhow::bail!("App data is not known for order {}", order.metadata.uid)
-        };
-        let app_data = serde_json::from_str::<app_data::Root>(app_data)?;
-        let (in_amount, out_amount) = match order.data.kind {
-            OrderKind::Sell => (order.data.sell_amount, order.data.buy_amount),
-            OrderKind::Buy => (order.data.buy_amount, order.data.sell_amount),
-        };
-
-        let tokens = vec![order.data.sell_token, order.data.buy_token];
-        let clearing_prices = match order.data.kind {
-            OrderKind::Sell => {
-                vec![out_amount, in_amount]
-            }
-            OrderKind::Buy => {
-                vec![in_amount, out_amount]
-            }
-        };
-
-        let solver = Address::random();
-
-        let query = simulator::swap_simulator::Query {
-            in_amount: in_amount.try_into()?,
-            in_token: order.data.sell_token,
-            out_amount,
-            out_token: order.data.buy_token,
-            kind: order.data.kind,
-            receiver: order.data.receiver.unwrap_or(order.metadata.owner),
-            sell_token_source: order.data.sell_token_balance,
-            buy_token_destination: order.data.buy_token_balance,
-            from: order.metadata.owner,
-            tx_origin: None,
-            clearing_prices,
-            solver,
-            tokens,
-            wrappers: app_data
-                .wrappers()
-                .iter()
-                .map(|wrapper| simulator::encoding::WrapperCall {
-                    address: wrapper.address,
-                    data: wrapper.data.clone().into(),
-                })
-                .collect(),
-        };
-        let pre_interactions: Vec<EncodedInteraction> = order
-            .interactions
-            .pre
-            .iter()
-            .map(InteractionEncoding::encode)
-            .collect();
-        let post_interactions: Vec<EncodedInteraction> = order
-            .interactions
-            .post
-            .iter()
-            .map(InteractionEncoding::encode)
-            .collect();
-
-        let mut swap = self.simulator.fake_swap(query).await?;
-        swap.settlement.interactions.pre = pre_interactions
-            .into_iter()
-            .chain(swap.settlement.interactions.pre)
-            .collect();
-        swap.settlement.interactions.post.extend(post_interactions);
-
-        Ok(swap)
-    }
-
-    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<OrderSimulation> {
-        let result = self.simulator.simulate_swap(swap).await?;
-
-        let request = simulator::tenderly::prepare_request(
-            self.chain_id.clone(),
-            &result.tx,
-            result.overrides,
-            None,
-        )?;
-
-        Ok(OrderSimulation {
-            tenderly_request: request,
-            error: result.result.err(),
-        })
     }
 }
 
