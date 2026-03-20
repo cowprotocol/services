@@ -125,6 +125,8 @@ impl<'a> PriceEstimatorFactory<'a> {
             network.settlement,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
+            args.min_gas_amount_for_unverified_quotes,
+            args.max_gas_amount_for_unverified_quotes,
         )
         .await?;
         Ok(Some(Arc::new(verifier)))
