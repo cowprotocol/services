@@ -125,7 +125,7 @@ impl Default for PriceEstimation {
             tokens_without_verification: Default::default(),
             max_gas_per_tx: default_max_gas_per_tx(),
             min_gas_amount_for_unverified_quotes: 0,
-            max_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: u64::MAX,
         }
     }
 }
@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(config.balance_overrides.cache_size, 1000);
         assert!(config.tokens_without_verification.is_empty());
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 0);
-        assert_eq!(config.max_gas_amount_for_unverified_quotes, 0);
+        assert_eq!(config.max_gas_amount_for_unverified_quotes, u64::MAX);
     }
 
     #[test]
