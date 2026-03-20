@@ -306,6 +306,9 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                             "NoSolutions"
                         }
                         quote::Error::QuotingFailed(quote::QuotingFailed::Math) => "MathError",
+                        quote::Error::QuotingFailed(quote::QuotingFailed::UnsupportedToken) => {
+                            "UnsupportedToken"
+                        }
                         quote::Error::DeadlineExceeded(_) => "DeadlineExceeded",
                         quote::Error::Blockchain(_) => "BlockchainError",
                         quote::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
