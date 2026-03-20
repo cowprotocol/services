@@ -77,17 +77,7 @@ async fn order_simulation(web3: Web3) {
         .send()
         .await
         .unwrap();
-    dbg!(&response);
     assert_eq!(response.status(), StatusCode::OK);
     let response = response.json::<OrderSimulation>().await.unwrap();
-    log_simulation_request(
-        &Url::parse(
-            "https://api.tenderly.co/api/v1/account/cow-protocol/project/production/simulate",
-        )
-        .unwrap(),
-        &Url::parse("https://dashboard.tenderly.co/cow-protocol/production/").unwrap(),
-        response.tenderly_request.into(),
-    )
-    .unwrap();
     assert_eq!(response.error, None);
 }
