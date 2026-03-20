@@ -122,16 +122,6 @@ impl OrderSimulator {
         );
 
         // Set up fake solver.
-        /*let solver_override = AccountOverride {
-            code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone()),
-            // Allow solver simulations to proceed even if the real account holds no ETH.
-            // The number is obscenely large, but not max to avoid potential overflows.
-            // We had this set to eth(1), but some simulations require more than that on non-ETH
-            // networks e.g. polygon so it led to reverts.
-            balance: Some(U256::MAX / U256::from(2)),
-            ..Default::default()
-        };
-        swap.overrides.insert(query.solver, solver_override);*/
         swap.overrides.insert(
             query.solver,
             AccountOverride {
