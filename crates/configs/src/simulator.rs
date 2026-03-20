@@ -29,6 +29,7 @@ pub struct Config {
     /// - ethereum
     /// - tenderly (using TenderlyConfig)
     /// - enso (using EnsoConfig)
+    #[serde(default)]
     pub kind: SimulatorKind,
 }
 
@@ -157,6 +158,12 @@ pub struct Addresses {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deserialize_empty_config() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(matches!(config.kind, SimulatorKind::Ethereum));
+    }
 
     #[test]
     fn deserialize_simulator_kind() {
