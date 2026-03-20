@@ -172,7 +172,7 @@ impl TradeVerifier {
 
         // Join custom pre_interactions
         pre_interactions.extend([self
-            .trade_setup_interaction(out_amount, &verification, &query)
+            .trade_setup_interaction(out_amount, &verification, &query, trade)
             .encode()]);
         pre_interactions.extend(swap.settlement.interactions.pre);
         swap.settlement.interactions.pre = pre_interactions;
