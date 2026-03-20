@@ -105,7 +105,7 @@ impl SwapSimulator {
     pub async fn fake_swap(&self, query: &Query) -> Result<EncodedSwap> {
         let overrides = StateOverride::default();
 
-        let pre_interactions = vec![self.trade_setup_interaction(&query).encode()];
+        let pre_interactions = vec![self.trade_setup_interaction(query).encode()];
         let mut interactions = vec![];
 
         if query.out_token == BUY_ETH_ADDRESS {
@@ -131,7 +131,7 @@ impl SwapSimulator {
             settlement: EncodedSettlement {
                 tokens: query.tokens.to_vec(),
                 clearing_prices: query.clearing_prices.to_vec(),
-                trades: vec![encode_fake_trade(&query)?],
+                trades: vec![encode_fake_trade(query)?],
                 interactions: Interactions {
                     pre: pre_interactions,
                     main: interactions,

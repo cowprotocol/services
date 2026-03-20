@@ -5,7 +5,7 @@ use {
     },
     anyhow::{Context, Result},
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::support::{AnyoneAuthenticator, Solver, Trader},
+    contracts::alloy::support::{AnyoneAuthenticator, Solver},
     model::{
         order::{Order, OrderKind},
         order_simulator::OrderSimulation,
