@@ -175,7 +175,7 @@ mod tests {
                 assert_eq!(tenderly.project, "test-project");
                 assert_eq!(tenderly.api_key, "test-api-key");
             }
-            _ => unreachable!(),
+            _ => panic!("Config should be of type Tenderly"),
         };
         let toml = r#"
         [kind]
@@ -190,7 +190,7 @@ mod tests {
                 assert_eq!(enso.url.as_str(), "http://test-url/");
                 assert_eq!(enso.network_block_interval, Some(Duration::from_secs(5)));
             }
-            _ => unreachable!(),
+            _ => panic!("Config should be of type Enso"),
         };
 
         let toml = r#"
@@ -199,5 +199,29 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(matches!(config.kind, SimulatorKind::Ethereum))
+    }
+
+    #[derive(Deserialize)]
+    struct TestConfigContainingSimulator {
+        simulator: Config,
+    }
+
+    #[test]
+    fn deserialize_full_config() {
+        let toml = r#"
+        [simulator.kind]
+        type = "Tenderly"
+        user = "test-user"
+        api-key = "test-api-key"
+        "#;
+        let config: TestConfigContainingSimulator = toml::from_str(toml).unwrap();
+
+        match config.simulator.kind {
+            SimulatorKind::Tenderly(tenderly) => {
+                assert_eq!(tenderly.user, "test-user");
+                assert_eq!(tenderly.api_key, "test-api-key");
+            }
+            _ => panic!("Config should be of type Tenderly"),
+        };
     }
 }
