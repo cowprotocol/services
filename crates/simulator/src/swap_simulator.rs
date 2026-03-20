@@ -40,12 +40,6 @@ pub struct Query {
     pub buy_token_destination: BuyTokenDestination,
     pub from: Address,
     pub tx_origin: Option<Address>,
-    /// These interactions will be executed before the trade.
-    // pub pre_interactions: Vec<Interaction>,
-    /// Interactions needed to produce the expected trade amount.
-    // pub interactions: Vec<Interaction>,
-    /// These interactions will be executed after the trade.
-    // pub post_interactions: Vec<Interaction>,
     pub solver: Address,
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
