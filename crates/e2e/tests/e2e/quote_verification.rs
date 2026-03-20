@@ -159,6 +159,8 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         BigDecimal::zero(),
         Default::default(),
         12_000_000,
+        0,
+        u32::MAX,
     )
     .await
     .unwrap();

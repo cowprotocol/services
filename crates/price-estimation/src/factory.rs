@@ -121,6 +121,8 @@ impl<'a> PriceEstimatorFactory<'a> {
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
             args.max_gas_per_tx,
+            args.min_gas_amount_for_unverified_quotes,
+            args.max_gas_amount_for_unverified_quotes,
         )
         .await?;
         Ok(Some(Arc::new(verifier)))
