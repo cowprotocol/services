@@ -150,6 +150,7 @@ pub mod test_util {
             price_estimation::PriceEstimation,
             test_util::TestDefault,
         },
+        alloy::primitives::U256,
         std::path::Path,
     };
 
@@ -206,7 +207,10 @@ pub mod test_util {
                     },
                     ..TestDefault::test_default()
                 },
-                order_simulation_gas_limit: None,
+                // Enable order simulation for testing
+                order_simulation_gas_limit: Some(
+                    U256::try_from(16777215).expect("u64 can be converted to U256"),
+                ),
             }
         }
     }
