@@ -1,5 +1,5 @@
 use {
-    crate::{Address, auction::AuctionId},
+    crate::{Address, auction::AuctionId, timeout::QueryScalarTimeoutExt},
     sqlx::PgConnection,
     tracing::instrument,
 };
@@ -29,7 +29,7 @@ pub async fn fetch(
         r#"SELECT owners FROM surplus_capturing_jit_order_owners WHERE auction_id = $1;"#;
     let row = sqlx::query_scalar(QUERY)
         .bind(auction_id)
-        .fetch_optional(ex)
+        .fetch_optional_with_timeout(ex)
         .await?;
     Ok(row)
 }

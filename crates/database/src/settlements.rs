@@ -1,5 +1,5 @@
 use {
-    crate::{Address, PgTransaction, TransactionHash},
+    crate::{Address, PgTransaction, TransactionHash, timeout::QueryAsTimeoutExt},
     sqlx::{Executor, PgConnection},
     tracing::instrument,
 };
@@ -21,7 +21,7 @@ WHERE
         .bind(auction_id)
         .bind(solver)
         .bind(solution_uid)
-        .fetch_optional(ex)
+        .fetch_optional_with_timeout(ex)
         .await
 }
 
@@ -42,7 +42,7 @@ FROM settlements
 WHERE auction_id IS NULL
 ORDER BY block_number ASC
     "#;
-    sqlx::query_as(QUERY).fetch_all(ex).await
+    sqlx::query_as(QUERY).fetch_all_with_timeout(ex).await
 }
 
 #[instrument(skip_all)]

@@ -12,6 +12,7 @@ use {
         TransactionHash,
         auction::AuctionId,
         orders::OrderKind,
+        timeout::{QueryAsTimeoutExt, QueryScalarTimeoutExt},
     },
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
@@ -83,7 +84,7 @@ pub async fn load_by_tx_hash(
     "#;
     let auction_id = sqlx::query_scalar(FETCH_AUCTION_ID)
         .bind(tx_hash)
-        .fetch_optional(ex.deref_mut())
+        .fetch_optional_with_timeout(ex.deref_mut())
         .await?;
     let Some(auction_id) = auction_id else {
         return Ok(None);
@@ -102,7 +103,7 @@ pub async fn load_latest(
         LIMIT 1;
     "#;
     let auction_id: Option<i64> = sqlx::query_scalar(FETCH_AUCTION_ID)
-        .fetch_optional(ex.deref_mut())
+        .fetch_optional_with_timeout(ex.deref_mut())
         .await?;
     let Some(auction_id) = auction_id else {
         return Ok(None);
@@ -122,7 +123,7 @@ pub async fn load_by_id(
     "#;
     let auction: Option<Auction> = sqlx::query_as(FETCH_AUCTION)
         .bind(id)
-        .fetch_optional(ex.deref_mut())
+        .fetch_optional_with_timeout(ex.deref_mut())
         .await?;
     let Some(auction) = auction else {
         return Ok(None);
@@ -135,7 +136,7 @@ pub async fn load_by_id(
     "#;
     let settlements: Vec<Settlement> = sqlx::query_as(FETCH_SETTLEMENTS)
         .bind(id)
-        .fetch_all(ex.deref_mut())
+        .fetch_all_with_timeout(ex.deref_mut())
         .await?;
 
     // we set `ranking to uid + 1` because uids get assigned from best to worst
@@ -147,11 +148,11 @@ pub async fn load_by_id(
     "#;
     let solutions: Vec<ProposedSolution> = sqlx::query_as(FETCH_SOLUTIONS)
         .bind(id)
-        .fetch_all(ex.deref_mut())
+        .fetch_all_with_timeout(ex.deref_mut())
         .await?;
 
     const FETCH_TRADES: &str = r#"
-        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy, 
+        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy,
             COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
             COALESCE(o.buy_token, pjo.buy_token) AS buy_token
         FROM proposed_trade_executions AS pte
@@ -167,7 +168,7 @@ pub async fn load_by_id(
     "#;
     let trades: Vec<ProposedTrade> = sqlx::query_as(FETCH_TRADES)
         .bind(id)
-        .fetch_all(ex.deref_mut())
+        .fetch_all_with_timeout(ex.deref_mut())
         .await?;
 
     const FETCH_REFERENCE_SCORES: &str = r#"
@@ -177,7 +178,7 @@ pub async fn load_by_id(
     "#;
     let reference_scores: Vec<ReferenceScore> = sqlx::query_as(FETCH_REFERENCE_SCORES)
         .bind(id)
-        .fetch_all(ex.deref_mut())
+        .fetch_all_with_timeout(ex.deref_mut())
         .await?;
 
     Ok(Some(SolverCompetition {
@@ -206,7 +207,10 @@ pub async fn fetch_auction_participants(
         WHERE ps.auction_id = $1
     "#;
 
-    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -262,7 +266,7 @@ async fn save_solutions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_solutions 
+        r#"INSERT INTO proposed_solutions
         (auction_id, uid, id, solver, is_winner, filtered_out, score, price_tokens, price_values)"#,
     );
 
@@ -290,7 +294,7 @@ async fn save_trade_executions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_trade_executions 
+        r#"INSERT INTO proposed_trade_executions
         (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
     );
 
@@ -326,7 +330,7 @@ async fn save_jit_orders(
             // Order data is saved to `proposed_jit_orders` table only if the order is not
             // already in the `orders` table.
             const QUERY_JIT: &str = r#"
-                INSERT INTO proposed_jit_orders 
+                INSERT INTO proposed_jit_orders
                 (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
                 SELECT $1, $2, $3, $4, $5, $6, $7, $8
                     WHERE NOT EXISTS (SELECT 1 FROM orders WHERE uid = $3)
@@ -396,7 +400,7 @@ pub async fn fetch(
     let query_str = format!("{BASE_SOLUTIONS_QUERY} WHERE ps.auction_id = $1");
     let query = sqlx::query_as::<_, SolutionRow>(&query_str).bind(auction_id);
 
-    map_rows_to_solutions(query.fetch_all(ex).await?)
+    map_rows_to_solutions(query.fetch_all_with_timeout(ex).await?)
 }
 
 #[instrument(skip_all)]
@@ -412,7 +416,7 @@ pub async fn fetch_solver_winning_solutions(
         .bind(auction_id)
         .bind(solver);
 
-    map_rows_to_solutions(query.fetch_all(ex).await?)
+    map_rows_to_solutions(query.fetch_all_with_timeout(ex).await?)
 }
 
 #[instrument(skip_all)]
@@ -479,7 +483,7 @@ pub async fn fetch_in_flight_orders(
 
     sqlx::query_as(QUERY)
         .bind(current_block)
-        .fetch_all(ex)
+        .fetch_all_with_timeout(ex)
         .await
 }
 
@@ -510,7 +514,10 @@ JOIN proposed_solutions ps
 WHERE pte.order_uid = $1
 ORDER BY ps.auction_id DESC, ps.uid
     "#;
-    sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(order_uid)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 #[cfg(test)]

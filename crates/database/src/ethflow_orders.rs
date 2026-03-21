@@ -1,5 +1,5 @@
 use {
-    crate::{OrderUid, PgTransaction, TransactionHash},
+    crate::{OrderUid, PgTransaction, TransactionHash, timeout::QueryAsTimeoutExt},
     sqlx::{Executor, PgConnection},
     std::time::Duration,
     tracing::instrument,
@@ -71,7 +71,10 @@ pub async fn read_order(
         LEFT JOIN ethflow_refunds ON ethflow_orders.uid = ethflow_refunds.order_uid
         WHERE uid = $1
     "#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(id)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 #[derive(Debug, Clone, Default)]
@@ -112,7 +115,7 @@ pub async fn insert_refund_tx_hash(
     refund: &Refund,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3) 
+        INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3)
         ON CONFLICT (order_uid) DO UPDATE SET block_number = $2, tx_hash = $3
     "#;
 
@@ -153,7 +156,7 @@ pub async fn refundable_orders(
 
     let query = format!(
         r#"
-SELECT eo.uid, eo.valid_to 
+SELECT eo.uid, eo.valid_to
 FROM ethflow_orders eo
 JOIN orders o ON o.uid = eo.uid
     AND o.partially_fillable = false
@@ -172,7 +175,7 @@ WHERE eo.valid_to < $1
         .bind(since_valid_to)
         .bind(min_validity_duration)
         .bind(min_price_deviation)
-        .fetch_all(ex)
+        .fetch_all_with_timeout(ex)
         .await
 }
 

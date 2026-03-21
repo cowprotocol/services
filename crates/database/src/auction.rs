@@ -1,5 +1,5 @@
 use {
-    crate::{Address, OrderUid},
+    crate::{Address, OrderUid, timeout::QueryAsTimeoutExt},
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, types::JsonValue},
 };
@@ -15,14 +15,14 @@ FROM auctions
 ORDER BY id DESC
 LIMIT 1
     ;"#;
-    sqlx::query_as(QUERY).fetch_optional(ex).await
+    sqlx::query_as(QUERY).fetch_optional_with_timeout(ex).await
 }
 
 pub async fn get_next_auction_id(ex: &mut PgConnection) -> Result<AuctionId, sqlx::Error> {
     const QUERY: &str =
         r#"SELECT nextval(pg_get_serial_sequence('auctions', 'id'))::bigint as next_id;"#;
 
-    let (id,) = sqlx::query_as(QUERY).fetch_one(ex).await?;
+    let (id,) = sqlx::query_as(QUERY).fetch_one_with_timeout(ex).await?;
     Ok(id)
 }
 
@@ -77,7 +77,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 
 pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auction>, sqlx::Error> {
     const QUERY: &str = r#"SELECT * FROM competition_auctions WHERE id = $1;"#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(id)
+        .fetch_optional_with_timeout(ex)
+        .await
 }
 
 pub async fn fetch_multiple(
@@ -85,7 +88,10 @@ pub async fn fetch_multiple(
     ids: &[AuctionId],
 ) -> Result<Vec<Auction>, sqlx::Error> {
     const QUERY: &str = r#"SELECT * FROM competition_auctions WHERE id = ANY($1) ORDER BY id"#;
-    sqlx::query_as(QUERY).bind(ids).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(ids)
+        .fetch_all_with_timeout(ex)
+        .await
 }
 
 pub async fn get_order_uids(
@@ -95,7 +101,7 @@ pub async fn get_order_uids(
     const QUERY: &str = r#"SELECT order_uids FROM competition_auctions WHERE id = $1;"#;
     let record: Option<(Vec<OrderUid>,)> = sqlx::query_as(QUERY)
         .bind(auction_id)
-        .fetch_optional(ex)
+        .fetch_optional_with_timeout(ex)
         .await?;
     Ok(record.map(|(order_uids,)| order_uids))
 }
@@ -124,7 +130,10 @@ pub async fn fetch_auction_ids_by_order_uid(
 ) -> Result<Vec<AuctionId>, sqlx::Error> {
     const QUERY: &str =
         "SELECT auction_id FROM auction_orders WHERE order_uid = $1 ORDER BY auction_id";
-    let rows: Vec<(AuctionId,)> = sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await?;
+    let rows: Vec<(AuctionId,)> = sqlx::query_as(QUERY)
+        .bind(order_uid)
+        .fetch_all_with_timeout(ex)
+        .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 

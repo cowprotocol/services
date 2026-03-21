@@ -2,7 +2,7 @@
 //! `competition_auctions` table. But it can't currently be removed, since the
 //! solver team is still using it.
 use {
-    crate::{Address, PgTransaction, auction::AuctionId},
+    crate::{Address, PgTransaction, auction::AuctionId, timeout::QueryAsTimeoutExt},
     bigdecimal::BigDecimal,
     sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
@@ -47,7 +47,10 @@ pub async fn fetch(
     auction_id: AuctionId,
 ) -> Result<Vec<AuctionPrice>, sqlx::Error> {
     const QUERY: &str = "SELECT * FROM auction_prices WHERE auction_id = $1";
-    let prices = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
+    let prices = sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .fetch_all_with_timeout(ex)
+        .await?;
     Ok(prices)
 }
 
@@ -59,7 +62,7 @@ SELECT * FROM auction_prices WHERE auction_id = (
     FROM auction_prices
 )
     "#;
-    sqlx::query_as(QUERY).fetch_all(ex).await
+    sqlx::query_as(QUERY).fetch_all_with_timeout(ex).await
 }
 
 #[instrument(skip_all)]
@@ -74,8 +77,10 @@ ORDER BY auction_id DESC
 LIMIT 1
     "#;
 
-    let auction_price: Option<AuctionPrice> =
-        sqlx::query_as(QUERY).bind(token).fetch_optional(ex).await?;
+    let auction_price: Option<AuctionPrice> = sqlx::query_as(QUERY)
+        .bind(token)
+        .fetch_optional_with_timeout(ex)
+        .await?;
     Ok(auction_price.map(|ap| ap.price))
 }
 

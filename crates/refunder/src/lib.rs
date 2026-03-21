@@ -45,6 +45,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::heap_dump_handler::spawn_heap_dump_handler();
     tracing::info!("running refunder with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("refunder".into()), None);
+    database::init_global_query_timeout(args.database_pool.global_query_timeout);
     run(args).await;
 }
 
