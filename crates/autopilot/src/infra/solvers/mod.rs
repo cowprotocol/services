@@ -23,6 +23,7 @@ pub struct Driver {
     pub name: String,
     pub url: Url,
     pub submission_address: eth::Address,
+    pub supports_thin_solve_request: bool,
     client: Client,
 }
 
@@ -40,6 +41,7 @@ impl Driver {
         url: Url,
         name: String,
         submission_account: Account,
+        supports_thin_solve_request: bool,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -66,6 +68,7 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
+            supports_thin_solve_request,
         })
     }
 

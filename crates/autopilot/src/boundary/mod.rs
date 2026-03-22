@@ -37,6 +37,7 @@ pub fn web3_client(ethrpc: &Url, ethrpc_args: &shared::web3::Arguments) -> Web3 
     shared::web3::web3(ethrpc_args, ethrpc, "base")
 }
 
+#[derive(Clone)]
 pub struct SolvableOrders {
     pub orders: HashMap<domain::OrderUid, Arc<model::order::Order>>,
     pub quotes: HashMap<domain::OrderUid, Arc<domain::Quote>>,

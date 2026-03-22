@@ -1075,6 +1075,30 @@ impl Test {
         }
     }
 
+    pub async fn solve_with_body_mode(&self, body_mode: &str) -> Solve<'_> {
+        self.solve_with_solver_body_mode(solver::NAME, body_mode)
+            .await
+    }
+
+    pub async fn solve_with_solver_body_mode(&self, solver: &str, body_mode: &str) -> Solve<'_> {
+        let mut request = self
+            .client
+            .post(format!("http://{}/{}/solve", self.driver.addr, solver))
+            .header("X-Auction-Id", self.auction_id)
+            .header("X-Auction-Body-Mode", body_mode);
+        request = request.json(&driver::solve_req(self));
+        let res = request.send().await.unwrap();
+        let status = res.status();
+        let body = res.text().await.unwrap();
+        tracing::debug!(?status, ?body, "got a response from /solve");
+        Solve {
+            status,
+            body,
+            trades: &self.trades,
+            blockchain: &self.blockchain,
+        }
+    }
+
     /// Call the /reveal endpoint.
     pub async fn reveal(&self, solution_id: u64) -> Reveal {
         let res = self

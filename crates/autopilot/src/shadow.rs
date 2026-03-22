@@ -182,19 +182,44 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     #[instrument(skip_all)]
     async fn competition(&self, auction: &domain::Auction) -> Vec<Bid<Unscored>> {
-        let request = solve::Request::new(
+        let full_request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
             self.solve_deadline,
             self.compress_solve_request,
+            solve::SolveRequestBodyMode::Full,
         )
         .await;
+        let thin_request = if self
+            .drivers
+            .iter()
+            .any(|driver| driver.supports_thin_solve_request)
+        {
+            let start = std::time::Instant::now();
+            let request = solve::Request::new(
+                auction,
+                &self.trusted_tokens.all(),
+                self.solve_deadline,
+                self.compress_solve_request,
+                solve::SolveRequestBodyMode::Thin,
+            )
+            .await;
+            Metrics::get()
+                .thin_request_serialization_time
+                .observe(start.elapsed().as_secs_f64());
+            Some(request)
+        } else {
+            None
+        };
 
-        futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.participate(Arc::clone(driver), request.clone(), auction.id)),
-        )
+        futures::future::join_all(self.drivers.iter().map(|driver| {
+            let request = if driver.supports_thin_solve_request {
+                thin_request.as_ref().unwrap_or(&full_request).clone()
+            } else {
+                full_request.clone()
+            };
+            self.participate(Arc::clone(driver), request, auction.id)
+        }))
         .await
         .into_iter()
         .flatten()
@@ -296,6 +321,10 @@ struct Metrics {
     /// Tracks the winner of every auction.
     #[metric(labels("driver"))]
     wins: prometheus::IntCounterVec,
+
+    /// Time spent serializing thin solve requests.
+    #[metric(buckets(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5))]
+    thin_request_serialization_time: prometheus::Histogram,
 }
 
 impl Metrics {

@@ -129,6 +129,7 @@ sqlx = { version = "0.8", default-features = false, features = [
   "tls-native-tls"
 ] }
 strum = { version = "0.27.2", features = ["derive"] }
+subtle = "2.5.0"
 syn = "2.0.108"
 tempfile = "3.10.1"
 testlib = { path = "crates/testlib" }

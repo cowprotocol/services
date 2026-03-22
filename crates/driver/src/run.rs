@@ -62,6 +62,10 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     tracing::info!(%commit_hash, "running driver with {config:#?}");
 
+    let _delta_sync_task = infra::delta_sync::maybe_spawn_from_env();
+    // Keep the JoinHandle alive for the lifetime of the driver to avoid
+    // cancelling the background delta sync task.
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc.clone(), &args.current_block).await;
     let simulator_eth = simulator::Ethereum::new(

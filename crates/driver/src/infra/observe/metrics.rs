@@ -58,6 +58,30 @@ pub struct Metrics {
         )
     )]
     pub used_solve_time: prometheus::HistogramVec,
+
+    /// Number of thin-mode fallbacks to full body parsing.
+    pub thin_solve_replica_fallbacks: prometheus::IntCounter,
+
+    /// Unknown fields observed in delta replica order payloads.
+    pub delta_replica_unknown_fields_total: prometheus::IntCounter,
+
+    /// Missing required fields in delta replica order payloads.
+    pub delta_replica_missing_required_fields_total: prometheus::IntCounter,
+
+    /// Order removals for uids not present in the replica.
+    pub delta_replica_unknown_order_removals_total: prometheus::IntCounter,
+
+    /// Current number of orders tracked by the delta replica.
+    pub delta_replica_order_count: prometheus::IntGauge,
+
+    /// Age of the last replica update, in seconds.
+    pub delta_replica_last_update_age_seconds: prometheus::IntGauge,
+
+    /// Number of checksum mismatches between driver replica and autopilot.
+    pub delta_replica_diverged_total: prometheus::IntCounter,
+
+    /// Number of checksum uid decode failures in the delta replica.
+    pub delta_replica_checksum_decode_errors_total: prometheus::IntCounter,
 }
 
 impl Metrics {

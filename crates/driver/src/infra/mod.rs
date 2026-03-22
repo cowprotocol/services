@@ -2,6 +2,7 @@ pub mod api;
 pub mod blockchain;
 pub mod cli;
 pub mod config;
+pub mod delta_sync;
 pub mod liquidity;
 pub mod mempool;
 pub mod notify;
