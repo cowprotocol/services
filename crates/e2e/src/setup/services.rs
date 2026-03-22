@@ -15,12 +15,7 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-<<<<<<< HEAD
     autopilot::infra::persistence::dto,
-=======
-    autopilot::{infra::persistence::dto, run::run_with_listener},
-    clap::Parser,
->>>>>>> my-feature-branch
     configs::{
         autopilot::{
             Configuration,

@@ -854,129 +854,9 @@ fn error_to_response(err: PriceEstimationError) -> Response {
     }
 }
 
-use {
-    super::*,
-    crate::{
-        database::{Config as DbConfig, Postgres},
-        domain,
-        infra::Persistence,
-        solvable_orders::DeltaEnvelope,
-        test_helpers::test_order,
-    },
-    account_balances::BalanceFetching,
-    axum::{
-        body,
-        http::{HeaderValue, Request},
-    },
-    bad_tokens::list_based::DenyListedTokens,
-    bigdecimal::BigDecimal,
-    chrono::Utc,
-    cow_amm::Registry,
-    database::byte_array::ByteArray,
-    eth_domain_types as eth,
-    ethrpc::{
-        alloy::unbuffered_provider,
-        block_stream::{BlockInfo, mock_single_block},
-    },
-    event_indexing::block_retriever::BlockRetriever,
-    futures::FutureExt,
-    price_estimation::{
-        HEALTHY_PRICE_ESTIMATION_TIME,
-        native::NativePriceEstimating,
-        native_price_cache::{Cache, CachingNativePriceEstimator, NativePriceUpdater},
-    },
-    serde::Deserialize,
-    serde_json,
-    sqlx::postgres::PgPoolOptions,
-    std::{collections::VecDeque, sync::Arc, time::Duration},
-    tower::ServiceExt,
-};
-
-#[derive(Clone, Default)]
-struct StubBalanceFetcher;
-
-#[async_trait::async_trait]
-impl BalanceFetching for StubBalanceFetcher {
-    async fn get_balances(
-        &self,
-        queries: &[account_balances::Query],
-    ) -> Vec<anyhow::Result<alloy::primitives::U256>> {
-        queries
-            .iter()
-            .map(|_| Ok(alloy::primitives::U256::ZERO))
-            .collect()
-    }
-
-    async fn can_transfer(
-        &self,
-        _query: &account_balances::Query,
-        _amount: alloy::primitives::U256,
-    ) -> Result<(), account_balances::TransferSimulationError> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Default)]
-struct StubNativePriceEstimator;
-
-impl NativePriceEstimating for StubNativePriceEstimator {
-    fn estimate_native_price(
-        &self,
-        _token: Address,
-        _timeout: Duration,
-    ) -> futures::future::BoxFuture<'_, price_estimation::native::NativePriceEstimateResult>
-    {
-        async { Ok(1.0) }.boxed()
-    }
-}
-
-fn test_price(value: u128) -> domain::auction::Price {
-    domain::auction::Price::try_new(eth::Ether::from(eth::U256::from(value))).unwrap()
-}
-
-struct EnvGuard {
-    key: &'static str,
-    previous: Option<String>,
-}
-
-impl EnvGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let previous = std::env::var(key).ok();
-        unsafe {
-            std::env::set_var(key, value);
-        }
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        if let Some(value) = &self.previous {
-            unsafe {
-                std::env::set_var(self.key, value);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
-}
-
-struct ApiKeyOverrideGuard;
-
-impl ApiKeyOverrideGuard {
-    fn set(value: Option<String>) -> Self {
-        set_delta_sync_api_key_override(value);
-        Self
-    }
-}
-
-impl Drop for ApiKeyOverrideGuard {
-    fn drop(&mut self) {
-        clear_delta_sync_api_key_override();
-    }
-}
+#[cfg(test)]
+mod tests {
+    use {
         super::*,
         crate::{
             database::{Config as DbConfig, Postgres},
@@ -1729,6 +1609,5 @@ impl Drop for ApiKeyOverrideGuard {
         );
         assert_eq!(payload["oldestAvailable"], 5);
         assert_eq!(payload["latestSequence"], 12);
->>>>>>> my-feature-branch
     }
 }
