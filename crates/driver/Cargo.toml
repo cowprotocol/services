@@ -44,6 +44,7 @@ ethrpc = { workspace = true }
 event-indexing = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
+hex = { workspace = true }
 hex-literal = { workspace = true }
 http-client = { workspace = true }
 humantime = { workspace = true }
@@ -65,6 +66,7 @@ serde = { workspace = true, features = ["derive"] }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+sha2 = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
@@ -105,6 +107,7 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 mimalloc-allocator = ["dep:mimalloc"]
+test-helpers = []
 tokio-console = ["observe/tokio-console"]
 
 [lints]

@@ -12,6 +12,8 @@ use {
 pub struct Solver {
     pub name: String,
     pub url: Url,
+    #[serde(default)]
+    pub supports_thin_solve_request: bool,
     #[serde(flatten)]
     pub submission_account: Account,
 }
@@ -21,6 +23,7 @@ impl Solver {
         Self {
             name,
             url,
+            supports_thin_solve_request: false,
             submission_account: account,
         }
     }
@@ -67,6 +70,7 @@ impl Solver {
         Self {
             name: name.to_string(),
             url: format!("http://localhost:11088/{name}").parse().unwrap(),
+            supports_thin_solve_request: false,
             submission_account: Account::Address(address),
         }
     }

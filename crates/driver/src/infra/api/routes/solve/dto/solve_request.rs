@@ -223,6 +223,55 @@ impl SolveRequest {
     pub fn id(&self) -> i64 {
         self.id
     }
+
+    pub fn from_replica_parts(
+        id: i64,
+        deadline: chrono::DateTime<chrono::Utc>,
+        surplus_capturing_jit_order_owners: Vec<eth::Address>,
+        tokens: Vec<(eth::Address, Option<eth::U256>, bool)>,
+        orders: Vec<serde_json::Value>,
+    ) -> Result<Self, serde_json::Error> {
+        Ok(Self {
+            id,
+            tokens: tokens
+                .into_iter()
+                .map(|(address, price, trusted)| Token {
+                    address,
+                    price,
+                    trusted,
+                })
+                .collect(),
+            orders: orders
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<Vec<_>, _>>()?,
+            deadline,
+            surplus_capturing_jit_order_owners,
+        })
+    }
+
+    pub(crate) fn from_replica_parts_typed(
+        id: i64,
+        deadline: chrono::DateTime<chrono::Utc>,
+        surplus_capturing_jit_order_owners: Vec<eth::Address>,
+        tokens: Vec<(eth::Address, Option<eth::U256>, bool)>,
+        orders: Vec<Order>,
+    ) -> Self {
+        Self {
+            id,
+            tokens: tokens
+                .into_iter()
+                .map(|(address, price, trusted)| Token {
+                    address,
+                    price,
+                    trusted,
+                })
+                .collect(),
+            orders,
+            deadline,
+            surplus_capturing_jit_order_owners,
+        }
+    }
 }
 
 #[serde_as]
@@ -236,9 +285,9 @@ struct Token {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Order {
+pub(crate) struct Order {
     #[serde_as(as = "serde_ext::Hex")]
     uid: [u8; order::UID_LEN],
     sell_token: eth::Address,
@@ -272,7 +321,7 @@ struct Order {
     quote: Option<Quote>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
@@ -280,7 +329,7 @@ enum Kind {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::Address,
@@ -290,7 +339,7 @@ struct Interaction {
     call_data: Vec<u8>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum SellTokenBalance {
     #[default]
@@ -299,7 +348,7 @@ enum SellTokenBalance {
     External,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum BuyTokenBalance {
     #[default]
@@ -307,7 +356,7 @@ enum BuyTokenBalance {
     Internal,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum SigningScheme {
     Eip712,
@@ -316,14 +365,14 @@ enum SigningScheme {
     Eip1271,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Class {
     Market,
     Limit,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum FeePolicy {
     #[serde(rename_all = "camelCase")]
@@ -339,7 +388,7 @@ enum FeePolicy {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "serde_ext::U256")]

@@ -165,6 +165,24 @@ pub async fn run(
     config: Configuration,
     shutdown_controller: ShutdownController,
 ) {
+    run_inner(args, config, shutdown_controller, None).await;
+}
+
+pub async fn run_with_listener(
+    args: CliArguments,
+    config: Configuration,
+    shutdown_controller: ShutdownController,
+    api_listener: tokio::net::TcpListener,
+) {
+    run_inner(args, config, shutdown_controller, Some(api_listener)).await;
+}
+
+async fn run_inner(
+    args: CliArguments,
+    config: Configuration,
+    shutdown_controller: ShutdownController,
+    api_listener: Option<tokio::net::TcpListener>,
+) {
     assert!(config.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         config.database.write_url.as_str(),
@@ -485,12 +503,23 @@ pub async fn run(
     let startup = Arc::new(Some(AtomicBool::new(false)));
 
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
-    let api_task = tokio::spawn(infra::api::serve(
-        config.api_address,
-        api_native_price_estimator,
-        config.price_estimation.quote_timeout,
-        api_shutdown_receiver,
-    ));
+    let api_task = if let Some(listener) = api_listener {
+        tokio::spawn(infra::api::serve_with_listener(
+            listener,
+            api_native_price_estimator,
+            solvable_orders_cache.clone(),
+            config.price_estimation.quote_timeout,
+            api_shutdown_receiver,
+        ))
+    } else {
+        tokio::spawn(infra::api::serve(
+            config.api_address,
+            api_native_price_estimator,
+            solvable_orders_cache.clone(),
+            config.price_estimation.quote_timeout,
+            api_shutdown_receiver,
+        ))
+    };
 
     observe::metrics::serve_metrics(
         liveness.clone(),
@@ -597,10 +626,15 @@ pub async fn run(
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::try_new(driver.url, driver.name.clone(), driver.submission_account)
-                .await
-                .map(Arc::new)
-                .expect("failed to load solver configuration")
+            infra::Driver::try_new(
+                driver.url,
+                driver.name.clone(),
+                driver.submission_account,
+                driver.supports_thin_solve_request,
+            )
+            .await
+            .map(Arc::new)
+            .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
@@ -656,6 +690,7 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
+                driver.supports_thin_solve_request,
             )
             .await
             .map(Arc::new)

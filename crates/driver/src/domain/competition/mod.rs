@@ -41,6 +41,7 @@ use {
 };
 
 pub mod auction;
+pub mod delta_replica;
 pub mod order;
 mod pre_processing;
 pub mod risk_detector;

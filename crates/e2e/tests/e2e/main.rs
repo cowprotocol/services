@@ -14,6 +14,7 @@ mod cors;
 mod cow_amm;
 mod database;
 mod debug_order;
+mod delta_sync;
 mod deprecated_endpoints;
 mod eth_integration;
 mod eth_safe;

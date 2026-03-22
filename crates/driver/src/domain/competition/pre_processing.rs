@@ -1,19 +1,25 @@
 use {
-    super::{Auction, Order, order},
+    super::{Auction, Order, delta_replica::ReplicaState, order},
     crate::{
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
             cow_amm,
             liquidity,
         },
-        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
+        infra::{
+            self,
+            api::routes::solve::dto::SolveRequest,
+            delta_sync,
+            observe::metrics,
+            tokens,
+        },
     },
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Bytes, FixedBytes},
     anyhow::{Context, Result},
     axum::{
         body::{self, Body},
-        http::Request,
+        http::{HeaderMap, Request},
     },
     balance_overrides::BalanceOverrideRequest,
     chrono::Utc,
@@ -29,7 +35,8 @@ use {
     std::{
         collections::HashMap,
         future::Future,
-        sync::Arc,
+        str::FromStr,
+        sync::{Arc, OnceLock},
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
@@ -40,6 +47,15 @@ type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
+
+static DELTA_SYNC_RESYNC_RETRY_ATTEMPTS: OnceLock<usize> = OnceLock::new();
+static DELTA_SYNC_RESYNC_RETRY_DELAY: OnceLock<Duration> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SolveRequestBodyMode {
+    Full,
+    Thin,
+}
 
 /// Tasks for fetching data needed to properly process auctions.
 /// These are shared by all connected solvers.
@@ -120,7 +136,6 @@ impl DataAggregator {
             tracing::debug!("await running data aggregation task");
             return Ok(lock.tasks.clone());
         }
-
         let tasks = self.assemble_tasks(request).await?;
 
         tracing::debug!("started new data aggregation task");
@@ -227,18 +242,97 @@ impl Utilities {
     /// auction pre-processing since eagerly deserializing these requests
     /// is surprisingly costly because their are so big.
     async fn parse_request(&self, solve_request: Request<Body>) -> Result<Arc<Auction>> {
-        let solve_request = collect_request_body(solve_request).await?;
-
-        let auction_dto: SolveRequest = {
-            let _timer = metrics::get().processing_stage_timer("parse_dto");
-            let _timer2 =
-                observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
-            // deserialization takes tens of milliseconds so run it on a blocking task
-            tokio::task::spawn_blocking(move || {
-                serde_json::from_slice(&solve_request).context("could not parse solve request")
-            })
+        let body_mode = parse_solve_request_body_mode(solve_request.headers())?;
+        let replica_state = delta_sync::replica_state()
             .await
-            .context("failed to await blocking task")??
+            .unwrap_or(ReplicaState::Uninitialized);
+        let replica_fresh = delta_sync::replica_is_fresh().await.unwrap_or(false);
+        let replica_ready = matches!(replica_state, ReplicaState::Ready) && replica_fresh;
+        let auction_dto = if delta_sync::replica_preprocessing_enabled() && replica_ready {
+            if let Some(metadata) =
+                parse_solve_request_metadata_from_headers(solve_request.headers())?
+            {
+                match build_solve_request_from_replica_resilient(&metadata, body_mode).await {
+                    Ok(Some(from_replica)) => {
+                        tracing::debug!(
+                            auction_id = from_replica.id(),
+                            "using delta replica with request headers; skipped solve request body"
+                        );
+                        from_replica
+                    }
+                    Ok(None) => {
+                        let solve_request = collect_request_body(solve_request).await?;
+                        parse_full_solve_request(solve_request).await?
+                    }
+                    Err(err) => {
+                        if body_mode == SolveRequestBodyMode::Thin {
+                            return Err(err);
+                        }
+                        let solve_request = collect_request_body(solve_request).await?;
+                        parse_full_solve_request(solve_request).await?
+                    }
+                }
+            } else {
+                let solve_request = collect_request_body(solve_request).await?;
+                let metadata = parse_solve_request_metadata(&solve_request)?;
+                match build_solve_request_from_replica_resilient(&metadata, body_mode).await {
+                    Ok(Some(from_replica)) => {
+                        tracing::debug!(
+                            auction_id = from_replica.id(),
+                            "using delta replica for solve request orders and prices"
+                        );
+                        from_replica
+                    }
+                    Ok(None) => parse_full_solve_request(solve_request).await?,
+                    Err(err) => {
+                        if body_mode == SolveRequestBodyMode::Thin {
+                            return Err(err);
+                        }
+                        parse_full_solve_request(solve_request).await?
+                    }
+                }
+            }
+        } else if delta_sync::replica_preprocessing_enabled() && !replica_ready {
+            if body_mode == SolveRequestBodyMode::Thin {
+                let headers = solve_request.headers().clone();
+                let body = collect_request_body(solve_request).await?;
+                if let Ok(from_body) = parse_full_solve_request(body.clone()).await {
+                    from_body
+                } else {
+                    let metadata = if let Some(metadata) =
+                        parse_solve_request_metadata_from_headers(&headers)?
+                    {
+                        metadata
+                    } else {
+                        parse_solve_request_metadata(&body)?
+                    };
+                    match build_solve_request_from_replica_resilient(&metadata, body_mode).await {
+                        Ok(Some(from_replica)) => from_replica,
+                        Ok(None) => anyhow::bail!(
+                            "solve request uses thin body mode but delta replica is unavailable"
+                        ),
+                        Err(err) => return Err(err),
+                    }
+                }
+            } else {
+                metrics::get().thin_solve_replica_fallbacks.inc();
+                tracing::info!(
+                    state = ?replica_state,
+                    replica_fresh,
+                    "delta replica not ready; falling back to full solve body"
+                );
+                let solve_request = collect_request_body(solve_request).await?;
+                parse_full_solve_request(solve_request).await?
+            }
+        } else {
+            if body_mode == SolveRequestBodyMode::Thin {
+                anyhow::bail!(
+                    "solve request uses thin body mode but DRIVER_DELTA_SYNC_USE_REPLICA is \
+                     disabled"
+                );
+            }
+            let solve_request = collect_request_body(solve_request).await?;
+            parse_full_solve_request(solve_request).await?
         };
 
         // now that we finally know the auction id we can set it in the span
@@ -547,6 +641,297 @@ impl Utilities {
     }
 }
 
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SolveRequestMetadata {
+    id: i64,
+    tokens: Vec<SolveRequestTokenMetadata>,
+    deadline: chrono::DateTime<chrono::Utc>,
+    #[serde(default)]
+    surplus_capturing_jit_order_owners: Vec<eth::Address>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+struct SolveRequestTokenMetadata {
+    address: eth::Address,
+    trusted: bool,
+}
+
+fn parse_solve_request_metadata(solve_request: &[u8]) -> Result<SolveRequestMetadata> {
+    let _timer = metrics::get().processing_stage_timer("parse_dto");
+    let _timer2 = observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
+    serde_json::from_slice::<SolveRequestMetadata>(solve_request)
+        .context("could not parse solve request metadata")
+}
+
+fn parse_solve_request_metadata_from_headers(
+    headers: &HeaderMap,
+) -> Result<Option<SolveRequestMetadata>> {
+    let Some(id_header) = headers.get("X-Auction-Id") else {
+        return Ok(None);
+    };
+    let Some(deadline_header) = headers.get("X-Auction-Deadline") else {
+        return Ok(None);
+    };
+    let Some(tokens_header) = headers.get("X-Auction-Tokens") else {
+        return Ok(None);
+    };
+
+    let id = id_header
+        .to_str()
+        .context("X-Auction-Id header is not valid ASCII")?
+        .parse()
+        .context("X-Auction-Id header is not a valid integer")?;
+    let deadline = deadline_header
+        .to_str()
+        .context("X-Auction-Deadline header is not valid ASCII")?
+        .parse()
+        .context("X-Auction-Deadline header is not a valid RFC3339 timestamp")?;
+
+    let tokens = tokens_header
+        .to_str()
+        .context("X-Auction-Tokens header is not valid ASCII")?
+        .split(',')
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            let (address, trusted) = entry
+                .split_once(':')
+                .context("invalid X-Auction-Tokens entry")?;
+            validate_address_format(address)
+                .with_context(|| format!("invalid token address in X-Auction-Tokens: {address}"))?;
+            let address = address
+                .parse()
+                .context("invalid token address in X-Auction-Tokens")?;
+            let trusted =
+                parse_trusted_flag(trusted).context("invalid trusted flag in X-Auction-Tokens")?;
+            Ok(SolveRequestTokenMetadata { address, trusted })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let surplus_capturing_jit_order_owners = headers
+        .get("X-Auction-Jit-Order-Owners")
+        .map(|value| {
+            value
+                .to_str()
+                .context("X-Auction-Jit-Order-Owners header is not valid ASCII")?
+                .split(',')
+                .filter(|entry| !entry.is_empty())
+                .map(|entry| {
+                    validate_address_format(entry).with_context(|| {
+                        format!("invalid address in X-Auction-Jit-Order-Owners: {entry}")
+                    })?;
+                    entry
+                        .parse()
+                        .context("invalid address in X-Auction-Jit-Order-Owners")
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+
+    Ok(Some(SolveRequestMetadata {
+        id,
+        tokens,
+        deadline,
+        surplus_capturing_jit_order_owners,
+    }))
+}
+
+fn parse_solve_request_body_mode(headers: &HeaderMap) -> Result<SolveRequestBodyMode> {
+    let Some(value) = headers.get("X-Auction-Body-Mode") else {
+        return Ok(SolveRequestBodyMode::Full);
+    };
+
+    let mode = value
+        .to_str()
+        .context("X-Auction-Body-Mode header is not valid ASCII")?;
+    match mode {
+        "full" => Ok(SolveRequestBodyMode::Full),
+        "thin" => Ok(SolveRequestBodyMode::Thin),
+        _ => anyhow::bail!("invalid X-Auction-Body-Mode value: {mode}"),
+    }
+}
+
+fn parse_trusted_flag(value: &str) -> Result<bool> {
+    let normalized = value.to_ascii_lowercase();
+    if matches!(normalized.as_str(), "1" | "true") {
+        return Ok(true);
+    }
+    if matches!(normalized.as_str(), "0" | "false") {
+        return Ok(false);
+    }
+    anyhow::bail!("unsupported trusted flag value: {value}")
+}
+
+fn validate_address_format(value: &str) -> Result<()> {
+    if !value.starts_with("0x") || value.len() != 42 {
+        anyhow::bail!("address must be 0x-prefixed 20-byte hex")
+    }
+    if !value[2..].chars().all(|c| c.is_ascii_hexdigit()) {
+        anyhow::bail!("address contains non-hex characters")
+    }
+    Ok(())
+}
+
+async fn parse_full_solve_request(solve_request: body::Bytes) -> Result<SolveRequest> {
+    let _timer = metrics::get().processing_stage_timer("parse_dto");
+    let _timer2 = observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
+    let request = tokio::task::spawn_blocking(move || {
+        serde_json::from_slice::<SolveRequest>(&solve_request)
+            .context("could not parse solve request")
+    })
+    .await
+    .context("failed to await blocking task")??;
+    Ok(request)
+}
+
+async fn build_solve_request_from_replica(
+    metadata: &SolveRequestMetadata,
+) -> Result<Option<SolveRequest>> {
+    let Some(snapshot) = delta_sync::snapshot().await else {
+        return Ok(None);
+    };
+
+    let request_auction_id =
+        u64::try_from(metadata.id).context("solve request auction id is negative")?;
+    if snapshot.auction_id != request_auction_id {
+        anyhow::bail!(
+            "delta replica auction id mismatch: replica={}, request={}",
+            snapshot.auction_id,
+            request_auction_id
+        );
+    }
+
+    let tokens = metadata
+        .tokens
+        .iter()
+        .cloned()
+        .map(|token| {
+            let price = snapshot
+                .prices
+                .get(&token.address)
+                .map(|value| eth::U256::from_str(value))
+                .transpose()
+                .context("could not parse replicated token price")?;
+            Ok((token.address, price, token.trusted))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    tracing::debug!(
+        auction_id = snapshot.auction_id,
+        sequence = snapshot.sequence,
+        order_count = snapshot.orders.len(),
+        token_count = tokens.len(),
+        "constructed solve request from delta replica"
+    );
+
+    Ok(Some(SolveRequest::from_replica_parts_typed(
+        metadata.id,
+        metadata.deadline,
+        metadata.surplus_capturing_jit_order_owners.clone(),
+        tokens,
+        snapshot.orders,
+    )))
+}
+
+async fn build_solve_request_from_replica_resilient(
+    metadata: &SolveRequestMetadata,
+    body_mode: SolveRequestBodyMode,
+) -> Result<Option<SolveRequest>> {
+    match build_solve_request_from_replica(metadata).await {
+        Ok(Some(request)) => Ok(Some(request)),
+        Ok(None) => {
+            if body_mode != SolveRequestBodyMode::Thin {
+                return Ok(None);
+            }
+            if matches!(
+                delta_sync::replica_state().await,
+                Some(ReplicaState::Syncing | ReplicaState::Resyncing)
+            ) {
+                let attempts = delta_sync_resync_retry_attempts();
+                let delay = delta_sync_resync_retry_delay();
+                for _ in 0..attempts {
+                    tokio::time::sleep(delay).await;
+                    if let Ok(Some(request)) = build_solve_request_from_replica(metadata).await {
+                        return Ok(Some(request));
+                    }
+                }
+            }
+            let bootstrapped = delta_sync::ensure_replica_snapshot_from_env()
+                .await
+                .context("could not bootstrap delta replica for thin solve request")?;
+            if !bootstrapped {
+                anyhow::bail!(
+                    "solve request uses thin body mode but delta replica is unavailable and \
+                     DRIVER_DELTA_SYNC_AUTOPILOT_URL is not configured"
+                );
+            }
+            match build_solve_request_from_replica(metadata).await? {
+                Some(request) => Ok(Some(request)),
+                None => anyhow::bail!(
+                    "solve request uses thin body mode but delta replica is still unavailable \
+                     after bootstrap"
+                ),
+            }
+        }
+        Err(err) => {
+            if body_mode != SolveRequestBodyMode::Thin {
+                tracing::warn!(
+                    ?err,
+                    "delta replica unavailable for solve request; fallback to request body"
+                );
+                return Ok(None);
+            }
+
+            tracing::warn!(
+                ?err,
+                "delta replica build failed for thin solve request; attempting bootstrap"
+            );
+            let bootstrapped = delta_sync::ensure_replica_snapshot_from_env()
+                .await
+                .context("could not bootstrap delta replica after thin parse failure")?;
+            if !bootstrapped {
+                anyhow::bail!(
+                    "solve request uses thin body mode but delta replica build failed and \
+                     bootstrap is not configured"
+                );
+            }
+            match build_solve_request_from_replica(metadata).await {
+                Ok(Some(request)) => Ok(Some(request)),
+                Ok(None) => anyhow::bail!(
+                    "solve request uses thin body mode but delta replica is unavailable after \
+                     bootstrap"
+                ),
+                Err(retry_err) => Err(retry_err.context(
+                    "solve request uses thin body mode but delta replica build failed after \
+                     bootstrap",
+                )),
+            }
+        }
+    }
+}
+
+fn delta_sync_resync_retry_attempts() -> usize {
+    *DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.get_or_init(|| {
+        std::env::var("DRIVER_DELTA_SYNC_RESYNC_RETRY_ATTEMPTS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(3)
+    })
+}
+
+fn delta_sync_resync_retry_delay() -> Duration {
+    *DELTA_SYNC_RESYNC_RETRY_DELAY.get_or_init(|| {
+        let millis = std::env::var("DRIVER_DELTA_SYNC_RESYNC_RETRY_DELAY_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(500);
+        Duration::from_millis(millis)
+    })
+}
+
 fn init_auction_id_in_span(id: Option<i64>) {
     let Some(id) = id else {
         return;
@@ -570,4 +955,209 @@ async fn collect_request_body(request: Request<Body>) -> Result<body::Bytes> {
     let duration = start.elapsed();
     tracing::debug!(?duration, "finished streaming request body");
     Ok(body_bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{
+            domain::competition::delta_replica::{RawAuctionData, Snapshot},
+            infra::delta_sync::{DeltaReplicaTestGuard, set_replica_snapshot_for_tests},
+        },
+        axum::http::HeaderValue,
+        std::collections::HashMap,
+    };
+
+    #[test]
+    fn parse_trusted_flag_accepts_known_values() {
+        assert!(parse_trusted_flag("1").unwrap());
+        assert!(parse_trusted_flag("true").unwrap());
+        assert!(!parse_trusted_flag("0").unwrap());
+        assert!(!parse_trusted_flag("false").unwrap());
+    }
+
+    #[test]
+    fn parse_trusted_flag_rejects_unknown_values() {
+        assert!(parse_trusted_flag("maybe").is_err());
+    }
+
+    #[test]
+    fn parse_body_mode_defaults_to_full() {
+        let headers = HeaderMap::new();
+        assert_eq!(
+            parse_solve_request_body_mode(&headers).unwrap(),
+            SolveRequestBodyMode::Full
+        );
+    }
+
+    #[test]
+    fn parse_body_mode_recognizes_thin() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Auction-Body-Mode", HeaderValue::from_static("thin"));
+        assert_eq!(
+            parse_solve_request_body_mode(&headers).unwrap(),
+            SolveRequestBodyMode::Thin
+        );
+    }
+
+    #[test]
+    fn parse_body_mode_rejects_unknown_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Auction-Body-Mode", HeaderValue::from_static("partial"));
+        assert!(parse_solve_request_body_mode(&headers).is_err());
+    }
+
+    #[test]
+    fn delta_sync_resync_retry_values_are_cached() {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _lock = LOCK.lock().expect("lock poisoned");
+
+        let attempts_expected = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.get().copied().unwrap_or(7);
+        let delay_expected = DELTA_SYNC_RESYNC_RETRY_DELAY
+            .get()
+            .copied()
+            .unwrap_or_else(|| Duration::from_millis(123));
+
+        let _ = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(7);
+        let _ = DELTA_SYNC_RESYNC_RETRY_DELAY.set(Duration::from_millis(123));
+
+        assert_eq!(delta_sync_resync_retry_attempts(), attempts_expected);
+        assert_eq!(delta_sync_resync_retry_delay(), delay_expected);
+
+        let _ = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(9);
+        let _ = DELTA_SYNC_RESYNC_RETRY_DELAY.set(Duration::from_millis(999));
+
+        assert_eq!(delta_sync_resync_retry_attempts(), attempts_expected);
+        assert_eq!(delta_sync_resync_retry_delay(), delay_expected);
+    }
+
+    #[test]
+    fn parse_metadata_from_headers_accepts_complete_header_set() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Auction-Id", HeaderValue::from_static("42"));
+        headers.insert(
+            "X-Auction-Deadline",
+            HeaderValue::from_static("2026-03-20T00:00:00Z"),
+        );
+        headers.insert(
+            "X-Auction-Tokens",
+            HeaderValue::from_static(
+                "0x0101010101010101010101010101010101010101:1,\
+                 0x0202020202020202020202020202020202020202:0",
+            ),
+        );
+        headers.insert(
+            "X-Auction-Jit-Order-Owners",
+            HeaderValue::from_static(
+                "0x0303030303030303030303030303030303030303,\
+                 0x0404040404040404040404040404040404040404",
+            ),
+        );
+
+        let metadata = parse_solve_request_metadata_from_headers(&headers)
+            .unwrap()
+            .expect("headers should decode");
+
+        assert_eq!(metadata.id, 42);
+        assert_eq!(metadata.tokens.len(), 2);
+        assert_eq!(metadata.tokens[0].address, eth::Address::repeat_byte(1));
+        assert!(metadata.tokens[0].trusted);
+        assert_eq!(metadata.tokens[1].address, eth::Address::repeat_byte(2));
+        assert!(!metadata.tokens[1].trusted);
+        assert_eq!(metadata.surplus_capturing_jit_order_owners.len(), 2);
+        assert_eq!(
+            metadata.surplus_capturing_jit_order_owners,
+            vec![eth::Address::repeat_byte(3), eth::Address::repeat_byte(4)]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_from_headers_returns_none_if_required_headers_are_missing() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Auction-Id", HeaderValue::from_static("42"));
+        headers.insert(
+            "X-Auction-Deadline",
+            HeaderValue::from_static("2026-03-20T00:00:00Z"),
+        );
+        // Missing X-Auction-Tokens means metadata is not available.
+
+        let metadata = parse_solve_request_metadata_from_headers(&headers).unwrap();
+        assert!(metadata.is_none());
+    }
+
+    #[test]
+    fn parse_metadata_from_headers_rejects_invalid_trusted_flag() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Auction-Id", HeaderValue::from_static("42"));
+        headers.insert(
+            "X-Auction-Deadline",
+            HeaderValue::from_static("2026-03-20T00:00:00Z"),
+        );
+        headers.insert(
+            "X-Auction-Tokens",
+            HeaderValue::from_static("0x0101010101010101010101010101010101010101:maybe"),
+        );
+
+        let err = parse_solve_request_metadata_from_headers(&headers).unwrap_err();
+        assert!(
+            err.to_string().contains("invalid trusted flag")
+                || err.to_string().contains("unsupported trusted flag")
+        );
+    }
+
+    #[test]
+    fn parse_metadata_from_body_accepts_thin_envelope() {
+        let payload = serde_json::json!({
+            "id": 7,
+            "tokens": [
+                {
+                    "address": "0x0101010101010101010101010101010101010101",
+                    "trusted": true
+                }
+            ],
+            "orders": [],
+            "deadline": "2026-03-20T00:00:00Z",
+            "surplusCapturingJitOrderOwners": []
+        });
+
+        let metadata = parse_solve_request_metadata(&serde_json::to_vec(&payload).unwrap())
+            .expect("metadata should parse");
+
+        assert_eq!(metadata.id, 7);
+        assert_eq!(metadata.tokens.len(), 1);
+        assert_eq!(metadata.tokens[0].address, eth::Address::repeat_byte(1));
+        assert!(metadata.tokens[0].trusted);
+        assert!(metadata.surplus_capturing_jit_order_owners.is_empty());
+    }
+
+    #[tokio::test]
+    async fn build_solve_request_from_replica_rejects_auction_id_mismatch() {
+        let _guard = DeltaReplicaTestGuard::acquire();
+        set_replica_snapshot_for_tests(Snapshot {
+            version: 1,
+            auction_id: 5,
+            sequence: 1,
+            auction: RawAuctionData {
+                orders: vec![],
+                prices: HashMap::new(),
+            },
+        })
+        .await;
+
+        let metadata = SolveRequestMetadata {
+            id: 6,
+            tokens: vec![SolveRequestTokenMetadata {
+                address: eth::Address::repeat_byte(1),
+                trusted: true,
+            }],
+            deadline: chrono::Utc::now(),
+            surplus_capturing_jit_order_owners: Vec::new(),
+        };
+
+        let err = build_solve_request_from_replica(&metadata)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("auction id mismatch"));
+    }
 }

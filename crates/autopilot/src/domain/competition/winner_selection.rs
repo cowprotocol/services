@@ -1221,6 +1221,7 @@ mod tests {
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
             Account::Address(solver_address),
+            false,
         )
         .await
         .unwrap();

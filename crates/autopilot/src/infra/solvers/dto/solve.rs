@@ -34,6 +34,16 @@ pub struct Request {
     auction_id: i64,
     body: bytes::Bytes,
     content_encoding: Option<HeaderValue>,
+    deadline_header: Option<String>,
+    tokens_header: Option<String>,
+    jit_owners_header: Option<String>,
+    body_mode_header: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SolveRequestBodyMode {
+    Full,
+    Thin,
 }
 
 impl Request {
@@ -42,17 +52,23 @@ impl Request {
         trusted_tokens: &HashSet<Address>,
         time_limit: Duration,
         compress: bool,
+        body_mode: SolveRequestBodyMode,
     ) -> Self {
         let _timer =
             observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
+        let thin_body = matches!(body_mode, SolveRequestBodyMode::Thin);
         let helper = RequestHelper {
             id: auction.id,
-            orders: auction
-                .orders
-                .clone()
-                .into_iter()
-                .map(dto::order::from_domain)
-                .collect(),
+            orders: if thin_body {
+                Vec::new()
+            } else {
+                auction
+                    .orders
+                    .clone()
+                    .into_iter()
+                    .map(dto::order::from_domain)
+                    .collect()
+            },
             tokens: auction
                 .prices
                 .iter()
@@ -72,6 +88,23 @@ impl Request {
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
         let auction_id = auction.id;
+        let (deadline_header, tokens_header, jit_owners_header) = if thin_body {
+            (None, None, None)
+        } else {
+            let deadline = helper.deadline.to_rfc3339();
+            let tokens_header = helper
+                .tokens
+                .iter()
+                .map(|token| format!("{}:{}", token.address, u8::from(token.trusted)))
+                .join(",");
+            let jit_owners_header = helper
+                .surplus_capturing_jit_order_owners
+                .iter()
+                .map(ToString::to_string)
+                .join(",");
+            (Some(deadline), Some(tokens_header), Some(jit_owners_header))
+        };
+        let body_mode_header = if thin_body { "thin" } else { "full" };
 
         let (body, content_encoding) = tokio::task::spawn_blocking(move || {
             let serialized = serde_json::to_vec(&helper).expect("type should be JSON serializable");
@@ -113,6 +146,10 @@ impl Request {
             body,
             auction_id,
             content_encoding,
+            deadline_header,
+            tokens_header,
+            jit_owners_header,
+            body_mode_header,
         }
     }
 
@@ -131,12 +168,28 @@ impl InjectIntoHttpRequest for Request {
             // headers to help the driver detect duplicated
             // `/solve` requests before streaming the body
             .header("X-Auction-Id", self.auction_id)
+            .header("X-Auction-Body-Mode", self.body_mode_header)
             // manually set the content type header for JSON since
             // we can't use `request.json(self)`
             .header(
                 reqwest::header::CONTENT_TYPE,
                 reqwest::header::HeaderValue::from_static("application/json"),
             );
+        let request = if let Some(deadline) = &self.deadline_header {
+            request.header("X-Auction-Deadline", deadline)
+        } else {
+            request
+        };
+        let request = if let Some(tokens) = &self.tokens_header {
+            request.header("X-Auction-Tokens", tokens)
+        } else {
+            request
+        };
+        let request = if let Some(jit_owners) = &self.jit_owners_header {
+            request.header("X-Auction-Jit-Order-Owners", jit_owners)
+        } else {
+            request
+        };
         if let Some(encoding) = &self.content_encoding {
             request.header(reqwest::header::CONTENT_ENCODING, encoding)
         } else {
@@ -171,6 +224,7 @@ struct RequestHelper {
     #[serde_as(as = "DisplayFromStr")]
     pub id: i64,
     pub tokens: Vec<Token>,
+    #[serde(default)]
     pub orders: Vec<Order>,
     pub deadline: DateTime<Utc>,
     pub surplus_capturing_jit_order_owners: Vec<Address>,
@@ -284,7 +338,10 @@ pub struct Response {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        crate::{domain, test_helpers::test_order},
+    };
 
     fn make_test_json() -> Vec<u8> {
         let json_value = serde_json::json!({
@@ -308,6 +365,10 @@ mod tests {
             auction_id: 1,
             body: Bytes::from(json),
             content_encoding: None,
+            deadline_header: Some("2025-01-01T00:00:00Z".to_string()),
+            tokens_header: Some("0x0000000000000000000000000000000000000000:1".to_string()),
+            jit_owners_header: Some(String::new()),
+            body_mode_header: "full",
         }
     }
 
@@ -322,7 +383,99 @@ mod tests {
             auction_id: 1,
             body: Bytes::from(compressed),
             content_encoding: Some(HeaderValue::from_static("br")),
+            deadline_header: Some("2025-01-01T00:00:00Z".to_string()),
+            tokens_header: Some("0x0000000000000000000000000000000000000000:1".to_string()),
+            jit_owners_header: Some(String::new()),
+            body_mode_header: "full",
         }
+    }
+
+    #[tokio::test]
+    async fn thin_request_embeds_metadata_in_body_and_omits_headers() {
+        let token = Address::repeat_byte(0x11);
+        let price = domain::auction::Price::try_new(eth::Ether::from(eth::U256::from(1)))
+            .expect("price should be non-zero");
+        let auction = domain::auction::Auction {
+            id: 42,
+            block: 1,
+            orders: vec![test_order(1, 10)],
+            prices: HashMap::from([(token.into(), price)]),
+            surplus_capturing_jit_order_owners: vec![Address::repeat_byte(0x22)],
+        };
+        let trusted_tokens = HashSet::from([token]);
+
+        let request = Request::new(
+            &auction,
+            &trusted_tokens,
+            Duration::from_secs(30),
+            false,
+            SolveRequestBodyMode::Thin,
+        )
+        .await;
+
+        let json: serde_json::Value = serde_json::from_slice(request.body.as_ref()).unwrap();
+        assert!(json["id"].as_str().is_some());
+        assert!(json["tokens"].as_array().is_some());
+        assert!(json["deadline"].as_str().is_some());
+        if let Some(orders) = json.get("orders").and_then(|value| value.as_array()) {
+            assert!(orders.is_empty());
+        }
+
+        let client = reqwest::Client::new();
+        let built = request
+            .inject(client.post("http://example.com"))
+            .build()
+            .unwrap();
+        let headers = built.headers();
+        assert!(headers.get("X-Auction-Deadline").is_none());
+        assert!(headers.get("X-Auction-Tokens").is_none());
+        assert!(headers.get("X-Auction-Jit-Order-Owners").is_none());
+        let body_mode = headers
+            .get("X-Auction-Body-Mode")
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(body_mode, Some("thin"));
+    }
+
+    #[tokio::test]
+    async fn full_request_includes_orders_and_headers() {
+        let token = Address::repeat_byte(0x33);
+        let price = domain::auction::Price::try_new(eth::Ether::from(eth::U256::from(2)))
+            .expect("price should be non-zero");
+        let auction = domain::auction::Auction {
+            id: 99,
+            block: 1,
+            orders: vec![test_order(1, 10)],
+            prices: HashMap::from([(token.into(), price)]),
+            surplus_capturing_jit_order_owners: vec![Address::repeat_byte(0x44)],
+        };
+        let trusted_tokens = HashSet::from([token]);
+
+        let request = Request::new(
+            &auction,
+            &trusted_tokens,
+            Duration::from_secs(30),
+            false,
+            SolveRequestBodyMode::Full,
+        )
+        .await;
+
+        let json: serde_json::Value = serde_json::from_slice(request.body.as_ref()).unwrap();
+        let orders = json["orders"].as_array().expect("orders array");
+        assert_eq!(orders.len(), 1);
+
+        let client = reqwest::Client::new();
+        let built = request
+            .inject(client.post("http://example.com"))
+            .build()
+            .unwrap();
+        let headers = built.headers();
+        assert!(headers.get("X-Auction-Deadline").is_some());
+        assert!(headers.get("X-Auction-Tokens").is_some());
+        assert!(headers.get("X-Auction-Jit-Order-Owners").is_some());
+        let body_mode = headers
+            .get("X-Auction-Body-Mode")
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(body_mode, Some("full"));
     }
 
     #[test]

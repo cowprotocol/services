@@ -15,7 +15,7 @@ use {
         providers::ext::AnvilApi,
     },
     app_data::{AppDataDocument, AppDataHash},
-    autopilot::infra::persistence::dto,
+    autopilot::{infra::persistence::dto, run::run_with_listener},
     clap::Parser,
     configs::{
         autopilot::{
@@ -188,6 +188,46 @@ impl<'a> Services<'a> {
         config: configs::autopilot::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
+        self.start_autopilot_with_shutdown_controller_inner(
+            solve_deadline,
+            extra_args,
+            config,
+            control,
+            None,
+        )
+        .await
+    }
+
+    pub async fn start_autopilot_with_shutdown_controller_with_listener(
+        &self,
+        solve_deadline: Option<Duration>,
+        extra_args: Vec<String>,
+        mut config: configs::autopilot::Configuration,
+        control: autopilot::shutdown_controller::ShutdownController,
+        listener: tokio::net::TcpListener,
+    ) -> JoinHandle<()> {
+        let listener_addr = listener
+            .local_addr()
+            .expect("failed to read listener address");
+        config.api_address = listener_addr;
+        self.start_autopilot_with_shutdown_controller_inner(
+            solve_deadline,
+            extra_args,
+            config,
+            control,
+            Some(listener),
+        )
+        .await
+    }
+
+    async fn start_autopilot_with_shutdown_controller_inner(
+        &self,
+        solve_deadline: Option<Duration>,
+        extra_args: Vec<String>,
+        config: configs::autopilot::Configuration,
+        control: autopilot::shutdown_controller::ShutdownController,
+        listener: Option<tokio::net::TcpListener>,
+    ) -> JoinHandle<()> {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
             .contracts
@@ -221,7 +261,12 @@ impl<'a> Services<'a> {
         let args = autopilot::arguments::CliArguments::try_parse_from(args)
             .map_err(|err| err.to_string())
             .unwrap();
-        let join_handle = tokio::task::spawn(autopilot::run(args, config, control));
+        let join_handle = match listener {
+            Some(listener) => {
+                tokio::task::spawn(run_with_listener(args, config, control, listener))
+            }
+            None => tokio::task::spawn(autopilot::run(args, config, control)),
+        };
         self.wait_until_autopilot_ready().await;
 
         join_handle

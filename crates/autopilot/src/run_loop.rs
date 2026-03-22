@@ -45,10 +45,7 @@ use {
     std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
+        sync::{Arc, atomic::AtomicBool},
         time::{Duration, Instant},
     },
     tracing::{Instrument, instrument},
@@ -100,8 +97,6 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: MaintenanceSync,
     winner_selection: winner_selection::Arbitrator,
-    /// Notifier that wakes the main loop on new blocks or orders
-    wake_notify: Arc<tokio::sync::Notify>,
 }
 
 impl RunLoop {
@@ -136,7 +131,6 @@ impl RunLoop {
             probes,
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
-            wake_notify,
         }
     }
 
@@ -156,22 +150,8 @@ impl RunLoop {
             None
         };
         let mut leader_lock_tracker = LeaderLockTracker::new(leader);
-
         while !control.should_shutdown() {
             leader_lock_tracker.try_acquire().await;
-
-            // Wait for notify about some significant state change (e.g. new
-            // order, new block). We only update the cache afterwards to update
-            // to the most recent state.
-            self_arc.wake_notify.notified().await;
-            let start_block = self_arc
-                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
-                .await;
-
-            // caches are warmed up, we're ready to do leader work
-            if let Some(startup) = self_arc.probes.startup.as_ref() {
-                startup.store(true, Ordering::Release);
-            }
 
             if !leader_lock_tracker.is_leader() {
                 // only the leader is supposed to run the auctions
@@ -179,6 +159,9 @@ impl RunLoop {
                 continue;
             }
 
+            let start_block = self_arc
+                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
+                .await;
             if let Some(auction) = self_arc
                 .next_auction(start_block, &mut last_auction, &mut last_block)
                 .await
@@ -288,6 +271,10 @@ impl RunLoop {
             .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
             .ok()?;
         Metrics::auction(id);
+
+        self.solvable_orders_cache
+            .set_auction_id(u64::try_from(id).unwrap_or_default())
+            .await;
 
         // always update the auction because the tests use this as a readiness probe
         self.persistence.replace_current_auction_in_db(id, &auction);
@@ -572,20 +559,47 @@ impl RunLoop {
     /// Returns all fair solutions sorted by their score (best to worst).
     #[instrument(skip_all)]
     async fn fetch_solutions(&self, auction: &domain::Auction) -> Vec<competition::Bid<Unscored>> {
-        let request = solve::Request::new(
+        let full_request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
             self.config.solve_deadline,
             self.config.compress_solve_request,
+            solve::SolveRequestBodyMode::Full,
         )
         .await;
-        Metrics::solve_request_body_size(request.body_size());
+        let thin_request = if self
+            .drivers
+            .iter()
+            .any(|driver| driver.supports_thin_solve_request)
+        {
+            let start = Instant::now();
+            let request = solve::Request::new(
+                auction,
+                &self.trusted_tokens.all(),
+                self.config.solve_deadline,
+                self.config.compress_solve_request,
+                solve::SolveRequestBodyMode::Thin,
+            )
+            .await;
+            Metrics::thin_request_serialization_time(start.elapsed());
+            Some(request)
+        } else {
+            None
+        };
+        Metrics::solve_request_body_size(full_request.body_size());
 
-        let mut bids = futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.solve(driver.clone(), request.clone())),
-        )
+        let mut bids = futures::future::join_all(self.drivers.iter().map(|driver| {
+            let full_request = full_request.clone();
+            let thin_request = thin_request.clone();
+            async move {
+                let request = Self::select_solve_request_for_driver(
+                    driver.supports_thin_solve_request,
+                    full_request,
+                    thin_request,
+                );
+                self.solve(driver.clone(), request).await
+            }
+        }))
         .await
         .into_iter()
         .flatten()
@@ -617,6 +631,18 @@ impl RunLoop {
         // Shuffle so that sorting randomly splits ties.
         bids.shuffle(&mut rand::thread_rng());
         bids
+    }
+
+    fn select_solve_request_for_driver(
+        supports_thin_solve_request: bool,
+        full_request: solve::Request,
+        thin_request: Option<solve::Request>,
+    ) -> solve::Request {
+        if supports_thin_solve_request {
+            thin_request.unwrap_or(full_request)
+        } else {
+            full_request
+        }
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and
@@ -977,6 +1003,10 @@ struct Metrics {
         1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
     ))]
     solve_request_body_size: prometheus::Histogram,
+
+    /// Time spent serializing thin solve requests.
+    #[metric(buckets(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5))]
+    thin_request_serialization_time: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -1075,6 +1105,12 @@ impl Metrics {
     fn solve_request_body_size(size: usize) {
         Self::get().solve_request_body_size.observe(size as f64)
     }
+
+    fn thin_request_serialization_time(elapsed: Duration) {
+        Self::get()
+            .thin_request_serialization_time
+            .observe(elapsed.as_secs_f64())
+    }
 }
 
 pub mod observe {
@@ -1152,5 +1188,88 @@ pub mod observe {
         let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
         non_winning_orders.retain(|uid| auction_uids.contains(uid));
         super::Metrics::matched_unsettled(non_winning_orders);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{domain, test_helpers::test_order},
+        eth_domain_types as eth,
+        std::collections::{HashMap, HashSet},
+    };
+
+    fn test_auction() -> domain::auction::Auction {
+        let token = Address::repeat_byte(0x11);
+        let price = domain::auction::Price::try_new(eth::Ether::from(eth::U256::from(1)))
+            .expect("price should be non-zero");
+        domain::auction::Auction {
+            id: 1,
+            block: 1,
+            orders: vec![test_order(1, 10)],
+            prices: HashMap::from([(token.into(), price)]),
+            surplus_capturing_jit_order_owners: vec![Address::repeat_byte(0x22)],
+        }
+    }
+
+    #[tokio::test]
+    async fn solve_request_selection_uses_full_for_non_thin_driver() {
+        let auction = test_auction();
+        let trusted_tokens = HashSet::from([Address::repeat_byte(0x11)]);
+        let full_request = solve::Request::new(
+            &auction,
+            &trusted_tokens,
+            Duration::from_secs(30),
+            false,
+            solve::SolveRequestBodyMode::Full,
+        )
+        .await;
+        let thin_request = solve::Request::new(
+            &auction,
+            &trusted_tokens,
+            Duration::from_secs(30),
+            false,
+            solve::SolveRequestBodyMode::Thin,
+        )
+        .await;
+        let full_size = full_request.body_size();
+        let thin_size = thin_request.body_size();
+
+        let selected =
+            RunLoop::select_solve_request_for_driver(false, full_request, Some(thin_request));
+
+        assert_eq!(selected.body_size(), full_size);
+        assert_ne!(full_size, thin_size);
+    }
+
+    #[tokio::test]
+    async fn solve_request_selection_uses_thin_when_supported() {
+        let auction = test_auction();
+        let trusted_tokens = HashSet::from([Address::repeat_byte(0x11)]);
+        let full_request = solve::Request::new(
+            &auction,
+            &trusted_tokens,
+            Duration::from_secs(30),
+            false,
+            solve::SolveRequestBodyMode::Full,
+        )
+        .await;
+        let thin_request = solve::Request::new(
+            &auction,
+            &trusted_tokens,
+            Duration::from_secs(30),
+            false,
+            solve::SolveRequestBodyMode::Thin,
+        )
+        .await;
+        let full_size = full_request.body_size();
+        let thin_size = thin_request.body_size();
+
+        let selected =
+            RunLoop::select_solve_request_for_driver(true, full_request, Some(thin_request));
+
+        assert_eq!(selected.body_size(), thin_size);
+        assert_ne!(full_size, thin_size);
     }
 }

@@ -24,6 +24,7 @@ pub mod protocol_fees;
 pub mod quote;
 pub mod settle;
 pub mod solver_balance;
+pub mod thin_mode;
 
 /// The default surplus factor. Set to a high value to ensure a positive score
 /// by default. Use a surplus factor of 1 if you want to test negative scores.

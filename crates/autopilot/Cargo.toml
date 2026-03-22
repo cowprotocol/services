@@ -63,9 +63,11 @@ s3 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+sha2 = { workspace = true }
 shared = { workspace = true }
 sqlx = { workspace = true }
 strum = { workspace = true }
+subtle = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }

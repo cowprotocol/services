@@ -14,4 +14,7 @@ pub mod shutdown_controller;
 pub mod solvable_orders;
 pub mod util;
 
+#[cfg(test)]
+pub mod test_helpers;
+
 pub use self::run::{run, start};
