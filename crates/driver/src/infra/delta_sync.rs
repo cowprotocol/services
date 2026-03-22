@@ -174,6 +174,16 @@ fn snapshot_from_replica(replica: &Replica) -> Option<ReplicaSnapshot> {
 }
 
 pub async fn replica_health() -> Option<ReplicaHealth> {
+    // If delta sync is not enabled, treat the replica as disabled for
+    // health reporting. Do not require a base URL here because tests may
+    // interact with the in-memory replica without an external service.
+    if !shared::env::flag_enabled(
+        std::env::var("DRIVER_DELTA_SYNC_ENABLED").ok().as_deref(),
+        true,
+    ) {
+        return None;
+    }
+
     let checksum_enabled = delta_sync_checksum_enabled();
     let base_url = if checksum_enabled {
         delta_sync_base_url_from_env()
@@ -183,6 +193,12 @@ pub async fn replica_health() -> Option<ReplicaHealth> {
 
     let replica = delta_replica();
     let replica = replica.read().await;
+
+    // If there's no external delta sync base URL and the local replica hasn't
+    // been initialized, treat the replica as disabled for health reporting.
+    if base_url.is_none() && matches!(replica.state(), ReplicaState::Uninitialized) {
+        return None;
+    }
     let now = chrono::Utc::now();
     let last_update_age_seconds = replica
         .last_update()

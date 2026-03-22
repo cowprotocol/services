@@ -84,7 +84,10 @@ async fn delta_sync_snapshot_stream_resync_recovery(web3: Web3) {
         .expect("failed to read delta sync listener address");
     let delta_api_port = delta_api_addr.port();
     let delta_api_url = format!("http://{delta_api_addr}");
+    // Enable delta sync environment variables BEFORE starting autopilot
     let _env = DeltaEnvGuard::enable(delta_api_url.clone()).await;
+    // Drop the listener so autopilot can bind to the same port
+    drop(delta_listener);
 
     colocation::start_driver(
         onchain.contracts(),
@@ -165,10 +168,6 @@ async fn delta_sync_snapshot_stream_resync_recovery(web3: Web3) {
     .unwrap();
 
     let (_shutdown_after_resync, control_after_resync) = ShutdownController::new_manual_shutdown();
-    let _delta_listener =
-        tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], delta_api_port)))
-            .await
-            .expect("failed to bind delta sync listener for restart");
     let _autopilot_after_resync: tokio::task::JoinHandle<()> = services
         .start_autopilot_with_shutdown_controller(
             None,
@@ -222,7 +221,10 @@ async fn delta_sync_update_pipeline_integration(web3: Web3) {
         .local_addr()
         .expect("failed to read delta sync listener address");
     let delta_api_url = format!("http://{delta_api_addr}");
+    // Enable delta sync environment variables BEFORE starting autopilot
     let _env = DeltaEnvGuard::enable(delta_api_url.clone()).await;
+    // Drop the listener so autopilot can bind to the same port
+    drop(delta_listener);
 
     colocation::start_driver(
         onchain.contracts(),

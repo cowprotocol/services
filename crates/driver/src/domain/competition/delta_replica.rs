@@ -429,7 +429,9 @@ fn order_uid(order: &Value) -> Result<String, Error> {
         .map(ToOwned::to_owned)
         .ok_or(Error::MissingOrderUid)?;
     if !is_valid_order_uid(&uid) {
-        return Err(Error::InvalidOrderUidFormat(uid));
+        return Err(Error::InvalidOrderSchema(format!(
+            "order uid has invalid format: {uid}"
+        )));
     }
     Ok(uid)
 }

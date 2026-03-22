@@ -312,10 +312,7 @@ impl Utilities {
                         match build_solve_request_from_replica_resilient(&metadata, body_mode).await
                         {
                             Ok(Some(from_replica)) => from_replica,
-                            Ok(None) => anyhow::bail!(
-                                "solve request uses thin body mode but delta replica is \
-                                 unavailable"
-                            ),
+                            Ok(None) => parse_full_solve_request(body.clone()).await?,
                             Err(err) => return Err(err),
                         }
                     }
@@ -329,9 +326,7 @@ impl Utilities {
                     };
                     match build_solve_request_from_replica_resilient(&metadata, body_mode).await {
                         Ok(Some(from_replica)) => from_replica,
-                        Ok(None) => anyhow::bail!(
-                            "solve request uses thin body mode but delta replica is unavailable"
-                        ),
+                        Ok(None) => parse_full_solve_request(body.clone()).await?,
                         Err(err) => return Err(err),
                     }
                 }
