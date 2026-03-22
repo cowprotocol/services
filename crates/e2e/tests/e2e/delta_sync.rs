@@ -105,37 +105,32 @@ async fn delta_sync_snapshot_stream_resync_recovery(web3: Web3) {
 
     let services = Services::new(&onchain).await;
     let (shutdown_before_resync, control_before_resync) = ShutdownController::new_manual_shutdown();
-    let autopilot_before_resync = services
-        .start_autopilot_with_shutdown_controller_with_listener(
+    let autopilot_before_resync: tokio::task::JoinHandle<()> = services
+        .start_autopilot_with_shutdown_controller(
             None,
-            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
             delta_autopilot_config(solver.address(), 9589, delta_api_port),
             control_before_resync,
-            delta_listener,
         )
         .await;
     services
-        .start_api(
-            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
-                        vec![
-                            configs::native_price_estimators::NativePriceEstimator::driver(
-                                "test_quoter".to_string(),
-                                "http://localhost:11088/test_solver".parse().unwrap(),
-                            ),
-                        ],
-                    ]),
-                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
-                },
-                ..configs::orderbook::Configuration::test_default()
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
+                            "test_quoter".to_string(),
+                            "http://localhost:11088/test_solver".parse().unwrap(),
+                        ),
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
-        )
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     let first_order = OrderCreation {
@@ -170,17 +165,15 @@ async fn delta_sync_snapshot_stream_resync_recovery(web3: Web3) {
     .unwrap();
 
     let (_shutdown_after_resync, control_after_resync) = ShutdownController::new_manual_shutdown();
-    let delta_listener =
+    let _delta_listener =
         tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], delta_api_port)))
             .await
             .expect("failed to bind delta sync listener for restart");
-    let _autopilot_after_resync = services
-        .start_autopilot_with_shutdown_controller_with_listener(
+    let _autopilot_after_resync: tokio::task::JoinHandle<()> = services
+        .start_autopilot_with_shutdown_controller(
             None,
-            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
             delta_autopilot_config(solver.address(), 9590, delta_api_port),
             control_after_resync,
-            delta_listener,
         )
         .await;
 
@@ -250,37 +243,32 @@ async fn delta_sync_update_pipeline_integration(web3: Web3) {
 
     let services = Services::new(&onchain).await;
     let (_shutdown, control) = ShutdownController::new_manual_shutdown();
-    let _autopilot = services
-        .start_autopilot_with_shutdown_controller_with_listener(
+    let _autopilot: tokio::task::JoinHandle<()> = services
+        .start_autopilot_with_shutdown_controller(
             None,
-            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
             delta_autopilot_config(solver.address(), 9589, delta_api_addr.port()),
             control,
-            delta_listener,
         )
         .await;
     services
-        .start_api(
-            vec!["--gas-estimators=http://localhost:11088/gasprice".to_string()],
-            configs::orderbook::Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
-                    estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
-                        vec![
-                            configs::native_price_estimators::NativePriceEstimator::driver(
-                                "test_quoter".to_string(),
-                                "http://localhost:11088/test_solver".parse().unwrap(),
-                            ),
-                        ],
-                    ]),
-                    ..configs::orderbook::native_price::NativePriceConfig::test_default()
-                },
-                ..configs::orderbook::Configuration::test_default()
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
+                            "test_quoter".to_string(),
+                            "http://localhost:11088/test_solver".parse().unwrap(),
+                        ),
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
-        )
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     let first_order = OrderCreation {

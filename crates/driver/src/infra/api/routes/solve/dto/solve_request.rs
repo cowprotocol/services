@@ -224,6 +224,10 @@ impl SolveRequest {
         self.id
     }
 
+    pub fn has_orders(&self) -> bool {
+        !self.orders.is_empty()
+    }
+
     pub fn from_replica_parts(
         id: i64,
         deadline: chrono::DateTime<chrono::Utc>,

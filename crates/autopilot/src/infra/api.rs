@@ -438,39 +438,39 @@ async fn stream_delta_events(
         let mut stream = Box::pin(stream);
         loop {
             tokio::select! {
-                _ = forward_sender.closed() => {
-                    break;
-                }
-                item = stream.next() => {
-                    let Some(item) = item else {
-                        break;
-                    };
-                    match forward_sender.try_send(item) {
-                        Ok(()) => {}
-                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                            DeltaMetrics::get().stream_lagged.inc();
-                            let latest_sequence =
-                                cache.delta_sequence().await.unwrap_or(replay_to_sequence);
-                            let resync_payload = serde_json::json!({
-                                "message": "delta stream dropped slow consumer",
-                                "latestSequence": latest_sequence,
-                                "skipped": 0
-                            })
-                            .to_string();
-                            let _ = forward_sender.try_send(Ok(
-                                sse::Event::default()
-                                    .event("resync_required")
-                                    .data(resync_payload),
-                            ));
-                            tracing::warn!("delta stream dropped slow consumer");
-                            break;
-                        }
-                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                            break;
-                        }
-                    }
-                }
+                            _ = forward_sender.closed() => {
+                                break;
+                            }
+                            item = stream.next() => {
+                                let Some(item) = item else {
+                                    break;
+                                };
+                                match forward_sender.try_send(item) {
+                                    Ok(()) => {}
+                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                DeltaMetrics::get().stream_lagged.inc();
+                let latest_sequence =
+                    cache.delta_sequence().await.unwrap_or(replay_to_sequence);
+                let resync_payload = serde_json::json!({
+                    "message": "delta stream dropped slow consumer",
+                    "latestSequence": latest_sequence,
+                    "skipped": 0
+                })
+                .to_string();
+                let _ = forward_sender
+                    .send(Ok(sse::Event::default()
+                        .event("resync_required")
+                        .data(resync_payload)))
+                    .await;
+                tracing::warn!("delta stream dropped slow consumer");
+                break;
             }
+                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
         }
     });
 
@@ -1394,7 +1394,7 @@ mod tests {
         assert!(replay_has_order);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn slow_consumer_gets_resync_required_event() {
         let _guard_enabled = EnvGuard::set("AUTOPILOT_DELTA_SYNC_ENABLED", "true");
         let _guard_buffer = EnvGuard::set("AUTOPILOT_DELTA_SYNC_STREAM_BUFFER", "1");
@@ -1425,13 +1425,40 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/delta/stream?after_sequence=0")
+                    .extension(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))))
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        for sequence in 1..=3u64 {
+        let collected = Arc::new(tokio::sync::Mutex::new(String::new()));
+        let collected_writer = Arc::clone(&collected);
+
+        let mut body_stream = response.into_body().into_data_stream();
+        let read_task = tokio::spawn(async move {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                match tokio::time::timeout_at(deadline, futures::StreamExt::next(&mut body_stream))
+                    .await
+                {
+                    Ok(Some(Ok(chunk))) => {
+                        let mut buf = collected_writer.lock().await;
+                        buf.push_str(&String::from_utf8_lossy(&chunk));
+                        if buf.contains("event: resync_required") {
+                            return;
+                        }
+                    }
+                    _ => return,
+                }
+            }
+        });
+
+        // Give the read task a moment to subscribe and start polling.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Publish events rapidly to overwhelm the buffer (size = 1).
+        for sequence in 1..=10u64 {
             cache
                 .publish_delta_for_tests(DeltaEnvelope {
                     auction_id: 0,
@@ -1445,15 +1472,10 @@ mod tests {
                 .await;
         }
 
-        let bytes = tokio::time::timeout(
-            Duration::from_secs(2),
-            body::to_bytes(response.into_body(), usize::MAX),
-        )
-        .await
-        .expect("stream read timeout")
-        .unwrap();
-        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        read_task.await.unwrap();
 
+        let text = collected.lock().await;
+        println!("Response text: {}", *text);
         assert!(text.contains("event: resync_required"));
     }
 
