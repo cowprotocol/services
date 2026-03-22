@@ -297,7 +297,26 @@ impl Utilities {
                 let headers = solve_request.headers().clone();
                 let body = collect_request_body(solve_request).await?;
                 if let Ok(from_body) = parse_full_solve_request(body.clone()).await {
-                    from_body
+                    // Check if the parsed body has orders. A thin request with an empty
+                    // orders array will parse successfully but should use the replica instead.
+                    if !from_body.orders.is_empty() {
+                        from_body
+                    } else {
+                        let metadata = if let Some(metadata) =
+                            parse_solve_request_metadata_from_headers(&headers)?
+                        {
+                            metadata
+                        } else {
+                            parse_solve_request_metadata(&body)?
+                        };
+                        match build_solve_request_from_replica_resilient(&metadata, body_mode).await {
+                            Ok(Some(from_replica)) => from_replica,
+                            Ok(None) => anyhow::bail!(
+                                "solve request uses thin body mode but delta replica is unavailable"
+                            ),
+                            Err(err) => return Err(err),
+                        }
+                    }
                 } else {
                     let metadata = if let Some(metadata) =
                         parse_solve_request_metadata_from_headers(&headers)?
