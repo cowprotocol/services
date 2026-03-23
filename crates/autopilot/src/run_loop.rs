@@ -586,7 +586,6 @@ impl RunLoop {
         } else {
             None
         };
-        Metrics::solve_request_body_size(full_request.body_size());
 
         let mut bids = futures::future::join_all(self.drivers.iter().map(|driver| {
             let full_request = full_request.clone();
@@ -597,6 +596,7 @@ impl RunLoop {
                     full_request,
                     thin_request,
                 );
+                Metrics::solve_request_body_size(request.body_size());
                 self.solve(driver.clone(), request).await
             }
         }))

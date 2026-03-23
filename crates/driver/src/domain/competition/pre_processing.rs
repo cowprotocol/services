@@ -1028,24 +1028,49 @@ mod tests {
     fn delta_sync_resync_retry_values_are_cached() {
         static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _lock = LOCK.lock().expect("lock poisoned");
+        // Capture current initialization state so the test can be deterministic
+        // whether the `OnceLock`s were set by prior tests or not.
+        let prev_attempts = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.get().copied();
+        let prev_delay = DELTA_SYNC_RESYNC_RETRY_DELAY.get().copied();
 
-        let attempts_expected = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.get().copied().unwrap_or(7);
-        let delay_expected = DELTA_SYNC_RESYNC_RETRY_DELAY
-            .get()
-            .copied()
-            .unwrap_or_else(|| Duration::from_millis(123));
+        if prev_attempts.is_none() {
+            // Ensure we can set when uninitialized and that subsequent sets fail.
+            assert!(DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(7).is_ok());
+            assert_eq!(delta_sync_resync_retry_attempts(), 7);
+            assert!(DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(9).is_err());
+            assert_eq!(delta_sync_resync_retry_attempts(), 7);
+        } else {
+            // If already initialized elsewhere, ensure the function returns
+            // the stored value and that additional `set` calls fail.
+            let v = prev_attempts.unwrap();
+            assert_eq!(delta_sync_resync_retry_attempts(), v);
+            assert!(DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(9).is_err());
+            assert_eq!(delta_sync_resync_retry_attempts(), v);
+        }
 
-        let _ = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(7);
-        let _ = DELTA_SYNC_RESYNC_RETRY_DELAY.set(Duration::from_millis(123));
-
-        assert_eq!(delta_sync_resync_retry_attempts(), attempts_expected);
-        assert_eq!(delta_sync_resync_retry_delay(), delay_expected);
-
-        let _ = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(9);
-        let _ = DELTA_SYNC_RESYNC_RETRY_DELAY.set(Duration::from_millis(999));
-
-        assert_eq!(delta_sync_resync_retry_attempts(), attempts_expected);
-        assert_eq!(delta_sync_resync_retry_delay(), delay_expected);
+        if prev_delay.is_none() {
+            assert!(
+                DELTA_SYNC_RESYNC_RETRY_DELAY
+                    .set(Duration::from_millis(123))
+                    .is_ok()
+            );
+            assert_eq!(delta_sync_resync_retry_delay(), Duration::from_millis(123));
+            assert!(
+                DELTA_SYNC_RESYNC_RETRY_DELAY
+                    .set(Duration::from_millis(999))
+                    .is_err()
+            );
+            assert_eq!(delta_sync_resync_retry_delay(), Duration::from_millis(123));
+        } else {
+            let d = prev_delay.unwrap();
+            assert_eq!(delta_sync_resync_retry_delay(), d);
+            assert!(
+                DELTA_SYNC_RESYNC_RETRY_DELAY
+                    .set(Duration::from_millis(999))
+                    .is_err()
+            );
+            assert_eq!(delta_sync_resync_retry_delay(), d);
+        }
     }
 
     #[test]
