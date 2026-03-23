@@ -261,7 +261,7 @@ struct Inner {
 struct IndexedAuctionState {
     current_orders_by_uid: HashMap<domain::OrderUid, domain::Order>,
     current_prices_by_token: HashMap<Address, Price>,
-    filtered_invalid: HashSet<OrderUid>,
+    filtered_invalid: HashMap<OrderUid, OrderFilterReason>,
     filtered_in_flight: HashSet<OrderUid>,
     filtered_no_balance: HashSet<OrderUid>,
     filtered_no_price: HashSet<OrderUid>,
@@ -443,6 +443,7 @@ impl SolvableOrdersCache {
                 .unwrap_or_else(|_| chrono::Duration::seconds(60));
             prune_delta_history(&mut inner.delta_history, max_age);
         }
+        // Send while holding the cache lock to keep replay + live ordering consistent
         let _ = self.delta_sender.send(envelope);
     }
 
@@ -1040,12 +1041,14 @@ impl SolvableOrdersCache {
         for uid in &change_bundle.order_removed_candidates {
             let model_uid = OrderUid(uid.0);
             indexed_state.current_orders_by_uid.remove(uid);
-            let was_invalid = indexed_state.filtered_invalid.remove(&model_uid);
+            let was_invalid_reason = indexed_state.filtered_invalid.remove(&model_uid);
             let was_in_flight = indexed_state.filtered_in_flight.remove(&model_uid);
             let was_no_balance = indexed_state.filtered_no_balance.remove(&model_uid);
             let was_no_price = indexed_state.filtered_no_price.remove(&model_uid);
 
-            register_transition(model_uid, InvalidSignature, was_invalid, false);
+            if let Some(reason) = was_invalid_reason {
+                register_transition(model_uid, reason, true, false);
+            }
             register_transition(model_uid, InFlight, was_in_flight, false);
             register_transition(model_uid, InsufficientBalance, was_no_balance, false);
             register_transition(model_uid, MissingNativePrice, was_no_price, false);
@@ -1213,10 +1216,10 @@ impl SolvableOrdersCache {
         let mut candidate_orders = self
             .filter_invalid_orders(impacted_orders, &mut invalid_for_impacted)
             .await;
-        for uid in invalid_for_impacted.keys() {
-            let was_filtered = indexed_state.filtered_invalid.contains(uid);
-            indexed_state.filtered_invalid.insert(*uid);
-            register_transition(*uid, InvalidSignature, was_filtered, true);
+        for (uid, reason) in invalid_for_impacted.iter() {
+            let was_filtered = indexed_state.filtered_invalid.contains_key(uid);
+            indexed_state.filtered_invalid.insert(*uid, *reason);
+            register_transition(*uid, *reason, was_filtered, true);
             indexed_state
                 .current_orders_by_uid
                 .remove(&domain::OrderUid(uid.0));
@@ -1274,8 +1277,10 @@ impl SolvableOrdersCache {
             if let Some(order) = db_solvable_orders.orders.get(&uid) {
                 let model_uid = order.metadata.uid;
                 if !invalid_for_impacted.contains_key(&model_uid) {
-                    let was_filtered = indexed_state.filtered_invalid.remove(&model_uid);
-                    register_transition(model_uid, InvalidSignature, was_filtered, false);
+                    let was_filtered_reason = indexed_state.filtered_invalid.remove(&model_uid);
+                    if let Some(reason) = was_filtered_reason {
+                        register_transition(model_uid, reason, true, false);
+                    }
                 }
                 if !in_flight.contains(&model_uid) {
                     let was_filtered = indexed_state.filtered_in_flight.remove(&model_uid);
@@ -1390,6 +1395,7 @@ impl SolvableOrdersCache {
             let filtered = indexed_state
                 .filtered_invalid
                 .iter()
+                .map(|(uid, _)| uid)
                 .chain(indexed_state.filtered_in_flight.iter())
                 .chain(indexed_state.filtered_no_balance.iter())
                 .chain(indexed_state.filtered_no_price.iter())
@@ -2173,8 +2179,8 @@ fn build_indexed_state(
         ..Default::default()
     };
 
-    for uid in invalid_order_uids.keys() {
-        state.filtered_invalid.insert(*uid);
+    for (uid, reason) in invalid_order_uids.iter() {
+        state.filtered_invalid.insert(*uid, *reason);
     }
 
     for (uid, reason) in filtered_order_events {
@@ -3330,7 +3336,7 @@ mod tests {
         let indexed = build_indexed_state(&auction, &invalid, &filtered);
         assert_eq!(indexed.current_orders_by_uid.len(), 1);
         assert_eq!(indexed.current_prices_by_token.len(), 1);
-        assert!(indexed.filtered_invalid.contains(&uid));
+        assert!(indexed.filtered_invalid.contains_key(&uid));
         assert!(indexed.filtered_in_flight.contains(&uid));
         assert!(indexed.filtered_no_balance.contains(&uid));
         assert!(indexed.filtered_no_price.contains(&uid));

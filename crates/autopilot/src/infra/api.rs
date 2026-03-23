@@ -335,18 +335,80 @@ async fn stream_delta_events(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response();
         }
         Err(DrainError::Lagged(skipped)) => {
+            // Instead of immediately treating this as a hard lag (410), retry once:
+            // a new subscription+replay may recover from the race where envelopes were
+            // published between the initial subscribe/replay build and this drain.
             DeltaMetrics::get().stream_lagged.inc();
             tracing::warn!(
                 after_sequence,
                 checkpoint_sequence,
                 skipped,
-                "delta stream lagged while draining live envelopes"
+                "delta stream lagged while draining live envelopes; retrying subscription once"
             );
-            return delta_stream_gone_response(
-                format!("resnapshot required because subscription lagged by {skipped} messages"),
-                checkpoint_sequence,
-                None,
-            );
+
+            // Try to re-subscribe and rebuild replay+drain once.
+            match state
+                .solvable_orders_cache
+                .subscribe_deltas_with_replay_checked(query.after_sequence)
+                .await
+            {
+                Ok((new_receiver, new_replay)) => {
+                    receiver = new_receiver;
+                    replay_to_sequence = new_replay.checkpoint_sequence;
+                    // rebuild replay payloads
+                    replay_payloads.clear();
+                    for envelope in new_replay.envelopes {
+                        replay_to_sequence = replay_to_sequence.max(envelope.to_sequence);
+                        let envelope = to_api_envelope(envelope, Some(baseline_sequence));
+                        let payload = match serde_json::to_string(&envelope) {
+                            Ok(payload) => payload,
+                            Err(err) => {
+                                tracing::error!(?err, "failed to serialize delta envelope");
+                                DeltaMetrics::get().serialize_errors.inc();
+                                return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response();
+                            }
+                        };
+                        replay_payloads.push(payload);
+                    }
+
+                    match drain_live_envelopes(
+                        &mut receiver,
+                        replay_to_sequence,
+                        baseline_sequence,
+                        &mut replay_to_sequence,
+                    ) {
+                        Ok(payloads) => payloads,
+                        Err(DrainError::Serialize(err)) => {
+                            tracing::error!(?err, "failed to serialize drained delta envelope");
+                            DeltaMetrics::get().serialize_errors.inc();
+                            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response();
+                        }
+                        Err(DrainError::Lagged(skipped)) => {
+                            tracing::warn!(
+                                after_sequence,
+                                checkpoint_sequence,
+                                skipped,
+                                "delta stream lagged while draining live envelopes even after retry"
+                            );
+                            // Use the retry's checkpoint (replay_to_sequence) in the resync response
+                            return delta_stream_gone_response(
+                                format!("resnapshot required because subscription lagged by {skipped} messages"),
+                                replay_to_sequence,
+                                None,
+                            );
+                        }
+                    }
+                }
+                Err(_) => {
+                    // If we cannot re-subscribe for any reason, fall back to resync response.
+                    tracing::warn!("failed to re-subscribe after lag while draining live envelopes");
+                    return delta_stream_gone_response(
+                        format!("resnapshot required because subscription lagged by {skipped} messages"),
+                        checkpoint_sequence,
+                        None,
+                    );
+                }
+            }
         }
     };
     replay_payloads.extend(drained_outcome.payloads);
