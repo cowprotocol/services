@@ -228,15 +228,16 @@ impl Bitget {
 
         Err(match error_code.unwrap_or(80000) {
             80001 // Insufficient token balance
-            | 80002 // Amount below minimum
-            | 80003 // Amount above maximum
             | 80004 // Order expired
             | 80005 // Insufficient liquidity
             | 80008 // Reverse quote did not converge
             | 80009 // Token info not found
             | 80010 // Price/gas price not found
             => Error::NotFound,
-            80006 => Error::BadRequest, // Illegal request
+            80002 // Amount below minimum
+            | 80003 // Amount above maximum
+            | 80006 // Illegal request
+            => Error::BadRequest,
             code => Error::Api { code, message },
         })
     }
