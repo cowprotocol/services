@@ -9,13 +9,15 @@ use {
 #[tokio::test]
 async fn sell_no_liquidity() {
     let api = mock::http::setup(vec![
-        // Swap request returns an error status.
+        // Swap request returns an error status (insufficient liquidity).
         mock::http::Expectation::Post {
             path: mock::http::Path::exact("bgw-pro/swapx/pro/swap"),
             req: mock::http::RequestBody::Any,
             res: json!({
-                "status": 404,
-                "data": {}
+                "status": 1,
+                "error_code": 80005,
+                "message": "Insufficient liquidity; transaction cannot be completed at this time.",
+                "data": null
             }),
         },
     ])
