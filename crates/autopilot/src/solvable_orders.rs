@@ -762,14 +762,10 @@ impl SolvableOrdersCache {
         );
 
         if store_events {
-            self.store_events_by_reason(
-                inputs.invalid_order_uids.clone(),
-                OrderEventLabel::Invalid,
-            );
-            self.store_events_by_reason(
-                inputs.filtered_order_events.clone(),
-                OrderEventLabel::Filtered,
-            );
+            let invalid_order_uids_clone = inputs.invalid_order_uids.clone();
+            let filtered_order_events_clone = inputs.filtered_order_events.clone();
+            self.store_events_by_reason(invalid_order_uids_clone, OrderEventLabel::Invalid);
+            self.store_events_by_reason(filtered_order_events_clone, OrderEventLabel::Filtered);
         }
 
         let mut cache = self.cache.lock().await;

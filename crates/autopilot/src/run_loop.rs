@@ -97,7 +97,12 @@ pub struct RunLoop {
     /// the most recent data available.
     maintenance: MaintenanceSync,
     winner_selection: winner_selection::Arbitrator,
+    /// Notifier for waking up the main loop on new blocks or orders
+    wake_notify: Arc<tokio::sync::Notify>,
 }
+
+const MAX_INTERVAL: Duration = Duration::from_secs(30);
+const FOLLOWER_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 impl RunLoop {
     #[expect(clippy::too_many_arguments)]
@@ -131,6 +136,7 @@ impl RunLoop {
             probes,
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
+            wake_notify,
         }
     }
 
@@ -154,19 +160,41 @@ impl RunLoop {
             leader_lock_tracker.try_acquire().await;
 
             if !leader_lock_tracker.is_leader() {
-                // only the leader is supposed to run the auctions
-                tokio::time::sleep(Duration::from_millis(200)).await;
+                // Follower nodes: update cache and sleep, keep last_block warm
+                let _ = self_arc.update_caches(&mut last_block, false).await;
+                tokio::time::sleep(FOLLOWER_POLL_INTERVAL).await;
                 continue;
             }
 
-            let start_block = self_arc
-                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
-                .await;
+            // Only leader nodes wait for notifications or timeout, then update
+            match tokio::time::timeout(MAX_INTERVAL, self_arc.wake_notify.notified()).await {
+                Ok(_) => {
+                    // Got a notification, proceed
+                }
+                Err(_) => {
+                    // Timeout elapsed, log and continue
+                    tracing::debug!("run_loop: wake_notify timeout elapsed, proceeding");
+                }
+            }
+
+            // Re-confirm leadership after waiting
+            leader_lock_tracker.try_acquire().await;
+            if !leader_lock_tracker.is_leader() {
+                // Lost leadership after waiting, skip this cycle
+                continue;
+            }
+
+            let start_block = self_arc.update_caches(&mut last_block, true).await;
             if let Some(auction) = self_arc
                 .next_auction(start_block, &mut last_auction, &mut last_block)
                 .await
             {
                 let auction_id = auction.id;
+
+                self_arc
+                    .solvable_orders_cache
+                    .set_auction_id(auction_id.try_into().unwrap())
+                    .await;
                 self_arc
                     .single_run(auction)
                     .instrument(tracing::info_span!("auction", auction_id))
