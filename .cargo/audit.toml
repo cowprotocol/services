@@ -5,14 +5,6 @@
 [advisories]
 # Known vulnerabilities that are tracked in https://github.com/cowprotocol/services/issues/3338
 ignore = [
-  # idna - Punycode label vulnerability (RUSTSEC-2024-0421)
-  # Needs upgrade to 1.0.0+ (transitive dependency)
-  "RUSTSEC-2024-0421",
-
-  # protobuf - Uncontrolled recursion (RUSTSEC-2024-0437)
-  # Needs upgrade to 3.7.2+ (transitive dependency)
-  "RUSTSEC-2024-0437",
-
   # rsa - Marvin Attack timing sidechannel (RUSTSEC-2023-0071)
   # No patch available yet (cryptography vulnerability)
   "RUSTSEC-2023-0071",
