@@ -113,7 +113,7 @@ impl From<bitget::Error> for Error {
         match err {
             bitget::Error::OrderNotSupported => Self::OrderNotSupported,
             bitget::Error::NotFound => Self::NotFound,
-            bitget::Error::MissingDecimals => Self::BadRequest,
+            bitget::Error::MissingDecimals | bitget::Error::BadRequest => Self::BadRequest,
             bitget::Error::RateLimited => Self::RateLimited,
             _ => Self::Other(Box::new(err)),
         }
