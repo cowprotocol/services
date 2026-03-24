@@ -459,23 +459,6 @@ impl SolvableOrdersCache {
         }
     }
 
-    pub async fn delta_after(
-        &self,
-        after_sequence: u64,
-    ) -> Result<Vec<DeltaEnvelope>, DeltaAfterError> {
-        self.delta_replay_after(after_sequence).await
-    }
-
-    pub async fn delta_replay_after(
-        &self,
-        after_sequence: u64,
-    ) -> Result<Vec<DeltaEnvelope>, DeltaAfterError> {
-        Ok(self
-            .delta_replay_with_checkpoint(after_sequence)
-            .await?
-            .envelopes)
-    }
-
     pub async fn delta_replay_with_checkpoint(
         &self,
         after_sequence: u64,
@@ -2022,7 +2005,7 @@ fn compute_delta_events(
     events
 }
 
-fn apply_delta_events_to_auction(
+pub(crate) fn apply_delta_events_to_auction(
     previous: domain::RawAuctionData,
     events: &[DeltaEvent],
 ) -> domain::RawAuctionData {
@@ -3166,44 +3149,6 @@ mod tests {
         state
     }
 
-    fn apply_events(
-        previous: domain::RawAuctionData,
-        events: &[DeltaEvent],
-    ) -> domain::RawAuctionData {
-        let mut orders: HashMap<domain::OrderUid, domain::Order> = previous
-            .orders
-            .into_iter()
-            .map(|order| (order.uid, order))
-            .collect();
-        let mut prices = previous.prices;
-
-        for event in events {
-            match event {
-                DeltaEvent::AuctionChanged { .. } => {}
-                DeltaEvent::OrderAdded(order) | DeltaEvent::OrderUpdated(order) => {
-                    orders.insert(order.uid, order.clone());
-                }
-                DeltaEvent::OrderRemoved(uid) => {
-                    orders.remove(uid);
-                }
-                DeltaEvent::PriceChanged { token, price } => {
-                    if let Some(price) = price {
-                        prices.insert((*token).into(), *price);
-                    } else {
-                        prices.remove(&(*token).into());
-                    }
-                }
-            }
-        }
-
-        normalize(domain::RawAuctionData {
-            block: previous.block,
-            orders: orders.into_values().collect(),
-            prices,
-            surplus_capturing_jit_order_owners: previous.surplus_capturing_jit_order_owners,
-        })
-    }
-
     #[test]
     fn normalized_delta_surface_ignores_non_delta_fields() {
         let mut a = domain::RawAuctionData {
@@ -3463,7 +3408,7 @@ mod tests {
 
             next_state = normalize(next_state);
             let events = compute_delta_events(Some(&state), &next_state);
-            let reconstructed = apply_events(state.clone(), &events);
+            let reconstructed = apply_delta_events_to_auction(state.clone(), &events);
 
             assert_eq!(reconstructed, next_state);
             state = next_state;

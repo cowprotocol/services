@@ -365,7 +365,8 @@ async fn stream_delta_events(
                             Err(err) => {
                                 tracing::error!(?err, "failed to serialize delta envelope");
                                 DeltaMetrics::get().serialize_errors.inc();
-                                return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response();
+                                return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error")
+                                    .into_response();
                             }
                         };
                         replay_payloads.push(payload);
@@ -381,18 +382,24 @@ async fn stream_delta_events(
                         Err(DrainError::Serialize(err)) => {
                             tracing::error!(?err, "failed to serialize drained delta envelope");
                             DeltaMetrics::get().serialize_errors.inc();
-                            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response();
+                            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal error")
+                                .into_response();
                         }
                         Err(DrainError::Lagged(skipped)) => {
                             tracing::warn!(
                                 after_sequence,
                                 checkpoint_sequence,
                                 skipped,
-                                "delta stream lagged while draining live envelopes even after retry"
+                                "delta stream lagged while draining live envelopes even after \
+                                 retry"
                             );
-                            // Use the retry's checkpoint (replay_to_sequence) in the resync response
+                            // Use the retry's checkpoint (replay_to_sequence) in the resync
+                            // response
                             return delta_stream_gone_response(
-                                format!("resnapshot required because subscription lagged by {skipped} messages"),
+                                format!(
+                                    "resnapshot required because subscription lagged by {skipped} \
+                                     messages"
+                                ),
                                 replay_to_sequence,
                                 None,
                             );
@@ -401,9 +408,13 @@ async fn stream_delta_events(
                 }
                 Err(_) => {
                     // If we cannot re-subscribe for any reason, fall back to resync response.
-                    tracing::warn!("failed to re-subscribe after lag while draining live envelopes");
+                    tracing::warn!(
+                        "failed to re-subscribe after lag while draining live envelopes"
+                    );
                     return delta_stream_gone_response(
-                        format!("resnapshot required because subscription lagged by {skipped} messages"),
+                        format!(
+                            "resnapshot required because subscription lagged by {skipped} messages"
+                        ),
                         checkpoint_sequence,
                         None,
                     );
@@ -423,72 +434,54 @@ async fn stream_delta_events(
     let replay_stream = iter(replay_payloads.into_iter().map(|payload| {
         Ok::<sse::Event, Infallible>(sse::Event::default().event("delta").data(payload))
     }));
-    let replay_to_sequence = replay_to_sequence;
     let cache = Arc::clone(&state.solvable_orders_cache);
-    let live_stream = BroadcastStream::new(receiver)
-        .filter_map(move |item| {
-            let cache = Arc::clone(&cache);
-            async move {
-                match item {
-                    Ok(envelope) => {
-                        // Avoid replay/live overlap if a message was delivered
-                        // to the broadcast channel before the replay was built.
-                        if envelope.to_sequence <= replay_to_sequence {
-                            return None;
-                        }
-
-                        match serde_json::to_string(&to_api_envelope(
-                            envelope,
-                            Some(baseline_sequence),
-                        )) {
-                            Ok(payload) => Some(LiveEvent {
-                                event: sse::Event::default().event("delta").data(payload),
-                                close: false,
-                            }),
-                            Err(err) => {
-                                tracing::error!(?err, "failed to serialize live delta envelope");
-                                DeltaMetrics::get().serialize_errors.inc();
-                                Some(LiveEvent {
-                                    event: sse::Event::default()
-                                        .event("error")
-                                        .data("failed to serialize live delta envelope"),
-                                    close: true,
-                                })
-                            }
+    let live_stream = BroadcastStream::new(receiver).filter_map(move |item| {
+        let cache = Arc::clone(&cache);
+        async move {
+            match item {
+                Ok(envelope) => {
+                    if envelope.to_sequence <= replay_to_sequence {
+                        return None;
+                    }
+                    match serde_json::to_string(&to_api_envelope(envelope, Some(baseline_sequence)))
+                    {
+                        Ok(payload) => Some(Ok::<sse::Event, Infallible>(
+                            sse::Event::default().event("delta").data(payload),
+                        )),
+                        Err(err) => {
+                            tracing::error!(?err, "failed to serialize live delta envelope");
+                            DeltaMetrics::get().serialize_errors.inc();
+                            Some(Ok::<sse::Event, Infallible>(
+                                sse::Event::default()
+                                    .event("error")
+                                    .data("failed to serialize live delta envelope"),
+                            ))
                         }
                     }
-                    Err(BroadcastStreamRecvError::Lagged(skipped)) => Some(LiveEvent {
-                        event: sse::Event::default().event("resync_required").data({
-                            DeltaMetrics::get().stream_lagged.inc();
-                            let latest_sequence =
-                                cache.delta_sequence().await.unwrap_or(checkpoint_sequence);
-                            tracing::warn!(
-                                after_sequence,
-                                checkpoint_sequence,
-                                skipped,
-                                "delta stream lagged"
-                            );
-                            serde_json::json!({
-                                "message": format!("delta stream lagged by {skipped} messages"),
-                                "latestSequence": latest_sequence,
-                                "skipped": skipped,
-                            })
-                            .to_string()
-                        }),
-                        close: true,
-                    }),
+                }
+                Err(BroadcastStreamRecvError::Lagged(skipped)) => {
+                    DeltaMetrics::get().stream_lagged.inc();
+                    let latest_sequence =
+                        cache.delta_sequence().await.unwrap_or(checkpoint_sequence);
+                    tracing::warn!(
+                        after_sequence,
+                        checkpoint_sequence,
+                        skipped,
+                        "delta stream lagged"
+                    );
+                    let payload = serde_json::json!({
+                        "message": "delta stream lagged",
+                        "latestSequence": latest_sequence,
+                        "skipped": skipped
+                    })
+                    .to_string();
+                    Some(Ok::<sse::Event, Infallible>(
+                        sse::Event::default().event("resync_required").data(payload),
+                    ))
                 }
             }
-        })
-        .scan(false, |closed, item| {
-            if *closed {
-                return std::future::ready(None);
-            }
-            if item.close {
-                *closed = true;
-            }
-            std::future::ready(Some(Ok::<sse::Event, Infallible>(item.event)))
-        });
+        }
+    });
     let stream = replay_stream.chain(live_stream);
 
     let (stream_sender, stream_receiver) =
@@ -596,11 +589,6 @@ fn to_api_envelope(
             .map(delta_event_to_dto)
             .collect(),
     }
-}
-
-struct LiveEvent {
-    event: sse::Event,
-    close: bool,
 }
 
 #[derive(Debug)]
@@ -1341,7 +1329,8 @@ mod tests {
                 price: Some(test_price(1200)),
             },
         ];
-        let current = apply_events(baseline.clone(), &events);
+        let current =
+            crate::solvable_orders::apply_delta_events_to_auction(baseline.clone(), &events);
         let envelope = DeltaEnvelope {
             auction_id: 1,
             auction_sequence: 2,

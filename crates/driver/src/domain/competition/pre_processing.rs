@@ -36,7 +36,7 @@ use {
         collections::HashMap,
         future::Future,
         str::FromStr,
-        sync::{Arc, OnceLock},
+        sync::{Arc, LazyLock},
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
@@ -48,8 +48,21 @@ type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
-static DELTA_SYNC_RESYNC_RETRY_ATTEMPTS: OnceLock<usize> = OnceLock::new();
-static DELTA_SYNC_RESYNC_RETRY_DELAY: OnceLock<Duration> = OnceLock::new();
+static DELTA_SYNC_RESYNC_RETRY_ATTEMPTS: LazyLock<usize> = LazyLock::new(|| {
+    parse_retry_attempts(
+        std::env::var("DRIVER_DELTA_SYNC_RESYNC_RETRY_ATTEMPTS")
+            .ok()
+            .as_deref(),
+    )
+});
+
+static DELTA_SYNC_RESYNC_RETRY_DELAY: LazyLock<Duration> = LazyLock::new(|| {
+    parse_retry_delay_ms(
+        std::env::var("DRIVER_DELTA_SYNC_RESYNC_RETRY_DELAY_MS")
+            .ok()
+            .as_deref(),
+    )
+});
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SolveRequestBodyMode {
@@ -928,24 +941,26 @@ async fn build_solve_request_from_replica_resilient(
 }
 
 fn delta_sync_resync_retry_attempts() -> usize {
-    *DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.get_or_init(|| {
-        std::env::var("DRIVER_DELTA_SYNC_RESYNC_RETRY_ATTEMPTS")
-            .ok()
-            .and_then(|value| value.parse::<usize>().ok())
-            .filter(|value| *value > 0)
-            .unwrap_or(3)
-    })
+    *DELTA_SYNC_RESYNC_RETRY_ATTEMPTS
 }
 
 fn delta_sync_resync_retry_delay() -> Duration {
-    *DELTA_SYNC_RESYNC_RETRY_DELAY.get_or_init(|| {
-        let millis = std::env::var("DRIVER_DELTA_SYNC_RESYNC_RETRY_DELAY_MS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|value| *value > 0)
-            .unwrap_or(500);
-        Duration::from_millis(millis)
-    })
+    *DELTA_SYNC_RESYNC_RETRY_DELAY
+}
+
+fn parse_retry_attempts(value: Option<&str>) -> usize {
+    value
+        .and_then(|v| v.parse().ok())
+        .filter(|v: &usize| *v > 0)
+        .unwrap_or(3)
+}
+
+fn parse_retry_delay_ms(value: Option<&str>) -> Duration {
+    let millis = value
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(500);
+    Duration::from_millis(millis)
 }
 
 fn init_auction_id_in_span(id: Option<i64>) {
@@ -1025,52 +1040,24 @@ mod tests {
     }
 
     #[test]
-    fn delta_sync_resync_retry_values_are_cached() {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _lock = LOCK.lock().expect("lock poisoned");
-        // Capture current initialization state so the test can be deterministic
-        // whether the `OnceLock`s were set by prior tests or not.
-        let prev_attempts = DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.get().copied();
-        let prev_delay = DELTA_SYNC_RESYNC_RETRY_DELAY.get().copied();
+    fn delta_sync_resync_retry_parsing() {
+        // Test parsing helpers deterministically.
+        assert_eq!(parse_retry_attempts(None), 3);
+        assert_eq!(parse_retry_attempts(Some("")), 3);
+        assert_eq!(parse_retry_attempts(Some("0")), 3);
+        assert_eq!(parse_retry_attempts(Some("5")), 5);
+        assert_eq!(parse_retry_attempts(Some("not-a-number")), 3);
 
-        if prev_attempts.is_none() {
-            // Ensure we can set when uninitialized and that subsequent sets fail.
-            assert!(DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(7).is_ok());
-            assert_eq!(delta_sync_resync_retry_attempts(), 7);
-            assert!(DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(9).is_err());
-            assert_eq!(delta_sync_resync_retry_attempts(), 7);
-        } else {
-            // If already initialized elsewhere, ensure the function returns
-            // the stored value and that additional `set` calls fail.
-            let v = prev_attempts.unwrap();
-            assert_eq!(delta_sync_resync_retry_attempts(), v);
-            assert!(DELTA_SYNC_RESYNC_RETRY_ATTEMPTS.set(9).is_err());
-            assert_eq!(delta_sync_resync_retry_attempts(), v);
-        }
-
-        if prev_delay.is_none() {
-            assert!(
-                DELTA_SYNC_RESYNC_RETRY_DELAY
-                    .set(Duration::from_millis(123))
-                    .is_ok()
-            );
-            assert_eq!(delta_sync_resync_retry_delay(), Duration::from_millis(123));
-            assert!(
-                DELTA_SYNC_RESYNC_RETRY_DELAY
-                    .set(Duration::from_millis(999))
-                    .is_err()
-            );
-            assert_eq!(delta_sync_resync_retry_delay(), Duration::from_millis(123));
-        } else {
-            let d = prev_delay.unwrap();
-            assert_eq!(delta_sync_resync_retry_delay(), d);
-            assert!(
-                DELTA_SYNC_RESYNC_RETRY_DELAY
-                    .set(Duration::from_millis(999))
-                    .is_err()
-            );
-            assert_eq!(delta_sync_resync_retry_delay(), d);
-        }
+        assert_eq!(parse_retry_delay_ms(None), Duration::from_millis(500));
+        assert_eq!(parse_retry_delay_ms(Some("0")), Duration::from_millis(500));
+        assert_eq!(
+            parse_retry_delay_ms(Some("250")),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            parse_retry_delay_ms(Some("abc")),
+            Duration::from_millis(500)
+        );
     }
 
     #[test]
