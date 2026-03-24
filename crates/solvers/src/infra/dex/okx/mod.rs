@@ -389,6 +389,7 @@ impl Okx {
     fn handle_api_error(code: i64, message: &str) -> Result<(), Error> {
         Err(match code {
             0 => return Ok(()),
+            51005 => Error::NotFound, // Honeypot or leveraged token (undocumented)
             82000 => Error::NotFound, // Insufficient liquidity
             82104 => Error::NotFound, // Token not supported
             82112 => Error::NotFound, // Internal OKX risk validation failed
