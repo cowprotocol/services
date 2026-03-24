@@ -1,6 +1,13 @@
 help:
     @just --list
 
+setup:
+    cd contracts && \
+    cargo r -r -- vendor && \
+    cargo r -r -- generate && \
+    cargo +nightly fmt --all && \
+    tombi format
+
 # Run unit tests
 test-unit:
     cargo nextest run

@@ -2,7 +2,7 @@ use {
     alloy_primitives::{Address, B256, Bytes, U256},
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
-    contracts::alloy::GPv2Settlement,
+    contracts::GPv2Settlement,
     derive_more::Debug,
     model::{
         interaction::InteractionData,

@@ -32,7 +32,7 @@ use {
         providers::{DynProvider, Provider},
     },
     anyhow::{Context, Result},
-    contracts::alloy::{
+    contracts::{
         BalancerV2ComposableStablePoolFactory,
         BalancerV2ComposableStablePoolFactoryV3,
         BalancerV2ComposableStablePoolFactoryV4,

@@ -3,7 +3,7 @@ use {
     alloy_primitives::Address,
     alloy_rpc_types::Log,
     anyhow::Context,
-    contracts::alloy::cow_amm::{
+    contracts::cow_amm::{
         CowAmmLegacyHelper,
         CowAmmLegacyHelper::CowAmmLegacyHelper::CowAmmLegacyHelperEvents as CowAmmEvent,
     },

@@ -5,7 +5,7 @@ use {
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, anyhow},
     balance_overrides::BalanceOverriding,
-    contracts::alloy::{GPv2Settlement, WETH9, support::Solver},
+    contracts::{GPv2Settlement, WETH9, support::Solver},
     eth_domain_types::NonZeroU256,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{

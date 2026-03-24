@@ -1,7 +1,7 @@
 use {
     crate::{Amm, cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval},
     alloy_primitives::Address,
-    contracts::alloy::cow_amm::CowAmmLegacyHelper,
+    contracts::cow_amm::CowAmmLegacyHelper,
     ethrpc::{AlloyProvider, block_stream::CurrentBlockWatcher},
     event_indexing::{
         block_retriever::BlockRetriever,

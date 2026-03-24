@@ -8,7 +8,7 @@ use {
     alloy_sol_types::SolCall,
     alloy_transport::{RpcError, TransportErrorKind},
     anyhow::{Context, Result, bail, ensure},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     ethrpc::Web3,
     model::interaction::InteractionData,
 };

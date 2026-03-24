@@ -12,7 +12,7 @@ use {
         order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
-    contracts::alloy::{ERC20, IZeroex},
+    contracts::{ERC20, IZeroex},
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
         assert_approximately_eq,
