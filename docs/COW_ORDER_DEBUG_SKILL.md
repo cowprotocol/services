@@ -26,13 +26,10 @@ When presenting findings, follow these guidelines:
 
 Run through these in order:
 
-1. [ ] **Order status** — Check API status first (cancelled/expired/fulfilled/open)
-2. [ ] **User cancellation** — If cancelled, search logs for `order cancelled all:ORDER_UID` FIRST
-3. [ ] **Order in auction** — Was order in autopilot auction? When?
-4. [ ] **Solver bids** — Did any solver bid? What happened to their solution?
-5. [ ] **Settlement outcome** — Did settlement succeed/fail/timeout?
-6. [ ] **Limit price sanity** — Was quote reasonable? Check slippage, fees, gas
-7. [ ] **Price movement** — Did price move between quote and expiry?
+1. [ ] **Order overview** — Check `/debug/order` endpoing first to get an overfiew of the order's lifetime. Use the creation and expiration timestamp to limit ALL log queries to only this relevant time period.
+2. [ ] **User cancellation** — If cancelled, search logs for `order cancelled all:ORDER_UID` FIRST, note that the order was cancelled but still investigate why the order was so slow to execute that the user ultimately cancelled the order
+3.  [ ] **Reverts** when there are `discarded` solutions resimulate the first one and investgiate why it reverted
+4. [ ] **Limit Price** when there were 0 solutions proposed for the order investigate whether the order's limit price is reasonable given the order's quote
 
 ---
 
