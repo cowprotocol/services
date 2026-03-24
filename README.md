@@ -4,6 +4,8 @@
 
 This repository contains backend code for [Cow Protocol Services](https://docs.cow.fi/) written in Rust.
 
+New to the repo? Start with the architecture + flow diagrams in [`docs/ONBOARDING.md`](./docs/ONBOARDING.md), then run the stack locally via the [`playground`](./playground/README.md).
+
 ## Order Book
 
 The `orderbook` crate provides the http api through which users (usually through a frontend web application) interact with the order book.
