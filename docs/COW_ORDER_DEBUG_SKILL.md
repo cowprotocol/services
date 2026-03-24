@@ -2,6 +2,26 @@
 
 Debug why CoW Protocol orders fail to match. Requires DB access + Victoria Logs access (via Grafana).
 
+## Report Style
+
+When presenting findings, follow these guidelines:
+
+- **Detail level**: Detailed and comprehensible, but not verbose. Include what matters, skip what doesn't.
+- **Tables**: Use tables whenever presenting structured data (order fields, event timelines, filter reasons, comparisons).
+- **Addresses & hashes**: Always log the **full** contract address or transaction hash — never truncate.
+- **Timestamps**: Always show `YYYY-MM-DD HH:MM:SS UTC (unix_timestamp)`. Example: `2024-03-15 14:32:01 UTC (1710510721)`.
+- **Formatting**:
+  - **Bold** for key facts, final verdicts, and important values.
+  - *Italics* for context, side-notes, or caveats.
+  - `code` for addresses, hashes, UIDs, amounts, and log snippets.
+  - Use `> ` blockquotes to call out the **root cause** conclusion.
+- **Colors** (GitHub-flavored markdown callouts where supported):
+  - 🔴 / ❌ for failures, errors, root causes
+  - 🟡 / ⚠️ for warnings, suspicious or ambiguous findings
+  - 🟢 / ✅ for expected/healthy behavior
+
+---
+
 ## Quick Checklist
 
 Run through these in order:
@@ -17,6 +37,25 @@ Run through these in order:
 ---
 
 ## 1. Fetch Order Data
+
+### Debug endpoint (most comprehensive)
+
+The debug endpoint returns **all relevant DB data** for an order in a single call — quotes, events, auction history, trades, etc. Start here.
+
+```bash
+# Read key directly — more reliable than source .env.claude (avoids variable expansion issues)
+X_API_KEY=$(grep '^X_API_KEY=' .env.claude | cut -d= -f2)
+
+# Production:
+curl -s "https://partners.cow.fi/$NETWORK/api/v1/debug/order/$ORDER_UID" \
+  -H "X-API-Key: $X_API_KEY" | jq .
+
+# Barn (staging):
+curl -s "https://partners.barn.cow.fi/$NETWORK/api/v1/debug/order/$ORDER_UID" \
+  -H "X-API-Key: $X_API_KEY" | jq .
+```
+
+### Public order endpoint
 
 ```bash
 # Replace $NETWORK (mainnet/gnosis/arbitrum) and $ORDER_UID
