@@ -3,10 +3,14 @@ use {
         primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
     },
-    autopilot::config::Configuration,
-    balance_overrides::{BalanceOverrides, BalanceOverriding, Strategy},
+    balance_overrides::{BalanceOverrides, BalanceOverriding},
     bigdecimal::{BigDecimal, Zero},
-    configs::test_util::TestDefault,
+    configs::{
+        autopilot::Configuration,
+        balance_overrides::Strategy,
+        price_estimation::BalanceOverridesConfig,
+        test_util::TestDefault,
+    },
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
@@ -22,6 +26,7 @@ use {
         trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
     serde_json::json,
+    simulator::swap_simulator::SwapSimulator,
     std::sync::Arc,
 };
 
@@ -143,17 +148,30 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         .await
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
+    let balance_overrides = Arc::new(BalanceOverrides::default());
+    let gas_limit = 12_000_000;
+    let simulator = SwapSimulator::new(
+        balance_overrides.clone(),
+        *onchain.contracts().gp_settlement.address(),
+        *onchain.contracts().weth.address(),
+        block_stream.clone(),
+        web3.clone(),
+        gas_limit,
+    )
+    .await
+    .unwrap();
 
     let verifier = TradeVerifier::new(
         web3.clone(),
         None,
+        simulator,
         Arc::new(web3.clone()),
-        Arc::new(BalanceOverrides::default()),
-        block_stream,
+        balance_overrides,
         *onchain.contracts().gp_settlement.address(),
-        *onchain.contracts().weth.address(),
         BigDecimal::zero(),
         Default::default(),
+        0,
+        u32::MAX,
     )
     .await
     .unwrap();
@@ -368,21 +386,36 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    services
-        .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec![
-                    // The OpenZeppelin `ERC20Mintable` token uses a mapping in
-                    // the first (0'th) storage slot for balances.
-                    format!("--quote-token-balance-overrides={:?}@0", token.address()),
-                    // We don't configure the WETH token and instead rely on
-                    // auto-detection for balance overrides.
-                    "--quote-autodetect-token-balance-overrides=true".to_string(),
-                ],
+    // The OpenZeppelin `ERC20Mintable` token uses a mapping in
+    // the first (0'th) storage slot for balances.
+    let token_overrides: configs::balance_overrides::TokenConfiguration = toml::from_str(&format!(
+        r#"
+    [{:?}]
+    type = "SolidityMapping"
+    target_contract = "{:?}"
+    map_slot = "0x0"
+    "#,
+        token.address(),
+        token.address()
+    ))
+    .unwrap();
+    let orderbook_config = configs::orderbook::Configuration {
+        price_estimation: configs::price_estimation::PriceEstimation {
+            balance_overrides: BalanceOverridesConfig {
+                token_overrides,
+                // We don't configure the WETH token and instead rely on
+                // auto-detection for balance overrides.
+                autodetect: true,
                 ..Default::default()
             },
+            ..configs::orderbook::Configuration::test_default().price_estimation
+        },
+        ..configs::orderbook::Configuration::test_default()
+    };
+    services
+        .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            orderbook_config,
             solver,
         )
         .await;
@@ -522,12 +555,17 @@ async fn usdt_quote_verification(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec!["--quote-autodetect-token-balance-overrides=true".to_string()],
-                ..Default::default()
-            },
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration {
+                price_estimation: configs::price_estimation::PriceEstimation {
+                    balance_overrides: BalanceOverridesConfig {
+                        autodetect: true,
+                        ..Default::default()
+                    },
+                    ..configs::orderbook::Configuration::test_default().price_estimation
+                },
+                ..configs::orderbook::Configuration::test_default()
+            },
             solver,
         )
         .await;

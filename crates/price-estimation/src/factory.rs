@@ -1,6 +1,5 @@
 use {
     super::{
-        Arguments,
         NativePriceEstimator as NativePriceEstimatorSource,
         PriceEstimating,
         competition::CompetitionEstimator,
@@ -15,19 +14,21 @@ use {
         ExternalSolver,
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
-        config::native_price::NativePriceConfig,
-        trade_verifier::{code_fetching::CachedCodeFetcher, tenderly_api::TenderlyCodeSimulator},
-        utils::http_client_factory::HttpClientFactory,
+        config::{native_price::NativePriceConfig, price_estimation::BalanceOverridesConfigExt},
+        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
     bad_tokens::list_based::DenyListedTokens,
+    configs::price_estimation::PriceEstimation,
     contracts::alloy::WETH9,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,
+    http_client::HttpClientFactory,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
+    simulator::{swap_simulator::SwapSimulator, tenderly},
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
     token_info::TokenInfoFetching,
 };
@@ -60,7 +61,7 @@ pub struct Components {
 
 /// A factory for initializing shared price estimators.
 pub struct PriceEstimatorFactory<'a> {
-    args: &'a Arguments,
+    args: &'a PriceEstimation,
     config: &'a NativePriceConfig,
     network: Network,
     components: Components,
@@ -70,7 +71,7 @@ pub struct PriceEstimatorFactory<'a> {
 
 impl<'a> PriceEstimatorFactory<'a> {
     pub async fn new(
-        args: &'a Arguments,
+        args: &'a PriceEstimation,
         config: &'a NativePriceConfig,
         network: Network,
         components: Components,
@@ -86,7 +87,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     }
 
     async fn trade_verifier(
-        args: &'a Arguments,
+        args: &'a PriceEstimation,
         network: &Network,
         components: &Components,
     ) -> Result<Option<Arc<dyn TradeVerifying>>> {
@@ -95,24 +96,37 @@ impl<'a> PriceEstimatorFactory<'a> {
         };
         let web3 = web3.labeled("simulator");
 
-        let tenderly = args
-            .tenderly
-            .get_api_instance(&components.http_factory, "price_estimation".to_owned())
-            .unwrap()
-            .map(|t| Arc::new(TenderlyCodeSimulator::new(t, network.chain.id())));
-
         let balance_overrides = args.balance_overrides.init(web3.clone());
+
+        let tenderly = args.tenderly.as_ref().map(|config| {
+            Arc::new(tenderly::TenderlyApi::new_instrumented(
+                "price_estimation".to_string(),
+                config,
+                &components.http_factory,
+                network.chain.id().to_string(),
+            )) as Arc<dyn tenderly::Api>
+        });
+        let simulator = SwapSimulator::new(
+            balance_overrides.clone(),
+            network.settlement,
+            network.native_token,
+            network.block_stream.clone(),
+            web3.clone(),
+            args.max_gas_per_tx,
+        )
+        .await?;
 
         let verifier = TradeVerifier::new(
             web3,
             tenderly,
+            simulator,
             components.code_fetcher.clone(),
             balance_overrides,
-            network.block_stream.clone(),
             network.settlement,
-            network.native_token,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
+            args.min_gas_amount_for_unverified_quotes,
+            args.max_gas_amount_for_unverified_quotes,
         )
         .await?;
         Ok(Some(Arc::new(verifier)))
@@ -202,14 +216,19 @@ impl<'a> PriceEstimatorFactory<'a> {
                 ))
             }
             NativePriceEstimatorSource::OneInchSpotPriceApi => {
+                let one_inch = self
+                    .args
+                    .one_inch
+                    .as_ref()
+                    .context("one-inch config must be set when OneInchSpotPriceApi is used")?;
                 let name = "OneInchSpotPriceApi".to_string();
                 Ok((
                     name.clone(),
                     Arc::new(InstrumentedPriceEstimator::new(
                         native::OneInch::new(
                             self.components.http_factory.create(),
-                            self.args.one_inch_url.clone(),
-                            self.args.one_inch_api_key.clone(),
+                            one_inch.url.clone(),
+                            Some(one_inch.api_key.clone()),
                             self.network.chain.id(),
                             self.network.block_stream.clone(),
                             self.components.tokens.clone(),
@@ -219,17 +238,17 @@ impl<'a> PriceEstimatorFactory<'a> {
                 ))
             }
             NativePriceEstimatorSource::CoinGecko => {
-                anyhow::ensure!(
-                    self.args.coin_gecko.coin_gecko_api_key.is_some(),
-                    "coin_gecko_api_key must be set when CoinGecko is used as native price \
-                     estimator"
-                );
+                let coin_gecko_config = self
+                    .args
+                    .coin_gecko
+                    .as_ref()
+                    .context("coin-gecko config must be set when CoinGecko is used")?;
 
                 let name = "CoinGecko".to_string();
                 let coin_gecko = native::CoinGecko::new(
                     self.components.http_factory.create(),
-                    self.args.coin_gecko.coin_gecko_url.clone(),
-                    self.args.coin_gecko.coin_gecko_api_key.clone(),
+                    coin_gecko_config.url.clone(),
+                    Some(coin_gecko_config.api_key.clone()),
                     &self.network.chain,
                     *weth.address(),
                     self.components.tokens.clone(),
@@ -237,9 +256,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .await?;
 
                 let coin_gecko: Arc<dyn NativePriceEstimating> =
-                    if let Some(coin_gecko_buffered_configuration) =
-                        &self.args.coin_gecko.coin_gecko_buffered
-                    {
+                    if let Some(buffered_config) = &coin_gecko_config.buffered {
                         let configuration = buffered::Configuration {
                             max_concurrent_requests: Some(
                                 coin_gecko
@@ -247,13 +264,9 @@ impl<'a> PriceEstimatorFactory<'a> {
                                     .try_into()
                                     .context("invalid CoinGecko max batch size")?,
                             ),
-                            debouncing_time: coin_gecko_buffered_configuration
-                                .coin_gecko_debouncing_time
-                                .unwrap(),
+                            debouncing_time: buffered_config.debouncing_time,
                             result_ready_timeout: self.args.quote_timeout,
-                            broadcast_channel_capacity: coin_gecko_buffered_configuration
-                                .coin_gecko_broadcast_channel_capacity
-                                .unwrap(),
+                            broadcast_channel_capacity: buffered_config.broadcast_channel_capacity,
                         };
 
                         Arc::new(InstrumentedPriceEstimator::new(

@@ -6,13 +6,15 @@ use {
             ext::{AnvilApi, ImpersonateConfig},
         },
     },
-    autopilot::config::{Configuration, solver::Solver},
-    configs::test_util::TestDefault,
+    configs::{
+        autopilot::{Configuration, solver::Solver},
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
+    },
     contracts::alloy::{
         ERC20,
         support::{Balances, Signatures},
     },
-    driver::domain::eth::NonZeroU256,
     e2e::setup::{
         DeployedContracts,
         OnchainComponents,
@@ -24,6 +26,7 @@ use {
         run_test,
         wait_for_condition,
     },
+    eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind, OrderUid},
@@ -187,21 +190,23 @@ async fn cow_amm_jit(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            Configuration::test("mock_solver", solver.address()),
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..Configuration::test("mock_solver", solver.address())
+            },
         )
         .await;
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     // Derive the order's valid_to from the blockchain because the cow amm enforces
@@ -562,29 +567,35 @@ factory = "0xf76c421bAb7df8548604E60deCCcE50477C10462"
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-                // it uses an older helper contract that was deployed before the desired cow amm
-                "--cow-amm-configs=0xf76c421bAb7df8548604E60deCCcE50477C10462|0x3FF0041A614A9E6Bf392cbB961C97DA214E9CB31|20476672".to_string()
-            ],
             Configuration {
                 drivers: vec![
                     Solver::test("test_solver", solver.address()),
                     Solver::test("mock_solver", solver.address()),
                 ],
+                cow_amm: configs::autopilot::cow_amm::CowAmmGroupConfig {
+                    contracts: vec![configs::autopilot::cow_amm::CowAmmConfig {
+                        factory: address!("f76c421bAb7df8548604E60deCCcE50477C10462"),
+                        helper: address!("3FF0041A614A9E6Bf392cbB961C97DA214E9CB31"),
+                        index_start: 20476672,
+                    }],
+                    ..Default::default()
+                },
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_solver",
+                    "http://localhost:11088/test_solver",
+                )]),
                 ..Configuration::test_no_drivers()
-            }
+            },
         )
         .await;
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     onchain.mint_block().await;
@@ -836,21 +847,23 @@ async fn cow_amm_opposite_direction(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
-                    .to_string(),
-            ],
-            Configuration::test("mock_solver", solver.address()),
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "mock_solver",
+                    "http://localhost:11088/mock_solver",
+                )]),
+                ..Configuration::test("mock_solver", solver.address())
+            },
         )
         .await;
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
-                    .to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "mock_solver",
+                "http://localhost:11088/mock_solver",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     // Get the current block timestamp

@@ -4,16 +4,14 @@
 /// private submission networks are used.
 use {
     super::Error,
-    crate::{
-        domain::eth,
-        infra::{config::file::GasEstimatorType, mempool},
-    },
+    crate::infra::{config::file::GasEstimatorType, mempool},
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::anyhow,
+    eth_domain_types as eth,
     ethrpc::Web3,
     gas_price_estimation::{
         GasPriceEstimating,
-        configurable_alloy::{ConfigurableGasPriceEstimator, EstimatorConfig},
+        configurable_alloy::ConfigurableGasPriceEstimator,
         eth_node::NodeGasPriceEstimator,
     },
     std::sync::Arc,
@@ -24,7 +22,7 @@ type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
 pub struct GasPriceEstimator {
-    gas: Arc<dyn GasPriceEstimating>,
+    pub(super) gas: Arc<dyn GasPriceEstimating>,
     additional_tip: AdditionalTip,
     max_fee_per_gas: eth::U256,
     min_priority_fee: eth::U256,
@@ -43,7 +41,7 @@ impl GasPriceEstimator {
                 reward_percentile,
             } => Arc::new(ConfigurableGasPriceEstimator::new(
                 web3.provider.clone(),
-                EstimatorConfig {
+                configs::gas_price_estimation::EstimatorConfig {
                     past_blocks: *past_blocks,
                     reward_percentile: *reward_percentile,
                 },

@@ -43,4 +43,14 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
+    /// solve individual orders via the OKX DEX aggregator API
+    Okx {
+        #[clap(long, env)]
+        config: PathBuf,
+    },
+    /// solve individual orders using Bitget API
+    Bitget {
+        #[clap(long, env)]
+        config: PathBuf,
+    },
 }

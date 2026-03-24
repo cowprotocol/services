@@ -11,7 +11,6 @@ use {
                 Unscored,
                 winner_selection::{self, Ranking},
             },
-            eth::{self, TxId},
             settlement::{ExecutionEnded, ExecutionStarted},
         },
         infra::{
@@ -29,6 +28,7 @@ use {
     alloy::primitives::B256,
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
+    eth_domain_types::{self as eth, Address, TxId},
     ethrpc::block_stream::BlockInfo,
     futures::{FutureExt, TryFutureExt},
     itertools::Itertools,
@@ -66,6 +66,21 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
     pub compress_solve_request: bool,
+}
+
+impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
+    fn from(value: configs::autopilot::run_loop::RunLoopConfig) -> Self {
+        Self {
+            submission_deadline: value.submission_deadline,
+            max_settlement_transaction_wait: value.max_settlement_transaction_wait,
+            solve_deadline: value.solve_deadline,
+            max_run_loop_delay: value.max_delay,
+            max_winners_per_auction: value.max_winners_per_auction,
+            max_solutions_per_solver: value.max_solutions_per_solver,
+            enable_leader_lock: value.enable_leader_lock,
+            compress_solve_request: value.compress_solve_request,
+        }
+    }
 }
 
 pub struct Probes {
@@ -266,7 +281,6 @@ impl RunLoop {
             tracing::debug!("no current auction");
             return None;
         };
-        let auction = self.remove_in_flight_orders(auction).await;
         let id = self
             .persistence
             .get_next_auction_id()
@@ -482,7 +496,7 @@ impl RunLoop {
                     .solution()
                     .prices()
                     .iter()
-                    .map(|(token, price)| (token.0, price.get().0))
+                    .map(|(token, price)| (Address::from(*token), price.get().0))
                     .collect(),
                 is_winner: bid.is_winner(),
                 filtered_out: bid.is_filtered_out(),
@@ -504,7 +518,7 @@ impl RunLoop {
                 prices: auction
                     .prices
                     .iter()
-                    .map(|(key, value)| (key.0, value.get().0))
+                    .map(|(key, value)| (Address::from(*key), value.get().0))
                     .collect(),
             },
             solutions,
@@ -517,7 +531,7 @@ impl RunLoop {
                 .prices
                 .clone()
                 .into_iter()
-                .map(|(key, value)| (key.0, value.get().0))
+                .map(|(key, value)| (*key, value.get().0))
                 .collect(),
             block_deadline,
             competition_simulation_block,
@@ -870,36 +884,6 @@ impl RunLoop {
             }
         }
         Err(SettleError::Timeout)
-    }
-
-    /// Removes orders that are currently being settled to avoid solver
-    /// solutions conflicting with each other.
-    #[instrument(skip_all)]
-    async fn remove_in_flight_orders(
-        &self,
-        mut auction: domain::RawAuctionData,
-    ) -> domain::RawAuctionData {
-        let in_flight = self
-            .persistence
-            .fetch_in_flight_orders(auction.block)
-            .await
-            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
-            .unwrap_or_default();
-
-        if in_flight.is_empty() {
-            return auction;
-        };
-
-        auction.orders.retain(|o| !in_flight.contains(&o.uid));
-        auction
-            .surplus_capturing_jit_order_owners
-            .retain(|owner| !in_flight.iter().any(|i| i.owner() == *owner));
-        tracing::debug!(
-            orders = ?in_flight,
-            "filtered out in-flight orders and surplus_capturing_jit_order_owners"
-        );
-
-        auction
     }
 }
 

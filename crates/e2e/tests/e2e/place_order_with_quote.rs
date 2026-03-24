@@ -1,8 +1,12 @@
 use {
     ::alloy::primitives::U256,
-    autopilot::{config::Configuration, shutdown_controller::ShutdownController},
-    configs::test_util::TestDefault,
-    driver::domain::eth::NonZeroU256,
+    autopilot::shutdown_controller::ShutdownController,
+    configs::{
+        autopilot::Configuration,
+        order_quoting::{ExternalSolver, OrderQuoting},
+        shared::SharedConfig,
+        test_util::TestDefault,
+    },
     e2e::setup::{colocation, wait_for_condition, *},
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
@@ -10,7 +14,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
-    number::units::EthUnit,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     shared::web3::Web3,
     std::ops::DerefMut,
 };
@@ -222,43 +226,51 @@ async fn fallback_native_price_estimator(web3: Web3) {
     let autopilot_handle = services
         .start_autopilot_with_shutdown_controller(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
-            Configuration::test("test_solver", solver.address()),
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                shared: SharedConfig {
+                    gas_estimators: vec![TestDefault::test_default()],
+                    ..Default::default()
+                },
+                ..Configuration::test("test_solver", solver.address())
+            },
             control,
         )
         .await;
 
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
-                    fallback_estimators: Some(price_estimation::NativePriceEstimators::new(vec![
-                        vec![price_estimation::NativePriceEstimator::driver(
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                fallback_estimators: Some(
+                    configs::native_price_estimators::NativePriceEstimators::new(vec![vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_solver".parse().unwrap(),
-                        )],
-                    ])),
-                    shared: price_estimation::config::native_price::NativePriceConfig {
-                        cache: price_estimation::config::native_price::CacheConfig {
-                            max_age: std::time::Duration::from_secs(2),
-                            ..Default::default()
-                        },
+                        ),
+                    ]]),
+                ),
+                shared: configs::native_price::NativePriceConfig {
+                    cache: configs::native_price::CacheConfig {
+                        max_age: std::time::Duration::from_secs(2),
                         ..Default::default()
                     },
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
+                    ..Default::default()
                 },
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
-        )
+            shared: SharedConfig {
+                gas_estimators: vec![TestDefault::test_default()],
+                ..Default::default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     tracing::info!("Quoting with autopilot running");

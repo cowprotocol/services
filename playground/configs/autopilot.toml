@@ -1,0 +1,33 @@
+node-url = "http://chain:8545"
+simulation-node-url = "http://chain:8545"
+
+[logging]
+filter = "warn,autopilot=debug,shared=info,price_estimation=info"
+
+[current-block]
+poll-interval = "1s"
+
+[[gas-estimators]]
+type = "Web3"
+
+[[gas-estimators]]
+type = "Alloy"
+
+[[drivers]]
+name = "baseline"
+url = "http://driver/baseline"
+address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
+
+[fee-policies]
+
+[order-quoting]
+price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]
+
+[native-price-estimation]
+estimators = [[{ type = "Driver", name = "baseline", url = "http://driver/baseline" }]]
+
+[native-price-estimation.cache]
+max-age = "20m"
+
+[order-quoting]
+price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]

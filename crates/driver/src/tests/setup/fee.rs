@@ -1,5 +1,5 @@
 use {
-    crate::domain::eth,
+    eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
     serde_json::json,
     serde_with::serde_as,

@@ -1,18 +1,16 @@
 use {
-    super::{competition::solution::settlement, eth},
+    super::competition::solution::settlement,
     crate::{
-        domain::{
-            BlockNo,
-            competition::solution::Settlement,
-            eth::{TxId, TxStatus},
-        },
+        domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
     anyhow::Context,
     contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
+    eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    num::Saturating,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -132,8 +130,8 @@ impl Mempools {
                         "settlement tx simulation reverted before submitting to the mempool"
                     );
                     return Err(Error::SimulationRevert {
-                        submitted_at_block: current_block,
-                        reverted_at_block: current_block,
+                        submitted_at_block: current_block.into(),
+                        reverted_at_block: current_block.into(),
                     });
                 } else {
                     tracing::warn!(
@@ -157,7 +155,7 @@ impl Mempools {
             .gas_price()
             .await
             .context("failed to compute current gas price")?;
-        let submission_block = self.ethereum.current_block().borrow().number;
+        let submission_block = self.ethereum.current_block().borrow().number.into();
         let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
 
         // if there is still a tx pending we also have to make sure we outbid that one
@@ -175,8 +173,8 @@ impl Mempools {
         };
 
         tracing::debug!(
-            submission_block,
-            blocks_until_deadline,
+            ?submission_block,
+            ?blocks_until_deadline,
             ?replacement_gas_price,
             ?current_gas_price,
             ?final_gas_price,
@@ -207,22 +205,22 @@ impl Mempools {
                     });
                 match receipt {
                     TxStatus::Executed { block_number } => return Ok(SubmissionSuccess {
-                        tx_hash: hash.clone(),
-                        submitted_at_block: submission_block.into(),
+                        tx_hash: hash,
+                        submitted_at_block: submission_block,
                         included_in_block: block_number,
                     }),
                     TxStatus::Reverted { block_number } => {
                         return Err(Error::Revert {
-                            tx_id: hash.clone(),
+                            tx_id: hash,
                             submitted_at_block: submission_block,
-                            reverted_at_block: block_number.into(),
+                            reverted_at_block: block_number,
                         })
                     }
                     TxStatus::Pending => {
                         // Check if the current block reached the submission deadline block number
-                        if block.number >= submission_deadline {
+                        if BlockNo(block.number) >= submission_deadline {
                             tracing::debug!(
-                                submission_deadline,
+                                submission_deadline = submission_deadline.0,
                                 current_block = block.number,
                                 settle_tx_hash = ?hash,
                                 "exceeded submission deadline, cancelling"
@@ -231,7 +229,7 @@ impl Mempools {
                                 .cancel(mempool, final_gas_price, signer, nonce)
                                 .await;
                             return Err(Error::Expired {
-                                tx_id: hash.clone(),
+                                tx_id: hash,
                                 submitted_at_block: submission_block,
                                 submission_deadline,
                             });
@@ -249,7 +247,7 @@ impl Mempools {
                                     .await;
                                 return Err(Error::SimulationRevert {
                                     submitted_at_block: submission_block,
-                                    reverted_at_block: block.number,
+                                    reverted_at_block: block.number.into(),
                                 });
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
@@ -278,7 +276,7 @@ impl Mempools {
                 return Ok(SubmissionSuccess {
                     tx_hash: hash,
                     included_in_block: block_number,
-                    submitted_at_block: submission_block.into(),
+                    submitted_at_block: submission_block,
                 });
             }
         }

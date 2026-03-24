@@ -4,20 +4,25 @@ use {
         primitives::{Address, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    autopilot::config::{
-        Configuration,
-        fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind},
-        solver::{Account, Solver},
-    },
     bigdecimal::BigDecimal,
-    configs::test_util::TestDefault,
+    configs::{
+        autopilot::{
+            Configuration,
+            fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind},
+            run_loop::RunLoopConfig,
+            solver::{Account, Solver},
+        },
+        order_quoting::{ExternalSolver, OrderQuoting},
+        orderbook::order_validation::OrderValidationConfig,
+        test_util::TestDefault,
+    },
     contracts::alloy::ERC20,
     database::byte_array::ByteArray,
-    driver::domain::eth::NonZeroU256,
     e2e::setup::{
         proxy::{OnRequest, ReverseProxy},
         *,
     },
+    eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -25,7 +30,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
-    orderbook::config::order_validation::OrderValidationConfig,
     shared::web3::Web3,
     std::{
         collections::HashMap,
@@ -349,22 +353,23 @@ async fn two_limit_orders_test(web3: Web3) {
     let backend: Url = "http://0.0.0.0:11088".parse().unwrap();
     let _proxy = ReverseProxy::start_with_callback(proxy_addr, &[backend], on_request);
 
+    let config = Configuration::test_no_drivers();
     let config = Configuration {
         drivers: vec![Solver::new(
             "test_solver".to_string(),
             "http://localhost:11089/test_solver".parse().unwrap(),
             Account::Address(solver.address()),
         )],
-        ..Configuration::test_no_drivers()
+        run_loop: RunLoopConfig {
+            compress_solve_request: true,
+            ..config.run_loop
+        },
+        ..config
     };
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec!["--compress-solve-request=true".to_string()],
-                ..Default::default()
-            },
             config,
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -502,23 +507,24 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let services = Services::new(&onchain).await;
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-            ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
-                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
-                        price_estimation::NativePriceEstimator::driver(
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "solver1",
+                "http://localhost:11088/test_solver",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_solver".parse().unwrap(),
                         ),
-                    ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
-                },
-                ..orderbook::config::Configuration::test_default()
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
-        )
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     // Place Orders
@@ -556,13 +562,10 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     // Start autopilot only once all the orders are created.
 
+    let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
-                "--max-winners-per-auction=2".to_string(),
-            ],
             Configuration {
                 drivers: vec![
                     Solver::new(
@@ -572,7 +575,15 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
                     ),
                     Solver::test("solver2", solver_b.address()),
                 ],
-                ..Configuration::test_no_drivers()
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "solver1",
+                    "http://localhost:11088/test_solver",
+                )]),
+                run_loop: RunLoopConfig {
+                    max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
+                    ..config.run_loop
+                },
+                ..config
             },
         )
         .await;
@@ -740,27 +751,27 @@ async fn too_many_limit_orders_test(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            Configuration::test("test_solver", solver_address),
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..Configuration::test("test_solver", solver_address)
+            },
         )
         .await;
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            orderbook::config::Configuration {
-                order_validation: OrderValidationConfig {
-                    max_limit_orders_per_user: 1,
-                    ..Default::default()
-                },
-                ..orderbook::config::Configuration::test_default()
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            order_validation: OrderValidationConfig {
+                max_limit_orders_per_user: 1,
+                ..Default::default()
             },
-        )
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     let order = OrderCreation {
@@ -843,27 +854,27 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     services
         .start_autopilot(
             None,
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            Configuration::test("test_solver", solver_address),
+            Configuration {
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_solver",
+                )]),
+                ..Configuration::test("test_solver", solver_address)
+            },
         )
         .await;
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-            orderbook::config::Configuration {
-                order_validation: OrderValidationConfig {
-                    max_limit_orders_per_user: 1,
-                    ..Default::default()
-                },
-                ..orderbook::config::Configuration::test_default()
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            order_validation: OrderValidationConfig {
+                max_limit_orders_per_user: 1,
+                ..Default::default()
             },
-        )
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     let quote_request = OrderQuoteRequest {
@@ -1166,12 +1177,9 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                autopilot: vec![format!("--unsupported-tokens={:#x}", unsupported.address())],
-                ..Default::default()
-            },
             Configuration {
                 drivers: vec![Solver::test("test_solver", solver.address())],
+                unsupported_tokens: vec![*unsupported.address()],
                 fee_policies: FeePoliciesConfig {
                     policies: vec![
                         FeePolicy {
@@ -1179,21 +1187,22 @@ async fn no_liquidity_limit_order(web3: Web3) {
                                 factor: 0.5.try_into().unwrap(),
                                 max_volume_factor: 0.01.try_into().unwrap(),
                             },
-                            order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Limit,
+                            order_class: configs::autopilot::fee_policy::FeePolicyOrderClass::Limit,
                         },
                         FeePolicy {
                             kind: FeePolicyKind::PriceImprovement {
                                 factor: 0.5.try_into().unwrap(),
                                 max_volume_factor: 0.01.try_into().unwrap(),
                             },
-                            order_class: autopilot::config::fee_policy::FeePolicyOrderClass::Market,
+                            order_class:
+                                configs::autopilot::fee_policy::FeePolicyOrderClass::Market,
                         },
                     ],
                     ..Default::default()
                 },
                 ..Configuration::test_no_drivers()
             },
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -1362,9 +1371,8 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
             500,
         )
@@ -1563,9 +1571,8 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     // Start protocol with 500 bps (5%) haircut
     services
         .start_protocol_with_args_and_haircut(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
             500,
         )

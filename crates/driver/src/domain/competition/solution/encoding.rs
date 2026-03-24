@@ -2,11 +2,11 @@ use {
     super::{error::Math, interaction::Liquidity, settlement, slippage, trade::ClearingPrices},
     crate::{
         domain::{
+            self,
             competition::{
                 self,
                 order::{self, Partial},
             },
-            eth::{self, Ether, allowance},
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
@@ -17,6 +17,7 @@ use {
         sol_types::SolCall,
     },
     contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
+    eth_domain_types::{self as eth, Ether, allowance},
     itertools::Itertools,
     num::Zero,
 };
@@ -192,7 +193,7 @@ pub fn tx(
         }
 
         interactions.push(match interaction {
-            competition::solution::Interaction::Custom(interaction) => eth::Interaction {
+            competition::solution::Interaction::Custom(interaction) => domain::Interaction {
                 value: interaction.value,
                 target: interaction.target.into(),
                 call_data: interaction.call_data.clone(),
@@ -270,10 +271,10 @@ fn encode_flashloan_settlement(
         .flashloans
         .values()
         .map(|flashloan| LoanRequest::Data {
-            amount: flashloan.amount.0,
-            borrower: flashloan.protocol_adapter.0,
-            lender: flashloan.liquidity_provider.0,
-            token: flashloan.token.0.0,
+            amount: flashloan.amount,
+            borrower: flashloan.protocol_adapter,
+            lender: flashloan.liquidity_provider,
+            token: flashloan.token,
         })
         .collect();
 
@@ -342,7 +343,7 @@ pub fn liquidity_interaction(
     liquidity: &Liquidity,
     slippage: &slippage::Parameters,
     settlement_contract: &Address,
-) -> Result<eth::Interaction, Error> {
+) -> Result<domain::Interaction, Error> {
     let (input, output) = slippage.apply_to(&slippage::Interaction {
         input: liquidity.input,
         output: liquidity.output,
@@ -365,10 +366,10 @@ pub fn liquidity_interaction(
     )))
 }
 
-pub fn approve(allowance: &Allowance) -> eth::Interaction {
+pub fn approve(allowance: &Allowance) -> domain::Interaction {
     let selector = hex_literal::hex!("095ea7b3");
     let amount: [_; 32] = allowance.amount.to_be_bytes();
-    eth::Interaction {
+    domain::Interaction {
         target: allowance.token.0.into(),
         value: Ether::zero(),
         // selector (4 bytes) + spender (20 byte address padded to 32 bytes) + amount (32 bytes)
@@ -383,8 +384,8 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
     }
 }
 
-fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> eth::Interaction {
-    eth::Interaction {
+fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> domain::Interaction {
+    domain::Interaction {
         target: *weth.address(),
         value: Ether::zero(),
         call_data: weth.withdraw(amount.0).calldata().to_vec().into(),
@@ -422,9 +423,10 @@ struct Flags {
 
 pub mod codec {
     use {
-        crate::domain::{competition::order, eth},
+        crate::domain::{self, competition::order},
         alloy::primitives::{Bytes, U256},
         contracts::alloy::GPv2Settlement,
+        eth_domain_types as eth,
     };
 
     pub(super) fn trade(trade: &super::Trade) -> GPv2Settlement::GPv2Trade::Data {
@@ -475,7 +477,7 @@ pub mod codec {
     }
 
     pub(super) fn interaction(
-        interaction: &eth::Interaction,
+        interaction: &domain::Interaction,
     ) -> GPv2Settlement::GPv2Interaction::Data {
         GPv2Settlement::GPv2Interaction::Data {
             target: interaction.target,

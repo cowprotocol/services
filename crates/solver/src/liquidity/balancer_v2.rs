@@ -447,7 +447,8 @@ mod tests {
 
         let [_, interactions, _] = encoder
             .finish(InternalizationStrategy::SkipInternalizableInteraction)
-            .interactions;
+            .interactions
+            .into_array();
         assert_eq!(
             interactions,
             [

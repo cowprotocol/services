@@ -2,18 +2,20 @@ use {
     super::{Error, Solution, encoding, trade::ClearingPrices},
     crate::{
         domain::{
+            self,
             competition::{
                 self,
                 auction,
                 order::{self},
                 solution::{self, Interaction, Trade, error},
             },
-            eth,
         },
-        infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
+        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
     alloy::primitives::U256,
+    eth_domain_types as eth,
     futures::future::try_join_all,
+    simulator::Simulator,
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
 };
@@ -270,7 +272,7 @@ impl Settlement {
     }
 
     /// Solution's pre interactions
-    pub fn pre_interactions(&self) -> &[eth::Interaction] {
+    pub fn pre_interactions(&self) -> &[domain::Interaction] {
         self.solution.pre_interactions()
     }
 
@@ -280,7 +282,7 @@ impl Settlement {
     }
 
     /// Solution's post interactions
-    pub fn post_interactions(&self) -> &[eth::Interaction] {
+    pub fn post_interactions(&self) -> &[domain::Interaction] {
         self.solution.post_interactions()
     }
 

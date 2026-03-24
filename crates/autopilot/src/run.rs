@@ -2,7 +2,6 @@ use {
     crate::{
         arguments::CliArguments,
         boundary,
-        config::{Configuration, solver::Account},
         database::{
             Postgres,
             ethflow_events::event_retriever::EthFlowRefundRetriever,
@@ -30,20 +29,21 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
+    configs::autopilot::{Configuration, solver::Account},
     contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
+    http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
     observe::metrics::LivenessChecking,
     price_estimation::{
+        config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::NativePriceEstimating,
         trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
-        arguments::tracing_config,
-        http_client::HttpClientFactory,
         order_quoting::{self, OrderQuoter},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -133,11 +133,24 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .validate()
         .expect("failed to validate configuration file");
 
+    let tracing_config = config
+        .shared
+        .tracing
+        .collector_endpoint
+        .as_ref()
+        .map(|endpoint| {
+            observe::TracingConfig::new(
+                endpoint.clone(),
+                "autopilot".into(),
+                config.shared.tracing.exporter_timeout,
+                config.shared.tracing.level,
+            )
+        });
     let obs_config = observe::Config::new(
-        args.shared.logging.log_filter.as_str(),
-        args.shared.logging.log_stderr_threshold,
-        args.shared.logging.use_json_logs,
-        tracing_config(&args.shared.tracing, "autopilot".into()),
+        config.shared.logging.filter.as_str(),
+        config.shared.logging.stderr_threshold,
+        config.shared.logging.use_json,
+        tracing_config,
     );
     observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
@@ -151,20 +164,16 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
-    if args.shadow.is_some() {
-        shadow_mode(args, config).await;
+    if config.shadow.is_some() {
+        shadow_mode(config).await;
     } else {
-        run(args, config, ShutdownController::default()).await;
+        run(config, ShutdownController::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(
-    args: CliArguments,
-    config: Configuration,
-    shutdown_controller: ShutdownController,
-) {
-    assert!(args.shadow.is_none(), "cannot run in shadow mode");
+pub async fn run(config: Configuration, shutdown_controller: ShutdownController) {
+    assert!(config.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         config.database.write_url.as_str(),
         crate::database::Config {
@@ -179,13 +188,14 @@ pub async fn run(
     // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
     crate::database::run_database_metrics_work(db_write.clone());
 
-    let http_factory = HttpClientFactory::new(&args.http_client);
-    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
-    let simulation_web3 = args
+    let http_factory = HttpClientFactory::from(config.http_client);
+    let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
+    let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
+    let simulation_web3 = config
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&ethrpc_args, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -193,32 +203,33 @@ pub async fn run(
         .instrument(info_span!("chain_id"))
         .await
         .expect("Could not get chainId");
-    if let Some(expected_chain_id) = args.shared.chain_id {
+    if let Some(expected_chain_id) = config.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
             "connected to node with incorrect chain ID",
         );
     }
 
-    let unbuffered_ethrpc = unbuffered_ethrpc(&args.shared.node_url).await;
-    let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
+    let unbuffered_ethrpc = unbuffered_ethrpc(&config.shared.node_url).await;
+    let ethrpc = ethrpc(&config.shared.node_url, &ethrpc_args).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
     let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
-        settlement: args.shared.settlement_contract_address,
-        signatures: args.shared.signatures_contract_address,
-        weth: args.shared.native_token_address,
-        balances: args.shared.balances_contract_address,
-        trampoline: args.shared.hooks_contract_address,
+        settlement: config.shared.contracts.settlement,
+        signatures: config.shared.contracts.signatures,
+        weth: config.shared.contracts.native_token,
+        balances: config.shared.contracts.balances,
+        trampoline: config.shared.contracts.hooks,
     };
+    let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
     let eth = ethereum(
         web3.clone(),
         unbuffered_ethrpc.web3().clone(),
         &chain,
         url,
         contracts.clone(),
-        &args.shared.current_block,
+        &current_block_args,
     )
     .await;
 
@@ -230,7 +241,7 @@ pub async fn run(
         .await
         .expect("Couldn't get vault relayer address");
 
-    let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
+    let vault_address = config.shared.contracts.balancer_v2_vault.or_else(|| {
         let chain_id = chain.id();
         let addr = BalancerV2Vault::deployment_address(&chain_id);
         if addr.is_none() {
@@ -244,7 +255,7 @@ pub async fn run(
 
     let chain = Chain::try_from(chain_id).expect("incorrect chain ID");
 
-    let balance_overrider = args.price_estimation.balance_overrides.init(web3.clone());
+    let balance_overrider = config.price_estimation.balance_overrides.init(web3.clone());
 
     let balance_fetcher = account_balances::cached(
         &web3,
@@ -258,17 +269,23 @@ pub async fn run(
         eth.current_block().clone(),
     );
 
+    let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config
+        .shared
+        .gas_estimators
+        .iter()
+        .map(shared::arguments::gas_estimator_type_from_config)
+        .collect();
     let gas_price_estimator = Arc::new(
         gas_price_estimation::create_priority_estimator(
             http_factory.create(),
             &web3,
-            args.shared.gas_estimators.as_slice(),
+            &gas_estimators,
         )
         .await
         .expect("failed to create gas price estimator"),
     );
 
-    let deny_listed_tokens = DenyListedTokens::new(args.unsupported_tokens.clone());
+    let deny_listed_tokens = DenyListedTokens::new(config.unsupported_tokens.clone());
 
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
@@ -281,7 +298,7 @@ pub async fn run(
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
-        &args.price_estimation,
+        &config.price_estimation,
         &config.native_price_estimation.shared,
         factory::Network {
             web3: web3.clone(),
@@ -299,9 +316,9 @@ pub async fn run(
             block_stream: eth.current_block().clone(),
         },
         factory::Components {
-            http_factory: price_estimation::utils::http_client_factory::HttpClientFactory::new(
-                http_factory.timeout,
-            ),
+            http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
+                timeout: http_factory.timeout,
+            }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
             code_fetcher: code_fetcher.clone(),
@@ -353,21 +370,23 @@ pub async fn run(
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args
+            &config
                 .order_quoting
                 .price_estimation_drivers
                 .iter()
-                .map(|price_estimator_driver| price_estimation::ExternalSolver {
-                    name: price_estimator_driver.name.clone(),
-                    url: price_estimator_driver.url.clone(),
-                })
+                .map(
+                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
+                        name: price_estimator_driver.name.clone(),
+                        url: price_estimator_driver.url.clone(),
+                    },
+                )
                 .collect::<Vec<_>>(),
             api_native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
         .unwrap();
 
-    let skip_event_sync_start = if args.skip_event_sync {
+    let skip_event_sync_start = if config.ethflow.skip_event_sync {
         Some(
             block_number_to_block_number_hash(&web3.provider, BlockNumberOrTag::Latest)
                 .await
@@ -408,20 +427,22 @@ pub async fn run(
         skip_event_sync_start,
     );
 
-    let archive_node_web3 = args.archive_node_url.as_ref().map_or(web3.clone(), |url| {
-        boundary::web3_client(url, &args.shared.ethrpc)
-    });
+    let archive_node_web3 = config
+        .cow_amm
+        .archive_node_url
+        .as_ref()
+        .map_or(web3.clone(), |url| boundary::web3_client(url, &ethrpc_args));
 
     let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
         provider: archive_node_web3.provider,
         block_stream: eth.current_block().clone(),
     }));
-    for config in &args.cow_amm_configs {
+    for cow_amm_config in &config.cow_amm.contracts {
         cow_amm_registry
             .add_listener(
-                config.index_start,
-                config.factory,
-                config.helper,
+                cow_amm_config.index_start,
+                cow_amm_config.factory,
+                cow_amm_config.helper,
                 db_write.pool.clone(),
             )
             .await;
@@ -434,25 +455,25 @@ pub async fn run(
         Arc::new(db_write.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.eip1271_onchain_quote_validity,
+                config.order_quoting.eip1271_onchain_quote_validity,
             )
             .unwrap(),
             presign_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.presign_onchain_quote_validity,
+                config.order_quoting.presign_onchain_quote_validity,
             )
             .unwrap(),
             standard_quote: chrono::Duration::from_std(
-                args.order_quoting.standard_offchain_quote_validity,
+                config.order_quoting.standard_offchain_quote_validity,
             )
             .unwrap(),
         },
         balance_fetcher.clone(),
-        args.price_estimation.quote_verification,
-        args.price_estimation.quote_timeout,
+        config.price_estimation.quote_verification,
+        config.price_estimation.quote_timeout,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
-        args.min_order_validity_period,
+        config.min_order_validity_period,
         persistence.clone(),
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
@@ -465,29 +486,34 @@ pub async fn run(
         *eth.contracts().weth().address(),
         domain::ProtocolFees::new(
             &config.fee_policies,
-            args.shared.volume_fee_bucket_overrides.clone(),
-            args.shared.enable_sell_equals_buy_volume_fee,
+            config
+                .shared
+                .volume_fee_bucket_overrides
+                .iter()
+                .map(Into::into)
+                .collect(),
+            config.shared.enable_sell_equals_buy_volume_fee,
         ),
         cow_amm_registry.clone(),
-        args.run_loop_native_price_timeout,
+        config.native_price_timeout,
         *eth.contracts().settlement().address(),
-        args.disable_order_balance_filter,
+        config.disable_order_balance_filter,
     );
 
-    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
 
     let (api_shutdown_sender, api_shutdown_receiver) = tokio::sync::oneshot::channel();
     let api_task = tokio::spawn(infra::api::serve(
-        args.api_address,
+        config.api_address,
         api_native_price_estimator,
-        args.price_estimation.quote_timeout,
+        config.price_estimation.quote_timeout,
         api_shutdown_receiver,
     ));
 
     observe::metrics::serve_metrics(
         liveness.clone(),
-        args.metrics_address,
+        config.metrics_address,
         Default::default(),
         startup.clone(),
     );
@@ -527,10 +553,10 @@ pub async fn run(
     );
     maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
-    if !args.ethflow_contracts.is_empty() {
+    if !config.ethflow.contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
-            args.ethflow_indexing_start,
+            config.ethflow.indexing_start,
             &web3,
             chain_id,
             db_write.clone(),
@@ -540,7 +566,7 @@ pub async fn run(
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), args.ethflow_contracts.clone()),
+            EthFlowRefundRetriever::new(web3.clone(), config.ethflow.contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
             ethflow_refund_start_block,
@@ -562,7 +588,7 @@ pub async fn run(
 
         let ethflow_start_block = determine_ethflow_indexing_start(
             &skip_event_sync_start,
-            args.ethflow_indexing_start,
+            config.ethflow.indexing_start,
             &web3,
             chain_id,
             &db_write,
@@ -572,7 +598,7 @@ pub async fn run(
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), args.ethflow_contracts),
+            CoWSwapOnchainOrdersContract::new(web3.clone(), config.ethflow.contracts),
             onchain_order_event_parser,
             block_retriever,
             ethflow_start_block,
@@ -584,16 +610,7 @@ pub async fn run(
         maintenance.add_ethflow_indexing(onchain_order_indexer, refund_event_handler);
     }
 
-    let run_loop_config = run_loop::Config {
-        submission_deadline: args.submission_deadline as u64,
-        max_settlement_transaction_wait: args.max_settlement_transaction_wait,
-        solve_deadline: args.solve_deadline,
-        max_run_loop_delay: args.max_run_loop_delay,
-        max_winners_per_auction: args.max_winners_per_auction,
-        max_solutions_per_solver: args.max_solutions_per_solver,
-        enable_leader_lock: args.enable_leader_lock,
-        compress_solve_request: args.compress_solve_request,
-    };
+    let run_loop_config = run_loop::Config::from(config.run_loop);
 
     let drivers_futures = config
         .drivers
@@ -613,7 +630,7 @@ pub async fn run(
         .collect();
 
     let awaiter = maintenance
-        .spawn_maintenance_task(eth.current_block().clone(), args.max_maintenance_timeout);
+        .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
 
     let run = RunLoop::new(
         run_loop_config,
@@ -634,12 +651,12 @@ pub async fn run(
     api_task.await.ok();
 }
 
-async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
-    let http_factory = HttpClientFactory::new(&args.http_client);
+async fn shadow_mode(config: Configuration) -> ! {
+    let http_factory = HttpClientFactory::from(config.http_client);
 
     let orderbook = infra::shadow::Orderbook::new(
         http_factory.create(),
-        args.shadow.expect("missing shadow mode configuration"),
+        config.shadow.expect("missing shadow mode configuration"),
     );
 
     let drivers_futures = config
@@ -670,7 +687,8 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
+    let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
     let weth = WETH9::Instance::deployed(&web3.provider)
         .await
         .expect("couldn't find deployed WETH contract");
@@ -681,7 +699,7 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
             .get_chain_id()
             .await
             .expect("Could not get chainId");
-        if let Some(expected_chain_id) = args.shared.chain_id {
+        if let Some(expected_chain_id) = config.shared.chain_id {
             assert_eq!(
                 chain_id, expected_chain_id,
                 "connected to node with incorrect chain ID",
@@ -698,18 +716,17 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         .await
     };
 
-    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    let liveness = Arc::new(Liveness::new(config.max_auction_age));
     observe::metrics::serve_metrics(
         liveness.clone(),
-        args.metrics_address,
+        config.metrics_address,
         Default::default(),
         Default::default(),
     );
 
-    let current_block = args
-        .shared
-        .current_block
-        .stream(args.shared.node_url, web3.provider.clone())
+    let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
+    let current_block = current_block_args
+        .stream(config.shared.node_url, web3.provider.clone())
         .await
         .expect("couldn't initialize current block stream");
 
@@ -717,11 +734,11 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         orderbook,
         drivers,
         trusted_tokens,
-        args.solve_deadline,
-        args.compress_solve_request,
+        config.run_loop.solve_deadline,
+        config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
-        args.max_winners_per_auction,
+        config.run_loop.max_winners_per_auction,
         (*weth.address()).into(),
     );
     shadow.run_forever().await;

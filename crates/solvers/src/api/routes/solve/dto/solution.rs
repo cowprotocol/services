@@ -4,8 +4,8 @@ use {
 };
 
 /// Creates a new solution DTO from its domain object.
-pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
-    super::Solutions {
+pub fn from_domain(solutions: &[solution::Solution]) -> super::SolverResponse {
+    SolverResponse::Solutions {
         solutions: solutions
             .iter()
             .map(|solution| Solution {

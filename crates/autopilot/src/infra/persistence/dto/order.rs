@@ -1,14 +1,15 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, OrderUid, eth},
+        domain::{self, OrderUid},
     },
     alloy::primitives::{Address, U256},
     app_data::AppDataHash,
+    configs::fee_factor::FeeFactor,
+    eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    shared::fee_factor::FeeFactor,
 };
 
 #[serde_as]

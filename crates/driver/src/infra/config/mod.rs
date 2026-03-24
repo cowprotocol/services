@@ -1,16 +1,13 @@
 use {
-    crate::{
-        domain::eth,
-        infra::{
-            blockchain,
-            config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
-            liquidity,
-            mempool,
-            notify,
-            simulator,
-            solver,
-        },
+    crate::infra::{
+        blockchain,
+        config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
+        liquidity,
+        mempool,
+        notify,
+        solver,
     },
+    eth_domain_types as eth,
     std::time::Duration,
 };
 
@@ -24,7 +21,7 @@ pub struct Config {
     pub solvers: Vec<solver::Config>,
     pub liquidity: liquidity::Config,
     pub liquidity_sources_notifier: Option<notify::liquidity_sources::Config>,
-    pub simulator: Option<simulator::Config>,
+    pub simulator: configs::simulator::Config,
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
@@ -32,4 +29,5 @@ pub struct Config {
     pub simulation_bad_token_max_age: Duration,
     pub app_data_fetching: AppDataFetching,
     pub tx_gas_limit: eth::U256,
+    pub http: configs::http_client::HttpClient,
 }

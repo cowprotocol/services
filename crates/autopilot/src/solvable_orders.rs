@@ -1,14 +1,26 @@
 use {
     crate::{
         boundary::{self, SolvableOrders},
-        domain::{self, auction::Price, eth},
+        domain::{self, auction::Price},
         infra::{self, banned},
     },
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     bad_tokens::list_based::DenyListedTokens,
-    database::order_events::OrderEventLabel,
+    database::order_events::{
+        OrderEventLabel,
+        OrderFilterReason::{
+            self,
+            BannedUser,
+            DustOrder,
+            InFlight,
+            InsufficientBalance,
+            InvalidSignature,
+            MissingNativePrice,
+            UnsupportedToken,
+        },
+    },
     futures::FutureExt,
     itertools::Itertools,
     model::{
@@ -32,7 +44,6 @@ use {
     tokio::sync::Mutex,
     tracing::instrument,
 };
-
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
     /// Tracks success and failure of the solvable orders cache update task.
@@ -79,14 +90,14 @@ impl Metrics {
     }
 
     #[instrument(skip_all)]
-    fn track_filtered_orders(reason: &'static str, invalid_orders: &[OrderUid]) {
+    fn track_filtered_orders(reason: OrderFilterReason, invalid_orders: &[OrderUid]) {
         if invalid_orders.is_empty() {
             return;
         }
 
         Metrics::get()
             .auction_filtered_orders
-            .with_label_values(&[reason])
+            .with_label_values(&[reason.as_str()])
             .set(i64::try_from(invalid_orders.len()).unwrap_or(i64::MAX));
 
         tracing::debug!(
@@ -202,14 +213,14 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.get_solvable_orders().await?;
         tracing::trace!("fetched solvable orders from db");
 
-        let orders = db_solvable_orders
+        let orders: Vec<&Order> = db_solvable_orders
             .orders
             .values()
             .map(|order| order.as_ref())
-            .collect::<Vec<_>>();
+            .collect();
 
-        let mut invalid_order_uids = HashSet::new();
-        let mut filtered_order_events = Vec::new();
+        let mut invalid_order_uids = HashMap::new();
+        let mut filtered_order_events: Vec<(OrderUid, OrderFilterReason)> = Vec::new();
 
         let balance_filter_exempt_orders: HashSet<_> = orders
             .iter()
@@ -222,7 +233,7 @@ impl SolvableOrdersCache {
             .map(|order| order.metadata.uid)
             .collect();
 
-        let (balances, orders, cow_amms) = {
+        let (balances, orders, cow_amms, in_flight) = {
             let queries = orders
                 .iter()
                 .map(|o| Query::from_order(o))
@@ -231,8 +242,18 @@ impl SolvableOrdersCache {
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut invalid_order_uids),
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
+                self.fetch_in_flight_orders(block),
             )
         };
+
+        // Remove in-flight orders - already won a previous auction, being settled
+        // on-chain.
+        let (orders, removed) = filter_out_in_flight_orders(orders, &in_flight);
+        Metrics::track_filtered_orders(InFlight, &removed);
+        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, InFlight)));
+        // It's possible that some orders got marked as invalid due to missing balance
+        // or so, but the order is perfectly fine if it's in-flight
+        invalid_order_uids.retain(|uid, _| !in_flight.contains(uid));
 
         let orders = if self.disable_order_balance_filter {
             orders
@@ -243,12 +264,12 @@ impl SolvableOrdersCache {
                 self.settlement_contract,
                 &balance_filter_exempt_orders,
             );
-            Metrics::track_filtered_orders("insufficient_balance", &removed);
-            invalid_order_uids.extend(removed);
+            Metrics::track_filtered_orders(InsufficientBalance, &removed);
+            invalid_order_uids.extend(removed.into_iter().map(|uid| (uid, InsufficientBalance)));
 
             let (orders, removed) = filter_dust_orders(orders, &balances);
-            Metrics::track_filtered_orders("dust_order", &removed);
-            filtered_order_events.extend(removed);
+            Metrics::track_filtered_orders(DustOrder, &removed);
+            filtered_order_events.extend(removed.into_iter().map(|uid| (uid, DustOrder)));
 
             orders
         };
@@ -286,29 +307,33 @@ impl SolvableOrdersCache {
 
             entry.insert(weth_price);
         }
-        Metrics::track_filtered_orders("missing_price", &removed);
-        filtered_order_events.extend(removed);
+        Metrics::track_filtered_orders(MissingNativePrice, &removed);
+        filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
 
         Metrics::track_orders_in_final_auction(&orders);
 
         if store_events {
-            // spawning a background task since `order_events` table insert operation takes
-            // a while and the result is ignored.
-            self.persistence.store_order_events_owned(
-                invalid_order_uids,
-                |uid| domain::OrderUid(uid.0),
-                OrderEventLabel::Invalid,
-            );
-            self.persistence.store_order_events_owned(
-                filtered_order_events,
-                |uid| domain::OrderUid(uid.0),
-                OrderEventLabel::Filtered,
-            );
+            self.store_events_by_reason(invalid_order_uids, OrderEventLabel::Invalid);
+            self.store_events_by_reason(filtered_order_events, OrderEventLabel::Filtered);
         }
 
-        let surplus_capturing_jit_order_owners = cow_amms
+        let in_flight_owners: HashSet<_> = in_flight
+            .iter()
+            .map(|uid| domain::OrderUid(uid.0).owner())
+            .collect();
+        let surplus_capturing_jit_order_owners: Vec<_> = cow_amms
             .iter()
             .filter(|cow_amm| {
+                // Orders rebalancing cow amms revert when the cow amm does not have exactly the
+                // state the order was crafted for so having multiple orders in-flight for the
+                // same cow amm is an issue. Additionally an amm can be rebalanced in many
+                // different ways which would all result in different order UIDs so filtering
+                // based on that is not sufficient. That's way we check if there is any order
+                // in-flight for that amm based on the owner of the order (i.e. the cow amm) and
+                // then discard that amm altogether for that auction.
+                if in_flight_owners.contains(cow_amm.address()) {
+                    return false;
+                }
                 cow_amm.traded_tokens().iter().all(|token| {
                     let price_exist = prices.contains_key(token);
                     if !price_exist {
@@ -322,7 +347,7 @@ impl SolvableOrdersCache {
                 })
             })
             .map(|cow_amm| *cow_amm.address())
-            .collect::<Vec<_>>();
+            .collect();
         let auction = domain::RawAuctionData {
             block,
             orders: tracing::info_span!("assemble_orders").in_scope(|| {
@@ -340,9 +365,7 @@ impl SolvableOrdersCache {
             }),
             prices: prices
                 .into_iter()
-                .map(|(key, value)| {
-                    Price::try_new(value.into()).map(|price| (eth::TokenAddress(key), price))
-                })
+                .map(|(key, value)| Price::try_new(value.into()).map(|price| (key.into(), price)))
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
@@ -359,7 +382,17 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    #[instrument(skip_all)]
+    async fn fetch_in_flight_orders(&self, block: u64) -> HashSet<OrderUid> {
+        self.persistence
+            .fetch_in_flight_orders(block)
+            .await
+            .inspect_err(|err| tracing::warn!(?err, "failed to fetch in-flight orders"))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|uid| OrderUid(uid.0))
+            .collect()
+    }
+
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = self
             .timed_future(
@@ -431,7 +464,7 @@ impl SolvableOrdersCache {
     async fn filter_invalid_orders<'a>(
         &self,
         mut orders: Vec<&'a Order>,
-        invalid_order_uids: &mut HashSet<OrderUid>,
+        invalid_order_uids: &mut HashMap<OrderUid, OrderFilterReason>,
     ) -> Vec<&'a Order> {
         let presignature_pending_orders = find_presignature_pending_orders(&orders);
 
@@ -444,14 +477,22 @@ impl SolvableOrdersCache {
             .await;
         tracing::trace!("filtered invalid orders");
 
-        Metrics::track_filtered_orders("banned_user", &banned_user_orders);
-        Metrics::track_filtered_orders("invalid_signature", &presignature_pending_orders);
-        Metrics::track_filtered_orders("unsupported_token", &unsupported_token_orders);
-        invalid_order_uids.extend(banned_user_orders);
-        invalid_order_uids.extend(presignature_pending_orders);
-        invalid_order_uids.extend(unsupported_token_orders);
+        Metrics::track_filtered_orders(BannedUser, &banned_user_orders);
+        Metrics::track_filtered_orders(InvalidSignature, &presignature_pending_orders);
+        Metrics::track_filtered_orders(UnsupportedToken, &unsupported_token_orders);
+        invalid_order_uids.extend(banned_user_orders.into_iter().map(|uid| (uid, BannedUser)));
+        invalid_order_uids.extend(
+            presignature_pending_orders
+                .into_iter()
+                .map(|uid| (uid, InvalidSignature)),
+        );
+        invalid_order_uids.extend(
+            unsupported_token_orders
+                .into_iter()
+                .map(|uid| (uid, UnsupportedToken)),
+        );
 
-        orders.retain(|order| !invalid_order_uids.contains(&order.metadata.uid));
+        orders.retain(|order| !invalid_order_uids.contains_key(&order.metadata.uid));
         orders
     }
 
@@ -469,6 +510,25 @@ impl SolvableOrdersCache {
             .with_label_values(&[label])
             .start_timer();
         fut.await
+    }
+
+    fn store_events_by_reason(
+        &self,
+        orders: impl IntoIterator<Item = (OrderUid, OrderFilterReason)>,
+        label: OrderEventLabel,
+    ) {
+        let mut by_reason: HashMap<OrderFilterReason, Vec<OrderUid>> = HashMap::new();
+        for (uid, reason) in orders {
+            by_reason.entry(reason).or_default().push(uid);
+        }
+        for (reason, uids) in by_reason {
+            self.persistence.store_order_events_owned(
+                uids,
+                |uid| domain::OrderUid(uid.0),
+                label,
+                Some(reason),
+            );
+        }
     }
 }
 
@@ -682,6 +742,22 @@ fn find_unsupported_tokens(
                 .then_some(order.metadata.uid)
         })
         .collect()
+}
+
+fn filter_out_in_flight_orders<'a>(
+    mut orders: Vec<&'a Order>,
+    in_flight: &HashSet<OrderUid>,
+) -> (Vec<&'a Order>, Vec<OrderUid>) {
+    let mut removed = vec![];
+    orders.retain(|order| {
+        if in_flight.contains(&order.metadata.uid) {
+            removed.push(order.metadata.uid);
+            false
+        } else {
+            true
+        }
+    });
+    (orders, removed)
 }
 
 #[cfg(test)]

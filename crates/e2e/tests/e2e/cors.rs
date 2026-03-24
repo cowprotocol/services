@@ -2,7 +2,11 @@
 //! headers.
 
 use {
-    configs::test_util::TestDefault,
+    configs::{
+        order_quoting::{ExternalSolver, OrderQuoting},
+        shared::SharedConfig,
+        test_util::TestDefault,
+    },
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
     reqwest::{Method, StatusCode},
     shared::web3::Web3,
@@ -20,14 +24,17 @@ async fn cors_preflight(web3: Web3) {
     // since we're testing malformed paths, etc;
     // we don't really need the rest of the protocol
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            shared: SharedConfig {
+                gas_estimators: vec![TestDefault::test_default()],
+                ..Default::default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
     let client = services.client();
 
@@ -81,14 +88,17 @@ async fn cors_headers_on_error(web3: Web3) {
     // since we're testing malformed paths, etc;
     // we don't really need the rest of the protocol
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-                "--gas-estimators=http://localhost:11088/gasprice".to_string(),
-            ],
-            orderbook::config::Configuration::test_default(),
-        )
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            shared: SharedConfig {
+                gas_estimators: vec![TestDefault::test_default()],
+                ..Default::default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
     let client = services.client();
 

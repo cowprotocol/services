@@ -1,8 +1,8 @@
 //! Test cases.
 
 use {
-    crate::domain::eth,
     bigdecimal::{BigDecimal, FromPrimitive, Signed, num_traits::CheckedMul},
+    eth_domain_types as eth,
     num::BigRational,
     number::{conversions::big_decimal_to_big_rational, u256_ext::U256Ext},
     std::str::FromStr,
