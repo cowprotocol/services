@@ -233,10 +233,14 @@ impl Bitget {
             | 80008 // Reverse quote did not converge
             | 80009 // Token info not found
             | 80010 // Price/gas price not found
+            | 80011 // Failed to generate calldata
+            | 80012 // Quote failed
+            | 80014 // Order not found
             => Error::NotFound,
             80002 // Amount below minimum
             | 80003 // Amount above maximum
             | 80006 // Illegal request
+            | 80013 // Unsupported chain
             => Error::BadRequest,
             code => Error::Api { code, message },
         })
