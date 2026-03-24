@@ -47,12 +47,14 @@ bury critical bugs under a wall of style nits.
 
 ## Severity
 
-- **Bug** — will cause incorrect behavior; must fix before merge
-- **Nit** — minor improvement, not blocking
-- **Question** — unclear intent, needs author clarification
+Use the code-review plugin's standard categories:
 
-If unsure whether something is a real issue, mark it as a **Question** rather
-than asserting a bug.
+- **Normal** — a bug or issue that should be fixed before merging
+- **Nit** — a minor improvement, not blocking
+
+Do not flag pre-existing issues not introduced by the PR. If unsure whether
+something is a real issue, ask a clarifying question rather than asserting a
+bug.
 
 ## Skip these files
 
