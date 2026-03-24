@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchPools, fetchTicks } from './api'
 import type { Pool, Tick } from './api'
-import { computePrice, short, feeTierLabel, formatLiquidity } from './utils'
+import { computePrice, short, feeTierLabel, formatLiquidity, explainTicks } from './utils'
 import './App.css'
 
 interface TicksState {
@@ -10,7 +10,17 @@ interface TicksState {
   poolId: string
 }
 
+function getNetworkFromPath(): string {
+  const segment = window.location.pathname.split('/').filter(Boolean)[0]
+  if (!segment) {
+    window.location.replace('/mainnet')
+    return 'mainnet'
+  }
+  return segment
+}
+
 export default function App() {
+  const network = getNetworkFromPath()
   const [pools, setPools] = useState<Pool[]>([])
   const [blockNumber, setBlockNumber] = useState<number | null>(null)
   // undefined = not yet fetched, null = last page, string = next cursor
@@ -21,14 +31,16 @@ export default function App() {
   const [ticksState, setTicksState] = useState<TicksState | null>(null)
   const [loadingTicks, setLoadingTicks] = useState(false)
   const [ticksError, setTicksError] = useState<string | null>(null)
-  const [filter, setFilter] = useState('')
+  const [showExplain, setShowExplain] = useState(false)
+  const [filterInput, setFilterInput] = useState('')
+  const [activeFilter, setActiveFilter] = useState('')
   const [sortDesc, setSortDesc] = useState(true)
 
   const loadPools = useCallback(async (after?: string) => {
     setLoadingPools(true)
     setPoolsError(null)
     try {
-      const res = await fetchPools(after)
+      const res = await fetchPools(network, after)
       setPools(prev => (after ? [...prev, ...res.pools] : res.pools))
       setBlockNumber(res.block_number)
       setCursor(res.next_cursor)
@@ -43,25 +55,56 @@ export default function App() {
     } finally {
       setLoadingPools(false)
     }
-  }, [])
+  }, [network])
 
   useEffect(() => {
     loadPools()
   }, [loadPools])
+
+  const doSearch = useCallback(
+    async (searchStr: string) => {
+      const f = searchStr.trim()
+      setPools([])
+      setCursor(undefined)
+      if (!f) {
+        loadPools()
+        return
+      }
+      setLoadingPools(true)
+      setPoolsError(null)
+      try {
+        const parts = f.includes('/') ? f.split('/').map(s => s.trim()).filter(Boolean) : [f]
+        const search =
+          parts.length >= 2 ? { token0: parts[0], token1: parts[1] } : { token0: parts[0] }
+        const res = await fetchPools(network, undefined, 5000, search)
+        setPools(res.pools)
+        setBlockNumber(res.block_number)
+        setCursor(res.next_cursor)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Unknown error'
+        setPoolsError(msg)
+      } finally {
+        setLoadingPools(false)
+      }
+    },
+    [network, loadPools],
+  )
 
   const openTicks = useCallback(
     async (poolId: string) => {
       if (selectedPool === poolId) {
         setSelectedPool(null)
         setTicksState(null)
+        setShowExplain(false)
         return
       }
       setSelectedPool(poolId)
       setTicksState(null)
       setTicksError(null)
+      setShowExplain(false)
       setLoadingTicks(true)
       try {
-        const res = await fetchTicks(poolId)
+        const res = await fetchTicks(network, poolId)
         setTicksState({ data: res.ticks, blockNumber: res.block_number, poolId })
       } catch (e) {
         setTicksError(e instanceof Error ? e.message : 'Unknown error')
@@ -72,16 +115,7 @@ export default function App() {
     [selectedPool],
   )
 
-  const filteredPools = (
-    filter
-      ? pools.filter(
-          p =>
-            p.id.toLowerCase().includes(filter.toLowerCase()) ||
-            p.token0.id.toLowerCase().includes(filter.toLowerCase()) ||
-            p.token1.id.toLowerCase().includes(filter.toLowerCase()),
-        )
-      : pools
-  ).toSorted((a, b) => {
+  const displayPools = pools.toSorted((a, b) => {
     try {
       const diff = BigInt(a.liquidity) - BigInt(b.liquidity)
       return sortDesc ? (diff < 0n ? 1 : diff > 0n ? -1 : 0) : (diff < 0n ? -1 : diff > 0n ? 1 : 0)
@@ -97,6 +131,7 @@ export default function App() {
       <header>
         <div className="header-left">
           <span className="logo">Uniswap V3 Pools</span>
+          <span className="network-badge">{network}</span>
           {blockNumber !== null && (
             <span className="chip">block {blockNumber.toLocaleString()}</span>
           )}
@@ -107,9 +142,13 @@ export default function App() {
           )}
           <input
             className="filter"
-            placeholder="Filter by address…"
-            value={filter}
-            onChange={e => setFilter(e.target.value)}
+            placeholder="Symbol, address, or USDC/WETH — press Enter"
+            value={filterInput}
+            onChange={e => setFilterInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { setActiveFilter(filterInput); doSearch(filterInput) }
+              if (e.key === 'Escape') { setFilterInput(''); setActiveFilter(''); doSearch('') }
+            }}
             spellCheck={false}
           />
         </div>
@@ -134,7 +173,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              {filteredPools.map(pool => (
+              {displayPools.map(pool => (
                 <tr
                   key={pool.id}
                   className={selectedPool === pool.id ? 'selected' : undefined}
@@ -161,10 +200,10 @@ export default function App() {
                   <td className="mono r">{pool.tick.toLocaleString()}</td>
                 </tr>
               ))}
-              {!loadingPools && filteredPools.length === 0 && (
+              {!loadingPools && displayPools.length === 0 && (
                 <tr>
                   <td colSpan={7} className="empty">
-                    {filter ? 'No pools match filter.' : 'No pools loaded.'}
+                    {activeFilter ? 'No pools match filter.' : 'No pools loaded.'}
                   </td>
                 </tr>
               )}
@@ -190,16 +229,44 @@ export default function App() {
               <div>
                 <h2>Ticks</h2>
                 <span className="mono dim addr-small">{selectedPool}</span>
+                {selectedPoolData && (
+                  <div className="ticks-tokens">
+                    {[selectedPoolData.token0, selectedPoolData.token1].map((t, i) => (
+                      <a
+                        key={i}
+                        className="mono dim"
+                        href={`https://etherscan.io/token/${t.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={t.id}
+                      >
+                        {t.symbol ?? t.id}
+                        <span className="dim"> {t.decimals}d</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
+              <div className="ticks-header-actions">
+              {ticksState && selectedPoolData && (
+                <button
+                  className="explain-btn"
+                  onClick={() => setShowExplain(v => !v)}
+                >
+                  {showExplain ? 'Hide explanation' : 'Explain'}
+                </button>
+              )}
               <button
                 className="close"
                 onClick={() => {
                   setSelectedPool(null)
                   setTicksState(null)
+                  setShowExplain(false)
                 }}
               >
                 ✕
               </button>
+              </div>
             </div>
 
             {loadingTicks && <div className="status-row">Loading ticks…</div>}
@@ -214,6 +281,16 @@ export default function App() {
                 </div>
                 {ticksState.data.length > 0 && selectedPoolData && (
                   <TickChart ticks={ticksState.data} currentTick={selectedPoolData.tick} />
+                )}
+                {showExplain && selectedPoolData && (
+                  <pre className="explain-box">
+                    {explainTicks({
+                      token0: selectedPoolData.token0.symbol ?? selectedPoolData.token0.id,
+                      token1: selectedPoolData.token1.symbol ?? selectedPoolData.token1.id,
+                      currentTick: selectedPoolData.tick,
+                      ticks: ticksState.data,
+                    })}
+                  </pre>
                 )}
                 <div className="ticks-table-wrap">
                   <table>

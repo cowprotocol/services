@@ -1,6 +1,19 @@
+//! Bootstraps the pool-indexer database from a Uniswap V3 subgraph.
+//!
+//! Seeding happens in two phases:
+//!
+//! 1. **Pools** — all pools and their current state are fetched with keyset
+//!    pagination and written to the DB in page-sized transactions.
+//! 2. **Ticks** — existing tick rows are cleared, then each pool's ticks are
+//!    fetched concurrently (up to [`TICK_CONCURRENCY`] at a time) and written.
+//!
+//! Both phases query the subgraph at the same fixed block number so the
+//! snapshot is consistent. After seeding, the caller should invoke
+//! `UniswapV3Indexer::catch_up` to replay any blocks the subgraph has already
+//! processed but that aren't yet in the DB.
+
 use {
     crate::{
-        config::Configuration,
         db::uniswap_v3 as db,
         indexer::uniswap_v3::{NewPoolData, PoolStateData, TickDeltaData},
     },
@@ -14,11 +27,10 @@ use {
     tracing::info,
 };
 
+/// Number of pools (or ticks) returned per GraphQL page.
 const PAGE_SIZE: usize = 1000;
+/// Maximum number of pools whose ticks are fetched concurrently.
 const TICK_CONCURRENCY: usize = 50;
-
-// ── Subgraph response types
-// ───────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct GqlResponse {
@@ -63,6 +75,7 @@ struct SubgraphTick {
     liquidity_net: String,
 }
 
+/// Wrapper around the `{ _meta { block { number } } }` GraphQL response.
 #[derive(Deserialize)]
 struct MetaPage {
     #[serde(rename = "_meta")]
@@ -79,9 +92,8 @@ struct MetaBlock {
     number: u64,
 }
 
-// ── GraphQL helpers
-// ───────────────────────────────────────────────────────────
-
+/// Executes a GraphQL query against `url` and deserialises the `data` field.
+/// Returns an error if the response contains a top-level `errors` array.
 async fn gql<T: for<'de> Deserialize<'de>>(
     client: &Client,
     url: &str,
@@ -102,14 +114,13 @@ async fn gql<T: for<'de> Deserialize<'de>>(
     serde_json::from_value(data).context("decode subgraph data")
 }
 
-// ── Fetchers
-// ──────────────────────────────────────────────────────────────────
-
 async fn fetch_current_block(client: &Client, url: &str) -> Result<u64> {
     let page: MetaPage = gql(client, url, "{ _meta { block { number } } }", json!({})).await?;
     Ok(page.meta.block.number)
 }
 
+/// Fetches one page of pools at `block`, ordered by id and starting after
+/// `cursor` (empty string to start from the beginning).
 async fn fetch_pools_page(
     client: &Client,
     url: &str,
@@ -138,6 +149,9 @@ async fn fetch_pools_page(
     Ok(page.pools)
 }
 
+/// Fetches all ticks for `pool_id` at `block` using keyset pagination.
+/// Returns each tick as a [`TickDeltaData`] where `delta` is the subgraph's
+/// `liquidityNet` (treated as an absolute value, not a running delta).
 async fn fetch_ticks_for_pool(
     client: Client,
     url: String,
@@ -188,17 +202,16 @@ async fn fetch_ticks_for_pool(
     Ok(ticks)
 }
 
-// ── Public entry point
-// ────────────────────────────────────────────────────────
-
+/// Seeds pools and ticks from the subgraph and returns the block number that
+/// was seeded. The caller is responsible for catching up to the current
+/// finalized block via `catch_up`.
 pub async fn seed(
     db: &PgPool,
-    config: &Configuration,
+    chain_id: u64,
     subgraph_url: &str,
     block: Option<u64>,
-) -> Result<()> {
+) -> Result<u64> {
     let client = Client::new();
-    let chain_id = config.indexer.chain_id;
 
     let block = match block {
         Some(b) => b,
@@ -208,7 +221,6 @@ pub async fn seed(
     };
     info!(block, "seeding pool-indexer from subgraph");
 
-    // ── Phase 1: pools ────────────────────────────────────────────────────────
     let mut pool_ids: Vec<String> = Vec::new();
     let mut cursor = String::new();
 
@@ -269,15 +281,19 @@ pub async fn seed(
         "all pools seeded — starting tick seeding"
     );
 
-    // ── Phase 2: ticks (50 pools concurrently) ────────────────────────────────
+    // Clear all existing tick data so seeded values are authoritative.
+    // This prevents stale rows (e.g. ticks burned to 0 before the seed block)
+    // from persisting if the seeder is re-run on a non-empty database.
+    let mut tx = db.begin().await.context("begin tick clear tx")?;
+    db::delete_ticks_for_chain(&mut tx, chain_id).await?;
+    tx.commit().await.context("commit tick clear")?;
+
     let mut total_ticks = 0usize;
     let url = subgraph_url.to_owned();
 
     for chunk in pool_ids.chunks(TICK_CONCURRENCY) {
-        let tick_batches: Vec<Vec<TickDeltaData>> = futures::stream::iter(chunk)
-            .map(|pool_id| {
-                fetch_ticks_for_pool(client.clone(), url.clone(), pool_id.clone(), block)
-            })
+        let tick_batches: Vec<Vec<TickDeltaData>> = futures::stream::iter(chunk.iter().cloned())
+            .map(|pool_id| fetch_ticks_for_pool(client.clone(), url.clone(), pool_id, block))
             .buffer_unordered(TICK_CONCURRENCY)
             .try_collect()
             .await?;
@@ -295,16 +311,11 @@ pub async fn seed(
         info!(total = total_ticks, "ticks seeded");
     }
 
-    // ── Phase 3: set checkpoint ───────────────────────────────────────────────
-    let mut tx = db.begin().await.context("begin checkpoint tx")?;
-    db::set_checkpoint(&mut tx, chain_id, &config.indexer.factory_address, block).await?;
-    tx.commit().await.context("commit checkpoint")?;
-
     info!(
         block,
         pools = pool_ids.len(),
         ticks = total_ticks,
         "seeding complete"
     );
-    Ok(())
+    Ok(block)
 }

@@ -108,7 +108,7 @@ async fn start_pool_indexer(factory: Address) {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),
         },
     };
-    let handle = tokio::task::spawn(pool_indexer::run(config));
+    let handle = tokio::task::spawn(pool_indexer::run(config, None, None));
     wait_for_condition(TIMEOUT, || async {
         reqwest::get(format!("{POOL_INDEXER_HOST}/health"))
             .await
@@ -299,22 +299,25 @@ async fn happy_path(web3: Web3) {
     start_pool_indexer(factory).await;
 
     wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools"))
-            .await
-            .ok()?;
+        let resp = reqwest::get(format!(
+            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+        ))
+        .await
+        .ok()?;
         let body: serde_json::Value = resp.json().await.ok()?;
         Some(body["block_number"].as_u64()? >= head)
     })
     .await
     .expect("indexer did not reach head block in time");
 
-    let resp: serde_json::Value =
-        reqwest::get(format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools"))
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
+    let resp: serde_json::Value = reqwest::get(format!(
+        "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+    ))
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
 
     let pools = resp["pools"].as_array().unwrap();
     assert!(!pools.is_empty());
@@ -331,7 +334,7 @@ async fn happy_path(web3: Web3) {
     assert_ne!(our_pool["sqrt_price"].as_str().unwrap(), "0");
 
     let resp: serde_json::Value = reqwest::get(format!(
-        "{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools/{pool_addr:?}/ticks"
+        "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/{pool_addr:?}/ticks"
     ))
     .await
     .unwrap()
@@ -371,9 +374,11 @@ async fn checkpoint_resume(web3: Web3) {
 
     start_pool_indexer(factory).await;
     wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools"))
-            .await
-            .ok()?;
+        let resp = reqwest::get(format!(
+            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+        ))
+        .await
+        .ok()?;
         let body: serde_json::Value = resp.json().await.ok()?;
         Some(body["block_number"].as_u64()? >= head)
     })
@@ -406,9 +411,11 @@ async fn checkpoint_resume(web3: Web3) {
 
     start_pool_indexer(factory).await;
     wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools"))
-            .await
-            .ok()?;
+        let resp = reqwest::get(format!(
+            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+        ))
+        .await
+        .ok()?;
         let body: serde_json::Value = resp.json().await.ok()?;
         Some(body["block_number"].as_u64()? >= head)
     })
@@ -485,9 +492,11 @@ async fn api_errors(web3: Web3) {
     start_pool_indexer(factory).await;
 
     wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools"))
-            .await
-            .ok()?;
+        let resp = reqwest::get(format!(
+            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+        ))
+        .await
+        .ok()?;
         let body: serde_json::Value = resp.json().await.ok()?;
         Some(body["block_number"].as_u64()? >= head)
     })
@@ -496,7 +505,7 @@ async fn api_errors(web3: Web3) {
 
     // Invalid address → 400.
     let status = reqwest::get(format!(
-        "{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools/not-an-address/ticks"
+        "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/not-an-address/ticks"
     ))
     .await
     .unwrap()
@@ -506,7 +515,7 @@ async fn api_errors(web3: Web3) {
     // Valid but unknown address → 200 with empty ticks array.
     let unknown = Address::from([0xABu8; 20]);
     let resp: serde_json::Value = reqwest::get(format!(
-        "{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools/{unknown:?}/ticks"
+        "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/{unknown:?}/ticks"
     ))
     .await
     .unwrap()
@@ -546,9 +555,11 @@ async fn pagination(web3: Web3) {
     start_pool_indexer(factory).await;
 
     wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools"))
-            .await
-            .ok()?;
+        let resp = reqwest::get(format!(
+            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+        ))
+        .await
+        .ok()?;
         let body: serde_json::Value = resp.json().await.ok()?;
         Some(body["block_number"].as_u64()? >= head)
     })
@@ -560,8 +571,10 @@ async fn pagination(web3: Web3) {
 
     loop {
         let url = match &cursor {
-            None => format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools?limit=1"),
-            Some(c) => format!("{POOL_INDEXER_HOST}/api/v1/uniswap/v3/pools?limit=1&after={c}"),
+            None => format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1"),
+            Some(c) => {
+                format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1&after={c}")
+            }
         };
         let resp: serde_json::Value = reqwest::get(&url).await.unwrap().json().await.unwrap();
         let pools = resp["pools"].as_array().unwrap();

@@ -32,10 +32,19 @@ export interface TicksResponse {
   ticks: Tick[]
 }
 
-export async function fetchPools(after?: string, limit = 1000): Promise<PoolsResponse> {
+export async function fetchPools(
+  network: string,
+  after?: string,
+  limit = 1000,
+  search?: { token0: string; token1?: string },
+): Promise<PoolsResponse> {
   const params = new URLSearchParams({ limit: String(limit) })
   if (after) params.set('after', after)
-  const res = await fetch(`/api/v1/uniswap/v3/pools?${params}`)
+  if (search) {
+    params.set('token0', search.token0)
+    if (search.token1) params.set('token1', search.token1)
+  }
+  const res = await fetch(`/api/v1/${network}/uniswap/v3/pools?${params}`)
   if (res.status === 503) throw new Error('not_indexed')
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string }
@@ -44,8 +53,8 @@ export async function fetchPools(after?: string, limit = 1000): Promise<PoolsRes
   return res.json() as Promise<PoolsResponse>
 }
 
-export async function fetchTicks(poolAddress: string): Promise<TicksResponse> {
-  const res = await fetch(`/api/v1/uniswap/v3/pools/${poolAddress}/ticks`)
+export async function fetchTicks(network: string, poolAddress: string): Promise<TicksResponse> {
+  const res = await fetch(`/api/v1/${network}/uniswap/v3/pools/${poolAddress}/ticks`)
   if (res.status === 503) throw new Error('not_indexed')
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string }

@@ -32,12 +32,13 @@ const FETCH_CONCURRENCY: usize = 8;
 /// Max concurrent eth_calls during prefetch phases.
 const PREFETCH_CONCURRENCY: usize = 50;
 
-// ── data types for batch DB operations ───────────────────────────────────────
-
+/// Data for a newly discovered pool, sourced from a `PoolCreated` factory
+/// event.
 pub struct NewPoolData {
     pub address: Address,
     pub token0: Address,
     pub token1: Address,
+    /// Raw fee in hundredths of a basis point (e.g. 3000 = 0.3 %).
     pub fee: u32,
     pub token0_decimals: Option<u8>,
     pub token1_decimals: Option<u8>,
@@ -46,6 +47,8 @@ pub struct NewPoolData {
     pub created_block: u64,
 }
 
+/// Full pool state as of a given block, sourced from an `Initialize` or `Swap`
+/// event (both carry the current price, liquidity, and tick).
 pub struct PoolStateData {
     pub pool_address: Address,
     pub block_number: u64,
@@ -54,31 +57,38 @@ pub struct PoolStateData {
     pub tick: i32,
 }
 
+/// A liquidity-only pool update sourced from a `Mint` or `Burn` event when no
+/// `Swap` or `Initialize` has been seen for the pool in the same chunk.
 pub struct LiquidityUpdateData {
     pub pool_address: Address,
     pub block_number: u64,
     pub liquidity: u128,
 }
 
+/// A signed liquidity delta for a single tick boundary, accumulated from
+/// `Mint` (+amount) and `Burn` (-amount) events.
 pub struct TickDeltaData {
     pub pool_address: Address,
     pub tick_idx: i32,
+    /// Net signed change to `liquidity_net` at this tick.
     pub delta: i128,
 }
 
+/// All state changes extracted from a single block-range chunk of logs,
+/// ready to be written to the database in one transaction.
 struct ChunkChanges {
     new_pools: Vec<NewPoolData>,
-    /// Full state updates (from Initialize / Swap).
+    /// Full state updates (from `Initialize` / `Swap`).
     pool_states: Vec<PoolStateData>,
-    /// Liquidity-only updates (from Mint/Burn with no Swap in this chunk).
+    /// Liquidity-only updates (from `Mint`/`Burn` with no `Swap` in this
+    /// chunk).
     liquidity_updates: Vec<LiquidityUpdateData>,
     /// Accumulated tick deltas.
     tick_deltas: Vec<TickDeltaData>,
 }
 
-// ── indexer
-// ───────────────────────────────────────────────────────────────────
-
+/// Indexes Uniswap V3 events for a single factory contract, persisting pool
+/// state and tick liquidity to the database.
 pub struct UniswapV3Indexer {
     provider: AlloyProvider,
     db: PgPool,
@@ -105,7 +115,11 @@ impl UniswapV3Indexer {
     }
 
     pub async fn run(self, poll_interval: std::time::Duration) -> ! {
-        self.backfill_symbols().await;
+        tokio::spawn(backfill_symbols(
+            self.provider.clone(),
+            self.db.clone(),
+            self.chain_id,
+        ));
         loop {
             if let Err(err) = self.run_once().await {
                 tracing::error!(?err, "indexer error, retrying after poll interval");
@@ -114,43 +128,43 @@ impl UniswapV3Indexer {
         }
     }
 
-    /// Fetches ERC-20 symbols for any token in the DB that is missing one.
-    /// Runs once at startup; failures for individual tokens are logged and
-    /// skipped.
-    async fn backfill_symbols(&self) {
-        let tokens = match db::get_tokens_missing_symbols(&self.db, self.chain_id).await {
-            Ok(t) => t,
-            Err(err) => {
-                tracing::warn!(
-                    ?err,
-                    "failed to query tokens missing symbols, skipping backfill"
-                );
-                return;
+    /// Processes all pending blocks starting from `from_block` up to the
+    /// current finalized block and returns. Loops until no further blocks
+    /// remain (handles new blocks finalizing during a long catch-up).
+    ///
+    /// If no checkpoint exists yet (fresh DB after seeding), the checkpoint is
+    /// initialized to `from_block - 1` so that `run_once` starts at
+    /// `from_block`. This means the caller (seeder) does not need to write the
+    /// checkpoint itself — it advances naturally per-chunk as blocks are
+    /// indexed.
+    pub async fn catch_up(&self, from_block: u64) -> Result<()> {
+        let mut tx = self.db.begin().await.context("begin checkpoint tx")?;
+        db::set_checkpoint(
+            &mut tx,
+            self.chain_id,
+            &self.factory,
+            from_block.saturating_sub(1),
+        )
+        .await?;
+        tx.commit().await.context("commit checkpoint")?;
+        loop {
+            let finalized = self
+                .provider
+                .get_block_by_number(self.finality_tag)
+                .await
+                .context("get finalized block")?
+                .context("no finalized block")?
+                .header
+                .number;
+            let last = db::get_checkpoint(&self.db, self.chain_id, &self.factory)
+                .await?
+                .unwrap_or(0);
+            if last >= finalized {
+                tracing::info!(block = finalized, "caught up to finalized block");
+                return Ok(());
             }
-        };
-        if tokens.is_empty() {
-            return;
+            self.run_once().await?;
         }
-        tracing::info!(count = tokens.len(), "backfilling token symbols");
-
-        let symbols: Vec<(Address, String)> = futures::stream::iter(tokens)
-            .map(|token| async move {
-                let sym = fetch_symbol(&self.provider, token).await;
-                (token, sym)
-            })
-            .buffer_unordered(PREFETCH_CONCURRENCY)
-            .filter_map(|(token, opt)| async move { opt.map(|s| (token, s)) })
-            .collect()
-            .await;
-
-        let mut updated = 0usize;
-        for (token, symbol) in &symbols {
-            match db::set_token_symbol(&self.db, self.chain_id, token, symbol).await {
-                Ok(()) => updated += 1,
-                Err(err) => tracing::warn!(%token, ?err, "failed to backfill symbol"),
-            }
-        }
-        tracing::info!(updated, "token symbol backfill complete");
     }
 
     async fn run_once(&self) -> Result<()> {
@@ -292,22 +306,7 @@ impl UniswapV3Indexer {
     /// Parallel-fetch ERC-20 decimals for all tokens referenced in PoolCreated
     /// events.
     async fn prefetch_decimals(&self, logs: &[Log]) -> DecimalsCache {
-        let tokens: Vec<Address> = logs
-            .iter()
-            .filter_map(|log| {
-                let t = log.topic0()?;
-                if *t != PoolCreated::SIGNATURE_HASH || log.address() != self.factory {
-                    return None;
-                }
-                let decoded = PoolCreated::decode_log(&log.inner).ok()?;
-                Some([decoded.data.token0, decoded.data.token1])
-            })
-            .flatten()
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        futures::stream::iter(tokens)
+        futures::stream::iter(pool_created_token_addresses(self.factory, logs))
             .map(|token| async move {
                 let dec = fetch_decimals(&self.provider, token).await;
                 (token, dec)
@@ -321,22 +320,7 @@ impl UniswapV3Indexer {
     /// Parallel-fetch ERC-20 symbols for all tokens referenced in PoolCreated
     /// events.
     async fn prefetch_symbols(&self, logs: &[Log]) -> SymbolsCache {
-        let tokens: Vec<Address> = logs
-            .iter()
-            .filter_map(|log| {
-                let t = log.topic0()?;
-                if *t != PoolCreated::SIGNATURE_HASH || log.address() != self.factory {
-                    return None;
-                }
-                let decoded = PoolCreated::decode_log(&log.inner).ok()?;
-                Some([decoded.data.token0, decoded.data.token1])
-            })
-            .flatten()
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        futures::stream::iter(tokens)
+        futures::stream::iter(pool_created_token_addresses(self.factory, logs))
             .map(|token| async move {
                 let sym = fetch_symbol(&self.provider, token).await;
                 (token, sym)
@@ -367,9 +351,6 @@ impl UniswapV3Indexer {
     }
 }
 
-// ── helpers
-// ───────────────────────────────────────────────────────────────────
-
 /// Sign-extends a 24-bit signed integer (alloy I24) to i32.
 fn signed24_to_i32(v: alloy::primitives::aliases::I24) -> i32 {
     let raw = v.into_raw().as_limbs()[0] as u32;
@@ -393,12 +374,68 @@ async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> 
         .ok()
 }
 
+async fn backfill_symbols(provider: AlloyProvider, db: sqlx::PgPool, chain_id: u64) {
+    let tokens = match db::get_tokens_missing_symbols(&db, chain_id).await {
+        Ok(t) => t,
+        Err(err) => {
+            tracing::warn!(
+                ?err,
+                "failed to query tokens missing symbols, skipping backfill"
+            );
+            return;
+        }
+    };
+    if tokens.is_empty() {
+        return;
+    }
+    let total = tokens.len();
+    tracing::info!(total, "backfilling token symbols");
+
+    let mut updated = 0usize;
+    let mut processed = 0usize;
+
+    for chunk in tokens.chunks(500) {
+        let symbols: Vec<(Address, String)> = futures::stream::iter(chunk.iter().copied())
+            .map(|token| {
+                let provider = provider.clone();
+                async move {
+                    let sym = fetch_symbol(&provider, token).await;
+                    (token, sym)
+                }
+            })
+            .buffer_unordered(PREFETCH_CONCURRENCY)
+            .filter_map(|(token, opt)| async move { opt.map(|s| (token, s)) })
+            .collect()
+            .await;
+
+        for (token, symbol) in &symbols {
+            match db::set_token_symbol(&db, chain_id, token, symbol).await {
+                Ok(()) => updated += 1,
+                Err(err) => tracing::warn!(%token, ?err, "failed to backfill symbol"),
+            }
+        }
+
+        processed += chunk.len();
+        tracing::info!(processed, total, updated, "token symbol backfill progress");
+    }
+
+    tracing::info!(updated, total, "token symbol backfill complete");
+}
+
 async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String> {
-    ERC20::new(token, provider.clone())
+    let sym = ERC20::new(token, provider.clone())
         .symbol()
         .call()
         .await
-        .ok()
+        .ok()?;
+    // Strip null bytes — some tokens embed \x00 in their symbol which Postgres
+    // rejects.
+    let cleaned = sym.replace('\x00', "");
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
 }
 
 /// Returns true when the RPC rejects a request because the result set would
@@ -413,6 +450,216 @@ fn is_range_too_large(err: &anyhow::Error) -> bool {
     })
 }
 
+/// Collects the unique set of token addresses from all `PoolCreated` events
+/// emitted by `factory` in `logs`.
+fn pool_created_token_addresses(factory: Address, logs: &[Log]) -> Vec<Address> {
+    logs.iter()
+        .filter_map(|log| {
+            let t = log.topic0()?;
+            if *t != PoolCreated::SIGNATURE_HASH || log.address() != factory {
+                return None;
+            }
+            let decoded = PoolCreated::decode_log(&log.inner).ok()?;
+            Some([decoded.data.token0, decoded.data.token1])
+        })
+        .flatten()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+/// Accumulates per-event-type state changes while iterating over a chunk's
+/// logs.
+struct LogAccumulator {
+    new_pools: HashMap<Address, NewPoolData>,
+    /// Latest full state per pool, established by `Initialize` or `Swap`.
+    full_states: HashMap<Address, PoolStateData>,
+    /// Liquidity-only update per pool, used when no full state exists yet in
+    /// the chunk (i.e. neither `Initialize` nor `Swap` has been seen).
+    liq_only: HashMap<Address, (u64, u128)>,
+    /// Accumulated signed tick-liquidity deltas, keyed by `(pool, tick_idx)`.
+    tick_deltas: HashMap<(Address, i32), i128>,
+}
+
+impl LogAccumulator {
+    fn new() -> Self {
+        Self {
+            new_pools: HashMap::new(),
+            full_states: HashMap::new(),
+            liq_only: HashMap::new(),
+            tick_deltas: HashMap::new(),
+        }
+    }
+
+    /// Records a newly discovered pool, filling token metadata from the
+    /// prefetch caches.
+    fn handle_pool_created(
+        &mut self,
+        log: &Log,
+        dec_cache: &DecimalsCache,
+        sym_cache: &SymbolsCache,
+    ) {
+        let Ok(decoded) = PoolCreated::decode_log(&log.inner) else {
+            return;
+        };
+        let e = &decoded.data;
+        let pool: Address = e.pool;
+        let token0: Address = e.token0;
+        let token1: Address = e.token1;
+        let created_block = log.block_number.unwrap_or(0);
+        tracing::debug!(%pool, %token0, %token1, fee = e.fee.to::<u32>(), "discovered pool");
+        self.new_pools.insert(
+            pool,
+            NewPoolData {
+                address: pool,
+                token0,
+                token1,
+                fee: e.fee.to::<u32>(),
+                token0_decimals: dec_cache.get(&token0).copied(),
+                token1_decimals: dec_cache.get(&token1).copied(),
+                token0_symbol: sym_cache.get(&token0).cloned(),
+                token1_symbol: sym_cache.get(&token1).cloned(),
+                created_block,
+            },
+        );
+    }
+
+    /// Records the initial price and tick from an `Initialize` event.
+    /// Preserves any liquidity already seen for this pool earlier in the chunk.
+    fn handle_initialize(&mut self, log: &Log) {
+        let Ok(decoded) = Initialize::decode_log(&log.inner) else {
+            return;
+        };
+        let e = &decoded.data;
+        let pool = log.address();
+        let block = log.block_number.unwrap_or(0);
+        let liquidity = self
+            .full_states
+            .get(&pool)
+            .map(|s| s.liquidity)
+            .unwrap_or(0);
+        self.full_states.insert(
+            pool,
+            PoolStateData {
+                pool_address: pool,
+                block_number: block,
+                sqrt_price_x96: e.sqrtPriceX96,
+                liquidity,
+                tick: signed24_to_i32(e.tick),
+            },
+        );
+        self.liq_only.remove(&pool);
+    }
+
+    /// Records a full pool-state update (price, liquidity, tick) from a `Swap`.
+    fn handle_swap(&mut self, log: &Log) {
+        let Ok(decoded) = Swap::decode_log(&log.inner) else {
+            return;
+        };
+        let e = &decoded.data;
+        let pool = log.address();
+        let block = log.block_number.unwrap_or(0);
+        self.full_states.insert(
+            pool,
+            PoolStateData {
+                pool_address: pool,
+                block_number: block,
+                sqrt_price_x96: e.sqrtPriceX96,
+                liquidity: e.liquidity,
+                tick: signed24_to_i32(e.tick),
+            },
+        );
+        self.liq_only.remove(&pool);
+    }
+
+    /// Applies positive tick-liquidity deltas from a `Mint` and refreshes
+    /// pool liquidity from the prefetch cache.
+    fn handle_mint(&mut self, log: &Log, liq_cache: &LiquidityCache) {
+        let Ok(decoded) = Mint::decode_log(&log.inner) else {
+            return;
+        };
+        let e = &decoded.data;
+        let pool = log.address();
+        let block = log.block_number.unwrap_or(0);
+        let amount = e.amount.cast_signed() as i128;
+        *self
+            .tick_deltas
+            .entry((pool, signed24_to_i32(e.tickLower)))
+            .or_default() += amount;
+        *self
+            .tick_deltas
+            .entry((pool, signed24_to_i32(e.tickUpper)))
+            .or_default() -= amount;
+        self.update_liquidity_from_cache(pool, block, liq_cache);
+    }
+
+    /// Applies negative tick-liquidity deltas from a `Burn` and refreshes
+    /// pool liquidity from the prefetch cache.
+    fn handle_burn(&mut self, log: &Log, liq_cache: &LiquidityCache) {
+        let Ok(decoded) = Burn::decode_log(&log.inner) else {
+            return;
+        };
+        let e = &decoded.data;
+        let pool = log.address();
+        let block = log.block_number.unwrap_or(0);
+        let amount = e.amount.cast_signed() as i128;
+        *self
+            .tick_deltas
+            .entry((pool, signed24_to_i32(e.tickLower)))
+            .or_default() -= amount;
+        *self
+            .tick_deltas
+            .entry((pool, signed24_to_i32(e.tickUpper)))
+            .or_default() += amount;
+        self.update_liquidity_from_cache(pool, block, liq_cache);
+    }
+
+    /// Refreshes the stored liquidity for `pool` at `block` using the
+    /// prefetch cache. Updates the existing full state in-place if one exists,
+    /// otherwise stores a liquidity-only record.
+    fn update_liquidity_from_cache(
+        &mut self,
+        pool: Address,
+        block: u64,
+        liq_cache: &LiquidityCache,
+    ) {
+        if let Some(&liq) = liq_cache.get(&(pool, block)) {
+            if let Some(state) = self.full_states.get_mut(&pool) {
+                state.liquidity = liq;
+                state.block_number = block;
+            } else {
+                self.liq_only.insert(pool, (block, liq));
+            }
+        }
+    }
+
+    fn into_chunk_changes(self) -> ChunkChanges {
+        ChunkChanges {
+            new_pools: self.new_pools.into_values().collect(),
+            pool_states: self.full_states.into_values().collect(),
+            liquidity_updates: self
+                .liq_only
+                .into_iter()
+                .map(|(pool, (block, liq))| LiquidityUpdateData {
+                    pool_address: pool,
+                    block_number: block,
+                    liquidity: liq,
+                })
+                .collect(),
+            tick_deltas: self
+                .tick_deltas
+                .into_iter()
+                .filter(|(_, d)| *d != 0)
+                .map(|((pool, tick), delta)| TickDeltaData {
+                    pool_address: pool,
+                    tick_idx: tick,
+                    delta,
+                })
+                .collect(),
+        }
+    }
+}
+
 fn collect_log_changes(
     factory: Address,
     logs: &[Log],
@@ -420,148 +667,22 @@ fn collect_log_changes(
     dec_cache: &DecimalsCache,
     sym_cache: &SymbolsCache,
 ) -> ChunkChanges {
-    // Pool address → latest full state (from Initialize or Swap).
-    let mut full_states: HashMap<Address, PoolStateData> = HashMap::new();
-    // Pool address → latest liquidity update (from Mint/Burn, only if no full
-    // state has been established for this pool in the chunk).
-    let mut liq_only: HashMap<Address, (u64, u128)> = HashMap::new();
-    // (pool, tick_idx) → accumulated signed delta.
-    let mut tick_deltas: HashMap<(Address, i32), i128> = HashMap::new();
-    let mut new_pools: HashMap<Address, NewPoolData> = HashMap::new();
-
+    let mut acc = LogAccumulator::new();
     for log in logs {
         let Some(t) = log.topic0() else { continue };
-
         if *t == PoolCreated::SIGNATURE_HASH && log.address() == factory {
-            let Ok(decoded) = PoolCreated::decode_log(&log.inner) else {
-                continue;
-            };
-            let e = &decoded.data;
-            let pool: Address = e.pool;
-            let token0: Address = e.token0;
-            let token1: Address = e.token1;
-            let created_block = log.block_number.unwrap_or(0);
-            tracing::debug!(%pool, %token0, %token1, fee = e.fee.to::<u32>(), "discovered pool");
-            new_pools.insert(
-                pool,
-                NewPoolData {
-                    address: pool,
-                    token0,
-                    token1,
-                    fee: e.fee.to::<u32>(),
-                    token0_decimals: dec_cache.get(&token0).copied(),
-                    token1_decimals: dec_cache.get(&token1).copied(),
-                    token0_symbol: sym_cache.get(&token0).cloned(),
-                    token1_symbol: sym_cache.get(&token1).cloned(),
-                    created_block,
-                },
-            );
+            acc.handle_pool_created(log, dec_cache, sym_cache);
         } else if *t == Initialize::SIGNATURE_HASH {
-            let Ok(decoded) = Initialize::decode_log(&log.inner) else {
-                continue;
-            };
-            let e = &decoded.data;
-            let pool = log.address();
-            let block = log.block_number.unwrap_or(0);
-            // Preserve any liquidity already accumulated for this pool in this chunk.
-            let liquidity = full_states.get(&pool).map(|s| s.liquidity).unwrap_or(0);
-            full_states.insert(
-                pool,
-                PoolStateData {
-                    pool_address: pool,
-                    block_number: block,
-                    sqrt_price_x96: e.sqrtPriceX96,
-                    liquidity,
-                    tick: signed24_to_i32(e.tick),
-                },
-            );
-            liq_only.remove(&pool);
+            acc.handle_initialize(log);
         } else if *t == Swap::SIGNATURE_HASH {
-            let Ok(decoded) = Swap::decode_log(&log.inner) else {
-                continue;
-            };
-            let e = &decoded.data;
-            let pool = log.address();
-            let block = log.block_number.unwrap_or(0);
-            full_states.insert(
-                pool,
-                PoolStateData {
-                    pool_address: pool,
-                    block_number: block,
-                    sqrt_price_x96: e.sqrtPriceX96,
-                    liquidity: e.liquidity,
-                    tick: signed24_to_i32(e.tick),
-                },
-            );
-            liq_only.remove(&pool);
+            acc.handle_swap(log);
         } else if *t == Mint::SIGNATURE_HASH {
-            let Ok(decoded) = Mint::decode_log(&log.inner) else {
-                continue;
-            };
-            let e = &decoded.data;
-            let pool = log.address();
-            let block = log.block_number.unwrap_or(0);
-            let amount = e.amount.cast_signed();
-            *tick_deltas
-                .entry((pool, signed24_to_i32(e.tickLower)))
-                .or_default() += amount as i128;
-            *tick_deltas
-                .entry((pool, signed24_to_i32(e.tickUpper)))
-                .or_default() -= amount as i128;
-            if let Some(&liq) = liq_cache.get(&(pool, block)) {
-                if let Some(state) = full_states.get_mut(&pool) {
-                    state.liquidity = liq;
-                    state.block_number = block;
-                } else {
-                    liq_only.insert(pool, (block, liq));
-                }
-            }
+            acc.handle_mint(log, liq_cache);
         } else if *t == Burn::SIGNATURE_HASH {
-            let Ok(decoded) = Burn::decode_log(&log.inner) else {
-                continue;
-            };
-            let e = &decoded.data;
-            let pool = log.address();
-            let block = log.block_number.unwrap_or(0);
-            let amount = e.amount.cast_signed();
-            *tick_deltas
-                .entry((pool, signed24_to_i32(e.tickLower)))
-                .or_default() -= amount as i128;
-            *tick_deltas
-                .entry((pool, signed24_to_i32(e.tickUpper)))
-                .or_default() += amount as i128;
-            if let Some(&liq) = liq_cache.get(&(pool, block)) {
-                if let Some(state) = full_states.get_mut(&pool) {
-                    state.liquidity = liq;
-                    state.block_number = block;
-                } else {
-                    liq_only.insert(pool, (block, liq));
-                }
-            }
+            acc.handle_burn(log, liq_cache);
         }
     }
-
-    ChunkChanges {
-        new_pools: new_pools.into_values().collect(),
-        pool_states: full_states.into_values().collect(),
-        liquidity_updates: liq_only
-            .into_iter()
-            .map(|(pool, (block, liq))| LiquidityUpdateData {
-                pool_address: pool,
-                block_number: block,
-                liquidity: liq,
-            })
-            .collect(),
-        tick_deltas: tick_deltas
-            .into_iter()
-            .filter(|(_, d)| *d != 0)
-            .map(|((pool, tick), delta)| TickDeltaData {
-                pool_address: pool,
-                tick_idx: tick,
-                delta,
-            })
-            .collect(),
-    }
+    acc.into_chunk_changes()
 }
 
 #[cfg(test)]

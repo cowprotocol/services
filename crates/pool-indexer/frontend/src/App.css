@@ -63,6 +63,18 @@ header {
   font-weight: 600;
 }
 
+.network-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  text-transform: lowercase;
+}
+
 .chip {
   padding: 2px 8px;
   border-radius: 10px;
@@ -263,6 +275,61 @@ header {
   word-break: break-all;
 }
 
+.ticks-tokens {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.ticks-tokens a {
+  font-size: 11px;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.ticks-tokens a:hover {
+  color: var(--accent);
+}
+
+.ticks-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.explain-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.explain-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.explain-box {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  flex-shrink: 0;
+  overflow-y: auto;
+  max-height: 300px;
+}
+
 .ticks-header .close {
   background: none;
   border: none;
@@ -273,7 +340,6 @@ header {
   border-radius: 4px;
   line-height: 1;
   flex-shrink: 0;
-  margin-left: 8px;
 }
 .ticks-header .close:hover {
   color: var(--text);

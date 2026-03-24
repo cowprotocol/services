@@ -61,3 +61,87 @@ export function feeTierLabel(ppm: string): string {
   const labels: Record<string, string> = { '100': '0.01%', '500': '0.05%', '3000': '0.3%', '10000': '1%' }
   return labels[ppm] ?? `${(Number(ppm) / 10000).toFixed(2)}%`
 }
+
+function tickToPrice(tick: number): number {
+  return Math.pow(1.0001, tick)
+}
+
+function inferComposition(currentTick: number, lowerTick: number, upperTick: number): string {
+  if (currentTick < lowerTick) {
+    return 'entirely token0 (price is below range, position is out of range)'
+  } else if (currentTick >= upperTick) {
+    return 'entirely token1 (price is above range, position is out of range)'
+  } else {
+    const progress = (currentTick - lowerTick) / (upperTick - lowerTick)
+    if (progress < 0.2) return 'mostly token0 (price near lower bound)'
+    if (progress > 0.8) return 'mostly token1 (price near upper bound)'
+    return 'roughly balanced between token0 and token1'
+  }
+}
+
+export function explainTicks({
+  token0,
+  token1,
+  currentTick,
+  ticks,
+}: {
+  token0: string
+  token1: string
+  currentTick: number
+  ticks: Array<{ tick_idx: number; liquidity_net: string }>
+}): string {
+  // Pair ticks into LP positions: lower tick has +X liquidity net, upper has -X
+  const unmatched: Record<string, { tick_idx: number; liquidity_net: string }> = {}
+  const positions: Array<{
+    lower: { tick_idx: number; liquidity_net: string }
+    upper: { tick_idx: number; liquidity_net: string }
+  }> = []
+
+  for (const tick of ticks) {
+    let net: bigint
+    try {
+      net = BigInt(tick.liquidity_net)
+    } catch {
+      continue
+    }
+    const absKey = net < 0n ? (-net).toString() : net.toString()
+    if (unmatched[absKey]) {
+      const match = unmatched[absKey]
+      const lower = net > 0n ? tick : match
+      const upper = net > 0n ? match : tick
+      positions.push({ lower, upper })
+      delete unmatched[absKey]
+    } else {
+      unmatched[absKey] = tick
+    }
+  }
+
+  const unmatchedList = Object.values(unmatched)
+  const currentPrice = tickToPrice(currentTick)
+  const lines: string[] = []
+
+  lines.push(`Pool: ${token0}/${token1}`)
+  lines.push(`Current tick: ${currentTick} → 1 ${token0} = ${currentPrice.toFixed(6)} ${token1}`)
+  lines.push(`Active ticks: ${ticks.length} → ${positions.length} position(s) detected`)
+  lines.push('')
+
+  positions.forEach((pos, i) => {
+    const lowerPrice = tickToPrice(pos.lower.tick_idx)
+    const upperPrice = tickToPrice(pos.upper.tick_idx)
+    const composition = inferComposition(currentTick, pos.lower.tick_idx, pos.upper.tick_idx)
+    const inRange = currentTick >= pos.lower.tick_idx && currentTick < pos.upper.tick_idx
+
+    lines.push(`Position ${i + 1}:`)
+    lines.push(`  Range: tick ${pos.lower.tick_idx} to ${pos.upper.tick_idx}`)
+    lines.push(`  Price range: ${lowerPrice.toFixed(6)} to ${upperPrice.toFixed(6)} ${token1} per ${token0}`)
+    lines.push(`  Status: ${inRange ? 'In range (earning fees)' : 'Out of range (not earning fees)'}`)
+    lines.push(`  Composition: ${composition}`)
+    lines.push('')
+  })
+
+  if (unmatchedList.length > 0) {
+    lines.push(`${unmatchedList.length} unmatched tick(s) — may indicate partial data or a complex position.`)
+  }
+
+  return lines.join('\n')
+}

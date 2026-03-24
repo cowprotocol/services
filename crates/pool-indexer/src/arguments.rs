@@ -12,17 +12,12 @@ pub enum Command {
     Run {
         #[clap(long, env)]
         config: PathBuf,
-    },
-    /// Seed the database from the Uniswap V3 subgraph, then exit.
-    Seed {
-        #[clap(long, env)]
-        config: PathBuf,
-        /// Subgraph GraphQL endpoint URL.
+        /// Subgraph GraphQL endpoint. If provided, seeds the DB from the
+        /// subgraph before starting the event indexer.
         #[clap(long)]
-        subgraph_url: String,
-        /// Block number to seed at. Defaults to the subgraph's current indexed
-        /// block.
+        subgraph_url: Option<String>,
+        /// Block number to seed at (default: subgraph's current block).
         #[clap(long)]
-        block: Option<u64>,
+        seed_block: Option<u64>,
     },
 }

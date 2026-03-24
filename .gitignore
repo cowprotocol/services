@@ -9,3 +9,4 @@
 
 crates/pool-indexer/config.mainnet.toml
 crates/pool-indexer/frontend/node_modules/
+crates/pool-indexer/compare_subgraph.sh
