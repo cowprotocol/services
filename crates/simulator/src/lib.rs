@@ -1,16 +1,15 @@
 pub mod encoding;
-pub mod enso;
 pub mod ethereum;
 pub mod swap_simulator;
 pub mod tenderly;
 mod utils;
 
-pub use {enso::Enso, ethereum::Ethereum, tenderly::Tenderly};
 use {
     eth_domain_types::{self as eth, AccessList, Tx},
     http_client::HttpClientFactory,
     observe::future::Measure,
 };
+pub use {ethereum::Ethereum, tenderly::Tenderly};
 
 #[derive(Debug, Clone)]
 pub struct Simulator {
@@ -24,7 +23,6 @@ pub struct Simulator {
 enum Inner {
     Tenderly(tenderly::Tenderly),
     Ethereum,
-    Enso(enso::Enso),
 }
 
 impl Simulator {
@@ -46,20 +44,6 @@ impl Simulator {
         let eth = eth.with_metric_label("web3Simulator".into());
         Self {
             inner: Inner::Ethereum,
-            eth,
-            disable_access_lists: false,
-            disable_gas: None,
-        }
-    }
-
-    pub fn enso(config: &configs::simulator::EnsoConfig, eth: Ethereum) -> Self {
-        let eth = eth.with_metric_label("ensoSimulator".into());
-        Self {
-            inner: Inner::Enso(enso::Enso::new(
-                config,
-                eth.chain(),
-                eth.current_block().clone(),
-            )),
             eth,
             disable_access_lists: false,
             disable_gas: None,
@@ -99,11 +83,6 @@ impl Simulator {
                 .create_access_list(tx.clone())
                 .await
                 .map_err(with(tx.clone(), block))?,
-            Inner::Enso(_) => self
-                .eth
-                .create_access_list(tx.clone())
-                .await
-                .map_err(with(tx.clone(), block))?,
         };
         Ok(tx.access_list.clone().merge(access_list))
     }
@@ -128,11 +107,6 @@ impl Simulator {
                 .estimate_gas(tx.clone())
                 .await
                 .map_err(with(tx.clone(), block))?,
-            Inner::Enso(enso) => enso
-                .simulate(tx.clone())
-                .measure("enso_simulate_gas")
-                .await
-                .map_err(with(tx.clone(), block))?,
         })
     }
 }
@@ -143,8 +117,6 @@ pub enum SimulatorError {
     Tenderly(#[from] tenderly::Error),
     #[error("ethereum error: {0:?}")]
     Ethereum(#[from] ethereum::Error),
-    #[error("enso error: {0:?}")]
-    Enso(#[from] enso::Error),
     #[error("the simulated gas {0} exceeded the gas limit {1} provided in the solution")]
     GasExceeded(eth::Gas, eth::Gas),
 }
@@ -180,8 +152,6 @@ where
             SimulatorError::Tenderly(tenderly::Error::Revert(_)) => Some(tx.clone()),
             SimulatorError::Tenderly(tenderly::Error::Other(_)) => None,
             SimulatorError::Ethereum(_) => Some(tx.clone()),
-            SimulatorError::Enso(enso::Error::Http(_)) => None,
-            SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx.clone()),
             SimulatorError::GasExceeded(..) => Some(tx.clone()),
         };
         match tx {

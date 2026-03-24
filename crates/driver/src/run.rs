@@ -159,10 +159,6 @@ fn simulator(
             ..
         } => Simulator::tenderly(config, eth, http_factory),
         configs::simulator::Config {
-            kind: configs::simulator::SimulatorKind::Enso(config),
-            ..
-        } => Simulator::enso(config, eth),
-        configs::simulator::Config {
             kind: configs::simulator::SimulatorKind::Ethereum,
             ..
         } => Simulator::ethereum(eth),
