@@ -6,3 +6,6 @@
 **/testing.*.toml
 /playground/.env
 .env.claude
+
+crates/pool-indexer/config.mainnet.toml
+crates/pool-indexer/frontend/node_modules/

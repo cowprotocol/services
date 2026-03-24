@@ -3076,6 +3076,7 @@ dependencies = [
  "number",
  "observe",
  "orderbook",
+ "pool-indexer",
  "price-estimation",
  "refunder",
  "reqwest 0.13.2",
@@ -5368,6 +5369,34 @@ name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
+
+[[package]]
+name = "pool-indexer"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "anyhow",
+ "axum 0.8.8",
+ "bigdecimal",
+ "clap",
+ "contracts",
+ "ethrpc",
+ "futures",
+ "mimalloc",
+ "num",
+ "observe",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tikv-jemallocator",
+ "tokio",
+ "toml",
+ "tower-http",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "portable-atomic"
