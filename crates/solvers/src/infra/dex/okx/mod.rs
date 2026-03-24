@@ -389,10 +389,11 @@ impl Okx {
     fn handle_api_error(code: i64, message: &str) -> Result<(), Error> {
         Err(match code {
             0 => return Ok(()),
-            51005 => Error::NotFound, // Honeypot or leveraged token (undocumented)
-            82000 => Error::NotFound, // Insufficient liquidity
-            82104 => Error::NotFound, // Token not supported
-            82112 => Error::NotFound, // Internal OKX risk validation failed
+            51005 // Honeypot or leveraged token (undocumented)
+            | 82000 // Insufficient liquidity
+            | 82104 // Token not supported
+            | 82112 // Internal OKX risk validation failed
+            => Error::NotFound,
             50011 => Error::RateLimited,
             _ => Error::Api {
                 code,
