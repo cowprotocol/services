@@ -322,6 +322,12 @@ impl RunLoop {
         let solutions = self.fetch_solutions(&auction).await;
         observe::bids(&solutions);
         if solutions.is_empty() {
+            // `post_processing` normally saves the order-to-auction mapping as part
+            // of `save_auction`, but since this is an early return it has to be
+            // done manually.
+            if let Err(err) = self.persistence.save_auction_orders(&auction).await {
+                tracing::warn!(?err, "failed to save auction orders with no solutions");
+            }
             return;
         }
 

@@ -434,6 +434,21 @@ impl Persistence {
         Ok(())
     }
 
+    /// Save the mapping of orders to the auction they were included in.
+    pub async fn save_auction_orders(
+        &self,
+        auction: &domain::Auction,
+    ) -> Result<(), DatabaseError> {
+        let mut ex = self.postgres.pool.acquire().await?;
+        let order_uids: Vec<_> = auction
+            .orders
+            .iter()
+            .map(|order| ByteArray(order.uid.0))
+            .collect();
+        database::auction::save_auction_orders(&mut ex, auction.id, &order_uids).await?;
+        Ok(())
+    }
+
     /// Get auction data to post-process the given trades.
     pub async fn get_auction(
         &self,
