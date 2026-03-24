@@ -41,7 +41,7 @@ fn decimal_to_i128(v: BigDecimal) -> i128 {
 }
 
 pub fn decimal_to_u160(v: BigDecimal) -> alloy_primitives::aliases::U160 {
-    let s = v.to_string();
+    let s = v.to_plain_string();
     let int_part = s.split('.').next().unwrap_or(&s);
     int_part
         .parse::<alloy_primitives::aliases::U160>()
