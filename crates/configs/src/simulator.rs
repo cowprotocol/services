@@ -47,7 +47,7 @@ fn default_ethrpc_max_concurrent_requests() -> usize {
 pub enum SimulatorKind {
     #[default]
     Ethereum,
-    Tenderly(TenderlyConfig),
+    Tenderly(Box<TenderlyConfig>),
 }
 
 /// Tenderly API arguments.
