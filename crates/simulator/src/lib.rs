@@ -21,7 +21,7 @@ pub struct Simulator {
 
 #[derive(Debug, Clone)]
 enum Inner {
-    Tenderly(tenderly::Tenderly),
+    Tenderly(Box<tenderly::Tenderly>),
     Ethereum,
 }
 
@@ -33,7 +33,11 @@ impl Simulator {
     ) -> Self {
         let eth = eth.with_metric_label("tenderlySimulator".into());
         Self {
-            inner: Inner::Tenderly(tenderly::Tenderly::new(config, eth.clone(), http_factory)),
+            inner: Inner::Tenderly(Box::new(tenderly::Tenderly::new(
+                config,
+                eth.clone(),
+                http_factory,
+            ))),
             eth,
             disable_access_lists: false,
             disable_gas: None,
