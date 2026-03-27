@@ -84,14 +84,6 @@ impl GasPriceEstimator {
     /// If additional tip is configured, it will be added to the gas price. This
     /// is to increase the chance of a transaction being included in a block, in
     /// case private submission networks are used.
-    /// Returns a gas estimator that includes the additional tip adjustments.
-    /// This should be used when passing the estimator to components that need
-    /// realistic gas prices (e.g. the simulator), as opposed to `.gas` which
-    /// is the raw estimator without tip adjustments.
-    pub fn as_estimating(self: &Arc<Self>) -> Arc<dyn GasPriceEstimating> {
-        Arc::clone(self) as _
-    }
-
     pub async fn estimate(&self) -> Result<Eip1559Estimation, Error> {
         let estimate = self.gas.estimate().await.map_err(Error::GasPrice)?;
 

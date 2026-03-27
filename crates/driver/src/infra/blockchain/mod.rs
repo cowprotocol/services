@@ -183,7 +183,7 @@ impl Ethereum {
     }
 
     pub fn gas_estimator(&self) -> Arc<dyn GasPriceEstimating> {
-        self.inner.gas.as_estimating()
+        Arc::clone(&self.inner.gas) as _
     }
 
     pub fn block_gas_limit(&self) -> eth::Gas {
