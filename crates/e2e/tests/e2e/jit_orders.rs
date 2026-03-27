@@ -187,6 +187,8 @@ async fn single_limit_order_test(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        max_fee_per_gas: None,
+        max_priority_fee_per_gas: None,
     }));
 
     // Drive solution

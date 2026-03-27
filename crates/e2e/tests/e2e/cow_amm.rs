@@ -355,6 +355,8 @@ async fn cow_amm_jit(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        max_fee_per_gas: None,
+        max_priority_fee_per_gas: None,
     }));
 
     // Drive solution
@@ -997,6 +999,8 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             gas: None,
             flashloans: None,
             wrappers: vec![],
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
         }
     };
 
