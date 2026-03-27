@@ -155,7 +155,20 @@ impl Solution {
             solution.clearing_price(trade.order().sell.token).is_none()
                 || solution.clearing_price(trade.order().buy.token).is_none()
         }) {
-            return Err(error::Solution::InvalidClearingPrices);
+            let trade = solution
+                .user_trades()
+                .find(|trade| {
+                    solution.clearing_price(trade.order().sell.token).is_none()
+                        || solution.clearing_price(trade.order().buy.token).is_none()
+                })
+                .expect("there should be a trade without clearing price");
+            let sell_price = solution.clearing_price(trade.order().sell.token);
+            let buy_price = solution.clearing_price(trade.order().buy.token);
+            return Err(error::Solution::InvalidClearingPrices(
+                trade.clone(),
+                sell_price,
+                buy_price,
+            ));
         }
 
         // Apply protocol fees only if the drivers is set to handler the fees
@@ -673,7 +686,7 @@ pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Solution {
         #[error("invalid clearing prices")]
-        InvalidClearingPrices,
+        InvalidClearingPrices(Fulfillment, Option<eth::U256>, Option<eth::U256>),
         #[error(transparent)]
         ProtocolFee(#[from] fee::Error),
         #[error("invalid JIT trade")]

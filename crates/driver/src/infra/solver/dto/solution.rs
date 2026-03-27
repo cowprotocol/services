@@ -257,8 +257,10 @@ impl Solutions {
                     }).collect(),
                 )
                 .map_err(|err| match err {
-                    competition::solution::error::Solution::InvalidClearingPrices => {
-                        super::Error("invalid clearing prices".to_owned())
+                    competition::solution::error::Solution::InvalidClearingPrices(trade, sell_price, buy_price) => {
+                        super::Error(format!(
+                            "invalid clearing prices: trade {trade:?} has invalid sell price {sell_price:?} and buy price {buy_price:?}"
+                        ))
                     }
                     competition::solution::error::Solution::ProtocolFee(err) => {
                         super::Error(format!("could not incorporate protocol fee: {err}"))
