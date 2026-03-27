@@ -84,6 +84,14 @@ impl GasPriceEstimator {
     /// If additional tip is configured, it will be added to the gas price. This
     /// is to increase the chance of a transaction being included in a block, in
     /// case private submission networks are used.
+    /// Returns a gas estimator that includes the additional tip adjustments.
+    /// This should be used when passing the estimator to components that need
+    /// realistic gas prices (e.g. the simulator), as opposed to `.gas` which
+    /// is the raw estimator without tip adjustments.
+    pub fn as_estimating(self: &Arc<Self>) -> Arc<dyn GasPriceEstimating> {
+        Arc::clone(self) as _
+    }
+
     pub async fn estimate(&self) -> Result<Eip1559Estimation, Error> {
         let estimate = self.gas.estimate().await.map_err(Error::GasPrice)?;
 
@@ -133,5 +141,16 @@ impl GasPriceEstimator {
             max_priority_fee_per_gas: u128::try_from(max_priority_fee_per_gas)
                 .map_err(|err| Error::GasPrice(err.into()))?,
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl GasPriceEstimating for GasPriceEstimator {
+    async fn estimate(&self) -> ::anyhow::Result<Eip1559Estimation> {
+        GasPriceEstimator::estimate(self).await.map_err(Into::into)
+    }
+
+    async fn base_fee(&self) -> ::anyhow::Result<Option<u64>> {
+        self.gas.base_fee().await
     }
 }
