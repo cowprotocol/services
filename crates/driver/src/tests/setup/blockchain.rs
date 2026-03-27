@@ -112,6 +112,7 @@ impl Pool {
 pub struct Solution {
     pub trades: Vec<Trade>,
     pub flashloans: HashMap<order::Uid, Flashloan>,
+    pub gas_fee_override: Option<(u128, u128)>,
 }
 
 #[derive(Debug, Clone)]

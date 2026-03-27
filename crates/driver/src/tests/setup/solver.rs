@@ -388,6 +388,10 @@ impl Solver {
                 "interactions": interactions_json,
                 "preInteractions": pre_interactions_json,
             });
+            if let Some((max_fee, max_priority_fee)) = &solution.gas_fee_override {
+                solution_json["maxFeePerGas"] = json!(max_fee.to_string());
+                solution_json["maxPriorityFeePerGas"] = json!(max_priority_fee.to_string());
+            }
             if !solution.flashloans.is_empty() {
                 solution_json["flashloans"] = serde_json::Value::Object(
                     solution
