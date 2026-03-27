@@ -1014,6 +1014,20 @@ components:
         gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.
+        maxFeePerGas:
+          description: |
+            Optional maximum fee per gas for the settlement transaction.
+            Overrides the driver's default gas price estimation.
+            Must be provided together with maxPriorityFeePerGas.
+          allOf:
+            - $ref: "#/components/schemas/U256"
+        maxPriorityFeePerGas:
+          description: |
+            Optional maximum priority fee (tip) per gas for the settlement
+            transaction. Overrides the driver's default gas price estimation.
+            Must be provided together with maxFeePerGas.
+          allOf:
+            - $ref: "#/components/schemas/U256"
         flashloans:
           description: |
             Flashloans that are provided for this solution, mapping order UIDs to flashloan details.

@@ -57,6 +57,12 @@ pub struct Solution {
     pub post_interactions: Vec<Call>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    pub max_fee_per_gas: Option<U256>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    pub max_priority_fee_per_gas: Option<U256>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]

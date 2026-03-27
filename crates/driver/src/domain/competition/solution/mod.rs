@@ -68,9 +68,19 @@ pub struct Solution {
     #[debug(ignore)]
     weth: eth::WrappedNativeToken,
     gas: Option<eth::Gas>,
+    gas_fee_override: Option<GasFeeOverride>,
     flashloans: HashMap<order::Uid, Flashloan>,
     #[debug(ignore)]
     wrappers: Vec<WrapperCall>,
+}
+
+/// Optional gas fee overrides provided by the solver. When set, these
+/// values are used instead of the driver's own gas price estimation
+/// during settlement submission.
+#[derive(Clone, Copy, Debug)]
+pub struct GasFeeOverride {
+    pub max_fee_per_gas: u128,
+    pub max_priority_fee_per_gas: u128,
 }
 
 impl Solution {
@@ -85,6 +95,7 @@ impl Solution {
         solver: Solver,
         weth: eth::WrappedNativeToken,
         gas: Option<eth::Gas>,
+        gas_fee_override: Option<GasFeeOverride>,
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
@@ -147,6 +158,7 @@ impl Solution {
             solver,
             weth,
             gas,
+            gas_fee_override,
             flashloans,
             wrappers,
         };
@@ -230,6 +242,10 @@ impl Solution {
 
     pub fn gas(&self) -> Option<eth::Gas> {
         self.gas
+    }
+
+    pub fn gas_fee_override(&self) -> Option<GasFeeOverride> {
+        self.gas_fee_override
     }
 
     fn trade_count_for_scorable(
@@ -397,6 +413,8 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
+            // Gas fee overrides are per-solution; no meaningful way to merge them.
+            gas_fee_override: None,
             flashloans,
             wrappers: self.wrappers.clone(),
         })

@@ -172,6 +172,31 @@ impl Mempools {
             _ => current_gas_price,
         };
 
+        // Apply solver-provided gas fee override if present. The solver's
+        // values replace the driver estimate, but must still outbid any pending
+        // replacement transaction (a node requirement).
+        let final_gas_price = if let Some(gas_override) = settlement.gas_fee_override() {
+            let solver_price = Eip1559Estimation {
+                max_fee_per_gas: gas_override.max_fee_per_gas,
+                max_priority_fee_per_gas: gas_override.max_priority_fee_per_gas,
+            };
+            match &replacement_gas_price {
+                Some(replacement) => Eip1559Estimation {
+                    max_fee_per_gas: std::cmp::max(
+                        solver_price.max_fee_per_gas,
+                        replacement.max_fee_per_gas,
+                    ),
+                    max_priority_fee_per_gas: std::cmp::max(
+                        solver_price.max_priority_fee_per_gas,
+                        replacement.max_priority_fee_per_gas,
+                    ),
+                },
+                None => solver_price,
+            }
+        } else {
+            final_gas_price
+        };
+
         tracing::debug!(
             ?submission_block,
             ?blocks_until_deadline,
