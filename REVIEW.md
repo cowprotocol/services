@@ -5,8 +5,7 @@ correctness issues. Do not pad reviews with praise or filler.
 
 ## Priorities
 
-Review in this order. Stop at the first category that has findings — do not
-bury critical bugs under a wall of style nits.
+Review in priority order.
 
 1. **Correctness** — logic errors, wrong return values, off-by-one, missing
    error propagation, incorrect arithmetic (especially with U256/BigDecimal)
@@ -28,7 +27,10 @@ bury critical bugs under a wall of style nits.
   drops valid quotes
 - New `async` code does not block the Tokio runtime (no blocking I/O, no
   `std::thread::sleep`, no heavy computation without `spawn_blocking`)
-- Database queries include appropriate indexes and won't degrade at scale
+- Database queries that touch large tables have been checked against existing
+  indexes. If a PR adds or modifies a query on a large table, request
+  `EXPLAIN ANALYZE` output (before and after) if not already included in the
+  PR description
 - Settlement-related changes are backward-compatible with in-flight auctions
 - Changes to auction or solver logic preserve existing solver competition
   fairness
@@ -69,7 +71,8 @@ For each finding, include:
 - File path and line number
 - What is wrong (one sentence)
 - Why it matters (one sentence)
-- Suggested fix (code snippet if non-obvious)
+- For small, self-contained fixes, include a committable GitHub suggestion
+  block. For larger fixes, describe the recommended approach in prose.
 
 Do not summarize the PR. Do not list what looks correct. Only report findings.
-If there are no issues, say so in one sentence.
+If you do not find issues, simply comment: LGTM

@@ -20,6 +20,9 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
