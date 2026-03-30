@@ -22,6 +22,7 @@ pub struct Solutions(pub solvers_dto::solution::Solutions);
 
 impl Solutions {
     const MAX_BASE_POINT: u32 = 10000;
+    const PRICE_KEY_SAMPLE_SIZE: usize = 6;
 
     pub fn into_domain(
         self,
@@ -36,8 +37,17 @@ impl Solutions {
         self.0.solutions
             .into_iter()
             .map(|solution| {
+                let solution_id = solution.id;
+                let provided_price_count = solution.prices.len();
+                let provided_price_keys = solution
+                    .prices
+                    .keys()
+                    .take(Self::PRICE_KEY_SAMPLE_SIZE)
+                    .cloned()
+                    .collect_vec();
+
                 competition::Solution::new(
-                    competition::solution::Id::new(solution.id),
+                    competition::solution::Id::new(solution_id),
                     solution
                         .trades
                         .iter()
@@ -258,10 +268,32 @@ impl Solutions {
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices(trade, sell_price, buy_price) => {
+                        let sell_token = trade.order().sell.token;
+                        let buy_token = trade.order().buy.token;
+                        let canonical_sell_token = sell_token.as_erc20(weth);
+                        let canonical_buy_token = buy_token.as_erc20(weth);
+
                         super::Error(format!(
-                            "invalid clearing prices: trade {trade:?} has invalid sell price {sell_price:?} and buy price {buy_price:?}"
+                            "invalid clearing prices for solution {solution_id} order_uid {:?}: \
+                             sell_token {sell_token:?} buy_token {buy_token:?} \
+                             canonical_sell_token {canonical_sell_token:?} \
+                             canonical_buy_token {canonical_buy_token:?} \
+                             sell_price {sell_price:?} buy_price {buy_price:?} \
+                             provided_price_count {provided_price_count} \
+                             provided_price_keys_sample {provided_price_keys:?}",
+                            trade.order().uid,
                         ))
                     }
+                    competition::solution::error::Solution::ConflictingClearingPrices {
+                        token,
+                        existing,
+                        duplicate,
+                    } => super::Error(format!(
+                        "conflicting clearing prices for solution {solution_id} token {token:?}: \
+                         existing {existing:?}, duplicate {duplicate:?}; \
+                         provided_price_count {provided_price_count} \
+                         provided_price_keys_sample {provided_price_keys:?}"
+                    )),
                     competition::solution::error::Solution::ProtocolFee(err) => {
                         super::Error(format!("could not incorporate protocol fee: {err}"))
                     }

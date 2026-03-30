@@ -40,6 +40,31 @@ pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::
 
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
 
+fn canonicalize_prices(
+    prices: Prices,
+    weth: eth::WethAddress,
+) -> Result<Prices, error::Solution> {
+    let mut canonicalized = HashMap::with_capacity(prices.len());
+    for (token, price) in prices {
+        let token = token.as_erc20(weth);
+        match canonicalized.entry(token) {
+            Entry::Vacant(entry) => {
+                entry.insert(price);
+            }
+            Entry::Occupied(entry) if *entry.get() == price => {}
+            Entry::Occupied(entry) => {
+                return Err(error::Solution::ConflictingClearingPrices {
+                    token,
+                    existing: *entry.get(),
+                    duplicate: price,
+                });
+            }
+        }
+    }
+
+    Ok(canonicalized)
+}
+
 #[derive(Clone)]
 pub struct WrapperCall {
     pub address: eth::Address,
@@ -89,6 +114,8 @@ impl Solution {
         flashloans: HashMap<order::Uid, Flashloan>,
         wrappers: Vec<WrapperCall>,
     ) -> Result<Self, error::Solution> {
+        let prices = canonicalize_prices(prices, weth)?;
+
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
         // To make sure that all the same logic and checks get applied we convert them
@@ -687,6 +714,12 @@ pub mod error {
     pub enum Solution {
         #[error("invalid clearing prices")]
         InvalidClearingPrices(Fulfillment, Option<eth::U256>, Option<eth::U256>),
+        #[error("conflicting clearing prices for token {token:?}")]
+        ConflictingClearingPrices {
+            token: TokenAddress,
+            existing: eth::U256,
+            duplicate: eth::U256,
+        },
         #[error(transparent)]
         ProtocolFee(#[from] fee::Error),
         #[error("invalid JIT trade")]
@@ -729,6 +762,62 @@ pub mod error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonicalize_prices_normalizes_eth_to_weth() {
+        let weth = eth::WethAddress(eth::Address::repeat_byte(0x42).into());
+        let expected = eth::U256::from(7);
+
+        let prices = canonicalize_prices(
+            HashMap::from([(eth::ETH_TOKEN, expected)]),
+            weth,
+        )
+        .unwrap();
+
+        assert_eq!(prices.get(&weth.0), Some(&expected));
+        assert_eq!(prices.get(&eth::ETH_TOKEN), None);
+    }
+
+    #[test]
+    fn canonicalize_prices_accepts_matching_eth_and_weth_aliases() {
+        let weth = eth::WethAddress(eth::Address::repeat_byte(0x42).into());
+        let expected = eth::U256::from(7);
+
+        let prices = canonicalize_prices(
+            HashMap::from([(eth::ETH_TOKEN, expected), (weth.0, expected)]),
+            weth,
+        )
+        .unwrap();
+
+        assert_eq!(prices.len(), 1);
+        assert_eq!(prices.get(&weth.0), Some(&expected));
+    }
+
+    #[test]
+    fn canonicalize_prices_rejects_conflicting_eth_and_weth_aliases() {
+        let weth = eth::WethAddress(eth::Address::repeat_byte(0x42).into());
+        let err = canonicalize_prices(
+            HashMap::from([
+                (eth::ETH_TOKEN, eth::U256::from(7)),
+                (weth.0, eth::U256::from(8)),
+            ]),
+            weth,
+        )
+        .unwrap_err();
+
+        match err {
+            error::Solution::ConflictingClearingPrices {
+                token,
+                existing,
+                duplicate,
+            } => {
+                assert_eq!(token, weth.0);
+                assert_eq!(existing, eth::U256::from(7));
+                assert_eq!(duplicate, eth::U256::from(8));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 
     /// Tests that constructor ensures unique ids.
     #[test]
