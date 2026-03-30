@@ -146,11 +146,23 @@ impl SwapTransaction {
 /// A Bitget API response wrapper.
 ///
 /// On success `status` is 0 and `data` contains the result.
-/// On error `status` is non-zero and `data` is null.
+/// On error `status` is 1, `error_code` identifies the failure, and `data` is
+/// null.
+///
+/// See <https://web3.bitget.com/en/docs/swap-order#error-code-list>
 #[derive(Deserialize, Clone, Debug)]
 pub struct Response<T> {
-    /// Response status code (0 = success).
+    /// Response status code (0 = success, 1 = failure).
     pub status: i64,
+
+    /// Bitget error code (e.g. 80005 for insufficient liquidity).
+    /// Only present when `status` is non-zero.
+    #[serde(default)]
+    pub error_code: Option<i64>,
+
+    /// Human-readable error description.
+    #[serde(default)]
+    pub message: Option<String>,
 
     /// Response data — `None` when the API returns an error.
     pub data: Option<T>,
