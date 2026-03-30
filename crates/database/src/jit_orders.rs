@@ -5,7 +5,6 @@ use {
         OrderUid,
         TransactionHash,
         orders::{self, BuyTokenDestination, OrderKind, SellTokenSource, SigningScheme},
-        timeout::QueryAsTimeoutExt,
     },
     sqlx::{
         PgConnection,
@@ -52,10 +51,7 @@ SELECT,
 " FROM ", FROM,
 " WHERE o.uid = $1 ",
         );
-    sqlx::query_as(QUERY)
-        .bind(uid)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
 
 #[instrument(skip_all)]
@@ -65,10 +61,7 @@ pub async fn get_many_by_uid<'a>(
 ) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
     const QUERY: &str =
         const_format::concatcp!("SELECT ", SELECT, " FROM ", FROM, " WHERE o.uid = ANY($1)");
-    sqlx::query_as(QUERY)
-        .bind(order_uids)
-        .fetch_all_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(order_uids).fetch_all(ex).await
 }
 
 #[instrument(skip_all)]
@@ -93,10 +86,7 @@ pub async fn get_by_tx(
             WHERE ord.uid = o.uid)
         ",
     );
-    sqlx::query_as(QUERY)
-        .bind(tx_hash)
-        .fetch_all_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(tx_hash).fetch_all(ex).await
 }
 
 /// 1:1 mapping to the `jit_orders` table, used to store orders.

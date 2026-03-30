@@ -78,7 +78,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
     tracing::info!("file configuration:\n{:#?}", config);
-    database::init_global_query_timeout(config.database.global_query_timeout);
     run(config).await;
 }
 

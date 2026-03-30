@@ -4,7 +4,6 @@ use {
         PgTransaction,
         events::EventIndex,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
-        timeout::QueryAsTimeoutExt,
     },
     chrono::Utc,
     sqlx::{Executor, PgConnection},
@@ -81,10 +80,7 @@ pub async fn read_onchain_invalidation(
         SELECT * FROM onchain_order_invalidations
         WHERE uid = $1
     "#;
-    sqlx::query_as(QUERY)
-        .bind(id)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 #[cfg(test)]

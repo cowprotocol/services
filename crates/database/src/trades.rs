@@ -1,12 +1,5 @@
 use {
-    crate::{
-        Address,
-        OrderUid,
-        TransactionHash,
-        auction::AuctionId,
-        events::EventIndex,
-        timeout::QueryAsTimeoutExt,
-    },
+    crate::{Address, OrderUid, TransactionHash, auction::AuctionId, events::EventIndex},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
     tracing::{Instrument, info_span, instrument},
@@ -122,7 +115,7 @@ LEFT OUTER JOIN LATERAL (
         .bind(order_uid_filter)
         .bind(limit)
         .bind(offset)
-        .fetch_all_with_timeout(ex)
+        .fetch_all(ex)
         .instrument(info_span!("trades"))
 }
 
@@ -157,7 +150,7 @@ AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
     sqlx::query_as(QUERY)
         .bind(settlement.block_number)
         .bind(settlement.log_index)
-        .fetch_all_with_timeout(ex)
+        .fetch_all(ex)
         .await
 }
 
@@ -183,10 +176,7 @@ FROM (
 ) AS sub
 "#;
 
-    let (block_number,) = sqlx::query_as(QUERY)
-        .bind(token)
-        .fetch_one_with_timeout(ex)
-        .await?;
+    let (block_number,) = sqlx::query_as(QUERY).bind(token).fetch_one(ex).await?;
     Ok(block_number)
 }
 

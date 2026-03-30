@@ -164,8 +164,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
-    database::init_global_query_timeout(config.database.global_query_timeout);
-
     if config.shadow.is_some() {
         shadow_mode(config).await;
     } else {

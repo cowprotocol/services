@@ -1,5 +1,5 @@
 use {
-    crate::{Address, orders::OrderKind, timeout::QueryAsTimeoutExt},
+    crate::{Address, orders::OrderKind},
     bigdecimal::BigDecimal,
     sqlx::{
         PgConnection,
@@ -88,10 +88,7 @@ SELECT *
 FROM quotes
 WHERE id = $1
     "#;
-    sqlx::query_as(QUERY)
-        .bind(id)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 /// Fields for searching stored quotes.
@@ -138,7 +135,7 @@ LIMIT 1
         .bind(params.kind)
         .bind(params.expiration)
         .bind(&params.quote_kind)
-        .fetch_optional_with_timeout(ex)
+        .fetch_optional(ex)
         .await
 }
 

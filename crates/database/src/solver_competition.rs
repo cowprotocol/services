@@ -5,11 +5,7 @@
 //! uses individual and well defined tables for this.
 
 use {
-    crate::{
-        TransactionHash,
-        auction::AuctionId,
-        timeout::{QueryAsTimeoutExt, QueryScalarTimeoutExt},
-    },
+    crate::{TransactionHash, auction::AuctionId},
     sqlx::{PgConnection, types::JsonValue},
     tracing::instrument,
 };
@@ -47,10 +43,7 @@ pub async fn auction_start_block(
 ) -> Result<Option<String>, sqlx::Error> {
     const QUERY: &str =
         r#"SELECT json->>'auctionStartBlock' FROM solver_competitions sc WHERE sc.id = $1;"#;
-    sqlx::query_scalar(QUERY)
-        .bind(id)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_scalar(QUERY).bind(id).fetch_optional(ex).await
 }
 
 #[instrument(skip_all)]
@@ -67,10 +60,7 @@ LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 WHERE sc.id = $1
 GROUP BY sc.id
     ;"#;
-    sqlx::query_as(QUERY)
-        .bind(id)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 #[instrument(skip_all)]
@@ -89,7 +79,7 @@ LIMIT $1
     ;"#;
     sqlx::query_as(QUERY)
         .bind(i64::from(latest_competitions_count))
-        .fetch_all_with_timeout(ex)
+        .fetch_all(ex)
         .await
 }
 
@@ -119,10 +109,7 @@ JOIN settlements s ON sc.id = s.auction_id
 WHERE sc.id = (SELECT id FROM competition) AND s.solution_uid IS NOT NULL
 GROUP BY sc.id
     ;"#;
-    sqlx::query_as(QUERY)
-        .bind(tx_hash)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
 
 #[cfg(test)]

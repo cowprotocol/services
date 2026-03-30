@@ -2834,7 +2834,6 @@ dependencies = [
  "const_format",
  "futures",
  "maplit",
- "paste",
  "serde_json",
  "sqlx",
  "strum",

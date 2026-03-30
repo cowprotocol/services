@@ -6,7 +6,6 @@ use {
         TransactionHash,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
-        timeout::{QueryAsTimeoutExt, QueryScalarTimeoutExt},
     },
     futures::stream::BoxStream,
     sqlx::{
@@ -225,10 +224,7 @@ pub async fn read_order(
 SELECT * FROM ORDERS
 WHERE uid = $1
     "#;
-    sqlx::query_as(QUERY)
-        .bind(id)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
@@ -441,10 +437,7 @@ pub async fn read_quote(
 SELECT * FROM order_quotes
 WHERE order_uid = $1
 "#;
-    sqlx::query_as(query)
-        .bind(id)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(query).bind(id).fetch_optional(ex).await
 }
 
 #[instrument(skip_all)]
@@ -465,7 +458,7 @@ pub async fn read_quotes(
     separated.push_unseparated(") ");
 
     let query = query_builder.build_query_as();
-    query.fetch_all_with_timeout(ex).await
+    query.fetch_all(ex).await
 }
 
 #[instrument(skip_all)]
@@ -678,10 +671,7 @@ pub async fn single_full_order_with_quote(
         FULL_ORDER_WITH_QUOTE,
         " WHERE o.uid = $1"
     );
-    sqlx::query_as(QUERY)
-        .bind(uid)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
 
 #[instrument(skip_all)]
@@ -690,10 +680,7 @@ pub async fn many_full_orders_with_quotes<'a>(
     order_ids: &'a [OrderUid],
 ) -> Result<Vec<FullOrderWithQuote>, sqlx::Error> {
     const QUERY: &str = const_format::concatcp!(FULL_ORDER_WITH_QUOTE, " WHERE o.uid = ANY($1)");
-    sqlx::query_as(QUERY)
-        .bind(order_ids)
-        .fetch_all_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(order_ids).fetch_all(ex).await
 }
 
 // Partial query for getting the log indices of events of a single settlement.
@@ -975,7 +962,7 @@ pub async fn latest_settlement_block(ex: &mut PgConnection) -> Result<i64, sqlx:
 SELECT COALESCE(MAX(block_number), 0)
 FROM settlements
     "#;
-    sqlx::query_scalar(QUERY).fetch_one_with_timeout(ex).await
+    sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -1033,7 +1020,7 @@ pub async fn user_orders_with_quote(
     sqlx::query_as::<_, OrderWithQuote>(QUERY)
         .bind(min_valid_to)
         .bind(owner)
-        .fetch_all_with_timeout(ex)
+        .fetch_all(ex)
         .await
 }
 
@@ -1060,10 +1047,7 @@ SELECT DISTINCT order_uid FROM (
 ) AS updated_orders
 "#;
 
-    sqlx::query_as(QUERY)
-        .bind(after_block)
-        .fetch_all_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(after_block).fetch_all(ex).await
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -1127,7 +1111,7 @@ mod tests {
         sqlx::query_as(QUERY)
             .bind(id)
             .bind(execution)
-            .fetch_all_with_timeout(ex)
+            .fetch_all(ex)
             .await
     }
 

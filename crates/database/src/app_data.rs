@@ -1,7 +1,4 @@
-use {
-    crate::{AppId, timeout::QueryScalarTimeoutExt},
-    sqlx::PgConnection,
-};
+use {crate::AppId, sqlx::PgConnection};
 
 /// Tries to associate the contract app data with the full app data.
 ///
@@ -32,7 +29,7 @@ SELECT
     sqlx::query_scalar(QUERY)
         .bind(contract_app_data)
         .bind(full_app_data)
-        .fetch_one_with_timeout(ex)
+        .fetch_one(ex)
         .await
 }
 
@@ -47,7 +44,7 @@ WHERE contract_app_data = $1
 ;"#;
     sqlx::query_scalar(QUERY)
         .bind(contract_app_data)
-        .fetch_optional_with_timeout(ex)
+        .fetch_optional(ex)
         .await
 }
 

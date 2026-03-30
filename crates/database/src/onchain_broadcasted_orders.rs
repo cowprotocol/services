@@ -1,6 +1,6 @@
 use {
     super::events::EventIndex,
-    crate::{Address, OrderUid, PgTransaction, timeout::QueryAsTimeoutExt},
+    crate::{Address, OrderUid, PgTransaction},
     sqlx::{Executor, PgConnection},
     tracing::instrument,
 };
@@ -109,10 +109,7 @@ pub async fn read_order(
         SELECT * FROM onchain_placed_orders
         WHERE uid = $1
     "#;
-    sqlx::query_as(QUERY)
-        .bind(id)
-        .fetch_optional_with_timeout(ex)
-        .await
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 #[cfg(test)]
