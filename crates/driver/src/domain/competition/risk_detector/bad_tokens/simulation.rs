@@ -103,6 +103,7 @@ impl Detector {
                 }
                 .boxed()
             })
+            .future
             .await
     }
 }

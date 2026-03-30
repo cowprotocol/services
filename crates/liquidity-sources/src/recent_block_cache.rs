@@ -265,7 +265,7 @@ where
         let retries = self.maximum_retries;
         let delay = self.delay_between_retries;
         let fetcher = self.fetcher.clone();
-        let fut = self.requests.shared_or_else((key, block), |entry| {
+        let shared = self.requests.shared_or_else((key, block), |entry| {
             let (key, block) = entry.clone();
             async move {
                 for _ in 0..=retries {
@@ -280,7 +280,7 @@ where
             }
             .boxed()
         });
-        fut.await.context("could not fetch liquidity")
+        shared.future.await.context("could not fetch liquidity")
     }
 
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {

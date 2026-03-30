@@ -39,6 +39,16 @@ pub type BoxRequestSharing<Request, Response> =
 /// A boxed shared future.
 pub type BoxShared<T> = Shared<BoxFuture<'static, T>>;
 
+/// Result of [`RequestSharing::shared_or_else`] indicating whether an
+/// already in-flight future was reused or a new one was created.
+pub struct SharedResult<Fut: Future> {
+    /// The (possibly shared) future to await.
+    pub future: Shared<Fut>,
+    /// `true` when an existing in-flight request was reused instead of
+    /// starting a new one.
+    pub is_shared: bool,
+}
+
 type Cache<Request, Response> = Arc<Mutex<HashMap<Request, WeakShared<Response>>>>;
 
 impl<Request: Send + 'static, Fut: Future + Send + 'static> RequestSharing<Request, Fut>
@@ -100,7 +110,7 @@ where
 {
     /// Returns an existing in flight future or creates and uses a new future
     /// from the specified closure.
-    pub fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
+    pub fn shared_or_else<F>(&self, request: Request, future: F) -> SharedResult<Fut>
     where
         F: FnOnce(&Request) -> Fut,
     {
@@ -113,7 +123,10 @@ where
                 .request_sharing_access
                 .with_label_values(&[self.request_label.as_str(), "hits"])
                 .inc();
-            return existing;
+            return SharedResult {
+                future: existing,
+                is_shared: true,
+            };
         }
 
         Metrics::get()
@@ -129,7 +142,10 @@ where
             .request_sharing_cached_items
             .with_label_values(&[&self.request_label])
             .set(in_flight.len() as u64);
-        shared
+        SharedResult {
+            future: shared,
+            is_shared: false,
+        }
     }
 }
 
@@ -165,8 +181,14 @@ mod tests {
             request_label: label.clone(),
         };
 
-        let shared0 = sharing.shared_or_else(0, |_| futures::future::ready(0).boxed());
-        let shared1 = sharing.shared_or_else(0, |_| async { panic!() }.boxed());
+        let result0 = sharing.shared_or_else(0, |_| futures::future::ready(0).boxed());
+        let result1 = sharing.shared_or_else(0, |_| async { panic!() }.boxed());
+
+        assert!(!result0.is_shared);
+        assert!(result1.is_shared);
+
+        let shared0 = result0.future;
+        let shared1 = result1.future;
 
         assert!(shared0.ptr_eq(&shared1));
         assert_eq!(shared0.strong_count().unwrap(), 2);
