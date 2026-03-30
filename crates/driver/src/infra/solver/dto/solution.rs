@@ -234,30 +234,24 @@ impl Solutions {
                     solver.clone(),
                     weth,
                     solution.gas.map(eth::Gas::from),
-                    match (solution.max_fee_per_gas, solution.max_priority_fee_per_gas) {
-                        (Some(max_fee), Some(max_priority_fee)) => {
-                            Some(competition::solution::GasFeeOverride {
-                                max_fee_per_gas: max_fee.try_into().map_err(|_| {
+                    solution
+                        .gas_fee_override
+                        .map(|o| {
+                            Ok(competition::solution::GasFeeOverride {
+                                max_fee_per_gas: o.max_fee_per_gas.try_into().map_err(|_| {
                                     super::Error("max_fee_per_gas overflow".to_owned())
                                 })?,
-                                max_priority_fee_per_gas: max_priority_fee.try_into().map_err(
-                                    |_| {
+                                max_priority_fee_per_gas: o
+                                    .max_priority_fee_per_gas
+                                    .try_into()
+                                    .map_err(|_| {
                                         super::Error(
                                             "max_priority_fee_per_gas overflow".to_owned(),
                                         )
-                                    },
-                                )?,
+                                    })?,
                             })
-                        }
-                        (None, None) => None,
-                        _ => {
-                            return Err(super::Error(
-                                "max_fee_per_gas and max_priority_fee_per_gas must both be set \
-                                 or both be absent"
-                                    .to_owned(),
-                            ));
-                        }
-                    },
+                        })
+                        .transpose()?,
                     solver.config().fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans

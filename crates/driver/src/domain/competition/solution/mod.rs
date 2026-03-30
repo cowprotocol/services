@@ -74,9 +74,8 @@ pub struct Solution {
     wrappers: Vec<WrapperCall>,
 }
 
-/// Optional gas fee overrides provided by the solver. When set, these
-/// values are used instead of the driver's own gas price estimation
-/// during settlement submission.
+/// Gas fee overrides provided by the solver, used instead of the driver's
+/// own gas price estimation during settlement submission.
 #[derive(Clone, Copy, Debug)]
 pub struct GasFeeOverride {
     pub max_fee_per_gas: u128,

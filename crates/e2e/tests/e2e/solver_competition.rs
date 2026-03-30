@@ -508,8 +508,7 @@ async fn store_filtered_solutions(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
-        max_fee_per_gas: None,
-        max_priority_fee_per_gas: None,
+        gas_fee_override: None,
     }));
 
     // bad solver settles both orders at 2:1. Because it can't beat the
@@ -540,8 +539,7 @@ async fn store_filtered_solutions(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
-        max_fee_per_gas: None,
-        max_priority_fee_per_gas: None,
+        gas_fee_override: None,
     }));
 
     // Drive solution

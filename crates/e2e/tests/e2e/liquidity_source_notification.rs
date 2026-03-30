@@ -334,8 +334,7 @@ http-timeout = "10s"
         gas: None,
         flashloans: None,
         wrappers: vec![],
-        max_fee_per_gas: None,
-        max_priority_fee_per_gas: None,
+        gas_fee_override: None,
     }));
 
     // Wait for trade

@@ -1,5 +1,5 @@
 use {
-    super::competition::solution::settlement,
+    super::competition::solution::{GasFeeOverride, settlement},
     crate::{
         domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
@@ -172,30 +172,11 @@ impl Mempools {
             _ => current_gas_price,
         };
 
-        // Apply solver-provided gas fee override if present. The solver's
-        // values replace the driver estimate, but must still outbid any pending
-        // replacement transaction (a node requirement).
-        let final_gas_price = if let Some(gas_override) = settlement.gas_fee_override() {
-            let solver_price = Eip1559Estimation {
-                max_fee_per_gas: gas_override.max_fee_per_gas,
-                max_priority_fee_per_gas: gas_override.max_priority_fee_per_gas,
-            };
-            match &replacement_gas_price {
-                Some(replacement) => Eip1559Estimation {
-                    max_fee_per_gas: std::cmp::max(
-                        solver_price.max_fee_per_gas,
-                        replacement.max_fee_per_gas,
-                    ),
-                    max_priority_fee_per_gas: std::cmp::max(
-                        solver_price.max_priority_fee_per_gas,
-                        replacement.max_priority_fee_per_gas,
-                    ),
-                },
-                None => solver_price,
-            }
-        } else {
-            final_gas_price
-        };
+        let final_gas_price = apply_gas_fee_override(
+            final_gas_price,
+            settlement.gas_fee_override(),
+            replacement_gas_price.as_ref(),
+        );
 
         tracing::debug!(
             ?submission_block,
@@ -393,6 +374,36 @@ impl Mempools {
 
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
+    }
+}
+
+/// Applies the solver's gas fee override if present. When a replacement
+/// transaction is pending, the solver's values are raised to at least the
+/// replacement minimum (a node requirement).
+fn apply_gas_fee_override(
+    driver_estimate: Eip1559Estimation,
+    solver_override: Option<GasFeeOverride>,
+    replacement_price: Option<&Eip1559Estimation>,
+) -> Eip1559Estimation {
+    let Some(gas_override) = solver_override else {
+        return driver_estimate;
+    };
+    let solver_price = Eip1559Estimation {
+        max_fee_per_gas: gas_override.max_fee_per_gas,
+        max_priority_fee_per_gas: gas_override.max_priority_fee_per_gas,
+    };
+    match replacement_price {
+        Some(replacement) => Eip1559Estimation {
+            max_fee_per_gas: std::cmp::max(
+                solver_price.max_fee_per_gas,
+                replacement.max_fee_per_gas,
+            ),
+            max_priority_fee_per_gas: std::cmp::max(
+                solver_price.max_priority_fee_per_gas,
+                replacement.max_priority_fee_per_gas,
+            ),
+        },
+        None => solver_price,
     }
 }
 
