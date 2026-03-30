@@ -214,13 +214,35 @@ impl Bitget {
         Ok(BASE64_STANDARD.encode(signature))
     }
 
-    /// Bitget error handling based on status codes.
-    fn handle_api_error(status: i64, body: String) -> Result<(), Error> {
-        Err(match status {
-            0 => return Ok(()),
-            429 => Error::RateLimited,
-            404 => Error::NotFound,
-            _ => Error::Api { status, body },
+    /// Bitget error handling based on `error_code`.
+    ///
+    /// See <https://web3.bitget.com/en/docs/swap-order#error-code-list>
+    fn handle_api_error(
+        status: i64,
+        error_code: Option<i64>,
+        message: String,
+    ) -> Result<(), Error> {
+        if status == 0 {
+            return Ok(());
+        }
+
+        Err(match error_code.unwrap_or(80000) {
+            80001 // Insufficient token balance
+            | 80004 // Order expired
+            | 80005 // Insufficient liquidity
+            | 80008 // Reverse quote did not converge
+            | 80009 // Token info not found
+            | 80010 // Price/gas price not found
+            | 80011 // Failed to generate calldata
+            | 80012 // Quote failed
+            | 80014 // Order not found
+            => Error::NotFound,
+            80002 // Amount below minimum
+            | 80003 // Amount above maximum
+            | 80006 // Illegal request
+            | 80013 // Unsupported chain
+            => Error::BadRequest,
+            code => Error::Api { code, message },
         })
     }
 
@@ -256,6 +278,9 @@ impl Bitget {
         let status = response.status();
         let body = response.text().await.map_err(util::http::Error::from)?;
 
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(Error::RateLimited);
+        }
         if !status.is_success() {
             return Err(util::http::Error::Status(status, body).into());
         }
@@ -263,7 +288,11 @@ impl Bitget {
         let response: dto::Response<U> =
             serde_json::from_str(&body).map_err(util::http::Error::from)?;
 
-        Self::handle_api_error(response.status, body)?;
+        Self::handle_api_error(
+            response.status,
+            response.error_code,
+            response.message.unwrap_or_default(),
+        )?;
         response.data.ok_or(Error::NotFound)
     }
 }
@@ -294,8 +323,10 @@ pub enum Error {
     AmountConversionFailed,
     #[error("decimals are missing for the swapped tokens")]
     MissingDecimals,
-    #[error("api error status {status}: {body}")]
-    Api { status: i64, body: String },
+    #[error("bad request")]
+    BadRequest,
+    #[error("api error code {code}: {message}")]
+    Api { code: i64, message: String },
     #[error(transparent)]
     Http(#[from] util::http::Error),
 }

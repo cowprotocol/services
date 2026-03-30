@@ -1,43 +1,47 @@
+pub mod encoding;
+pub mod enso;
+pub mod ethereum;
+pub mod swap_simulator;
+pub mod tenderly;
+mod utils;
+
+pub use {enso::Enso, ethereum::Ethereum, tenderly::Tenderly};
 use {
-    crate::infra::blockchain::{self, Ethereum},
-    eth_domain_types as eth,
+    eth_domain_types::{self as eth, AccessList, Tx},
+    http_client::HttpClientFactory,
     observe::future::Measure,
 };
 
-pub mod enso;
-pub mod tenderly;
-
-/// Ethereum transaction simulator.
 #[derive(Debug, Clone)]
 pub struct Simulator {
     inner: Inner,
     eth: Ethereum,
     disable_access_lists: bool,
-    /// If this is [`Some`], every gas estimate will return this fixed
-    /// gas value.
     disable_gas: Option<eth::Gas>,
 }
 
-/// Configuration of the transaction simulator.
-#[derive(Debug)]
-pub enum Config {
-    Tenderly(tenderly::Config),
-    Enso(enso::Config),
+#[derive(Debug, Clone)]
+enum Inner {
+    Tenderly(tenderly::Tenderly),
+    Ethereum,
+    Enso(enso::Enso),
 }
 
 impl Simulator {
-    /// Simulate transactions on [Tenderly](https://tenderly.co/).
-    pub fn tenderly(config: tenderly::Config, eth: Ethereum) -> Self {
+    pub fn tenderly(
+        config: &configs::simulator::TenderlyConfig,
+        eth: Ethereum,
+        http_factory: &HttpClientFactory,
+    ) -> Self {
         let eth = eth.with_metric_label("tenderlySimulator".into());
         Self {
-            inner: Inner::Tenderly(tenderly::Tenderly::new(config, eth.clone())),
+            inner: Inner::Tenderly(tenderly::Tenderly::new(config, eth.clone(), http_factory)),
             eth,
             disable_access_lists: false,
             disable_gas: None,
         }
     }
 
-    /// Simulate transactions using the Ethereum RPC API.
     pub fn ethereum(eth: Ethereum) -> Self {
         let eth = eth.with_metric_label("web3Simulator".into());
         Self {
@@ -48,9 +52,7 @@ impl Simulator {
         }
     }
 
-    /// Simulate transactions using the [Enso Simulator](https://github.com/EnsoFinance/transaction-simulator).
-    /// Uses Ethereum RPC API to generate access lists.
-    pub fn enso(config: enso::Config, eth: Ethereum) -> Self {
+    pub fn enso(config: &configs::simulator::EnsoConfig, eth: Ethereum) -> Self {
         let eth = eth.with_metric_label("ensoSimulator".into());
         Self {
             inner: Inner::Enso(enso::Enso::new(
@@ -79,7 +81,7 @@ impl Simulator {
     /// Simulate the access list needed by a transaction. If the transaction
     /// already has an access list, the returned access list will be a
     /// superset of the existing one.
-    pub async fn access_list(&self, tx: &eth::Tx) -> Result<eth::AccessList, Error> {
+    pub async fn access_list(&self, tx: &Tx) -> Result<AccessList, Error> {
         if self.disable_access_lists {
             return Ok(tx.access_list.clone());
         }
@@ -87,7 +89,7 @@ impl Simulator {
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx, tenderly::GenerateAccessList::Yes)
+                    .simulate(tx.clone(), block, tenderly::GenerateAccessList::Yes)
                     .await
                     .map_err(with(tx.clone(), block))?
                     .access_list
@@ -115,7 +117,7 @@ impl Simulator {
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx, tenderly::GenerateAccessList::No)
+                    .simulate(tx.clone(), block, tenderly::GenerateAccessList::No)
                     .measure("tenderly_simulate_gas")
                     .await
                     .map_err(with(tx.clone(), block))?
@@ -135,19 +137,12 @@ impl Simulator {
     }
 }
 
-#[derive(Debug, Clone)]
-enum Inner {
-    Tenderly(tenderly::Tenderly),
-    Ethereum,
-    Enso(enso::Enso),
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum SimulatorError {
     #[error("tenderly error: {0:?}")]
     Tenderly(#[from] tenderly::Error),
-    #[error("blockchain error: {0:?}")]
-    Blockchain(#[from] blockchain::Error),
+    #[error("ethereum error: {0:?}")]
+    Ethereum(#[from] ethereum::Error),
     #[error("enso error: {0:?}")]
     Enso(#[from] enso::Error),
     #[error("the simulated gas {0} exceeded the gas limit {1} provided in the solution")]
@@ -158,7 +153,7 @@ pub enum SimulatorError {
 #[error("block: {block},  err: {err:?}, tx: {tx:?}")]
 pub struct RevertError {
     pub err: SimulatorError,
-    pub tx: eth::Tx,
+    pub tx: Tx,
     pub block: eth::BlockNo,
 }
 
@@ -174,7 +169,7 @@ pub enum Error {
     Other(#[from] SimulatorError),
 }
 
-fn with<E>(tx: eth::Tx, block: eth::BlockNo) -> impl FnOnce(E) -> Error
+fn with<E>(tx: Tx, block: eth::BlockNo) -> impl FnOnce(E) -> Error
 where
     E: Into<SimulatorError>,
 {
@@ -182,14 +177,19 @@ where
         let err: SimulatorError = err.into();
         let tx = match &err {
             SimulatorError::Tenderly(tenderly::Error::Http(_)) => None,
-            SimulatorError::Tenderly(tenderly::Error::Revert(_)) => Some(tx),
-            SimulatorError::Blockchain(_) => Some(tx),
+            SimulatorError::Tenderly(tenderly::Error::Revert(_)) => Some(tx.clone()),
+            SimulatorError::Tenderly(tenderly::Error::Other(_)) => None,
+            SimulatorError::Ethereum(_) => Some(tx.clone()),
             SimulatorError::Enso(enso::Error::Http(_)) => None,
-            SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
-            SimulatorError::GasExceeded(..) => Some(tx),
+            SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx.clone()),
+            SimulatorError::GasExceeded(..) => Some(tx.clone()),
         };
         match tx {
-            Some(tx) => Error::Revert(RevertError { err, tx, block }),
+            Some(tx) => Error::Revert(RevertError {
+                err,
+                tx: tx.clone(),
+                block,
+            }),
             None => Error::Other(err),
         }
     }

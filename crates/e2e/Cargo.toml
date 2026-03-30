@@ -55,6 +55,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
 signature-validator = { workspace = true }
+simulator = { workspace = true }
 solver = { workspace = true }
 solvers = { workspace = true }
 solvers-dto = { workspace = true }

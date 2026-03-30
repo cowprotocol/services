@@ -65,6 +65,7 @@ serde = { workspace = true, features = ["derive"] }
 serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+simulator = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }

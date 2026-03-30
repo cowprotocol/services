@@ -4,7 +4,6 @@ pub mod macros;
 pub mod arguments;
 pub mod current_block;
 pub mod db_order_conversions;
-pub mod encoded_settlement;
 pub mod event_storing_helpers;
 pub mod external_prices;
 pub mod fee;

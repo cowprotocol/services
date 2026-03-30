@@ -8,12 +8,11 @@ use {
         rpc::types::{TransactionReceipt, TransactionRequest},
         transports::TransportErrorKind,
     },
-    anyhow::anyhow,
     balance_overrides::{BalanceOverrides, BalanceOverriding},
     chain::Chain,
-    eth_domain_types::{self as eth, U256},
+    eth_domain_types as eth,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
-    gas_price_estimation::Eip1559EstimationExt,
+    gas_price_estimation::{Eip1559EstimationExt, GasPriceEstimating},
     shared::web3,
     std::{fmt, sync::Arc},
     thiserror::Error,
@@ -27,12 +26,14 @@ pub mod token;
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
 /// An Ethereum RPC connection.
+#[derive(Clone)]
 pub struct Rpc {
     web3: Web3,
     chain: Chain,
     args: RpcArgs,
 }
 
+#[derive(Clone)]
 pub struct RpcArgs {
     pub url: Url,
     pub max_batch_size: usize,
@@ -90,7 +91,6 @@ struct Inner {
     current_block: CurrentBlockWatcher,
     balance_simulator: BalanceSimulator,
     balance_overrider: Arc<dyn BalanceOverriding>,
-    tx_gas_limit: U256,
 }
 
 impl Ethereum {
@@ -104,11 +104,9 @@ impl Ethereum {
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
-        tx_gas_limit: U256,
         current_block_args: &shared::current_block::Arguments,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
-
         let current_block_stream = current_block_args
             .stream(args.url.clone(), web3.provider.clone())
             .await
@@ -134,7 +132,6 @@ impl Ethereum {
                 gas,
                 balance_simulator,
                 balance_overrider,
-                tx_gas_limit,
             }),
             web3,
         }
@@ -178,30 +175,34 @@ impl Ethereum {
         &self.inner.current_block
     }
 
-    /// Create access list used by a transaction.
-    #[instrument(skip_all)]
-    pub async fn create_access_list<T>(&self, tx: T) -> Result<eth::AccessList, Error>
-    where
-        T: Into<TransactionRequest>,
-    {
-        let tx = tx.into();
+    /// The gas price is determined based on the deadline by which the
+    /// transaction must be included on-chain. A shorter deadline requires a
+    /// higher gas price to increase the likelihood of timely inclusion.
+    pub async fn gas_price(&self) -> Result<Eip1559Estimation, Error> {
+        self.inner.gas.estimate().await
+    }
 
-        let gas_limit = self.inner.tx_gas_limit.try_into().map_err(|err| {
-            Error::GasPrice(anyhow!("failed to convert gas_limit to u64: {err:?}"))
-        })?;
-        let tx = tx.with_gas_limit(gas_limit);
-        let tx = match self.simulation_gas_price().await {
-            Some(gas_price) => tx.with_gas_price(gas_price),
-            _ => tx,
-        };
+    pub fn gas_estimator(&self) -> Arc<dyn GasPriceEstimating> {
+        Arc::clone(&self.inner.gas.gas)
+    }
 
-        let access_list = self.web3.provider.create_access_list(&tx).pending().await?;
+    pub fn block_gas_limit(&self) -> eth::Gas {
+        self.inner.current_block.borrow().gas_limit.into()
+    }
 
-        Ok(access_list
-            .ensure_ok()
-            .map_err(Error::AccessList)?
-            .access_list
-            .into())
+    /// Returns the current [`eth::Ether`] balance of the specified account.
+    pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
+        self.web3
+            .provider
+            .get_balance(address)
+            .await
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+
+    /// Returns a [`token::Erc20`] for the specified address.
+    pub fn erc20(&self, address: eth::TokenAddress) -> token::Erc20 {
+        token::Erc20::new(self, address)
     }
 
     /// Estimate gas used by a transaction.
@@ -228,32 +229,6 @@ impl Ethereum {
             .into();
 
         Ok(estimated_gas)
-    }
-
-    /// The gas price is determined based on the deadline by which the
-    /// transaction must be included on-chain. A shorter deadline requires a
-    /// higher gas price to increase the likelihood of timely inclusion.
-    pub async fn gas_price(&self) -> Result<Eip1559Estimation, Error> {
-        self.inner.gas.estimate().await
-    }
-
-    pub fn block_gas_limit(&self) -> eth::Gas {
-        self.inner.current_block.borrow().gas_limit.into()
-    }
-
-    /// Returns the current [`eth::Ether`] balance of the specified account.
-    pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
-        self.web3
-            .provider
-            .get_balance(address)
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
-    }
-
-    /// Returns a [`token::Erc20`] for the specified address.
-    pub fn erc20(&self, address: eth::TokenAddress) -> token::Erc20 {
-        token::Erc20::new(self, address)
     }
 
     /// Returns the transaction's on-chain inclusion status.

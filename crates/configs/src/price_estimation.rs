@@ -88,10 +88,20 @@ pub struct PriceEstimation {
     /// solvers underestimate in unverified quotes, leading to fees that don't
     /// cover execution gas and causing small orders to expire unfilled.
     #[serde(default)]
-    pub min_gas_amount_for_unverified_quotes: u64,
+    pub min_gas_amount_for_unverified_quotes: u32,
+
+    /// Maximum gas amount for unverified quotes. When an unverified quote
+    /// reports more gas than this, the ceiling is used instead. Verified
+    /// quotes are unaffected. Defaults to u32::MAX (disabled).
+    ///
+    /// This is a hack to alleviate tsolver issues where they report extremely
+    /// high gas for RWA tokens.
+    #[serde(default = "default_max_gas_amount_for_unverified_quotes")]
+    pub max_gas_amount_for_unverified_quotes: u32,
 
     /// Tenderly configuration (URL, project & API key).
-    pub tenderly: Option<TenderlyConfig>,
+    #[serde(default)]
+    pub tenderly: Option<crate::simulator::TenderlyConfig>,
 
     /// The CoinGecko native price configuration.
     pub coin_gecko: Option<CoinGeckoConfig>,
@@ -115,6 +125,7 @@ impl Default for PriceEstimation {
             tokens_without_verification: Default::default(),
             max_gas_per_tx: default_max_gas_per_tx(),
             min_gas_amount_for_unverified_quotes: 0,
+            max_gas_amount_for_unverified_quotes: u32::MAX,
         }
     }
 }
@@ -129,45 +140,6 @@ impl crate::test_util::TestDefault for PriceEstimation {
             quote_timeout: Duration::from_secs(10),
             quote_verification: QuoteVerificationMode::EnforceWhenPossible,
             ..Default::default()
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct TenderlyConfig {
-    /// The Tenderly user associated with the API key.
-    #[serde(default)]
-    pub user: String,
-
-    /// The Tenderly project associated with the API key.
-    #[serde(default)]
-    pub project: String,
-
-    /// Tenderly requires an API key to work. Optional since Tenderly could be
-    /// skipped in access lists estimators.
-    #[serde(default)]
-    pub api_key: String,
-}
-
-impl std::fmt::Debug for TenderlyConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TenderlyConfig")
-            .field("user", &self.user)
-            .field("project", &self.project)
-            .field("api_key", &"<REDACTED>")
-            .finish()
-    }
-}
-
-#[cfg(any(test, feature = "test-util"))]
-impl crate::test_util::TestDefault for TenderlyConfig {
-    fn test_default() -> Self {
-        Self {
-            user: "test-user".to_string(),
-            project: "test-project".to_string(),
-            api_key: "test-api-key".to_string(),
         }
     }
 }
@@ -280,6 +252,10 @@ fn default_one_inch_url() -> Url {
     Url::from_str("https://api.1inch.dev/").expect("url should be valid")
 }
 
+fn default_max_gas_amount_for_unverified_quotes() -> u32 {
+    u32::MAX
+}
+
 #[derive(Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case")]
@@ -336,6 +312,7 @@ mod tests {
         assert_eq!(config.balance_overrides.cache_size, 1000);
         assert!(config.tokens_without_verification.is_empty());
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 0);
+        assert_eq!(config.max_gas_amount_for_unverified_quotes, u32::MAX);
     }
 
     #[test]
@@ -347,6 +324,7 @@ mod tests {
         tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         amount-to-estimate-prices-with = "1000000000000000000"
         min-gas-amount-for-unverified-quotes = 400000
+        max-gas-amount-for-unverified-quotes = 800000
 
         [price-estimation-rate-limiter]
         back-off-growth-factor = 2.0
@@ -409,6 +387,7 @@ mod tests {
         assert_eq!(config.balance_overrides.cache_size, 500);
         assert_eq!(config.tokens_without_verification.len(), 1);
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 400_000);
+        assert_eq!(config.max_gas_amount_for_unverified_quotes, 800_000);
     }
 
     #[test]
@@ -438,7 +417,7 @@ mod tests {
                 api_key: "secret".to_string(),
                 ..TestDefault::test_default()
             }),
-            tenderly: Some(TenderlyConfig {
+            tenderly: Some(crate::simulator::TenderlyConfig {
                 api_key: "secret".to_string(),
                 ..TestDefault::test_default()
             }),

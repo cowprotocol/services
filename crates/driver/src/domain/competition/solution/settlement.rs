@@ -10,11 +10,12 @@ use {
                 solution::{self, Interaction, Trade, error},
             },
         },
-        infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
+        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
     futures::future::try_join_all,
+    simulator::Simulator,
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
 };

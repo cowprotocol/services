@@ -1,3 +1,5 @@
+#![recursion_limit = "160"]
+
 pub mod arguments;
 pub mod boundary;
 pub mod database;

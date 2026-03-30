@@ -12,23 +12,19 @@ mod dto;
 const GAS_LIMIT: u64 = 30_000_000;
 
 #[derive(Debug, Clone)]
-pub(super) struct Enso {
+pub struct Enso {
     url: reqwest::Url,
     chain: Chain,
     current_block: CurrentBlockWatcher,
     network_block_interval: Option<Duration>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Config {
-    /// The URL of the Transaction Simulator API.
-    pub url: reqwest::Url,
-    /// The time between new blocks in the network.
-    pub network_block_interval: Option<Duration>,
-}
-
 impl Enso {
-    pub(super) fn new(config: Config, chain: Chain, current_block: CurrentBlockWatcher) -> Self {
+    pub(super) fn new(
+        config: &configs::simulator::EnsoConfig,
+        chain: Chain,
+        current_block: CurrentBlockWatcher,
+    ) -> Self {
         Self {
             url: reqwest::Url::parse(&format!("{}api/v1/simulate", config.url)).unwrap(),
             chain,

@@ -26,6 +26,7 @@ use {
         trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
     serde_json::json,
+    simulator::swap_simulator::SwapSimulator,
     std::sync::Arc,
 };
 
@@ -147,18 +148,30 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         .await
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
+    let balance_overrides = Arc::new(BalanceOverrides::default());
+    let gas_limit = 12_000_000;
+    let simulator = SwapSimulator::new(
+        balance_overrides.clone(),
+        *onchain.contracts().gp_settlement.address(),
+        *onchain.contracts().weth.address(),
+        block_stream.clone(),
+        web3.clone(),
+        gas_limit,
+    )
+    .await
+    .unwrap();
 
     let verifier = TradeVerifier::new(
         web3.clone(),
         None,
+        simulator,
         Arc::new(web3.clone()),
-        Arc::new(BalanceOverrides::default()),
-        block_stream,
+        balance_overrides,
         *onchain.contracts().gp_settlement.address(),
-        *onchain.contracts().weth.address(),
         BigDecimal::zero(),
         Default::default(),
-        12_000_000,
+        0,
+        u32::MAX,
     )
     .await
     .unwrap();
