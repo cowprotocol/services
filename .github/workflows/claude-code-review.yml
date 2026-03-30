@@ -20,19 +20,12 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          plugin_marketplaces: |
-            https://github.com/anthropics/claude-code.git
-            https://github.com/anthropics/claude-plugins-official.git
-          plugins: |
-            code-review@claude-code-plugins
-            rust-analyzer-lsp@claude-plugins-official
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
 
