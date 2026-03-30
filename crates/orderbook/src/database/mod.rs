@@ -114,3 +114,30 @@ impl Metrics {
         Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, sqlx::Executor};
+
+    #[tokio::test]
+    #[ignore]
+    async fn statement_timeout_cancels_slow_query() {
+        let config = Config {
+            statement_timeout: Duration::from_millis(100),
+            ..Default::default()
+        };
+        let db = Postgres::try_new_with_timeout("postgresql://", config).unwrap();
+        let mut conn = db.pool.acquire().await.unwrap();
+
+        // A fast query should succeed.
+        conn.execute("SELECT 1").await.unwrap();
+
+        // A query exceeding the timeout should fail.
+        let err = conn
+            .execute("SELECT pg_sleep(5)")
+            .await
+            .expect_err("should have timed out");
+        let db_err = err.as_database_error().expect("should be a database error");
+        assert_eq!(db_err.code().as_deref(), Some("57014")); // query_canceled
+    }
+}
