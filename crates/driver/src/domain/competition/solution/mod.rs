@@ -76,6 +76,10 @@ pub struct Solution {
 
 /// Gas fee overrides provided by the solver, used instead of the driver's
 /// own gas price estimation during settlement submission.
+///
+/// Note: the driver may raise these values above what the solver specified
+/// if a pending replacement transaction requires a higher gas price (a node
+/// requirement for transaction replacement).
 #[derive(Clone, Copy, Debug)]
 pub struct GasFeeOverride {
     pub max_fee_per_gas: u128,
