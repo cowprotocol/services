@@ -135,3 +135,14 @@ impl GasPriceEstimator {
         })
     }
 }
+
+#[async_trait::async_trait]
+impl GasPriceEstimating for GasPriceEstimator {
+    async fn estimate(&self) -> ::anyhow::Result<Eip1559Estimation> {
+        GasPriceEstimator::estimate(self).await.map_err(Into::into)
+    }
+
+    async fn base_fee(&self) -> ::anyhow::Result<Option<u64>> {
+        self.gas.base_fee().await
+    }
+}
