@@ -263,7 +263,7 @@ pub fn encode_wrapper_settlement(
     wrappers: &[WrapperCall],
     settle_calldata: Bytes,
 ) -> Option<(Address, Bytes)> {
-    if wrappers.len() == 0 {
+    if wrappers.is_empty() {
         return None;
     };
     let wrapper_data = encode_wrapper_data(wrappers);
