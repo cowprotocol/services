@@ -146,7 +146,8 @@ impl OrderSimulator {
         );
 
         // Fund the settlement contract with enough out tokens to pay out
-        self.simulator
+        match self
+            .simulator
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.buy_token,
@@ -154,7 +155,14 @@ impl OrderSimulator {
                 amount: query.buy_amount,
             })
             .await
-            .map(|(token, balance_override)| swap.overrides.insert(token, balance_override));
+        {
+            Some((token, balance_override)) => {
+                swap.overrides.insert(token, balance_override);
+            }
+            None => {
+                tracing::warn!("Could not set state balance override for the settlement contract");
+            }
+        };
 
         Ok(swap)
     }
