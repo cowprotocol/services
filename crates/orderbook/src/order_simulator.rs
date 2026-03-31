@@ -102,7 +102,7 @@ impl OrderSimulator {
         })
     }
 
-    pub async fn add_state_overrides(&self, query: &Query, swap: &mut EncodedSwap) -> Result<()> {
+    pub async fn add_state_overrides(&self, query: &Query, swap: mut EncodedSwap) -> Result<EncodedSwap> {
         // Override authenticator with AnyoneAuthenticator so our fake solver is
         // accepted.
         let authenticator = self
