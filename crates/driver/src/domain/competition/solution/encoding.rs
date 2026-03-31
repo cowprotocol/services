@@ -206,9 +206,6 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let has_flashloans = !solution.flashloans.is_empty();
-    let has_wrappers = !solution.wrappers.is_empty();
-
     // Encode the base settlement calldata
     let mut settle_calldata = contracts
         .settlement()
@@ -227,6 +224,8 @@ pub fn tx(
 
     // Append auction ID to settlement calldata
     settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    let has_flashloans = !solution.flashloans.is_empty();
+    let has_wrappers = !solution.wrappers.is_empty();
 
     let (to, calldata) = if has_flashloans && has_wrappers {
         return Err(Error::FlashloanWrappersIncompatible);
@@ -234,8 +233,7 @@ pub fn tx(
         encode_flashloan_settlement(solution, contracts, settle_calldata)?
     } else if has_wrappers {
         simulator::encoding::encode_wrapper_settlement(&solution.wrappers, settle_calldata.into())
-        // wrappers is not empty by how has_wrappers is initialized
-        .unwrap()
+            .expect("wrappers is not empty")
     } else {
         (*contracts.settlement().address(), settle_calldata.into())
     };

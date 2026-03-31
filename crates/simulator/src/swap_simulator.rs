@@ -179,8 +179,7 @@ impl SwapSimulator {
     fn get_target_and_calldata(&self, swap: &EncodedSwap) -> (Address, Bytes) {
         if !swap.wrappers.is_empty() {
             encode_wrapper_settlement(&swap.wrappers, swap.settlement.into_settle_call())
-            // wrappers is not empty by the if statement above
-            .unwrap()
+                .expect("wrappers is not empty")
         } else {
             (
                 *self.settlement.address(),
