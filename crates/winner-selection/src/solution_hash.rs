@@ -1,4 +1,4 @@
-use alloy::primitives::keccak256;
+use alloy_primitives::keccak256;
 
 fn u64_be(x: u64) -> [u8; 8] {
     x.to_be_bytes()

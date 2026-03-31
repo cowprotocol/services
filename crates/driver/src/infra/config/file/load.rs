@@ -118,7 +118,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             .iter()
                             .map(|(token, supported)| {
                                 (
-                                    eth::TokenAddress(eth::ContractAddress(*token)),
+                                    eth::TokenAddress::from(*token),
                                     match supported {
                                         true => risk_detector::Quality::Supported,
                                         false => risk_detector::Quality::Unsupported,
@@ -158,6 +158,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                     },
                     haircut_bps: solver_config.haircut_bps,
+                    submission_accounts: vec![],
+                    forwarder_contract: None,
                     pod: pod_config,
                 }
             }
@@ -380,6 +382,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
+        http: config.http,
         pod: config.pod,
     }
 }

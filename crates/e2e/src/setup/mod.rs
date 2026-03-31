@@ -176,6 +176,17 @@ pub async fn run_forked_test_with_extra_filters_and_block_number<F, Fut, T>(
     run(f, extra_filters, Some((fork_url, Some(block_number)))).await
 }
 
+/// Run a pod flow test. This is the same as `run_test` but signals that
+/// pod config should be enabled for the driver.
+/// Tests using this should be prefixed with `pod_` and marked with `#[ignore]`.
+pub async fn run_pod_test<F, Fut>(f: F)
+where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    run(f, ["pod=debug"], None).await
+}
+
 async fn run<F, Fut, T>(
     f: F,
     filters: impl IntoIterator<Item = T>,

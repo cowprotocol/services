@@ -48,6 +48,11 @@ pub mod solution;
 pub mod solver_winner_selection;
 pub mod sorting;
 
+use auction::Id;
+use crate::infra::api::routes::solve::dto;
+use solver_winner_selection::{Bid, Unscored, SolverArbitrator};
+use winner_selection::state::RankedItem;
+
 use {
     crate::infra::notify::liquidity_sources::LiquiditySourceNotifying,
     eth_domain_types::BlockNo,
