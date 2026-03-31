@@ -118,6 +118,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::SolverResponse {
                 gas: solution
                     .gas
                     .map(|gas| u64::try_from(gas.0).unwrap_or(u64::MAX)),
+                gas_fee_override: None,
                 // rely on driver to fill in the blanks
                 flashloans: None,
                 wrappers: solution

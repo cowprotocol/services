@@ -12,6 +12,7 @@ pub mod buy_eth;
 pub mod example_config;
 pub mod fees;
 mod flashloan_hints;
+pub mod gas_fee_override;
 pub mod haircut;
 pub mod internalization;
 pub mod jit_orders;
