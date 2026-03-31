@@ -212,7 +212,7 @@ pub fn prepare_request(
             .map(TryInto::try_into)
             .map(|gas_price| gas_price.unwrap()),
         value: tx.value,
-        simulation_kind: Some(dto::SimulationKind::Quick),
+        simulation_kind: Some(dto::SimulationType::Quick),
         state_objects: Some(
             overrides
                 .into_iter()

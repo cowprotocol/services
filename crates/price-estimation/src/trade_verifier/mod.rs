@@ -176,7 +176,7 @@ impl TradeVerifier {
         let mut pre_interactions = verification
                 .pre_interactions
                 .iter()
-                // pre_interactions introduced by the solverW
+                // pre_interactions introduced by the solver
                 .chain(trade.pre_interactions())
                 .map(InteractionEncoding::encode)
                 .collect::<Vec<_>>();

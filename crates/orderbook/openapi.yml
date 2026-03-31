@@ -2549,7 +2549,7 @@ components:
           type: number
         priceImprovementMaxVolumeFactor:
           type: number
-    SimulationKind:
+    SimulationType:
       description: The kind of Tenderly simulation to run.
       type: string
       enum:
@@ -2620,8 +2620,8 @@ components:
           description: ETH value to send with the transaction (decimal-encoded uint256).
           type: string
           example: "0"
-        simulation_kind:
-          $ref: "#/components/schemas/SimulationKind"
+        simulation_type:
+          $ref: "#/components/schemas/SimulationType"
         save:
           description: Whether to save the simulation on Tenderly.
           type: boolean

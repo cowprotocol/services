@@ -81,10 +81,14 @@ impl OrderSimulator {
         Ok(swap)
     }
 
+    /// Simulates a swap of the provided EncodedSwap
+    /// The result contains the transaction simulation error (if any)
+    /// and a full API request object that can be used to resimulate the swap
+    /// using Tenderly.
     pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<OrderSimulation> {
         let result = self.simulator.simulate_settle_call(swap).await?;
 
-        let request = simulator::tenderly::dto::Request {
+        let tenderly_request = simulator::tenderly::dto::Request {
             transaction_index: None,
             save: Some(true),
             save_if_fails: Some(true),
@@ -97,7 +101,7 @@ impl OrderSimulator {
         };
 
         Ok(OrderSimulation {
-            tenderly_request: request.into(),
+            tenderly_request: tenderly_request.into(),
             error: result.result.err().map(|err| err.to_string()),
         })
     }

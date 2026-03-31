@@ -26,7 +26,7 @@ pub struct Request {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<U256>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub simulation_kind: Option<SimulationKind>,
+    pub simulation_kind: Option<SimulationType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub save: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,9 +51,9 @@ impl From<Request> for TenderlyRequest {
             gas: value.gas,
             gas_price: value.gas_price,
             value: value.value,
-            simulation_kind: value.simulation_kind.map(|kind| match kind {
-                SimulationKind::Full => order_simulator::SimulationKind::Full,
-                SimulationKind::Quick => order_simulator::SimulationKind::Quick,
+            simulation_type: value.simulation_kind.map(|kind| match kind {
+                SimulationType::Full => order_simulator::SimulationType::Full,
+                SimulationType::Quick => order_simulator::SimulationType::Quick,
             }),
             save: value.save,
             save_if_fails: value.save_if_fails,
@@ -99,9 +99,9 @@ impl From<TenderlyRequest> for Request {
             gas: value.gas,
             gas_price: value.gas_price,
             value: value.value,
-            simulation_kind: value.simulation_kind.map(|kind| match kind {
-                order_simulator::SimulationKind::Full => SimulationKind::Full,
-                order_simulator::SimulationKind::Quick => SimulationKind::Quick,
+            simulation_kind: value.simulation_type.map(|kind| match kind {
+                order_simulator::SimulationType::Full => SimulationType::Full,
+                order_simulator::SimulationType::Quick => SimulationType::Quick,
             }),
             save: value.save,
             save_if_fails: value.save_if_fails,
@@ -251,7 +251,7 @@ impl TryFrom<alloy_rpc_types::eth::state::AccountOverride> for StateObject {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum SimulationKind {
+pub enum SimulationType {
     Full,
     Quick,
 }

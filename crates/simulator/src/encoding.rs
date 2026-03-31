@@ -274,16 +274,32 @@ pub fn encode_wrapper_settlement(
 }
 
 /// Encodes wrapper metadata for wrapper settlement calls.
+/// As wrappers are called, each wrapper reads from wrapper calldata and
+/// consumes only their needed portion (however much data that is). Once wrapper
+/// is ready to call the settlement contract (or downstream wrapper) it calls
+/// the _internalSettle function provided in the CowWrapper abstract contract
 ///
-/// The format is:
-/// - For wrappers after the first: 20 bytes (address)
-/// - For each wrapper: 2 bytes (data length as u16 in native endian) + data
+/// Generally wrappers are encoded with a pair of Address (20 bytes) and then
+/// calldata (u16 length + data itself).
+///
+/// Since the first wrapper's address is the target of the transaction, it is
+/// not encoded.
+///
+/// The encoding format thus is:
+/// - The calldata of the first wrapper.
+/// - The address and calldata for each subsequent wrapper
+///
+/// Example: Encoding of 2 wrapper calls, the wrappers are named A, B and are
+/// called in the order A -> B
+///
+/// | A calldata length | A calldata | B address | B calldata length | B calldata |
+/// | u16               | &[u8]      | [u8; 20]  | u16               | &[u8]      |
+///
+/// Any additional wrappers will follow the same scheme: (address, length,
+/// calldata)
 ///
 /// More information about wrapper encoding:
 /// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
-///
-/// Note: The first wrapper address is omitted from the encoded data since it's
-/// already used as the transaction target.
 pub fn encode_wrapper_data(wrappers: &[WrapperCall]) -> Bytes {
     let mut wrapper_data = Vec::new();
 
