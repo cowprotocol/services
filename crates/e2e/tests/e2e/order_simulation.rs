@@ -4,10 +4,10 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
-        order_simulator::OrderSimulation,
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
+    orderbook::dto::OrderSimulation,
     reqwest::StatusCode,
 };
 

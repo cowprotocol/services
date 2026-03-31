@@ -1,4 +1,5 @@
 use {
+    crate::dto::OrderSimulation,
     alloy::{
         primitives::{Address, U256},
         rpc::types::state::AccountOverride,
@@ -6,7 +7,7 @@ use {
     anyhow::{Context, Result},
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
-    model::{order::Order, order_simulator::OrderSimulation},
+    model::order::Order,
     simulator::{
         encoding::InteractionEncoding,
         swap_simulator::{EncodedSwap, Query, SwapSimulator, TradeEncoding},

@@ -4,13 +4,23 @@ pub mod order;
 use {
     alloy::primitives::U256,
     number::serialization::HexOrDecimalU256,
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
+    simulator::tenderly,
 };
 pub use {
     auction::{Auction, AuctionId, AuctionWithId},
     order::Order,
 };
+
+/// The result of Order simulation, contains the error (if any)
+/// and full Tenderly API request that can be used to resimulate
+/// and debug using Tenderly
+#[derive(Clone, Deserialize, Serialize, Debug)]
+pub struct OrderSimulation {
+    pub tenderly_request: tenderly::dto::Request,
+    pub error: Option<String>,
+}
 
 #[serde_as]
 #[derive(Serialize)]
