@@ -280,7 +280,7 @@ where
             }
             .boxed()
         });
-        shared.future.await.context("could not fetch liquidity")
+        shared.await.context("could not fetch liquidity")
     }
 
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {

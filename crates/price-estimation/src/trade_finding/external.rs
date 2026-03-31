@@ -21,7 +21,7 @@ use {
     futures::FutureExt,
     observe::tracing::distributed::headers::tracing_headers,
     request_sharing::{BoxRequestSharing, RequestSharing},
-    reqwest::{Client, header},
+    reqwest::{Client, StatusCode, header},
     tracing::instrument,
     url::Url,
 };
@@ -102,7 +102,7 @@ impl ExternalTradeFinder {
                         .send()
                         .await
                         .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                    if response.status() == 429 {
+                    if response.status() == StatusCode::TOO_MANY_REQUESTS {
                         return Err(PriceEstimationError::RateLimited);
                     }
                     let text = response
@@ -112,11 +112,11 @@ impl ExternalTradeFinder {
                     serde_json::from_str::<dto::QuoteKind>(&text)
                         .map(TradeKind::from)
                         .map_err(|err| {
-                            if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
-                                PriceEstimationError::from(err)
-                            } else {
-                                PriceEstimationError::EstimatorInternal(anyhow!(err))
-                            }
+                            serde_json::from_str::<dto::Error>(&text)
+                                .map(PriceEstimationError::from)
+                                .unwrap_or_else(|_| {
+                                    PriceEstimationError::EstimatorInternal(anyhow!(err))
+                                })
                         })
                 }
                 .await;
@@ -130,9 +130,10 @@ impl ExternalTradeFinder {
         };
 
         let shared = self.sharing.shared_or_else(query.clone(), fut);
-        let response = shared.future.await;
+        let is_shared = shared.is_shared;
+        let response = shared.await;
 
-        if shared.is_shared {
+        if is_shared {
             tracing::debug!(
                 original_request_id = ?response.request_id,
                 "reusing in-flight quote request"

@@ -158,7 +158,7 @@ impl Inner {
                 .boxed()
             };
 
-            self.requests.shared_or_else(*token, build_request).future
+            self.requests.shared_or_else(*token, build_request)
         });
         futures::future::join_all(futures).await
     }

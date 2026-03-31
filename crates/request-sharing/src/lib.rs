@@ -11,7 +11,9 @@ use {
         collections::HashMap,
         future::Future,
         hash::Hash,
+        pin::Pin,
         sync::{Arc, Mutex},
+        task::{Context, Poll},
         time::Duration,
     },
 };
@@ -41,12 +43,24 @@ pub type BoxShared<T> = Shared<BoxFuture<'static, T>>;
 
 /// Result of [`RequestSharing::shared_or_else`] indicating whether an
 /// already in-flight future was reused or a new one was created.
+///
+/// Implements [`Future`] so it can be awaited directly.
 pub struct SharedResult<Fut: Future> {
-    /// The (possibly shared) future to await.
-    pub future: Shared<Fut>,
+    future: Shared<Fut>,
     /// `true` when an existing in-flight request was reused instead of
     /// starting a new one.
     pub is_shared: bool,
+}
+
+impl<Fut: Future> Future for SharedResult<Fut>
+where
+    Fut::Output: Clone,
+{
+    type Output = Fut::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.future).poll(cx)
+    }
 }
 
 type Cache<Request, Response> = Arc<Mutex<HashMap<Request, WeakShared<Response>>>>;
@@ -187,30 +201,20 @@ mod tests {
         assert!(!result0.is_shared);
         assert!(result1.is_shared);
 
-        let shared0 = result0.future;
-        let shared1 = result1.future;
+        // Complete first shared — result1 still holds a reference.
+        assert_eq!(result0.await, 0);
 
-        assert!(shared0.ptr_eq(&shared1));
-        assert_eq!(shared0.strong_count().unwrap(), 2);
-        assert_eq!(shared1.strong_count().unwrap(), 2);
-        assert_eq!(shared0.weak_count().unwrap(), 1);
-
-        // complete first shared
-        assert_eq!(shared0.now_or_never().unwrap(), 0);
-        assert_eq!(shared1.strong_count().unwrap(), 1);
-        assert_eq!(shared1.weak_count().unwrap(), 1);
-
-        // GC does not delete any keys because some tasks still use the future
+        // GC does not delete because result1 still references the future.
         RequestSharing::collect_garbage(&sharing.in_flight, &label);
         assert_eq!(sharing.in_flight.lock().unwrap().len(), 1);
         assert!(sharing.in_flight.lock().unwrap().get(&0).is_some());
 
-        // complete second shared
-        assert_eq!(shared1.now_or_never().unwrap(), 0);
+        // Complete second shared — proves sharing since its factory would panic.
+        assert_eq!(result1.await, 0);
 
         RequestSharing::collect_garbage(&sharing.in_flight, &label);
 
-        // GC deleted all now unused futures
+        // GC deleted all now unused futures.
         assert!(sharing.in_flight.lock().unwrap().is_empty());
     }
 }
