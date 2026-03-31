@@ -3,7 +3,7 @@ use {
     alloy::{
         primitives::{Address, U256},
         providers::Provider,
-        rpc::types::state::AccountOverride,
+        rpc::types::state::{AccountOverride, StateOverride},
     },
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
@@ -71,8 +71,7 @@ impl TxGasEstimator {
             .await
             .ok()?;
 
-        // Inject order hooks before/after existing interactions (same pattern as
-        // orderbook::order_simulator::add_interactions).
+        // Inject order hooks before/after existing interactions.
         let pre = order.pre_interactions.iter().map(encode_interaction);
         swap.settlement.interactions.pre = pre
             .chain(std::mem::take(&mut swap.settlement.interactions.pre))
@@ -82,48 +81,8 @@ impl TxGasEstimator {
             .post
             .extend(order.post_interactions.iter().map(encode_interaction));
 
-        // Apply state overrides so the fake settlement doesn't revert (same
-        // pattern as orderbook::order_simulator::add_state_overrides).
-        let authenticator = self
-            .simulator
-            .settlement
-            .authenticator()
-            .call()
-            .await
-            .ok()?;
-        swap.overrides.insert(
-            authenticator,
-            AccountOverride {
-                code: Some(AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone()),
-                ..Default::default()
-            },
-        );
-        swap.overrides.insert(
-            solver,
-            AccountOverride {
-                balance: Some(U256::MAX / U256::from(2)),
-                ..Default::default()
-            },
-        );
-        swap.overrides.insert(
-            owner,
-            AccountOverride {
-                code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone()),
-                ..Default::default()
-            },
-        );
-        if let Some((token, balance_override)) = self
-            .simulator
-            .balance_overrides
-            .state_override(BalanceOverrideRequest {
-                token: output.token.0,
-                holder: *self.simulator.settlement.address(),
-                amount: output.amount,
-            })
-            .await
-        {
-            swap.overrides.insert(token, balance_override);
-        }
+        let state_overrides = self.prepare_state_overrides(solver, owner, output).await?;
+        swap.overrides.extend(state_overrides);
 
         // simulate_settle_call gives us back the encoded tx + overrides;
         // re-use those to call eth_estimateGas.
@@ -140,6 +99,58 @@ impl TxGasEstimator {
             .ok()?;
 
         Some(eth::Gas(U256::from(gas)))
+    }
+
+    async fn prepare_state_overrides(
+        &self,
+        solver: Address,
+        owner: Address,
+        output: eth::Asset,
+    ) -> Option<StateOverride> {
+        let mut overrides = StateOverride::default();
+
+        let authenticator = self
+            .simulator
+            .settlement
+            .authenticator()
+            .call()
+            .await
+            .ok()?;
+        overrides.insert(
+            authenticator,
+            AccountOverride {
+                code: Some(AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone()),
+                ..Default::default()
+            },
+        );
+        overrides.insert(
+            solver,
+            AccountOverride {
+                balance: Some(U256::MAX / U256::from(2)),
+                ..Default::default()
+            },
+        );
+        overrides.insert(
+            owner,
+            AccountOverride {
+                code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone()),
+                ..Default::default()
+            },
+        );
+        if let Some((token, balance_override)) = self
+            .simulator
+            .balance_overrides
+            .state_override(BalanceOverrideRequest {
+                token: output.token.0,
+                holder: *self.simulator.settlement.address(),
+                amount: output.amount,
+            })
+            .await
+        {
+            overrides.insert(token, balance_override);
+        }
+
+        Some(overrides)
     }
 }
 
