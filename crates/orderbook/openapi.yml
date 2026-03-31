@@ -785,9 +785,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderSimulation"
+        "400":
+          description: Invalid order UID.
         "404":
           description: Order not found.
-        "501":
+        "405":
           description: Order simulation endpoint is not enabled.
         "500":
           description: Internal error.

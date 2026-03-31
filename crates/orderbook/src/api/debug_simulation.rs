@@ -21,8 +21,11 @@ pub async fn debug_simulation_handler(
         )
             .into_response(),
         Err(OrderSimulationError::NotEnabled) => (
-            StatusCode::NOT_IMPLEMENTED,
-            super::error("NotImplemented", "order simulation endpoint is not enabled"),
+            StatusCode::METHOD_NOT_ALLOWED,
+            super::error(
+                "MethodNotAllowed",
+                "order simulation endpoint is not enabled",
+            ),
         )
             .into_response(),
         Err(OrderSimulationError::Other(err)) => {
