@@ -28,7 +28,6 @@ pub struct Config {
     /// Kind of simulator that should be used. Can be either of
     /// - ethereum
     /// - tenderly (using TenderlyConfig)
-    /// - enso (using EnsoConfig)
     #[serde(default)]
     pub kind: SimulatorKind,
 }
@@ -48,8 +47,7 @@ fn default_ethrpc_max_concurrent_requests() -> usize {
 pub enum SimulatorKind {
     #[default]
     Ethereum,
-    Tenderly(TenderlyConfig),
-    Enso(EnsoConfig),
+    Tenderly(Box<TenderlyConfig>),
 }
 
 /// Tenderly API arguments.
@@ -108,17 +106,6 @@ impl crate::test_util::TestDefault for TenderlyConfig {
             ..Default::default()
         }
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct EnsoConfig {
-    /// The URL of the Transaction Simulator API.
-    pub url: Url,
-
-    /// The time between new blocks in the network.
-    #[serde(with = "humantime_serde", default)]
-    pub network_block_interval: Option<Duration>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -184,22 +171,6 @@ mod tests {
             }
             _ => panic!("Config should be of type Tenderly"),
         };
-        let toml = r#"
-        [kind]
-        type = "Enso"
-        url = "http://test-url/"
-        network-block-interval = "5s"
-        "#;
-        let config: Config = toml::from_str(toml).unwrap();
-
-        match config.kind {
-            SimulatorKind::Enso(enso) => {
-                assert_eq!(enso.url.as_str(), "http://test-url/");
-                assert_eq!(enso.network_block_interval, Some(Duration::from_secs(5)));
-            }
-            _ => panic!("Config should be of type Enso"),
-        };
-
         let toml = r#"
         [kind]
         type = "Ethereum"
