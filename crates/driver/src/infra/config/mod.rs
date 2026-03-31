@@ -6,7 +6,6 @@ use {
         mempool,
         notify,
         pod,
-        simulator,
         solver,
     },
     eth_domain_types as eth,

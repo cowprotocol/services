@@ -236,6 +236,58 @@ impl<'a> Services<'a> {
         .await;
     }
 
+    /// Starts a basic version of the protocol with pod flow enabled.
+    /// Use this for pod_* prefixed tests.
+    pub async fn start_protocol_with_pod(&self, solver: TestAccount) {
+        let autopilot_config =
+            configs::autopilot::Configuration::test("test_solver", solver.address());
+        let orderbook_config = configs::orderbook::Configuration::test_default();
+
+        colocation::start_driver_with_pod(
+            self.contracts,
+            vec![
+                colocation::start_baseline_solver_with_haircut(
+                    "test_solver".into(),
+                    solver.clone(),
+                    *self.contracts.weth.address(),
+                    vec![],
+                    1,
+                    true,
+                    0,
+                )
+                .await,
+            ],
+            colocation::LiquidityProvider::UniswapV2,
+            false,
+        );
+
+        let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
+
+        let autopilot_config = Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter.clone()]),
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..autopilot_config.shared
+            },
+            ..autopilot_config
+        };
+        let orderbook_config = configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter]),
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..orderbook_config.shared
+            },
+            ..orderbook_config
+        };
+
+        self.start_autopilot(None, autopilot_config).await;
+        self.start_api(orderbook_config).await;
+    }
+
     pub async fn start_protocol_with_args(
         &self,
         autopilot_config: configs::autopilot::Configuration,
