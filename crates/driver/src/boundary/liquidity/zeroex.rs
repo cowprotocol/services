@@ -85,7 +85,7 @@ pub async fn collector(
     let eth = eth.with_metric_label("zeroex".into());
     let settlement = *eth.contracts().settlement().address();
     let web3 = eth.web3().clone();
-    let contract = contracts::alloy::IZeroex::Instance::deployed(&web3.provider).await?;
+    let contract = contracts::IZeroex::Instance::deployed(&web3.provider).await?;
     let http_client_factory = &HttpClientFactory::new(&configs::http_client::HttpClient {
         timeout: config.http_timeout,
     });

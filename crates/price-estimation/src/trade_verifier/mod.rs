@@ -18,7 +18,7 @@ use {
     anyhow::{Context, Result},
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     bigdecimal::BigDecimal,
-    contracts::alloy::{
+    contracts::{
         GPv2Settlement,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },

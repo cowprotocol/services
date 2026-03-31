@@ -8,7 +8,7 @@ use {
     },
     alloy::eips::BlockId,
     anyhow::Result,
-    contracts::alloy::{
+    contracts::{
         BalancerV2LiquidityBootstrappingPool,
         BalancerV2LiquidityBootstrappingPoolFactory,
     },

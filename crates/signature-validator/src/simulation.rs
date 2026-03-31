@@ -12,7 +12,7 @@ use {
     alloy_transport::RpcError,
     anyhow::{Context, Result},
     balance_overrides::BalanceOverriding,
-    contracts::alloy::{
+    contracts::{
         ERC1271SignatureValidator::ERC1271SignatureValidator,
         GPv2Settlement,
         support::Signatures,

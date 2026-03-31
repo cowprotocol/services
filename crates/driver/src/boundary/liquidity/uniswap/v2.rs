@@ -7,7 +7,7 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
-    contracts::alloy::IUniswapLikeRouter,
+    contracts::IUniswapLikeRouter,
     eth_domain_types as eth,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     liquidity_sources::uniswap_v2::{

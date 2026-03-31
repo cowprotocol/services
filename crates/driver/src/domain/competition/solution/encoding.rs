@@ -16,7 +16,7 @@ use {
         primitives::{Address, Bytes, FixedBytes, U256},
         sol_types::SolCall,
     },
-    contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
+    contracts::{FlashLoanRouter::LoanRequest, WETH9},
     eth_domain_types::{self as eth, Ether, allowance},
     itertools::Itertools,
     num::Zero,
@@ -302,7 +302,7 @@ fn encode_wrapper_settlement(
     let wrapper_data = encode_wrapper_data(&solution.wrappers);
 
     // Create wrappedSettleCall
-    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+    let calldata = contracts::ICowWrapper::ICowWrapper::wrappedSettleCall {
         settleData: settle_calldata.into(),
         wrapperData: wrapper_data.into(),
     }
@@ -425,7 +425,7 @@ pub mod codec {
     use {
         crate::domain::{self, competition::order},
         alloy::primitives::{Bytes, U256},
-        contracts::alloy::GPv2Settlement,
+        contracts::GPv2Settlement,
         eth_domain_types as eth,
     };
 

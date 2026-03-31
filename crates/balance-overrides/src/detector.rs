@@ -11,7 +11,7 @@ use {
     },
     alloy_sol_types::SolCall,
     alloy_transport::{RpcError, TransportErrorKind},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     std::{
         collections::HashMap,
         fmt::{self, Debug, Formatter},

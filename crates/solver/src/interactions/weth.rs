@@ -1,7 +1,7 @@
 use {
     alloy::primitives::U256,
     anyhow::{Result, ensure},
-    contracts::alloy::WETH9,
+    contracts::WETH9,
     shared::interaction::{EncodedInteraction, Interaction},
 };
 
