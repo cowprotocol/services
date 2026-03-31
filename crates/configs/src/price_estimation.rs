@@ -31,7 +31,7 @@ fn default_quote_inaccuracy_limit() -> BigDecimal {
     BigDecimal::from(1)
 }
 
-pub const fn default_max_gas_per_tx() -> u64 {
+const fn default_max_gas_per_tx() -> u64 {
     16777215
 }
 

@@ -74,9 +74,9 @@ impl OrderSimulator {
                 .collect(),
         };
 
-        let mut swap = self.simulator.fake_swap(&query).await?;
-        add_interactions(&mut swap, order);
-        self.add_state_overrides(&query, &mut swap).await?;
+        let swap = self.simulator.fake_swap(&query).await?;
+        let swap = add_interactions(swap, order);
+        let swap = self.add_state_overrides(&query, swap).await?;
 
         Ok(swap)
     }
@@ -106,7 +106,11 @@ impl OrderSimulator {
         })
     }
 
-    pub async fn add_state_overrides(&self, query: &Query, swap: mut EncodedSwap) -> Result<EncodedSwap> {
+    pub async fn add_state_overrides(
+        &self,
+        query: &Query,
+        mut swap: EncodedSwap,
+    ) -> Result<EncodedSwap> {
         // Override authenticator with AnyoneAuthenticator so our fake solver is
         // accepted.
         let authenticator = self
@@ -159,11 +163,11 @@ impl OrderSimulator {
             .await
             .map(|(token, balance_override)| swap.overrides.insert(token, balance_override));
 
-        Ok(())
+        Ok(swap)
     }
 }
 
-fn add_interactions(swap: &mut EncodedSwap, order: &Order) {
+fn add_interactions(mut swap: EncodedSwap, order: &Order) -> EncodedSwap {
     let pre_interactions = order
         .interactions
         .pre
@@ -180,4 +184,6 @@ fn add_interactions(swap: &mut EncodedSwap, order: &Order) {
         .iter()
         .map(InteractionEncoding::encode);
     swap.settlement.interactions.post.extend(post_interactions);
+
+    swap
 }
