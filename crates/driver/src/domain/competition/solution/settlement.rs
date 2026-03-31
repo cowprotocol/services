@@ -271,6 +271,11 @@ impl Settlement {
         self.solution.id()
     }
 
+    /// Optional gas fee overrides provided by the solver.
+    pub fn gas_fee_override(&self) -> Option<super::GasFeeOverride> {
+        self.solution.gas_fee_override()
+    }
+
     /// Solution's pre interactions
     pub fn pre_interactions(&self) -> &[domain::Interaction] {
         self.solution.pre_interactions()
