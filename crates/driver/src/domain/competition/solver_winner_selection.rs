@@ -1,18 +1,36 @@
 use {
-    crate::domain::{competition::order::FeePolicy, eth::Address},
-    autopilot::domain::{
-        competition::Score,
-        eth::{self, WrappedNativeToken},
-    },
+    crate::domain::competition::order::FeePolicy,
+    eth_domain_types::{self as eth, Address, Ether},
     std::collections::HashMap,
     winner_selection::{
         self as winsel,
         OrderUid,
         RankType,
-        Unscored,
         state::{self, HasState, RankedItem, ScoredItem, UnscoredItem},
     },
 };
+
+pub use winner_selection::Unscored;
+
+/// Score for a solution, wrapping the surplus value.
+#[derive(Debug, Clone, Copy)]
+pub struct Score(pub Ether);
+
+/// Wrapped native token address (e.g., WETH).
+#[derive(Debug, Clone, Copy)]
+pub struct WrappedNativeToken(pub Address);
+
+impl From<Address> for WrappedNativeToken {
+    fn from(addr: Address) -> Self {
+        Self(addr)
+    }
+}
+
+impl From<WrappedNativeToken> for Address {
+    fn from(w: WrappedNativeToken) -> Self {
+        w.0
+    }
+}
 
 #[derive(Clone)]
 pub struct SolverArbitrator(winsel::Arbitrator);
@@ -28,7 +46,7 @@ impl SolverArbitrator {
     pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
         Self(winsel::Arbitrator {
             max_winners,
-            weth: wrapped_native_token.into(),
+            weth: wrapped_native_token.0.into(),
         })
     }
 
@@ -109,7 +127,7 @@ impl From<&crate::domain::competition::Auction> for winsel::AuctionContext {
             native_prices: auction
                 .tokens
                 .iter_keys_values()
-                .map(|(token, price)| (token.0.0, price.price.unwrap().0.0))
+                .map(|(token, price)| ((*token).into(), price.price.unwrap().0.0))
                 .collect(),
         }
     }

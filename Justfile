@@ -28,6 +28,13 @@ test-e2e filters="" *extra="":
 test-driver:
     RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only
 
+# Run pod flow tests (pod_ prefixed tests)
+#
+# These tests validate the pod network integration and are not run in CI by default.
+# They require access to the pod network endpoint.
+test-pod:
+    cargo nextest run -p e2e 'pod_' --test-threads 1 --failure-output final --run-ignored ignored-only
+
 # Run clippy
 clippy:
     cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
