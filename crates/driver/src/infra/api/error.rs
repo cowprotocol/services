@@ -113,6 +113,7 @@ impl From<quote::Error> for (axum::http::StatusCode, axum::Json<Error>) {
         if let quote::Error::Solver(ref solver_err) = value
             && let Some(custom_err) = solver_err.custom_error()
         {
+            tracing::warn!(err=?custom_err, "received custom solver error, mapping to internal errors");
             let (kind, description) = map_custom_solver_error(custom_err);
             return (
                 axum::http::StatusCode::BAD_REQUEST,
