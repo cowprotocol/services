@@ -33,7 +33,6 @@ use {
     },
     ::winner_selection::state::{HasState, RankedItem, ScoredItem, UnscoredItem},
     eth_domain_types::{self as eth, Address, WrappedNativeToken},
-    alloy::primitives::keccak256,
     std::collections::HashMap,
     tracing::instrument,
     winner_selection::{self as winsel},
