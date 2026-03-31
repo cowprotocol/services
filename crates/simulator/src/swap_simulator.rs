@@ -32,12 +32,10 @@ use {
 /// Contains the minimum data required to encode a fake settlement
 #[derive(Debug)]
 pub struct Query {
-    /// The input token, transferred into settlement contract
-    pub in_token: Address,
-    pub in_amount: NonZeroU256,
-    /// The output token, transferred out of settlemetn contract
-    pub out_token: Address,
-    pub out_amount: U256,
+    pub sell_token: Address,
+    pub sell_amount: NonZeroU256,
+    pub buy_token: Address,
+    pub buy_amount: U256,
     pub kind: OrderKind,
     pub receiver: Address,
     pub sell_token_source: SellTokenSource,
@@ -110,19 +108,15 @@ impl SwapSimulator {
         let pre_interactions = vec![];
         let mut interactions = vec![];
 
-        if query.out_token == BUY_ETH_ADDRESS {
+        if query.buy_token == BUY_ETH_ADDRESS {
             // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
             // does not have to emit unwraps to pay out `ETH` in a trade.
             // However, for the simulation to be successful this has to happen so we do it
             // ourselves here.
-            let buy_amount = match query.kind {
-                OrderKind::Sell => query.out_amount,
-                OrderKind::Buy => query.in_amount.get(),
-            };
             interactions.push((
                 self.native_token,
                 U256::ZERO,
-                WETH9::WETH9::withdrawCall { wad: buy_amount }
+                WETH9::WETH9::withdrawCall { wad: query.buy_amount }
                     .abi_encode()
                     .into(),
             ));
@@ -252,16 +246,16 @@ impl SwapSimulator {
 /// and the actual [`Trade::out_amount`] can be computed afterwards.
 fn encode_fake_trade(query: &Query) -> Result<EncodedTrade> {
     let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Sell => (query.in_amount.get(), U256::ZERO),
+        OrderKind::Sell => (query.sell_amount.get(), U256::ZERO),
         OrderKind::Buy => (
-            (query.out_amount).max(U256::from(u128::MAX)),
-            query.in_amount.get(),
+            query.sell_amount.get().max(U256::from(u128::MAX)),
+            query.buy_amount,
         ),
     };
     let fake_order = OrderData {
-        sell_token: query.in_token,
+        sell_token: query.sell_token,
         sell_amount,
-        buy_token: query.out_token,
+        buy_token: query.buy_token,
         buy_amount,
         receiver: Some(query.receiver),
         valid_to: u32::MAX,
@@ -282,14 +276,17 @@ fn encode_fake_trade(query: &Query) -> Result<EncodedTrade> {
         query
             .tokens
             .iter()
-            .position(|token| token == &query.in_token)
+            .position(|token| token == &query.sell_token)
             .context("missing sell token index")?,
         query
             .tokens
             .iter()
-            .position(|token| token == &query.out_token)
+            .position(|token| token == &query.buy_token)
             .context("missing buy token index")?,
-        query.in_amount.get(),
+        match query.kind {
+            OrderKind::Sell => query.sell_amount.get(),
+            OrderKind::Buy => query.buy_amount,
+        },
     );
 
     Ok(encoded_trade)

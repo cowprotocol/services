@@ -54,6 +54,7 @@ impl From<Request> for TenderlyRequest {
             simulation_type: value.simulation_kind.map(|kind| match kind {
                 SimulationType::Full => order_simulator::SimulationType::Full,
                 SimulationType::Quick => order_simulator::SimulationType::Quick,
+                SimulationType::Abi => order_simulator::SimulationType::Abi,
             }),
             save: value.save,
             save_if_fails: value.save_if_fails,
@@ -102,6 +103,7 @@ impl From<TenderlyRequest> for Request {
             simulation_kind: value.simulation_type.map(|kind| match kind {
                 order_simulator::SimulationType::Full => SimulationType::Full,
                 order_simulator::SimulationType::Quick => SimulationType::Quick,
+                order_simulator::SimulationType::Abi => SimulationType::Abi,
             }),
             save: value.save,
             save_if_fails: value.save_if_fails,
@@ -254,6 +256,7 @@ impl TryFrom<alloy_rpc_types::eth::state::AccountOverride> for StateObject {
 pub enum SimulationType {
     Full,
     Quick,
+    Abi,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

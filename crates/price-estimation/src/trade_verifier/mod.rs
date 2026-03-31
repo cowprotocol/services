@@ -148,12 +148,19 @@ impl TradeVerifier {
             TradeKind::Regular(trade) => trade.clearing_prices.iter().unzip(),
         };
 
+        let (sell_amount, buy_amount) = match query.kind {
+            OrderKind::Sell => (query.in_amount, *out_amount),
+            OrderKind::Buy => (
+                NonZeroU256::try_from(*out_amount).context("computed sell amount is zero")?,
+                query.in_amount.get(),
+            ),
+        };
         let simulator_query = simulator::swap_simulator::Query {
-            in_token: query.sell_token,
-            out_token: query.buy_token,
+            sell_token: query.sell_token,
+            buy_token: query.buy_token,
             kind: query.kind,
-            in_amount: query.in_amount,
-            out_amount: *out_amount,
+            sell_amount,
+            buy_amount,
             receiver: verification.receiver,
             sell_token_source: verification.sell_token_source,
             buy_token_destination: verification.buy_token_destination,

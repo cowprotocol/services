@@ -7,7 +7,7 @@ use {
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
     model::{
-        order::{Order, OrderKind},
+        order::Order,
         order_simulator::OrderSimulation,
     },
     simulator::{
@@ -34,27 +34,18 @@ impl OrderSimulator {
             anyhow::bail!("App data is not known for order {}", order.metadata.uid)
         };
         let app_data = serde_json::from_str::<app_data::Root>(app_data)?;
-        let (in_amount, out_amount) = match order.data.kind {
-            OrderKind::Sell => (order.data.sell_amount, order.data.buy_amount),
-            OrderKind::Buy => (order.data.buy_amount, order.data.sell_amount),
-        };
 
         let tokens = vec![order.data.sell_token, order.data.buy_token];
-        let clearing_prices = match order.data.kind {
-            OrderKind::Sell => {
-                vec![out_amount, in_amount]
-            }
-            OrderKind::Buy => {
-                vec![in_amount, out_amount]
-            }
-        };
+        // Clearing prices represent the limit price of the order; both order kinds
+        // produce the same ratio: [buy_amount, sell_amount] for [sell_token, buy_token].
+        let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
 
         let solver = Address::random();
         let query = Query {
-            in_amount: in_amount.try_into()?,
-            in_token: order.data.sell_token,
-            out_amount,
-            out_token: order.data.buy_token,
+            sell_amount: order.data.sell_amount.try_into()?,
+            sell_token: order.data.sell_token,
+            buy_amount: order.data.buy_amount,
+            buy_token: order.data.buy_token,
             kind: order.data.kind,
             receiver: order.data.receiver.unwrap_or(order.metadata.owner),
             sell_token_source: order.data.sell_token_balance,
@@ -156,9 +147,9 @@ impl OrderSimulator {
         self.simulator
             .balance_overrides
             .state_override(BalanceOverrideRequest {
-                token: query.out_token,
+                token: query.buy_token,
                 holder: *self.simulator.settlement.address(),
-                amount: query.out_amount,
+                amount: query.buy_amount,
             })
             .await
             .map(|(token, balance_override)| swap.overrides.insert(token, balance_override));
