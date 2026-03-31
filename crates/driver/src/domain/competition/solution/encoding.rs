@@ -234,6 +234,8 @@ pub fn tx(
         encode_flashloan_settlement(solution, contracts, settle_calldata)?
     } else if has_wrappers {
         simulator::encoding::encode_wrapper_settlement(&solution.wrappers, settle_calldata.into())
+        // wrappers is not empty by how has_wrappers is initialized
+        .unwrap()
     } else {
         (*contracts.settlement().address(), settle_calldata.into())
     };

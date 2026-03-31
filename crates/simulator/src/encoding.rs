@@ -28,6 +28,9 @@ pub type EncodedTrade = (
     Bytes,   // signature
 );
 
+// TODO: Change Vec into VecDeque for easy sandwitching of custom pre, main,
+// post interaction at the callsite.
+// This can't work elegantly until `extend_front` of VecDeque becomes stabilized
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Interactions {
     pub pre: Vec<EncodedInteraction>,
@@ -259,8 +262,10 @@ pub struct WrapperCall {
 pub fn encode_wrapper_settlement(
     wrappers: &[WrapperCall],
     settle_calldata: Bytes,
-) -> (Address, Bytes) {
-    // Encode wrapper metadata
+) -> Option<(Address, Bytes)> {
+    if wrappers.len() == 0 {
+        return None;
+    };
     let wrapper_data = encode_wrapper_data(wrappers);
 
     // Create wrappedSettleCall
@@ -270,7 +275,7 @@ pub fn encode_wrapper_settlement(
     }
     .abi_encode();
 
-    (wrappers[0].address, calldata.into())
+    Some((wrappers[0].address, calldata.into()))
 }
 
 /// Encodes wrapper metadata for wrapper settlement calls.

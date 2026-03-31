@@ -6,13 +6,10 @@ use {
     anyhow::{Context, Result},
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
-    model::{
-        order::Order,
-        order_simulator::OrderSimulation,
-    },
+    model::{order::Order, order_simulator::OrderSimulation},
     simulator::{
         encoding::InteractionEncoding,
-        swap_simulator::{EncodedSwap, Query, SwapSimulator},
+        swap_simulator::{EncodedSwap, Query, SwapSimulator, TradeEncoding},
     },
 };
 
@@ -37,7 +34,8 @@ impl OrderSimulator {
 
         let tokens = vec![order.data.sell_token, order.data.buy_token];
         // Clearing prices represent the limit price of the order; both order kinds
-        // produce the same ratio: [buy_amount, sell_amount] for [sell_token, buy_token].
+        // produce the same ratio: [buy_amount, sell_amount] for [sell_token,
+        // buy_token].
         let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
 
         let solver = Address::random();
@@ -65,7 +63,10 @@ impl OrderSimulator {
                 .collect(),
         };
 
-        let swap = self.simulator.fake_swap(&query).await?;
+        let swap = self
+            .simulator
+            .fake_swap(&query, TradeEncoding::Simple)
+            .await?;
         let swap = add_interactions(swap, order);
         let swap = self.add_state_overrides(&query, swap).await?;
 
@@ -159,6 +160,7 @@ impl OrderSimulator {
 }
 
 fn add_interactions(mut swap: EncodedSwap, order: &Order) -> EncodedSwap {
+    // Add order pre interactions before encoded swap's pre interactions
     let pre_interactions = order
         .interactions
         .pre
@@ -169,6 +171,7 @@ fn add_interactions(mut swap: EncodedSwap, order: &Order) -> EncodedSwap {
         .chain(std::mem::take(&mut swap.settlement.interactions.pre))
         .collect();
 
+    // Add order post interactions after encoded swap's post interactions
     let post_interactions = order
         .interactions
         .post

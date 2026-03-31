@@ -40,7 +40,7 @@ use {
     },
     simulator::{
         encoding::{EncodedTrade, InteractionEncoding, encode_trade},
-        swap_simulator::{EncodedSwap, SwapSimulator},
+        swap_simulator::{EncodedSwap, SwapSimulator, TradeEncoding},
         tenderly::{self},
     },
     std::{
@@ -174,7 +174,7 @@ impl TradeVerifier {
 
         let mut swap = self
             .simulator
-            .fake_swap(&simulator_query)
+            .fake_swap(&simulator_query, TradeEncoding::Disadvantageous)
             .await
             .map_err(Error::SimulationFailed)?;
 
@@ -188,20 +188,24 @@ impl TradeVerifier {
                 .map(InteractionEncoding::encode)
                 .collect::<Vec<_>>();
 
-        // Join custom pre_interactions
+        // Join custom pre_interactions in the following order:
+        // pre_interactions, trade setup interaction, encoded swap pre interactions
         pre_interactions.extend([self
             .trade_setup_interaction(out_amount, &verification, query, trade)
             .encode()]);
         pre_interactions.extend(swap.settlement.interactions.pre);
         swap.settlement.interactions.pre = pre_interactions;
 
-        // Interactions introduced by the solver
+        // Join interactions introduced by the solver, set up in the following order:
+        // trade interactions, encoded swap interactions
         let interactions = trade.interactions().map(InteractionEncoding::encode);
         swap.settlement.interactions.main = interactions
             .into_iter()
             .chain(swap.settlement.interactions.main)
             .collect();
 
+        // Join post interactions in the following order:
+        // encoded swap post interactions, verification post interactions,
         let post_interactions = verification
             .post_interactions
             .iter()
