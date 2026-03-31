@@ -1,13 +1,15 @@
 use {
     crate::{
         domain::{eth, solver},
-        infra::contracts,
+        infra::{contracts, tx_gas},
     },
+    balance_overrides::BalanceOverrides,
     chain::Chain,
     price_estimation::gas::SETTLEMENT_OVERHEAD,
     reqwest::Url,
     serde::Deserialize,
-    std::path::Path,
+    simulator::swap_simulator::SwapSimulator,
+    std::{path::Path, sync::Arc},
     tokio::fs,
 };
 
@@ -48,6 +50,11 @@ struct Config {
     /// If this is configured the solver will also use the Uniswap V3 liquidity
     /// sources that rely on RPC request.
     uni_v3_node_url: Option<Url>,
+
+    /// If set, the solver will simulate each solution's full settlement
+    /// transaction to obtain an accurate gas estimate that includes order
+    /// hook costs. Requires `chain-id` to be set.
+    gas_simulation_node_url: Option<Url>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -73,6 +80,33 @@ pub async fn load(path: &Path) -> solver::Config {
         ),
     };
 
+    let tx_gas_estimator = if let Some(url) = config.gas_simulation_node_url {
+        let chain_id = config.chain_id.expect(
+            "invalid configuration: `chain-id` is required when `gas-simulation.node-url` is set",
+        );
+        let settlement_addr = contracts::Contracts::for_chain(chain_id).settlement;
+        let web3 = ethrpc::web3(Default::default(), &url, Some("tx-gas"));
+        #[allow(deprecated)]
+        let current_block =
+            ethrpc::block_stream::current_block_stream(url.clone(), Default::default())
+                .await
+                .expect("failed to create block stream for tx gas estimator");
+        let balance_overrides = Arc::new(BalanceOverrides::new(web3.clone()));
+        let swap_simulator = SwapSimulator::new(
+            balance_overrides,
+            settlement_addr,
+            weth.0,
+            current_block,
+            web3,
+            15_000_000u64,
+        )
+        .await
+        .expect("failed to create swap simulator for tx gas estimator");
+        Some(Arc::new(tx_gas::TxGasEstimator::new(swap_simulator)))
+    } else {
+        None
+    };
+
     solver::Config {
         weth,
         base_tokens: config
@@ -85,6 +119,7 @@ pub async fn load(path: &Path) -> solver::Config {
         solution_gas_offset: config.solution_gas_offset.into(),
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
         uni_v3_node_url: config.uni_v3_node_url,
+        tx_gas_estimator,
     }
 }
 

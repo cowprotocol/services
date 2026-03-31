@@ -18,6 +18,8 @@ pub struct Order {
     pub partially_fillable: bool,
     pub flashloan_hint: Option<FlashloanHint>,
     pub wrappers: Vec<WrapperCall>,
+    pub pre_interactions: Vec<eth::Interaction>,
+    pub post_interactions: Vec<eth::Interaction>,
 }
 
 impl Order {

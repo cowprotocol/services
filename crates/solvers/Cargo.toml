@@ -52,6 +52,9 @@ tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
 
+balance-overrides = { workspace = true }
+simulator = { workspace = true }
+
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
 # remove/re-evaluate these dependencies.
 anyhow = { workspace = true }

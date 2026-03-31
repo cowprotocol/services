@@ -217,3 +217,30 @@ The fee calculation at line ~252 already uses `solution.gas`, so no further chan
    ```
 
 4. **Manual verification**: In a local playground with a sell=buy limit order that has a pre-interaction hook, confirm the baseline solver's solution includes a non-zero gas fee that matches the actual hook gas from the driver simulation.
+
+---
+
+## Implementation Log
+
+**Branch:** `tx-gas-simulation` — implemented 2026-03-31
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `crates/solvers/src/domain/eth/mod.rs` | Added `Clone` derive to `Interaction` |
+| `crates/solvers/src/domain/order.rs` | Added `pre_interactions` and `post_interactions: Vec<eth::Interaction>` to `Order` |
+| `crates/solvers/src/api/routes/solve/dto/auction.rs` | Maps `pre_interactions`/`post_interactions` from DTO `InteractionData` to domain on order construction |
+| `crates/solvers/Cargo.toml` | Added `simulator` and `balance-overrides` workspace deps |
+| `crates/solvers/src/infra/mod.rs` | Exported `pub mod tx_gas` |
+| `crates/solvers/src/infra/tx_gas.rs` | **New** — `TxGasEstimator`: wraps `SwapSimulator`, builds fake settlement via `fake_swap()`, injects order hooks (mirrors `add_interactions()` from `orderbook/src/order_simulator.rs`), applies state overrides (mirrors `add_state_overrides()`), calls `simulate_settle_call()` then `eth_estimateGas` |
+| `crates/solvers/src/infra/config/baseline.rs` | Added optional `gas_simulation_node_url: Option<Url>` TOML field under `[gas-simulation]`; builds `TxGasEstimator` via `BalanceOverrides::new(web3)` + `SwapSimulator::new(...)` when URL is present; threads it into `solver::Config` |
+| `crates/solvers/src/domain/solver/baseline.rs` | Added `tx_gas_estimator: Option<Arc<TxGasEstimator>>` to `Config` and `Inner`; sell=buy and routing branches both use simulation when available, fallback to static estimates on `None` or zero result |
+
+### Deviations from plan
+
+- **`BuyTokenDestination`**: Plan referenced a non-existent `TokenHolder` variant; actual enum only has `Erc20` (default) and `Internal`. Used `Erc20`.
+- **`estimate_gas` return type**: Alloy's `Provider::estimate_gas` returns `EthCall<N, U64, u64>` (resolves to `u64`), not `U256`. Fixed type annotation and converted with `U256::from(gas)`.
+- **`Provider` trait import**: `estimate_gas` is a trait method on `Provider`; needed explicit `use alloy::providers::Provider` in `tx_gas.rs`.
+- **`eth::Interaction` not `Clone`**: Required adding `#[derive(Clone)]` to `Interaction` in `domain/eth/mod.rs` because `Order` derives `Clone`.
+- **No modification to `SwapSimulator`**: The plan discussed adding `estimate_settle_gas` to `SwapSimulator`, but it was avoided by reusing the `tx`/`overrides` returned from the existing `simulate_settle_call()` and passing them to `estimate_gas` on the provider directly.

@@ -78,6 +78,24 @@ pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
                         data: w.data.clone(),
                     })
                     .collect(),
+                pre_interactions: order
+                    .pre_interactions
+                    .iter()
+                    .map(|i| eth::Interaction {
+                        target: i.target,
+                        value: eth::Ether(i.value),
+                        calldata: i.call_data.clone(),
+                    })
+                    .collect(),
+                post_interactions: order
+                    .post_interactions
+                    .iter()
+                    .map(|i| eth::Interaction {
+                        target: i.target,
+                        value: eth::Ether(i.value),
+                        calldata: i.call_data.clone(),
+                    })
+                    .collect(),
             })
             .collect(),
         liquidity: auction
