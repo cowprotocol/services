@@ -184,7 +184,20 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, ["pod=debug"], None).await
+    // Verbose logging for pod flow debugging
+    run(
+        f,
+        [
+            "pod=debug",
+            "driver=debug",
+            "driver::domain::competition=debug",
+            "driver::infra::solver=debug",
+            "autopilot=debug",
+            "autopilot::run=debug",
+        ],
+        None,
+    )
+    .await
 }
 
 async fn run<F, Fut, T>(
