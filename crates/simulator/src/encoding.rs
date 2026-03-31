@@ -299,7 +299,7 @@ pub fn encode_wrapper_settlement(
 /// calldata)
 ///
 /// More information about wrapper encoding:
-/// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
+/// https://docs.cow.fi/cow-protocol/integrate/wrappers#manual-encoding
 pub fn encode_wrapper_data(wrappers: &[WrapperCall]) -> Bytes {
     let mut wrapper_data = Vec::new();
 
