@@ -557,11 +557,11 @@ impl Competition {
                         auction_id = %auction_id,
                         deadline = ?deadline,
                         solver_address = %self.solver.address().0.to_string(),
-                        "[pod] pod flow failed"
+                        "pod flow failed"
                     );
                 });
             } else {
-                tracing::warn!("[pod] skipping submission to pod. empty auction id");
+                tracing::warn!("skipping pod submission: empty auction id");
             }
         }
 
@@ -613,6 +613,7 @@ impl Competition {
         score: Option<Solved>,
         solver: Solver,
     ) -> Result<(), anyhow::Error> {
+        let span = tracing::info_span!("pod_flow", auction_id = %auction_id.0, solver = %solver.name());
         tokio::spawn(async move {
             let pod_auction_client = AuctionClient::new(pod_provider, pod_auction_contract_address);
 
@@ -627,10 +628,8 @@ impl Competition {
             {
                 tracing::error!(
                     error = %e,
-                    auction_id = %auction_id,
                     deadline = ?deadline,
-                    solver_address = %solver.address().0.to_string(),
-                    "[pod] solution submission failed, aborting"
+                    "solution submission failed, aborting"
                 );
                 return;
             }
@@ -641,10 +640,8 @@ impl Competition {
             if let Ok(participants) = participants_result {
                 tracing::info!(
                     num_participants = participants.len(),
-                    auction_id = %auction_id,
                     deadline = ?deadline,
-                    solver_address = %solver.address().0.to_string(),
-                    "[pod] fetched bids"
+                    "fetched bids"
                 );
                 let arbitrator = solver.arbitrator();
                 if let Err(e) =
@@ -653,26 +650,23 @@ impl Competition {
                 {
                     tracing::error!(
                         error = %e,
-                        auction_id = %auction_id,
                         deadline = ?deadline,
-                        solver_address = %solver.address().0.to_string(),
-                        "[pod] winner selection failed, aborting"
+                        "winner selection failed, aborting"
                     );
                 }
             } else if let Err(e) = participants_result {
                 tracing::error!(
                     error = %e,
-                    auction_id = ?auction_id,
                     deadline = ?deadline,
-                    solver_address = %solver.address().0.to_string(),
-                    "[pod] failed to fetch participants, aborting"
+                    "failed to fetch participants, aborting"
                 );
             }
-        });
+        }.instrument(span));
 
         Ok(())
     }
 
+    #[instrument(name = "pod_submit_bid", skip_all, fields(auction_id = %auction_id.0))]
     async fn pod_solution_submission(
         pod_auction_client: &AuctionClient,
         auction_id: Id,
@@ -681,19 +675,11 @@ impl Competition {
         solver: &Solver,
     ) -> Result<(), anyhow::Error> {
         let pod_auction_id = pod_sdk::U256::from(u64::try_from(auction_id.0).inspect_err(|e| {
-            tracing::error!(
-                error = %e,
-                auction_id = ?auction_id,
-                "[pod] invalid auction id"
-            );
+            tracing::error!(error = %e, "invalid auction id");
         })?);
 
         let Some(score_value) = score.clone() else {
-            tracing::warn!(
-                auction_id = %pod_auction_id,
-                deadline = %deadline,
-                "[pod] no score available, skipping bid submission"
-            );
+            tracing::warn!(deadline = %deadline, "no score available, skipping bid submission");
             return Ok(());
         };
 
@@ -701,12 +687,7 @@ impl Competition {
         let solution_data = match serde_json::to_string(&solve_response) {
             Ok(data) => data,
             Err(e) => {
-                tracing::error!(
-                    error = %e,
-                    auction_id = %pod_auction_id,
-                    deadline = %deadline,
-                    "[pod] failed to serialize SolveResponse"
-                );
+                tracing::error!(error = %e, "failed to serialize SolveResponse");
                 return Err(anyhow::Error::new(e));
             }
         };
@@ -714,13 +695,12 @@ impl Competition {
         let pod_auction_value = score_value.score.0;
 
         tracing::info!(
-            pod_auction_id = ?pod_auction_id,
             deadline = ?deadline,
-            pod_auction_value = ?pod_auction_value,
-            solution_data_len = solution_data.len(),
-            solution_data_hex = %hex::encode(solution_data.clone().into_bytes()),
-            "[pod] preparing bid submission payload"
+            score = ?pod_auction_value,
+            payload_len = solution_data.len(),
+            "preparing bid submission"
         );
+        tracing::debug!(payload_hex = %hex::encode(solution_data.clone().into_bytes()), "bid payload");
 
         match pod_auction_client
             .submit_bid(
@@ -731,18 +711,9 @@ impl Competition {
             )
             .await
         {
-            Ok(_) => tracing::info!(
-                auction_id = %pod_auction_id,
-                deadline = %deadline,
-                "[pod] bid submission succeeded"
-            ),
+            Ok(_) => tracing::info!(deadline = %deadline, "bid submitted successfully"),
             Err(e) => {
-                tracing::error!(
-                    error = %e,
-                    auction_id = %pod_auction_id,
-                    deadline = %deadline,
-                    "[pod] bid submission failed"
-                );
+                tracing::error!(error = %e, deadline = %deadline, "bid submission failed");
                 return Err(e);
             }
         }
@@ -750,46 +721,29 @@ impl Competition {
         Ok(())
     }
 
+    #[instrument(name = "pod_fetch_bids", skip_all, fields(auction_id = %auction_id.0))]
     async fn pod_fetch_bids(
         pod_auction_client: &AuctionClient,
         auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<Bid<Unscored>>, anyhow::Error> {
         let pod_auction_id = pod_sdk::U256::from(u64::try_from(auction_id.0).inspect_err(|e| {
-            tracing::error!(
-                error = %e,
-                auction_id = ?auction_id,
-                "[pod] invalid auction id"
-            );
+            tracing::error!(error = %e, "invalid auction id");
         })?);
 
         if let Err(e) = pod_auction_client
             .wait_for_auction_end(deadline.into())
             .await
         {
-            tracing::error!(
-                error = %e,
-                auction_id = %pod_auction_id,
-                deadline = %deadline,
-                "[pod] wait_for_auction_end failed"
-            );
+            tracing::error!(error = %e, deadline = %deadline, "wait_for_auction_end failed");
             return Err(e);
         }
-        tracing::info!(
-            auction_id = %pod_auction_id,
-            deadline = %deadline,
-            "[pod] auction ended"
-        );
+        tracing::info!(deadline = %deadline, "auction ended");
 
         let bids = match pod_auction_client.fetch_bids(pod_auction_id).await {
             Ok(bids) => bids,
             Err(e) => {
-                tracing::error!(
-                    error = %e,
-                    auction_id = %pod_auction_id,
-                    deadline = %deadline,
-                    "[pod] fetch bids failed"
-                );
+                tracing::error!(error = %e, "fetch bids failed");
                 return Err(e);
             }
         };
@@ -800,12 +754,7 @@ impl Competition {
                 match serde_json::from_slice(bid.data.as_slice()) {
                     Ok(resp) => resp,
                     Err(e) => {
-                        tracing::error!(
-                            error = %e,
-                            auction_id = %pod_auction_id,
-                            deadline = %deadline,
-                            "[pod] failed to deserialize SolveResponse"
-                        );
+                        tracing::error!(error = %e, "failed to deserialize SolveResponse");
                         return Err(anyhow::Error::new(e));
                     }
                 };
@@ -818,6 +767,7 @@ impl Competition {
         Ok(participants)
     }
 
+    #[instrument(name = "pod_local_arbitration", skip_all, fields(auction_id = %auction_id.0, num_participants = participants.len()))]
     async fn local_winner_selection(
         auction: &Auction,
         auction_id: Id,
@@ -835,14 +785,13 @@ impl Competition {
                 tracing::info!(
                     num_winners = winners.len(),
                     num_non_winners = non_winners.len(),
-                    "[pod] local arbitration completed"
+                    "local arbitration completed"
                 );
                 for winner in winners {
                     tracing::info!(
-                        auction_id = ?auction_id.0,
                         submission_address = %winner.submission_address().to_string(),
                         computed_score = ?winner.score(),
-                        "[pod] local winner selected"
+                        "winner selected"
                     );
                 }
             }
