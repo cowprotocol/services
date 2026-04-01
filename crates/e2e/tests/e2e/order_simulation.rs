@@ -1,6 +1,11 @@
 use {
     alloy::{primitives::Address, providers::Provider},
+    bigdecimal::BigDecimal,
     configs::test_util::TestDefault,
+    database::{
+        byte_array::ByteArray,
+        events::{EventIndex, Trade, insert_trade},
+    },
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
@@ -12,6 +17,7 @@ use {
     reqwest::StatusCode,
     serde_json::json,
     simulator::tenderly::dto::SimulationType,
+    std::ops::DerefMut,
 };
 
 #[tokio::test]
@@ -30,6 +36,12 @@ async fn local_node_order_simulation_block_number() {
 #[ignore]
 async fn local_node_custom_order_simulation() {
     run_test(custom_order_simulation).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_order_simulation_partial_fill() {
+    run_test(order_simulation_partial_fill).await;
 }
 
 async fn custom_order_simulation(web3: Web3) {
@@ -278,6 +290,154 @@ async fn order_simulation_block_number(web3: Web3) {
     assert_eq!(
         result.error, None,
         "expected simulation success at block {block_with_funds} (funded), got error: {:?}",
+        result.error
+    );
+}
+
+// Trader has 1 WETH; the order is a partially-fillable sell of 2 WETH.
+//
+// - executed_amount=0  → simulation must fail (full 2 WETH needed, only 1
+//   available)
+// - executed_amount=1e18 → simulation must pass (only 1 WETH remaining, which
+//   is exactly what the trader holds)
+// - no query param, but DB trade row records 1 WETH executed → simulation must
+//   pass (reads fill state from the database)
+async fn order_simulation_partial_fill(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // Fund with 2 WETH so the order passes balance validation on submission.
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(2u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .approve(onchain.contracts().allowance, 2u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            configs::autopilot::Configuration::test("test_solver", solver.address()),
+            configs::orderbook::Configuration::test_default(),
+            solver,
+        )
+        .await;
+
+    let order = OrderCreation {
+        sell_token: *onchain.contracts().weth.address(),
+        sell_amount: 2u64.eth(),
+        buy_token: *token.address(),
+        buy_amount: 1u64.eth(),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        partially_fillable: true,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    // Transfer 1 WETH away so the trader now holds only 1 WETH.
+    let burn = Address::from([0x42u8; 20]);
+    onchain
+        .contracts()
+        .weth
+        .transfer(burn, 1u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    let client = services.client();
+
+    // executed_amount=0: simulate the full 2 WETH — must fail because the
+    // trader only holds 1 WETH.
+    let response = client
+        .get(format!(
+            "{API_HOST}/api/v1/debug/simulation/{uid}?executed_amount=0"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let result = response.json::<OrderSimulationResult>().await.unwrap();
+    assert!(
+        result.error.is_some(),
+        "expected simulation failure with executed_amount=0 (needs 2 WETH, trader has 1)"
+    );
+
+    // executed_amount=1 WETH: only 1 WETH left to sell — must pass because
+    // the trader holds exactly 1 WETH.
+    let response = client
+        .get(format!(
+            "{API_HOST}/api/v1/debug/simulation/{uid}?executed_amount={}",
+            1u64.eth()
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let result = response.json::<OrderSimulationResult>().await.unwrap();
+    assert_eq!(
+        result.error, None,
+        "expected simulation success with executed_amount=1 WETH (remaining 1 WETH, trader has \
+         1), got error: {:?}",
+        result.error
+    );
+
+    // Insert a fake trade into the database recording 1 WETH as already
+    // executed for this order.
+    let db = services.db();
+    let mut conn = db.acquire().await.unwrap();
+    insert_trade(
+        conn.deref_mut(),
+        &EventIndex {
+            block_number: 1,
+            log_index: 0,
+        },
+        &Trade {
+            order_uid: ByteArray(uid.0),
+            sell_amount_including_fee: BigDecimal::from(1_000_000_000_000_000_000u64),
+            buy_amount: BigDecimal::from(500_000_000_000_000_000u64),
+            fee_amount: BigDecimal::default(),
+        },
+    )
+    .await
+    .unwrap();
+
+    // No executed_amount query param — the simulator reads the fill state from
+    // the database (1 WETH executed), leaving 1 WETH to simulate.  The trader
+    // holds exactly 1 WETH, so the simulation must pass.
+    let response = client
+        .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let result = response.json::<OrderSimulationResult>().await.unwrap();
+    assert_eq!(
+        result.error, None,
+        "expected simulation success when DB shows 1 WETH executed (remaining 1 WETH, trader has \
+         1), got error: {:?}",
         result.error
     );
 }

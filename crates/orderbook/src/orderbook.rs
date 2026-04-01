@@ -8,7 +8,7 @@ use {
         order_simulator::OrderSimulator,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, U256},
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
     bigdecimal::ToPrimitive,
@@ -617,6 +617,7 @@ impl Orderbook {
         &self,
         uid: &OrderUid,
         block_number: Option<u64>,
+        executed_amount: Option<U256>,
     ) -> Result<Option<OrderSimulationResult>, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
@@ -630,7 +631,7 @@ impl Orderbook {
         };
 
         let swap = order_simulator
-            .encode_order(&order)
+            .encode_order(&order, executed_amount)
             .await
             .map_err(OrderSimulationError::Other)?;
         Ok(Some(
@@ -647,13 +648,14 @@ impl Orderbook {
         &self,
         order: Order,
         block_number: Option<u64>,
+        executed_amount: Option<U256>,
     ) -> Result<OrderSimulationResult, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
         };
 
         let swap = order_simulator
-            .encode_order(&order)
+            .encode_order(&order, executed_amount)
             .await
             .map_err(OrderSimulationError::Other)?;
         order_simulator

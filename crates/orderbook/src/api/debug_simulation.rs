@@ -1,6 +1,6 @@
 use {
     crate::{api::AppState, orderbook::OrderSimulationError},
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     axum::{
         Json,
         extract::{Path, Query, State},
@@ -23,9 +23,16 @@ use {
     std::sync::Arc,
 };
 
+#[serde_as]
 #[derive(Deserialize)]
 pub struct SimulationQuery {
     pub block_number: Option<u64>,
+    /// Override for how much of the order has already been filled, expressed
+    /// in the order's fill token (sell token for sell orders, buy token for
+    /// buy orders). When absent, the current on-chain fill state from the
+    /// order metadata is used.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    pub executed_amount: Option<U256>,
 }
 
 pub async fn debug_simulation_handler(
@@ -35,7 +42,7 @@ pub async fn debug_simulation_handler(
 ) -> Response {
     match state
         .orderbook
-        .simulate_order(&uid, params.block_number)
+        .simulate_order(&uid, params.block_number, params.executed_amount)
         .await
     {
         Ok(Some(result)) => (StatusCode::OK, Json(result)).into_response(),
@@ -85,6 +92,12 @@ pub struct SimulationRequest {
     pub interactions: Interactions,
     #[serde(default)]
     pub block_number: Option<u64>,
+    /// Override for how much of the order has already been filled, expressed
+    /// in the order's fill token (sell token for sell orders, buy token for
+    /// buy orders). When absent, no fill is assumed.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default)]
+    pub executed_amount: Option<U256>,
 }
 
 pub async fn debug_simulation_post_handler(
@@ -114,7 +127,7 @@ pub async fn debug_simulation_post_handler(
 
     match state
         .orderbook
-        .simulate_custom_order(order, request.block_number)
+        .simulate_custom_order(order, request.block_number, request.executed_amount)
         .await
     {
         Ok(result) => (StatusCode::OK, Json(result)).into_response(),
