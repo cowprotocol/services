@@ -271,6 +271,11 @@ pub fn handle_all_routes(
             "/api/v1/debug/simulation/{uid}",
             get(debug_simulation::debug_simulation_handler),
         ),
+        (
+            "POST",
+            "/api/v1/debug/simulation",
+            post(debug_simulation::debug_simulation_post_handler),
+        ),
         // V2 routes
         // /solver_competition routes (specific before parameterized)
         (

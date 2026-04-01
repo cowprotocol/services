@@ -640,6 +640,27 @@ impl Orderbook {
                 .map_err(OrderSimulationError::Other)?,
         ))
     }
+
+    /// Simulates an arbitrary order without requiring it to exist in the
+    /// database.
+    pub async fn simulate_custom_order(
+        &self,
+        order: Order,
+        block_number: Option<u64>,
+    ) -> Result<OrderSimulationResult, OrderSimulationError> {
+        let Some(order_simulator) = &self.order_simulator else {
+            return Err(OrderSimulationError::NotEnabled);
+        };
+
+        let swap = order_simulator
+            .encode_order(&order)
+            .await
+            .map_err(OrderSimulationError::Other)?;
+        order_simulator
+            .simulate_swap(swap, block_number)
+            .await
+            .map_err(OrderSimulationError::Other)
+    }
 }
 
 #[derive(Error, Debug)]

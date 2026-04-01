@@ -765,6 +765,31 @@ paths:
                 $ref: "#/components/schemas/TotalSurplus"
         "400":
           description: Invalid address.
+  "/api/v1/debug/simulation":
+    post:
+      operationId: debugSimulationPost
+      summary: Simulate an arbitrary order.
+      description: >
+        Simulates an arbitrary order specified in the request body and returns
+        the Tenderly simulation request, along with any simulation error if
+        applicable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulationRequest"
+      responses:
+        "200":
+          description: Simulation request returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderSimulation"
+        "405":
+          description: Order simulation endpoint is not enabled.
+        "500":
+          description: Internal error.
   "/api/v1/debug/simulation/{uid}":
     get:
       operationId: debugSimulation
@@ -2659,6 +2684,79 @@ components:
         - from
         - to
         - input
+    SimulationRequest:
+      description: >
+        Request body for simulating an arbitrary order without it being stored
+        in the orderbook.
+      type: object
+      properties:
+        sellToken:
+          description: The token being sold.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        buyToken:
+          description: The token being bought.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        sellAmount:
+          description: Amount of sell token (hex- or decimal-encoded uint256).
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: Amount of buy token (hex- or decimal-encoded uint256).
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        kind:
+          description: Whether this is a sell or buy order.
+          allOf:
+            - $ref: "#/components/schemas/OrderKind"
+        owner:
+          description: The address of the order owner.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        receiver:
+          description: >
+            The address that will receive the buy tokens. Defaults to the owner
+            if omitted.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: true
+        sellTokenBalance:
+          description: Where the sell token should be drawn from.
+          allOf:
+            - $ref: "#/components/schemas/SellTokenSource"
+          default: erc20
+        buyTokenBalance:
+          description: Where the buy token should be transferred to.
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenDestination"
+          default: erc20
+        appData:
+          description: >
+            Full app data JSON string. Defaults to `"{}"` if omitted.
+          type: string
+          nullable: true
+        interactions:
+          description: Pre- and post-trade interactions for the order.
+          type: object
+          properties:
+            pre:
+              description: Interactions executed before the order's trade.
+              type: array
+              items:
+                $ref: "#/components/schemas/InteractionData"
+            post:
+              description: Interactions executed after the order's trade.
+              type: array
+              items:
+                $ref: "#/components/schemas/InteractionData"
+      required:
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - kind
+        - owner
     OrderSimulation:
       description: >
         The Tenderly simulation request for an order, along with any
