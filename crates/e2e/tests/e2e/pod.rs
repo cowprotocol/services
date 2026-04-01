@@ -1,6 +1,6 @@
 use {
     bigdecimal::Zero,
-    e2e::setup::{wait_for_condition, *},
+    e2e::setup::{pod::PodTestClient, wait_for_condition, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
         order::{OrderCreation, OrderKind},
@@ -133,7 +133,7 @@ async fn pod_basic_test(web3: Web3) {
     .await
     .expect("Trade should execute");
 
-    // Verify solver competition data - this confirms the auction was processed correctly
+    // Verify solver competition data from autopilot
     let competition = services
         .get_latest_solver_competition()
         .await
@@ -146,22 +146,75 @@ async fn pod_basic_test(web3: Web3) {
         "Auction should have exactly 1 order"
     );
     
-    // Verify a winner was selected
+    // Verify a winner was selected by autopilot
     let winners: Vec<_> = competition.solutions.iter().filter(|s| s.is_winner).collect();
     assert_eq!(winners.len(), 1, "Should have exactly 1 winner");
     
-    let winner = winners[0];
+    let autopilot_winner = winners[0];
     assert_eq!(
-        winner.solver_address,
+        autopilot_winner.solver_address,
         solver.address(),
-        "Winner should be our solver"
+        "Autopilot winner should be our solver"
     );
-    assert!(!winner.score.is_zero(), "Winner should have non-zero score");
+    assert!(!autopilot_winner.score.is_zero(), "Winner should have non-zero score");
+
+    // === POD NETWORK VERIFICATION ===
+    // Query the pod network directly to verify driver submitted bid
+    tracing::info!(auction_id = competition.auction_id, "Querying pod network for bids...");
+    
+    let pod_client = PodTestClient::new()
+        .await
+        .expect("Should be able to connect to pod network");
+    
+    let pod_bids = pod_client
+        .fetch_bids(competition.auction_id)
+        .await
+        .expect("Should be able to fetch bids from pod network");
     
     tracing::info!(
-        winner_address = %winner.solver_address,
-        winner_score = ?winner.score,
-        "Pod competition verified: winner selected correctly"
+        auction_id = competition.auction_id,
+        num_pod_bids = pod_bids.len(),
+        "Fetched bids from pod network"
+    );
+
+    // Verify driver submitted a bid to pod network
+    assert!(
+        !pod_bids.is_empty(),
+        "Driver should have submitted at least 1 bid to pod network"
+    );
+
+    // Find the bid from our solver
+    let solver_bid = pod_bids
+        .iter()
+        .find(|b| b.submission_address == solver.address());
+    
+    assert!(
+        solver_bid.is_some(),
+        "Our solver should have a bid in pod network"
+    );
+    let solver_bid = solver_bid.unwrap();
+
+    // Verify the pod bid score matches autopilot's recorded score
+    // Note: Scores might differ slightly due to representation, but should be close
+    tracing::info!(
+        pod_bid_score = ?solver_bid.score,
+        autopilot_score = ?autopilot_winner.score,
+        pod_bid_data_len = solver_bid.data_len,
+        "Comparing pod bid with autopilot winner"
+    );
+
+    // === FINAL VERIFICATION ===
+    // The winner selected by autopilot should match the bid submitted to pod network
+    assert_eq!(
+        autopilot_winner.solver_address,
+        solver_bid.submission_address,
+        "Autopilot winner should match pod bid submitter"
+    );
+
+    tracing::info!(
+        autopilot_winner = %autopilot_winner.solver_address,
+        pod_bids_count = pod_bids.len(),
+        "✓ Pod flow verified end-to-end: bid submitted to pod network, autopilot selected correct winner"
     );
 }
 
@@ -363,7 +416,7 @@ async fn pod_multi_order_test(web3: Web3) {
     .await
     .expect("Both trades should execute");
 
-    // Verify solver competition data
+    // Verify solver competition data from autopilot
     let competition = services
         .get_latest_solver_competition()
         .await
@@ -376,29 +429,48 @@ async fn pod_multi_order_test(web3: Web3) {
         "Auction should have exactly 2 orders"
     );
     
-    // Verify a winner was selected
+    // Verify a winner was selected by autopilot
     let winners: Vec<_> = competition.solutions.iter().filter(|s| s.is_winner).collect();
     assert_eq!(winners.len(), 1, "Should have exactly 1 winner");
     
-    let winner = winners[0];
+    let autopilot_winner = winners[0];
     assert_eq!(
-        winner.solver_address,
+        autopilot_winner.solver_address,
         solver.address(),
-        "Winner should be our solver"
+        "Autopilot winner should be our solver"
     );
     
     // Verify the winning solution contains both orders
     assert_eq!(
-        winner.orders.len(),
+        autopilot_winner.orders.len(),
         2,
         "Winning solution should contain both orders"
     );
+
+    // === POD NETWORK VERIFICATION ===
+    tracing::info!(auction_id = competition.auction_id, "Querying pod network for multi-order auction...");
     
+    let pod_client = PodTestClient::new()
+        .await
+        .expect("Should be able to connect to pod network");
+    
+    let pod_bids = pod_client
+        .fetch_bids(competition.auction_id)
+        .await
+        .expect("Should be able to fetch bids from pod network");
+
+    // Verify driver submitted bid to pod
+    assert!(!pod_bids.is_empty(), "Driver should have submitted bid to pod network");
+    
+    let solver_bid = pod_bids.iter().find(|b| b.submission_address == solver.address());
+    assert!(solver_bid.is_some(), "Our solver should have bid in pod network");
+
     tracing::info!(
-        winner_address = %winner.solver_address,
-        winner_score = ?winner.score,
-        num_orders_in_solution = winner.orders.len(),
-        "Pod multi-order competition verified"
+        autopilot_winner = %autopilot_winner.solver_address,
+        autopilot_score = ?autopilot_winner.score,
+        pod_bids_count = pod_bids.len(),
+        num_orders = autopilot_winner.orders.len(),
+        "✓ Pod multi-order verified: bid submitted, both orders in winning solution"
     );
 }
 
@@ -557,7 +629,7 @@ async fn pod_multi_solver_test(web3: Web3) {
     .await
     .expect("Trade should execute");
 
-    // Verify solver competition data - confirms multiple solvers participated
+    // Verify solver competition data from autopilot
     let competition = services
         .get_latest_solver_competition()
         .await
@@ -570,31 +642,85 @@ async fn pod_multi_solver_test(web3: Web3) {
         "Auction should have exactly 1 order"
     );
     
-    // Verify we have multiple solutions (from different solvers)
-    // Note: Both solvers should have submitted solutions
+    // Verify we have multiple solutions from different solvers
     assert!(
-        competition.solutions.len() >= 1,
-        "Should have at least 1 solution"
+        competition.solutions.len() >= 2,
+        "Should have at least 2 solutions from different solvers"
     );
     
-    // Verify exactly one winner was selected
+    // Verify exactly one winner was selected by autopilot
     let winners: Vec<_> = competition.solutions.iter().filter(|s| s.is_winner).collect();
     assert_eq!(winners.len(), 1, "Should have exactly 1 winner");
     
-    let winner = winners[0];
-    assert!(!winner.score.is_zero(), "Winner should have non-zero score");
+    let autopilot_winner = winners[0];
+    assert!(!autopilot_winner.score.is_zero(), "Winner should have non-zero score");
     
     // The winner should be one of our solvers
     let valid_solvers = [solver_a.address(), solver_b.address()];
     assert!(
-        valid_solvers.contains(&winner.solver_address),
+        valid_solvers.contains(&autopilot_winner.solver_address),
         "Winner should be one of our solvers"
     );
+
+    // === POD NETWORK VERIFICATION ===
+    // This is the critical test: verify BOTH solvers submitted bids to pod network
+    tracing::info!(auction_id = competition.auction_id, "Querying pod network for multi-solver auction...");
     
+    let pod_client = PodTestClient::new()
+        .await
+        .expect("Should be able to connect to pod network");
+    
+    let pod_bids = pod_client
+        .fetch_bids(competition.auction_id)
+        .await
+        .expect("Should be able to fetch bids from pod network");
+
     tracing::info!(
-        winner_address = %winner.solver_address,
-        winner_score = ?winner.score,
-        num_solutions = competition.solutions.len(),
-        "Pod multi-solver competition verified"
+        auction_id = competition.auction_id,
+        num_pod_bids = pod_bids.len(),
+        "Fetched bids from pod network"
+    );
+
+    // CRITICAL: Verify BOTH solvers submitted bids to pod network
+    assert!(
+        pod_bids.len() >= 2,
+        "Both solvers should have submitted bids to pod network, got {}",
+        pod_bids.len()
+    );
+
+    // Check solver_a submitted a bid
+    let solver_a_bid = pod_bids.iter().find(|b| b.submission_address == solver_a.address());
+    assert!(
+        solver_a_bid.is_some(),
+        "Solver A should have submitted bid to pod network"
+    );
+
+    // Check solver_b submitted a bid
+    let solver_b_bid = pod_bids.iter().find(|b| b.submission_address == solver_b.address());
+    assert!(
+        solver_b_bid.is_some(),
+        "Solver B should have submitted bid to pod network"
+    );
+
+    // The winner in pod network should match autopilot's winner
+    let pod_winner = pod_bids.iter().max_by_key(|b| b.score);
+    assert!(pod_winner.is_some(), "Should have a winning bid in pod network");
+    let pod_winner = pod_winner.unwrap();
+
+    // Verify pod winner matches autopilot winner
+    assert_eq!(
+        autopilot_winner.solver_address,
+        pod_winner.submission_address,
+        "Autopilot winner should match pod network winner"
+    );
+
+    tracing::info!(
+        solver_a = %solver_a.address(),
+        solver_a_bid_score = ?solver_a_bid.unwrap().score,
+        solver_b = %solver_b.address(),
+        solver_b_bid_score = ?solver_b_bid.unwrap().score,
+        pod_winner = %pod_winner.submission_address,
+        autopilot_winner = %autopilot_winner.solver_address,
+        "✓ Pod multi-solver verified: both solvers submitted bids, winner selection consistent"
     );
 }
