@@ -19,6 +19,12 @@ async fn local_node_order_simulation() {
     run_test(order_simulation).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_order_simulation_block_number() {
+    run_test(order_simulation_block_number).await;
+}
+
 async fn order_simulation(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -87,12 +93,6 @@ async fn order_simulation(web3: Web3) {
     assert_eq!(tenderly.to, *onchain.contracts().gp_settlement.address());
     assert_eq!(tenderly.simulation_type, Some(SimulationType::Full));
     assert_eq!(tenderly.value, None);
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_order_simulation_block_number() {
-    run_test(order_simulation_block_number).await;
 }
 
 async fn order_simulation_block_number(web3: Web3) {
