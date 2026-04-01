@@ -80,7 +80,8 @@ pub struct EncodedSwap {
     pub receiver: Address,
 }
 
-/// The output of a swap simulation
+/// The output of a swap simulation.
+///
 /// Contains the transaction request that was used to perform the simulation
 /// (useful for introspection), The used state overrides and simulation result
 /// The result is of generic type O, and depends on the type of simulation:
