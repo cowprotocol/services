@@ -76,7 +76,8 @@ impl OrderSimulator {
         Ok(swap)
     }
 
-    /// Simulates a swap of the provided EncodedSwap
+    /// Simulates a swap of the provided EncodedSwap.
+    ///
     /// The result contains the transaction simulation error (if any)
     /// and a full API request object that can be used to resimulate the swap
     /// using Tenderly.
