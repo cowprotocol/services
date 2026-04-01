@@ -609,7 +609,8 @@ impl Orderbook {
         Ok(status)
     }
 
-    /// Simulates an order based on its Uid using the OrderSimulator
+    /// Simulates an order based on its Uid using the OrderSimulator.
+    ///
     /// The returned value contains the simulation result and tenderly API
     /// request object that can be used to debug it.
     pub async fn simulate_order(
