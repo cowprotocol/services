@@ -410,7 +410,7 @@ pub async fn run(config: Configuration) {
         ipfs,
     ));
 
-    let order_simulator = if let Some(gas_limit) = config.order_simulation_gas_limit {
+    let order_simulator = if let Some(config) = config.order_simulation {
         Some(Arc::new(OrderSimulator::new(
             SwapSimulator::new(
                 balance_overrider.clone(),
@@ -418,7 +418,10 @@ pub async fn run(config: Configuration) {
                 *native_token.address(),
                 current_block_stream.clone(),
                 web3,
-                gas_limit.try_into().expect("gas_limit must fit in u64"),
+                config
+                    .gas_limit
+                    .try_into()
+                    .expect("gas_limit must fit in u64"),
             )
             .await
             .expect("failed to create SwapSimulator"),

@@ -96,7 +96,7 @@ impl OrderSimulator {
         };
 
         Ok(OrderSimulation {
-            tenderly_request: tenderly_request.into(),
+            tenderly_request,
             error: result.result.err().map(|err| err.to_string()),
         })
     }
