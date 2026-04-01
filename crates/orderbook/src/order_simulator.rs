@@ -40,7 +40,7 @@ impl OrderSimulator {
         let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
 
         let solver = Address::random();
-        // TODO: Add support for specifying a partially filled order (current fill
+        // TODO(m-sz): Add support for specifying a partially filled order (current fill
         // status or custom amount)
         let query = Query {
             sell_amount: order.data.sell_amount.try_into()?,
