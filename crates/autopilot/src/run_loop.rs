@@ -492,12 +492,7 @@ impl RunLoop {
                         buy_amount: order.executed_buy.0,
                     })
                     .collect(),
-                clearing_prices: bid
-                    .solution()
-                    .prices()
-                    .iter()
-                    .map(|(token, price)| (Address::from(*token), price.get().0))
-                    .collect(),
+                clearing_prices: Default::default(),
                 is_winner: bid.is_winner(),
                 filtered_out: bid.is_filtered_out(),
             })
