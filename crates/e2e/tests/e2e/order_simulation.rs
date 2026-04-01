@@ -9,6 +9,7 @@ use {
     number::units::EthUnit,
     orderbook::dto::OrderSimulationResult,
     reqwest::StatusCode,
+    simulator::tenderly::dto::SimulationType,
 };
 
 #[tokio::test]
@@ -78,4 +79,11 @@ async fn order_simulation(web3: Web3) {
     assert_eq!(response.status(), StatusCode::OK);
     let response = response.json::<OrderSimulationResult>().await.unwrap();
     assert_eq!(response.error, None);
+
+    let tenderly = response.tenderly_request;
+    // check if the fields that are directly derived from the simulation have
+    // correct values in the tenderly request object
+    assert_eq!(tenderly.to, *onchain.contracts().gp_settlement.address());
+    assert_eq!(tenderly.simulation_type, Some(SimulationType::Full));
+    assert_eq!(tenderly.value, None);
 }
