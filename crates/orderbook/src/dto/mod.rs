@@ -17,7 +17,7 @@ pub use {
 /// and full Tenderly API request that can be used to resimulate
 /// and debug using Tenderly
 #[derive(Clone, Deserialize, Serialize, Debug)]
-pub struct OrderSimulation {
+pub struct OrderSimulationResult {
     pub tenderly_request: tenderly::dto::Request,
     pub error: Option<String>,
 }
