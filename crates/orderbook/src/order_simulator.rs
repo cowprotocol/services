@@ -1,5 +1,5 @@
 use {
-    crate::dto::OrderSimulation,
+    crate::dto::OrderSimulationResult,
     alloy::{
         primitives::{Address, U256},
         rpc::types::state::AccountOverride,
@@ -81,7 +81,7 @@ impl OrderSimulator {
     /// The result contains the transaction simulation error (if any)
     /// and a full API request object that can be used to resimulate the swap
     /// using Tenderly.
-    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<OrderSimulation> {
+    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<OrderSimulationResult> {
         let result = self.simulator.simulate_settle_call(swap).await?;
 
         let tenderly_request = simulator::tenderly::dto::Request {
@@ -96,7 +96,7 @@ impl OrderSimulator {
             )?
         };
 
-        Ok(OrderSimulation {
+        Ok(OrderSimulationResult {
             tenderly_request,
             error: result.result.err().map(|err| err.to_string()),
         })
@@ -148,7 +148,7 @@ impl OrderSimulator {
             },
         );
 
-        // Fund the settlement contract with enough out tokens to pay out
+        // Fund the settlement contract with enough buy tokens to be paid out
         match self
             .simulator
             .balance_overrides
@@ -177,11 +177,15 @@ fn add_interactions(mut swap: EncodedSwap, order: &Order) -> EncodedSwap {
         .interactions
         .pre
         .iter()
-        .map(InteractionEncoding::encode);
-    swap.settlement.interactions.pre = pre_interactions
-        .into_iter()
-        .chain(std::mem::take(&mut swap.settlement.interactions.pre))
+        .map(InteractionEncoding::encode)
         .collect();
+    // Prepend order pre_interactions so they run first
+    let settlement_pre_interactions =
+        std::mem::replace(&mut swap.settlement.interactions.pre, pre_interactions);
+    swap.settlement
+        .interactions
+        .pre
+        .extend(settlement_pre_interactions);
 
     // Add order post interactions after encoded swap's post interactions
     let post_interactions = order

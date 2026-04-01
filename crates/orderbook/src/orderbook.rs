@@ -4,7 +4,7 @@ use {
             orders::{InsertionError, OrderStoring},
             trades::{TradeFilter, TradeRetrieving},
         },
-        dto::{self, OrderSimulation},
+        dto::{self, OrderSimulationResult},
         order_simulator::OrderSimulator,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
@@ -616,7 +616,7 @@ impl Orderbook {
     pub async fn simulate_order(
         &self,
         uid: &OrderUid,
-    ) -> Result<Option<OrderSimulation>, OrderSimulationError> {
+    ) -> Result<Option<OrderSimulationResult>, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
         };

@@ -169,22 +169,17 @@ impl TryFrom<alloy_rpc_types::eth::state::AccountOverride> for StateObject {
     }
 }
 /// Opt for quick, abi, or full simulation API mode.
-/// full (default): Detailed decoded output — call trace, function
-/// inputs/outputs, state diffs, and logs with Solidity types.
-///
-/// quick: Raw,
-/// minimal output only. Fastest option; no decoding.
-///
-/// abi: Decoded function
-/// inputs/outputs and logs, but no state diffs. Middle ground between quick and
-/// full.
-///
 /// https://docs.tenderly.co/reference/api#/operations/simulateTransaction#response-body:~:text=true-,simulation_type,-string
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SimulationType {
+    /// Detailed decoded output — call trace, function
+    /// inputs/outputs, state diffs, and logs with Solidity types.
     Full,
+    /// Raw, minimal output only. Fastest option; no decoding.
     Quick,
+    /// Decoded function inputs/outputs and logs, but no state diffs. Middle
+    /// ground between quick and full.
     Abi,
 }
 

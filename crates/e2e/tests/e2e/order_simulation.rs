@@ -7,7 +7,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
-    orderbook::dto::OrderSimulation,
+    orderbook::dto::OrderSimulationResult,
     reqwest::StatusCode,
 };
 
@@ -76,6 +76,6 @@ async fn order_simulation(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let response = response.json::<OrderSimulation>().await.unwrap();
+    let response = response.json::<OrderSimulationResult>().await.unwrap();
     assert_eq!(response.error, None);
 }
