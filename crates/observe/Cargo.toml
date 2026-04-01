@@ -11,7 +11,6 @@ axum = { workspace = true }
 chrono = { workspace = true, features = ["now"] }
 console-subscriber = { workspace = true, optional = true }
 futures = { workspace = true }
-jemalloc_pprof = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-http = { workspace = true }
 opentelemetry-otlp = { workspace = true, features = ["grpc-tonic"] }
@@ -28,6 +27,12 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-serde = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+jemalloc_pprof = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+mimalloc = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }

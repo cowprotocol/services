@@ -69,7 +69,6 @@ sqlx = { workspace = true }
 strum = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tikv-jemallocator = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { workspace = true }
@@ -87,6 +86,9 @@ mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+
+[target.'cfg(unix)'.dependencies]
+tikv-jemallocator = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

@@ -92,7 +92,9 @@ pub mod test_util {
                 read_url: Some(
                     Url::from_str(&format!(
                         "postgresql://readonly@localhost/{db}",
-                        db = std::env::var("USER").unwrap()
+                        db = std::env::var("USER")
+                            .or_else(|_| std::env::var("USERNAME"))
+                            .unwrap()
                     ))
                     .unwrap(),
                 ),

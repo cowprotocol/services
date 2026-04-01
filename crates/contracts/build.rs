@@ -1,13 +1,15 @@
 use {
     alloy_sol_macro_expander::expand::expand,
     alloy_sol_macro_input::{SolInput, SolInputKind},
-    anyhow::{Context, Result},
+    anyhow::{Context, Result, bail},
     networks::*,
     proc_macro2::{Span, TokenStream},
     quote::{ToTokens, format_ident},
+    serde_json::Value,
     std::{
         collections::HashMap,
         fmt::Write,
+        fs,
         path::{Path, PathBuf},
     },
 };
@@ -1183,6 +1185,63 @@ pub struct SolMacroGen {
     pub expansion: Option<TokenStream>,
 }
 
+fn resolve_artifact_path(path: &Path) -> Result<PathBuf> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("failed to read artifact {}", path.display()))?;
+
+    let trimmed = text.trim();
+
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return Ok(path.to_path_buf());
+    }
+
+    let referenced = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(trimmed);
+
+    if !referenced.exists() {
+        bail!(
+            "artifact reference {} -> {} does not exist",
+            path.display(),
+            referenced.display()
+        );
+    }
+
+    Ok(referenced)
+}
+
+fn prepare_sol_input_path(path: &Path, name: &str) -> Result<PathBuf> {
+    let resolved = resolve_artifact_path(path)
+        .with_context(|| format!("failed to resolve artifact {}", path.display()))?;
+
+    let text = fs::read_to_string(&resolved)
+        .with_context(|| format!("failed to read resolved artifact {}", resolved.display()))?;
+
+    let json: Value = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse artifact JSON {}", resolved.display()))?;
+
+    match json {
+        Value::Object(_) => Ok(resolved),
+        Value::Array(_) => {
+            let out_dir = PathBuf::from(std::env::var("OUT_DIR")?).join("normalized-abi");
+
+            fs::create_dir_all(&out_dir)?;
+
+            let out_path = out_dir.join(format!("{name}.abi.json"));
+            let abi_text = serde_json::to_string(&json)?;
+
+            fs::write(&out_path, abi_text)?;
+
+            Ok(out_path)
+        }
+        _ => bail!(
+            "artifact {} is neither JSON ABI array nor object",
+            resolved.display()
+        ),
+    }
+}
+
 impl SolMacroGen {
     pub fn new(path: PathBuf, name: String) -> Self {
         Self {
@@ -1193,7 +1252,10 @@ impl SolMacroGen {
     }
 
     pub fn get_sol_input(&self) -> Result<SolInput> {
-        let path = self.path.to_string_lossy().into_owned();
+        let prepared = prepare_sol_input_path(&self.path, &self.name)
+            .with_context(|| format!("failed to prepare sol input for {}", self.path.display()))?;
+
+        let path = prepared.to_string_lossy().into_owned();
         let name = proc_macro2::Ident::new(&self.name, Span::call_site());
         let tokens = quote::quote! {
             #[sol(ignore_unlinked)]
@@ -1201,7 +1263,14 @@ impl SolMacroGen {
             #path
         };
 
-        let sol_input: SolInput = syn::parse2(tokens).context("failed to parse input")?;
+        let sol_input: SolInput = syn::parse2(tokens).with_context(|| {
+            format!(
+                "failed to parse input for contract {} from prepared artifact {} (original artifact {})",
+                self.name,
+                prepared.display(),
+                self.path.display(),
+            )
+        })?;
 
         Ok(sol_input)
     }

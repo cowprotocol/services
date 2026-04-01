@@ -45,7 +45,6 @@ serde_with = { workspace = true }
 sha2 = { workspace = true }
 solvers-dto = { workspace = true }
 thiserror = { workspace = true }
-tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = { workspace = true }
 tower = { workspace = true }
@@ -61,6 +60,9 @@ observe = { workspace = true }
 shared = { workspace = true }
 solver = { workspace = true }
 tracing = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+tikv-jemallocator = { workspace = true }
 
 [dev-dependencies]
 glob = "0.3"
