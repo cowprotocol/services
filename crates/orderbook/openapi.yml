@@ -812,6 +812,7 @@ paths:
           description: >
             Block number to simulate the order at. If not specified, the
             simulation uses the latest block.
+        - in: query
           name: executed_amount
           schema:
             $ref: "#/components/schemas/TokenAmount"
