@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy::{primitives::Address, providers::Provider},
     configs::test_util::TestDefault,
     e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
     ethrpc::{Web3, alloy::CallBuilderExt},

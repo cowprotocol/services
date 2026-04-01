@@ -87,9 +87,11 @@ impl OrderSimulator {
         swap: EncodedSwap,
         block_number: Option<u64>,
     ) -> Result<OrderSimulationResult> {
+        let block_number =
+            block_number.unwrap_or_else(|| self.simulator.current_block.borrow().number);
         let result = self
             .simulator
-            .simulate_settle_call(swap, block_number)
+            .simulate_settle_call(swap, Some(block_number))
             .await?;
 
         let tenderly_request = simulator::tenderly::dto::Request {
@@ -100,7 +102,7 @@ impl OrderSimulator {
                 self.chain_id.clone(),
                 &result.tx,
                 result.overrides,
-                block_number.map(BlockNo),
+                Some(BlockNo(block_number)),
             )?
         };
 
