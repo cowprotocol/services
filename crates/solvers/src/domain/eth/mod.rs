@@ -91,7 +91,7 @@ pub struct Tx {
 
 /// An arbitrary ethereum interaction that is required for the settlement
 /// execution.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,
