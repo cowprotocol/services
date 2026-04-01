@@ -118,16 +118,17 @@ impl Arbitrator {
         let winners = rank.winners().collect::<Vec<_>>();
         let non_winners = rank.non_winners().collect::<Vec<_>>();
         tracing::info!(
+            auction_id = ?auction.id,
             num_winners = winners.len(),
             num_non_winners = non_winners.len(),
-            "[pod] CoW arbitration completed"
+            "CoW Protocol arbitration completed"
         );
         for winner in winners {
             tracing::info!(
                 auction_id = ?auction.id,
                 submission_address = %winner.driver().submission_address.to_string(),
                 computed_score = ?winner.score(),
-                "[pod] CoW winner selected"
+                "winner selected"
             );
         }
         rank
