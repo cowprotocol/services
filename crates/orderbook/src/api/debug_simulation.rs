@@ -1,19 +1,30 @@
 use {
     crate::{api::AppState, orderbook::OrderSimulationError},
     axum::{
-        extract::{Path, State},
+        extract::{Path, Query, State},
         http::StatusCode,
         response::{IntoResponse, Json, Response},
     },
     model::order::OrderUid,
+    serde::Deserialize,
     std::sync::Arc,
 };
+
+#[derive(Deserialize)]
+pub struct SimulationQuery {
+    pub block_number: Option<u64>,
+}
 
 pub async fn debug_simulation_handler(
     State(state): State<Arc<AppState>>,
     Path(uid): Path<OrderUid>,
+    Query(params): Query<SimulationQuery>,
 ) -> Response {
-    match state.orderbook.simulate_order(&uid).await {
+    match state
+        .orderbook
+        .simulate_order(&uid, params.block_number)
+        .await
+    {
         Ok(Some(result)) => (StatusCode::OK, Json(result)).into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
