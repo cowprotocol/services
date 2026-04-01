@@ -4,7 +4,8 @@ use {
             orders::{InsertionError, OrderStoring},
             trades::{TradeFilter, TradeRetrieving},
         },
-        dto,
+        dto::{self, OrderSimulationResult},
+        order_simulator::OrderSimulator,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     alloy::primitives::{Address, B256},
@@ -235,9 +236,11 @@ pub struct Orderbook {
     order_validator: Arc<dyn OrderValidating>,
     app_data: Arc<crate::app_data::Registry>,
     active_order_competition_threshold: u32,
+    order_simulator: Option<Arc<OrderSimulator>>,
 }
 
 impl Orderbook {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         domain_separator: DomainSeparator,
         settlement_contract: Address,
@@ -246,6 +249,7 @@ impl Orderbook {
         order_validator: Arc<dyn OrderValidating>,
         app_data: Arc<crate::app_data::Registry>,
         active_order_competition_threshold: u32,
+        order_simulator: Option<Arc<OrderSimulator>>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -256,6 +260,7 @@ impl Orderbook {
             order_validator,
             app_data,
             active_order_competition_threshold,
+            order_simulator,
         }
     }
 
@@ -603,6 +608,37 @@ impl Orderbook {
         };
         Ok(status)
     }
+
+    /// Simulates an order based on its Uid using the OrderSimulator.
+    ///
+    /// The returned value contains the simulation result and tenderly API
+    /// request object that can be used to debug it.
+    pub async fn simulate_order(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<Option<OrderSimulationResult>, OrderSimulationError> {
+        let Some(order_simulator) = &self.order_simulator else {
+            return Err(OrderSimulationError::NotEnabled);
+        };
+        let Some(order) = self
+            .get_order(uid)
+            .await
+            .map_err(OrderSimulationError::Other)?
+        else {
+            return Ok(None);
+        };
+
+        let swap = order_simulator
+            .encode_order(&order)
+            .await
+            .map_err(OrderSimulationError::Other)?;
+        Ok(Some(
+            order_simulator
+                .simulate_swap(swap)
+                .await
+                .map_err(OrderSimulationError::Other)?,
+        ))
+    }
 }
 
 #[derive(Error, Debug)]
@@ -620,6 +656,14 @@ impl From<LoadSolverCompetitionError> for OrderStatusError {
             LoadSolverCompetitionError::Other(err) => Self::Other(err),
         }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum OrderSimulationError {
+    #[error("order simulation is not enabled")]
+    NotEnabled,
+    #[error("simulation could not be created for order")]
+    Other(anyhow::Error),
 }
 
 #[async_trait::async_trait]
@@ -707,6 +751,7 @@ mod tests {
             settlement_contract: Address::repeat_byte(0xba),
             app_data,
             active_order_competition_threshold: Default::default(),
+            order_simulator: None,
         };
 
         // Different owner

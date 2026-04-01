@@ -13,7 +13,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
@@ -47,6 +47,12 @@ pub struct VolumeFeeConfig {
     pub factor: Option<FeeFactor>,
     /// Timestamp from which this fee configuration becomes effective.
     pub effective_from_timestamp: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OrderSimulationConfig {
+    pub gas_limit: U256,
 }
 
 /// Top-level orderbook service configuration.
@@ -112,6 +118,10 @@ pub struct Configuration {
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Order simulation configuration. If `None`, the endpoint is disabled.
+    #[serde(default)]
+    pub order_simulation: Option<OrderSimulationConfig>,
 }
 
 impl Configuration {
@@ -137,13 +147,16 @@ pub mod test_util {
         crate::{
             orderbook::{
                 Configuration,
+                OrderSimulationConfig,
                 default_active_order_competition_threshold,
                 default_app_data_size_limit,
                 default_bind_address,
                 native_price::NativePriceConfig,
             },
+            price_estimation::PriceEstimation,
             test_util::TestDefault,
         },
+        alloy::primitives::U256,
         std::path::Path,
     };
 
@@ -193,7 +206,17 @@ pub mod test_util {
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
-                price_estimation: TestDefault::test_default(),
+                price_estimation: PriceEstimation {
+                    balance_overrides: crate::price_estimation::BalanceOverridesConfig {
+                        autodetect: true,
+                        ..Default::default()
+                    },
+                    ..TestDefault::test_default()
+                },
+                // Enable order simulation for testing
+                order_simulation: Some(OrderSimulationConfig {
+                    gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
+                }),
             }
         }
     }
@@ -243,6 +266,9 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [order-simulation]
+        gas-limit = "123456789"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -252,6 +278,10 @@ mod tests {
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
+        assert_eq!(
+            config.order_simulation.map(|config| config.gas_limit),
+            Some(U256::from(123456789u64))
+        );
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
@@ -354,6 +384,7 @@ mod tests {
             database: TestDefault::test_default(),
             http_client: Default::default(),
             price_estimation: Default::default(),
+            order_simulation: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
