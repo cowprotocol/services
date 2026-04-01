@@ -119,8 +119,7 @@ pub struct Configuration {
     #[serde(default)]
     pub price_estimation: PriceEstimation,
 
-    /// Gas limit for order simulation. If `None`, the endpoint is disabled.
-    /// endpoint is disabled.
+    /// Order simulation configuration. If `None`, the endpoint is disabled.
     #[serde(default)]
     pub order_simulation: Option<OrderSimulationConfig>,
 }
