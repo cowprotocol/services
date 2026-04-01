@@ -381,10 +381,7 @@ impl Solver {
         let signer = match Self::make_signer(config.account.clone()).await {
             Ok(signer) => signer,
             Err(e) => {
-                tracing::error!(
-                    error = %e,
-                    "[pod] failed to create signer for pod provider"
-                );
+                tracing::error!(error = %e, "failed to create signer for pod provider");
                 return None;
             }
         };
@@ -399,10 +396,7 @@ impl Solver {
         {
             Ok(p) => p,
             Err(e) => {
-                tracing::error!(
-                    error = %e,
-                    "[pod] failed to initialize pod provider"
-                );
+                tracing::error!(error = %e, "failed to initialize pod provider");
                 return None;
             }
         };
@@ -412,14 +406,14 @@ impl Solver {
                 tracing::info!(
                     signer_address = %signer_address,
                     signer_balance = %balance,
-                    "[pod] pod provider built with wallet",
+                    "pod provider initialized",
                 );
             }
             Err(e) => {
-                tracing::error!(
+                tracing::warn!(
                     error = %e,
                     signer_address = %signer_address,
-                    "[pod] pod provider built but failed to fetch balance",
+                    "pod provider initialized but failed to fetch balance",
                 );
             }
         }
@@ -618,16 +612,16 @@ impl Solver {
     ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, anyhow::Error> {
         match account {
             Account::PrivateKey(private_key_signer) => {
-                tracing::info!("[pod] make_signer PrivateKey variant");
+                tracing::debug!("using PrivateKey signer for pod");
                 Ok(Box::new(private_key_signer))
             }
             Account::Kms(aws_signer) => {
-                tracing::info!("[pod] make_signer Kms variant");
+                tracing::debug!("using KMS signer for pod");
                 Ok(Box::new(aws_signer))
             }
-            Account::Address(addr) => Err(anyhow!(format!(
-                "[pod] unsupported Address variant: {addr:?}"
-            ))),
+            Account::Address(addr) => Err(anyhow!(
+                "unsupported Address account type for pod signer: {addr:?}"
+            )),
         }
     }
 }
