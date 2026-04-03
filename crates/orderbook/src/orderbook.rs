@@ -616,6 +616,7 @@ impl Orderbook {
     pub async fn simulate_order(
         &self,
         uid: &OrderUid,
+        block_number: Option<u64>,
     ) -> Result<Option<OrderSimulationResult>, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
@@ -634,7 +635,7 @@ impl Orderbook {
             .map_err(OrderSimulationError::Other)?;
         Ok(Some(
             order_simulator
-                .simulate_swap(swap)
+                .simulate_swap(swap, block_number)
                 .await
                 .map_err(OrderSimulationError::Other)?,
         ))
