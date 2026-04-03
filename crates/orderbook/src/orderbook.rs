@@ -4,23 +4,26 @@ use {
             orders::{InsertionError, OrderStoring},
             trades::{TradeFilter, TradeRetrieving},
         },
-        dto::{self, OrderSimulationResult},
+        dto::{self, OrderSimulationRequest, OrderSimulationResult},
         order_simulator::OrderSimulator,
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
-    app_data::{AppDataHash, Validator},
+    app_data::{AppDataHash, Validator, WrapperCall},
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
     model::{
         DomainSeparator,
         order::{
+            Interactions,
             Order,
             OrderCancellation,
             OrderCreation,
             OrderCreationAppData,
+            OrderData,
+            OrderMetadata,
             OrderStatus,
             OrderUid,
             SignedOrderCancellations,
@@ -609,6 +612,26 @@ impl Orderbook {
         Ok(status)
     }
 
+    fn parse_interactions_and_wrappers(
+        &self,
+        full_app_data: &str,
+    ) -> Result<(Interactions, Vec<WrapperCall>)> {
+        Ok(if full_app_data.len() > 0 {
+            let app_data = self
+                .order_validator
+                .validate_app_data(
+                    &OrderCreationAppData::Full {
+                        full: full_app_data.to_string(),
+                    },
+                    &None,
+                )
+                .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+            (app_data.interactions, app_data.inner.protocol.wrappers)
+        } else {
+            (Interactions::default(), Vec::default())
+        })
+    }
+
     /// Simulates an order based on its Uid using the OrderSimulator.
     ///
     /// The returned value contains the simulation result and tenderly API
@@ -629,8 +652,19 @@ impl Orderbook {
             return Ok(None);
         };
 
+        let (_, wrappers) = self
+            .parse_interactions_and_wrappers(
+                order
+                    .metadata
+                    .full_app_data
+                    .as_ref()
+                    .map(|app_data| app_data.as_str())
+                    .unwrap_or_default(),
+            )
+            .map_err(OrderSimulationError::Other)?;
+
         let swap = order_simulator
-            .encode_order(&order)
+            .encode_order(&order, wrappers)
             .await
             .map_err(OrderSimulationError::Other)?;
         Ok(Some(
@@ -645,19 +679,42 @@ impl Orderbook {
     /// database.
     pub async fn simulate_custom_order(
         &self,
-        order: Order,
-        block_number: Option<u64>,
+        request: OrderSimulationRequest,
     ) -> Result<OrderSimulationResult, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
         };
+        let full_app_data = request.app_data.unwrap_or_default();
+        let (interactions, wrappers) = self
+            .parse_interactions_and_wrappers(&full_app_data)
+            .map_err(OrderSimulationError::Other)?;
+        let order = Order {
+            metadata: OrderMetadata {
+                owner: request.owner,
+                full_app_data: Some(full_app_data),
+                ..Default::default()
+            },
+            data: OrderData {
+                sell_token: request.sell_token,
+                buy_token: request.buy_token,
+                sell_amount: request.sell_amount,
+                buy_amount: request.buy_amount,
+                kind: request.kind,
+                receiver: request.receiver,
+                sell_token_balance: request.sell_token_balance,
+                buy_token_balance: request.buy_token_balance,
+                ..Default::default()
+            },
+            interactions,
+            ..Default::default()
+        };
 
         let swap = order_simulator
-            .encode_order(&order)
+            .encode_order(&order, wrappers)
             .await
             .map_err(OrderSimulationError::Other)?;
         order_simulator
-            .simulate_swap(swap, block_number)
+            .simulate_swap(swap, request.block_number)
             .await
             .map_err(OrderSimulationError::Other)
     }

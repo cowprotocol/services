@@ -5,6 +5,7 @@ use {
         rpc::types::state::AccountOverride,
     },
     anyhow::{Context, Result},
+    app_data::WrapperCall,
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
     eth_domain_types::BlockNo,
@@ -28,12 +29,11 @@ impl OrderSimulator {
         }
     }
 
-    pub async fn encode_order(&self, order: &Order) -> Result<EncodedSwap> {
-        let Some(app_data) = &order.metadata.full_app_data else {
-            anyhow::bail!("App data is not known for order {}", order.metadata.uid)
-        };
-        let app_data = serde_json::from_str::<app_data::Root>(app_data)?;
-
+    pub async fn encode_order(
+        &self,
+        order: &Order,
+        wrappers: Vec<WrapperCall>,
+    ) -> Result<EncodedSwap> {
         let tokens = vec![order.data.sell_token, order.data.buy_token];
         // Clearing prices represent the limit price of the order; both order kinds
         // produce the same ratio: [buy_amount, sell_amount] for [sell_token,
@@ -57,8 +57,7 @@ impl OrderSimulator {
             clearing_prices,
             solver,
             tokens,
-            wrappers: app_data
-                .wrappers()
+            wrappers: wrappers
                 .iter()
                 .map(|wrapper| simulator::encoding::WrapperCall {
                     address: wrapper.address,

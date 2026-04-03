@@ -361,7 +361,7 @@ impl OrderValidator {
     ///
     /// This is done by returning the [`HooksTrampoline`] `execute` calldata
     /// with the (pre/post) hooks calldata as the parameter.
-    fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
+    pub fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
         let to_interactions = |hooks: &[Hook]| -> Vec<InteractionData> {
             if hooks.is_empty() {
                 vec![]
