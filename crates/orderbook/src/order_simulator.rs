@@ -4,20 +4,29 @@ use {
         primitives::{Address, U256},
         rpc::types::state::AccountOverride,
     },
-    anyhow::{Context, Result},
+    anyhow::{Context, Result, anyhow},
+    app_data::WrapperCall,
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
-    eth_domain_types::BlockNo,
+    eth_domain_types::{BlockNo, NonZeroU256},
     model::order::Order,
     simulator::{
         encoding::InteractionEncoding,
         swap_simulator::{EncodedSwap, Query, SwapSimulator, TradeEncoding},
     },
+    thiserror::Error,
 };
-
 pub struct OrderSimulator {
     simulator: SwapSimulator,
     chain_id: String,
+}
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("simulation could not be created")]
+    Other(anyhow::Error),
+    #[error("malformed input")]
+    MalformedInput(anyhow::Error),
 }
 
 impl OrderSimulator {
@@ -28,12 +37,11 @@ impl OrderSimulator {
         }
     }
 
-    pub async fn encode_order(&self, order: &Order) -> Result<EncodedSwap> {
-        let Some(app_data) = &order.metadata.full_app_data else {
-            anyhow::bail!("App data is not known for order {}", order.metadata.uid)
-        };
-        let app_data = serde_json::from_str::<app_data::Root>(app_data)?;
-
+    pub async fn encode_order(
+        &self,
+        order: &Order,
+        wrappers: Vec<WrapperCall>,
+    ) -> Result<EncodedSwap, Error> {
         let tokens = vec![order.data.sell_token, order.data.buy_token];
         // Clearing prices represent the limit price of the order; both order kinds
         // produce the same ratio: [buy_amount, sell_amount] for [sell_token,
@@ -44,7 +52,8 @@ impl OrderSimulator {
         // TODO(m-sz): Add support for specifying a partially filled order (current fill
         // status or custom amount)
         let query = Query {
-            sell_amount: order.data.sell_amount.try_into()?,
+            sell_amount: NonZeroU256::try_from(order.data.sell_amount)
+                .map_err(|err| Error::MalformedInput(anyhow!(err)))?,
             sell_token: order.data.sell_token,
             buy_amount: order.data.buy_amount,
             buy_token: order.data.buy_token,
@@ -57,8 +66,7 @@ impl OrderSimulator {
             clearing_prices,
             solver,
             tokens,
-            wrappers: app_data
-                .wrappers()
+            wrappers: wrappers
                 .iter()
                 .map(|wrapper| simulator::encoding::WrapperCall {
                     address: wrapper.address,
@@ -70,7 +78,8 @@ impl OrderSimulator {
         let swap = self
             .simulator
             .fake_swap(&query, TradeEncoding::Simple)
-            .await?;
+            .await
+            .map_err(Error::Other)?;
         let swap = add_interactions(swap, order);
         let swap = self.add_state_overrides(&query, swap).await?;
 
@@ -86,13 +95,14 @@ impl OrderSimulator {
         &self,
         swap: EncodedSwap,
         block_number: Option<u64>,
-    ) -> Result<OrderSimulationResult> {
+    ) -> Result<OrderSimulationResult, Error> {
         let block_number =
             block_number.unwrap_or_else(|| self.simulator.current_block.borrow().number);
         let result = self
             .simulator
             .simulate_settle_call(swap, Some(block_number))
-            .await?;
+            .await
+            .map_err(Error::Other)?;
 
         let tenderly_request = simulator::tenderly::dto::Request {
             transaction_index: None,
@@ -103,7 +113,8 @@ impl OrderSimulator {
                 &result.tx,
                 result.overrides,
                 Some(BlockNo(block_number)),
-            )?
+            )
+            .map_err(|err| Error::Other(anyhow!(err)))?
         };
 
         Ok(OrderSimulationResult {
@@ -116,7 +127,7 @@ impl OrderSimulator {
         &self,
         query: &Query,
         mut swap: EncodedSwap,
-    ) -> Result<EncodedSwap> {
+    ) -> Result<EncodedSwap, Error> {
         // Override authenticator with AnyoneAuthenticator so our fake solver is
         // accepted.
         let authenticator = self
@@ -125,7 +136,8 @@ impl OrderSimulator {
             .authenticator()
             .call()
             .await
-            .context("could not fetch authenticator")?;
+            .context("could not fetch authenticator")
+            .map_err(Error::Other)?;
         swap.overrides.insert(
             authenticator,
             AccountOverride {
