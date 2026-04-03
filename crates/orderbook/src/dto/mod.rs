@@ -3,6 +3,8 @@ pub mod order;
 
 use {
     alloy::primitives::U256,
+    eth_domain_types::{Address, NonZeroU256},
+    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -12,6 +14,37 @@ pub use {
     auction::{Auction, AuctionId, AuctionWithId},
     order::Order,
 };
+
+/// Request body for the POST /api/v1/debug/simulation endpoint.
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderSimulationRequest {
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: NonZeroU256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: U256,
+    pub kind: OrderKind,
+    pub owner: Address,
+    #[serde(default)]
+    pub receiver: Option<Address>,
+    #[serde(default)]
+    pub sell_token_balance: SellTokenSource,
+    #[serde(default)]
+    pub buy_token_balance: BuyTokenDestination,
+    /// Full app data JSON. Defaults to `"{}"` if omitted.
+    #[serde(default)]
+    pub app_data: Option<String>,
+    #[serde(default)]
+    pub block_number: Option<u64>,
+    /// Override for how much of the order has already been filled, expressed
+    /// in the order's fill token (sell token for sell orders, buy token for
+    /// buy orders). When absent, no fill is assumed.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default)]
+    pub executed_amount: Option<U256>,
+}
 
 /// The result of Order simulation, contains the error (if any)
 /// and full Tenderly API request that can be used to resimulate
