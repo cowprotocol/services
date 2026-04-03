@@ -35,6 +35,10 @@ test-driver:
 test-pod:
     cargo nextest run -p e2e 'pod_' --test-threads 1 --failure-output final --run-ignored ignored-only
 
+# Run pod flow tests with verbose output (shows all logs) # temp (to debug during PR review)
+test-pod-verbose:
+    cargo nextest run -p e2e 'pod_' --test-threads 1 --success-output immediate --failure-output immediate --run-ignored ignored-only
+
 # Run clippy
 clippy:
     cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
