@@ -219,4 +219,11 @@ async fn order_simulation(web3: Web3) {
         "expected simulation success at block {block_with_funds} (funded), got error: {:?}",
         result.error
     );
+
+    let tenderly = result.tenderly_request;
+    // check if the fields that are directly derived from the simulation have
+    // correct values in the tenderly request object
+    assert_eq!(tenderly.to, *onchain.contracts().gp_settlement.address());
+    assert_eq!(tenderly.simulation_type, Some(SimulationType::Full));
+    assert_eq!(tenderly.value, None);
 }

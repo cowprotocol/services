@@ -2738,7 +2738,6 @@ components:
           nullable: true
         blockNumber:
           type: integer
-          required: false
       required:
         - sellToken
         - buyToken
