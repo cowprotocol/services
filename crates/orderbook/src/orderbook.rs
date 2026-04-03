@@ -5,7 +5,7 @@ use {
             trades::{TradeFilter, TradeRetrieving},
         },
         dto::{self, OrderSimulationRequest, OrderSimulationResult},
-        order_simulator::OrderSimulator,
+        order_simulator::{self, OrderSimulator},
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     alloy::primitives::{Address, B256},
@@ -663,15 +663,9 @@ impl Orderbook {
             )
             .map_err(OrderSimulationError::Other)?;
 
-        let swap = order_simulator
-            .encode_order(&order, wrappers)
-            .await
-            .map_err(OrderSimulationError::Other)?;
+        let swap = order_simulator.encode_order(&order, wrappers).await?;
         Ok(Some(
-            order_simulator
-                .simulate_swap(swap, block_number)
-                .await
-                .map_err(OrderSimulationError::Other)?,
+            order_simulator.simulate_swap(swap, block_number).await?,
         ))
     }
 
@@ -712,11 +706,15 @@ impl Orderbook {
         let swap = order_simulator
             .encode_order(&order, wrappers)
             .await
-            .map_err(OrderSimulationError::Other)?;
-        order_simulator
+            .map_err(|err| match err {
+                order_simulator::Error::Other(err) => OrderSimulationError::Other(err),
+                order_simulator::Error::MalformedInput(err) => {
+                    OrderSimulationError::MalformedInput(err)
+                }
+            })?;
+        Ok(order_simulator
             .simulate_swap(swap, request.block_number)
-            .await
-            .map_err(OrderSimulationError::Other)
+            .await?)
     }
 }
 
@@ -745,6 +743,15 @@ pub enum OrderSimulationError {
     MalformedInput(anyhow::Error),
     #[error("simulation could not be created for order")]
     Other(anyhow::Error),
+}
+
+impl From<order_simulator::Error> for OrderSimulationError {
+    fn from(value: order_simulator::Error) -> Self {
+        match value {
+            order_simulator::Error::Other(err) => Self::Other(err),
+            order_simulator::Error::MalformedInput(err) => Self::MalformedInput(err),
+        }
+    }
 }
 
 #[async_trait::async_trait]
