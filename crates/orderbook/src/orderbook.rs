@@ -8,7 +8,7 @@ use {
         order_simulator::{self, OrderSimulator},
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, U256},
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator, WrapperCall},
     bigdecimal::ToPrimitive,
@@ -616,7 +616,7 @@ impl Orderbook {
         &self,
         full_app_data: &str,
     ) -> Result<(Interactions, Vec<WrapperCall>)> {
-        Ok(if full_app_data.len() > 0 {
+        Ok(if !full_app_data.is_empty() {
             let app_data = self
                 .order_validator
                 .validate_app_data(
@@ -640,6 +640,7 @@ impl Orderbook {
         &self,
         uid: &OrderUid,
         block_number: Option<u64>,
+        executed_amount: Option<U256>,
     ) -> Result<Option<OrderSimulationResult>, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
@@ -654,16 +655,13 @@ impl Orderbook {
 
         let (_, wrappers) = self
             .parse_interactions_and_wrappers(
-                order
-                    .metadata
-                    .full_app_data
-                    .as_ref()
-                    .map(|app_data| app_data.as_str())
-                    .unwrap_or_default(),
+                order.metadata.full_app_data.as_deref().unwrap_or_default(),
             )
             .map_err(OrderSimulationError::Other)?;
 
-        let swap = order_simulator.encode_order(&order, wrappers).await?;
+        let swap = order_simulator
+            .encode_order(&order, wrappers, executed_amount)
+            .await?;
         Ok(Some(
             order_simulator.simulate_swap(swap, block_number).await?,
         ))
@@ -704,7 +702,7 @@ impl Orderbook {
         };
 
         let swap = order_simulator
-            .encode_order(&order, wrappers)
+            .encode_order(&order, wrappers, request.executed_amount)
             .await
             .map_err(|err| match err {
                 order_simulator::Error::Other(err) => OrderSimulationError::Other(err),
