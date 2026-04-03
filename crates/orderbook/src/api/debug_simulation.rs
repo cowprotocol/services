@@ -1,6 +1,6 @@
 use {
     crate::{api::AppState, dto::OrderSimulationRequest, orderbook::OrderSimulationError},
-    alloy::primitives::{Address, U256},
+    alloy::primitives::U256,
     axum::{
         Json,
         extract::{Path, Query, State},
@@ -13,6 +13,7 @@ use {
     serde_with::serde_as,
     std::sync::Arc,
 };
+
 #[serde_as]
 #[derive(Deserialize)]
 pub struct SimulationQuery {

@@ -2755,8 +2755,7 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
           nullable: true
         blockNumber:
-          schema:
-            type: integer
+          type: integer
           required: false
       required:
         - sellToken
