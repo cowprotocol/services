@@ -616,7 +616,7 @@ impl Orderbook {
         &self,
         full_app_data: &str,
     ) -> Result<(Interactions, Vec<WrapperCall>)> {
-        Ok(if full_app_data.len() > 0 {
+        Ok(if !full_app_data.is_empty() {
             let app_data = self
                 .order_validator
                 .validate_app_data(
@@ -654,12 +654,7 @@ impl Orderbook {
 
         let (_, wrappers) = self
             .parse_interactions_and_wrappers(
-                order
-                    .metadata
-                    .full_app_data
-                    .as_ref()
-                    .map(|app_data| app_data.as_str())
-                    .unwrap_or_default(),
+                order.metadata.full_app_data.as_deref().unwrap_or_default(),
             )
             .map_err(OrderSimulationError::Other)?;
 
