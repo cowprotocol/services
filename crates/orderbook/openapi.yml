@@ -2736,20 +2736,10 @@ components:
             Full app data JSON string. Defaults to `"{}"` if omitted.
           type: string
           nullable: true
-        interactions:
-          description: Pre- and post-trade interactions for the order.
-          type: object
-          properties:
-            pre:
-              description: Interactions executed before the order's trade.
-              type: array
-              items:
-                $ref: "#/components/schemas/InteractionData"
-            post:
-              description: Interactions executed after the order's trade.
-              type: array
-              items:
-                $ref: "#/components/schemas/InteractionData"
+        blockNumber:
+          schema:
+            type: integer
+          required: false
       required:
         - sellToken
         - buyToken

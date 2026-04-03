@@ -687,7 +687,7 @@ impl Orderbook {
         let full_app_data = request.app_data.unwrap_or_default();
         let (interactions, wrappers) = self
             .parse_interactions_and_wrappers(&full_app_data)
-            .map_err(OrderSimulationError::Other)?;
+            .map_err(OrderSimulationError::MalformedInput)?;
         let order = Order {
             metadata: OrderMetadata {
                 owner: request.owner,
@@ -697,7 +697,7 @@ impl Orderbook {
             data: OrderData {
                 sell_token: request.sell_token,
                 buy_token: request.buy_token,
-                sell_amount: request.sell_amount,
+                sell_amount: request.sell_amount.into(),
                 buy_amount: request.buy_amount,
                 kind: request.kind,
                 receiver: request.receiver,
@@ -741,6 +741,8 @@ impl From<LoadSolverCompetitionError> for OrderStatusError {
 pub enum OrderSimulationError {
     #[error("order simulation is not enabled")]
     NotEnabled,
+    #[error("malformed input")]
+    MalformedInput(anyhow::Error),
     #[error("simulation could not be created for order")]
     Other(anyhow::Error),
 }

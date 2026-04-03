@@ -3,7 +3,7 @@ pub mod order;
 
 use {
     alloy::primitives::U256,
-    eth_domain_types::Address,
+    eth_domain_types::{Address, NonZeroU256},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
@@ -22,10 +22,9 @@ pub use {
 pub struct OrderSimulationRequest {
     pub sell_token: Address,
     pub buy_token: Address,
+    pub sell_amount: NonZeroU256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: alloy::primitives::U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: alloy::primitives::U256,
+    pub buy_amount: U256,
     pub kind: OrderKind,
     pub owner: Address,
     #[serde(default)]
