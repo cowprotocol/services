@@ -29,5 +29,14 @@ estimators = [[{ type = "Driver", name = "baseline", url = "http://driver/baseli
 [native-price-estimation.cache]
 max-age = "20m"
 
-[order-quoting]
-price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]
+[database]
+write-url = "%DB_WRITE_URL"
+read-url = "%DB_READ_URL"
+
+[run-loop]
+
+solve-deadline = "30s"
+
+[ethflow]
+contracts = ["0xDdcCd8A0143204896A88627aBB24683eceb131C7"]
+indexing-start = 24798170
