@@ -12,10 +12,9 @@ use {
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::{ManageNativeToken, Solver},
+            solver::{ManageNativeToken, Slippage as SolverSlippage, Solver as InfraSolver},
         },
     },
-    alloy::network::TxSigner,
     chrono::Utc,
     futures::future::try_join_all,
     itertools::Itertools,
@@ -71,6 +70,63 @@ pub struct WrapperCall {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SolverInfo {
+    name: String,
+    address: eth::Address,
+    submission_address: eth::Address,
+    slippage: SolverSlippage,
+    quote_tx_origin: Option<eth::Address>,
+}
+
+impl SolverInfo {
+    #[cfg(test)]
+    pub fn for_tests(address: eth::Address) -> Self {
+        Self {
+            name: "test-solver".to_owned(),
+            address,
+            submission_address: address,
+            slippage: SolverSlippage {
+                relative: BigRational::from_integer(0.into()),
+                absolute: None,
+            },
+            quote_tx_origin: None,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn address(&self) -> eth::Address {
+        self.address
+    }
+
+    pub fn submission_address(&self) -> eth::Address {
+        self.submission_address
+    }
+
+    pub fn slippage(&self) -> &SolverSlippage {
+        &self.slippage
+    }
+
+    pub fn quote_tx_origin(&self) -> &Option<eth::Address> {
+        &self.quote_tx_origin
+    }
+}
+
+impl From<InfraSolver> for SolverInfo {
+    fn from(value: InfraSolver) -> Self {
+        Self {
+            name: value.name().to_string(),
+            address: value.address(),
+            submission_address: value.submission_address(),
+            slippage: value.slippage().clone(),
+            quote_tx_origin: *value.quote_tx_origin(),
+        }
+    }
+}
+
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
 /// A solution represents a set of orders which the solver has found an optimal
@@ -88,7 +144,7 @@ pub struct Solution {
     #[debug(ignore)]
     pub post_interactions: Vec<eth::Interaction>,
     #[debug("{}", solver.name())]
-    pub solver: Solver,
+    pub solver: SolverInfo,
     #[debug(ignore)]
     pub weth: eth::WethAddress,
     pub gas: Option<eth::Gas>,
@@ -106,7 +162,7 @@ impl Solution {
         pre_interactions: Vec<eth::Interaction>,
         interactions: Vec<Interaction>,
         post_interactions: Vec<eth::Interaction>,
-        solver: Solver,
+        solver: impl Into<SolverInfo>,
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
@@ -114,6 +170,7 @@ impl Solution {
         flashloans: HashMap<order::Uid, Flashloan>,
         wrappers: Vec<WrapperCall>,
     ) -> Result<Self, error::Solution> {
+        let solver = solver.into();
         let prices = canonicalize_prices(prices, weth)?;
 
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
@@ -263,7 +320,7 @@ impl Solution {
     }
 
     /// The solver which generated this solution.
-    pub fn solver(&self) -> &Solver {
+    pub fn solver(&self) -> &SolverInfo {
         &self.solver
     }
 
@@ -359,7 +416,7 @@ impl Solution {
         max_orders_per_merged_solution: usize,
     ) -> Result<Self, error::Merge> {
         // We can only merge solutions from the same solver
-        if self.solver.account().address() != other.solver.account().address() {
+        if self.solver.address() != other.solver.address() {
             return Err(error::Merge::Incompatible("Solvers"));
         }
 
