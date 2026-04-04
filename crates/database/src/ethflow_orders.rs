@@ -112,7 +112,7 @@ pub async fn insert_refund_tx_hash(
     refund: &Refund,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3) 
+        INSERT INTO ethflow_refunds (order_uid, block_number, tx_hash) VALUES($1, $2, $3)
         ON CONFLICT (order_uid) DO UPDATE SET block_number = $2, tx_hash = $3
     "#;
 
@@ -153,7 +153,7 @@ pub async fn refundable_orders(
 
     let query = format!(
         r#"
-SELECT eo.uid, eo.valid_to 
+SELECT eo.uid, eo.valid_to
 FROM ethflow_orders eo
 JOIN orders o ON o.uid = eo.uid
     AND o.partially_fillable = false
