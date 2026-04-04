@@ -141,12 +141,29 @@ pub fn start_driver(
     liquidity: LiquidityProvider,
     quote_using_limit_orders: bool,
 ) -> JoinHandle<()> {
-    start_driver_with_config_override(
+    start_driver_with_options(
         contracts,
         solvers,
         liquidity,
         quote_using_limit_orders,
         None,
+        false, // pod disabled by default
+    )
+}
+
+pub fn start_driver_with_pod(
+    contracts: &Contracts,
+    solvers: Vec<SolverEngine>,
+    liquidity: LiquidityProvider,
+    quote_using_limit_orders: bool,
+) -> JoinHandle<()> {
+    start_driver_with_options(
+        contracts,
+        solvers,
+        liquidity,
+        quote_using_limit_orders,
+        None,
+        true, // pod enabled
     )
 }
 
@@ -156,6 +173,24 @@ pub fn start_driver_with_config_override(
     liquidity: LiquidityProvider,
     quote_using_limit_orders: bool,
     config_override: Option<&str>,
+) -> JoinHandle<()> {
+    start_driver_with_options(
+        contracts,
+        solvers,
+        liquidity,
+        quote_using_limit_orders,
+        config_override,
+        false, // pod disabled by default
+    )
+}
+
+pub fn start_driver_with_options(
+    contracts: &Contracts,
+    solvers: Vec<SolverEngine>,
+    liquidity: LiquidityProvider,
+    quote_using_limit_orders: bool,
+    config_override: Option<&str>,
+    enable_pod: bool,
 ) -> JoinHandle<()> {
     let base_tokens: HashSet<_> = solvers
         .iter()
@@ -251,6 +286,20 @@ url = "{NODE_HOST}"
         contracts.balances.address(),
         contracts.signatures.address(),
     );
+
+    let base_config = if enable_pod {
+        format!(
+            r#"{base_config}
+[pod]
+endpoint = {:?}
+auction-contract-address = {:?}
+"#,
+            config::pod::POD_ENDPOINT,
+            config::pod::POD_AUCTION_CONTRACT,
+        )
+    } else {
+        base_config
+    };
 
     let final_config = if let Some(override_str) = config_override {
         utils::toml::merge_raw(&base_config, override_str).expect("Failed to merge driver config")

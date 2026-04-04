@@ -1,0 +1,15 @@
+eip1271-skip-creation-validation = true
+bind-address = "0.0.0.0:8080"
+
+[shared]
+node-url = "http://localhost:8545"
+simulation-node-url = "http://localhost:8545"
+
+[database]
+write-url = "postgresql://localhost:5432/aryan"
+
+[native-price-estimation]
+estimators = [[{ type = "Driver", name = "baseline", url = "http://localhost:11088/baseline" }]]
+
+[order-quoting]
+price-estimation-drivers = [{ name = "baseline", url = "http://localhost:11088/baseline" }]

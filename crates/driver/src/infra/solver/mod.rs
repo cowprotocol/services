@@ -8,6 +8,7 @@ use {
                 order,
                 risk_detector,
                 solution::{self, Solution},
+                solver_winner_selection::{self, SolverArbitrator, WrappedNativeToken},
             },
             liquidity,
             time::Remaining,
@@ -17,20 +18,25 @@ use {
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
+            pod,
         },
         util,
     },
     alloy::{
         consensus::SignableTransaction,
-        network::TxSigner,
+        network::{EthereumWallet, TxSigner},
         primitives::Address,
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
-    anyhow::Result,
+    anyhow::{Result, anyhow},
     derive_more::{From, Into},
     eth_domain_types as eth,
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
+    pod_sdk::{
+        Provider,
+        provider::{PodProvider, PodProviderBuilder},
+    },
     reqwest::header::HeaderName,
     std::{
         collections::HashMap,
@@ -100,12 +106,25 @@ pub struct ManageNativeToken {
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
     persistence: Persistence,
+    pod_provider: Option<PodProvider>,
+    arbitrator: solver_winner_selection::SolverArbitrator,
+}
+
+impl std::fmt::Debug for Solver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Solver")
+            .field("client", &self.client)
+            .field("config", &self.config)
+            .field("eth", &self.eth)
+            .field("persistence", &self.persistence)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -120,7 +139,7 @@ impl TxSigner<Signature> for Account {
     fn address(&self) -> Address {
         match self {
             Account::PrivateKey(local_signer) => local_signer.address(),
-            Account::Kms(aws_signer) => aws_signer.address(),
+            Account::Kms(aws_signer) => TxSigner::<Signature>::address(aws_signer),
             Account::Address(address) => *address,
         }
     }
@@ -219,6 +238,8 @@ pub struct Config {
     /// Address of the deployed CowSettlementForwarder contract for EIP-7702
     /// delegation. Required when `submission_accounts` is non-empty.
     pub forwarder_contract: Option<eth::Address>,
+    /// Pod configuration
+    pub pod: Option<pod::config::Config>,
 }
 
 impl Solver {
@@ -237,6 +258,13 @@ impl Solver {
 
         let persistence = Persistence::build(&config).await;
 
+        let pod_provider = Self::build_pod_provider(&config).await;
+
+        let weth_address: Address = eth.contracts().weth_address().0.into();
+        let arbitrator = SolverArbitrator::new(
+            10, // TODO: make max_winners configurable
+            WrappedNativeToken::from(weth_address),
+        );
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
@@ -245,6 +273,8 @@ impl Solver {
             config,
             eth,
             persistence,
+            pod_provider,
+            arbitrator,
         })
     }
 
@@ -323,6 +353,65 @@ impl Solver {
     /// Address of the CowSettlementForwarder contract for EIP-7702 delegation.
     pub fn forwarder_contract(&self) -> Option<eth::Address> {
         self.config.forwarder_contract
+    }
+
+    pub fn pod(&self) -> Option<(&PodProvider, Address)> {
+        let pod = self.pod_provider.as_ref()?;
+        let auction_contract = self.config.pod.as_ref()?.auction_contract_address;
+        Some((pod, auction_contract))
+    }
+
+    pub fn arbitrator(&self) -> &SolverArbitrator {
+        &self.arbitrator
+    }
+
+    async fn build_pod_provider(config: &Config) -> Option<PodProvider> {
+        let pod_config = match config.pod.as_ref() {
+            Some(cfg) => cfg,
+            None => return None,
+        };
+
+        let signer = match Self::make_signer(config.account.clone()).await {
+            Ok(signer) => signer,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to create signer for pod provider");
+                return None;
+            }
+        };
+
+        let signer_address = signer.address();
+        let wallet = EthereumWallet::from(signer);
+
+        let provider = match PodProviderBuilder::with_recommended_settings()
+            .wallet(wallet)
+            .on_url(pod_config.endpoint.clone())
+            .await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to initialize pod provider");
+                return None;
+            }
+        };
+
+        match provider.get_balance(signer_address).await {
+            Ok(balance) => {
+                tracing::info!(
+                    signer_address = %signer_address,
+                    signer_balance = %balance,
+                    "pod provider initialized",
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    signer_address = %signer_address,
+                    "pod provider initialized but failed to fetch balance",
+                );
+            }
+        }
+
+        Some(provider)
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -509,6 +598,24 @@ impl Solver {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    async fn make_signer(
+        account: infra::solver::Account,
+    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, anyhow::Error> {
+        match account {
+            Account::PrivateKey(private_key_signer) => {
+                tracing::debug!("using PrivateKey signer for pod");
+                Ok(Box::new(private_key_signer))
+            }
+            Account::Kms(aws_signer) => {
+                tracing::debug!("using KMS signer for pod");
+                Ok(Box::new(aws_signer))
+            }
+            Account::Address(addr) => Err(anyhow!(
+                "unsupported Address account type for pod signer: {addr:?}"
+            )),
+        }
     }
 }
 

@@ -236,6 +236,93 @@ impl<'a> Services<'a> {
         .await;
     }
 
+    /// Starts a basic version of the protocol with pod flow enabled.
+    /// Use this for pod_* prefixed tests with a single solver.
+    pub async fn start_protocol_with_pod(&self, solver: TestAccount) {
+        self.start_protocol_with_pod_solvers(vec![(solver, vec![])])
+            .await;
+    }
+
+    /// Starts the protocol with multiple solvers, all with pod enabled.
+    /// Each solver can have different base tokens to provide different solutions.
+    /// Use this for testing pod winner selection with competing solvers.
+    pub async fn start_protocol_with_pod_multi_solver(
+        &self,
+        solvers: Vec<(TestAccount, Vec<Address>)>,
+    ) {
+        self.start_protocol_with_pod_solvers(solvers).await;
+    }
+
+    /// Internal helper: starts protocol with pod-enabled driver for given solvers.
+    async fn start_protocol_with_pod_solvers(
+        &self,
+        solvers: Vec<(TestAccount, Vec<Address>)>, // (solver_account, base_tokens)
+    ) {
+        use configs::autopilot::solver::Solver;
+
+        let solver_engines: Vec<colocation::SolverEngine> = futures::future::join_all(
+            solvers
+                .iter()
+                .enumerate()
+                .map(|(i, (solver, base_tokens))| {
+                    let name = if i == 0 {
+                        "test_solver".to_string()
+                    } else {
+                        format!("solver_{}", i + 1)
+                    };
+                    colocation::start_baseline_solver_with_haircut(
+                        name,
+                        solver.clone(),
+                        *self.contracts.weth.address(),
+                        base_tokens.clone(),
+                        2,
+                        true,
+                        0,
+                    )
+                }),
+        )
+        .await;
+
+        let driver_solvers: Vec<Solver> = solver_engines
+            .iter()
+            .map(|e| Solver::test(&e.name, e.account.address()))
+            .collect();
+
+        colocation::start_driver_with_pod(
+            self.contracts,
+            solver_engines,
+            colocation::LiquidityProvider::UniswapV2,
+            false,
+        );
+
+        let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
+
+        let autopilot_config = Configuration {
+            drivers: driver_solvers,
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter.clone()]),
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..Default::default()
+            },
+            ..Configuration::test_no_drivers()
+        };
+        let orderbook_config = configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter]),
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..Default::default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        };
+
+        self.start_autopilot(None, autopilot_config).await;
+        self.start_api(orderbook_config).await;
+    }
+
     pub async fn start_protocol_with_args(
         &self,
         autopilot_config: configs::autopilot::Configuration,
