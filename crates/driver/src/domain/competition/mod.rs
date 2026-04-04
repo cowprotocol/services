@@ -603,7 +603,7 @@ impl Competition {
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
-        settlement_contract: &eth::Address,
+        _settlement_contract: &eth::Address,
     ) -> Auction {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
@@ -631,13 +631,12 @@ impl Competition {
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
-                if order.app_data.flashloan().is_some() {
-                    // If an order requires a flashloan we assume all the necessary
-                    // sell tokens will come from there. But the receiver must be the
-                    // settlement contract because that is how the driver expects
-                    // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement_contract);
-                }
+            }
+
+            // Flashloan orders get their sell tokens from the flashloan at
+            // settlement time, so skip the balance check.
+            if order.app_data.flashloan().is_some() {
+                return true;
             }
 
             // wrappers can produce the required funds at settlement time
