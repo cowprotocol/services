@@ -7,6 +7,7 @@ use {
     anyhow::{Context, Result},
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
+    eth_domain_types::BlockNo,
     model::order::Order,
     simulator::{
         encoding::InteractionEncoding,
@@ -81,8 +82,17 @@ impl OrderSimulator {
     /// The result contains the transaction simulation error (if any)
     /// and a full API request object that can be used to resimulate the swap
     /// using Tenderly.
-    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<OrderSimulationResult> {
-        let result = self.simulator.simulate_settle_call(swap).await?;
+    pub async fn simulate_swap(
+        &self,
+        swap: EncodedSwap,
+        block_number: Option<u64>,
+    ) -> Result<OrderSimulationResult> {
+        let block_number =
+            block_number.unwrap_or_else(|| self.simulator.current_block.borrow().number);
+        let result = self
+            .simulator
+            .simulate_settle_call(swap, Some(block_number))
+            .await?;
 
         let tenderly_request = simulator::tenderly::dto::Request {
             transaction_index: None,
@@ -92,7 +102,7 @@ impl OrderSimulator {
                 self.chain_id.clone(),
                 &result.tx,
                 result.overrides,
-                None,
+                Some(BlockNo(block_number)),
             )?
         };
 

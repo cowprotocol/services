@@ -235,8 +235,12 @@ impl SwapSimulator {
         })
     }
 
-    pub async fn simulate_settle_call(&self, swap: EncodedSwap) -> Result<SwapSimulation<Bytes>> {
-        let block = *self.current_block.borrow();
+    pub async fn simulate_settle_call(
+        &self,
+        swap: EncodedSwap,
+        block_number: Option<u64>,
+    ) -> Result<SwapSimulation<Bytes>> {
+        let block_number = block_number.unwrap_or_else(|| self.current_block.borrow().number);
         let (settlement_target, calldata) = self.get_target_and_calldata(&swap);
 
         let overrides = swap.overrides;
@@ -253,7 +257,7 @@ impl SwapSimulator {
             .provider
             .call(tx.clone())
             .overrides(overrides.clone())
-            .block(block.number.into())
+            .block(block_number.into())
             .await
             .map_err(|err| anyhow!(err));
 
