@@ -62,7 +62,6 @@ sqlx = { workspace = true }
 strum = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tikv-jemallocator = { workspace = true }
 token-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 toml = { workspace = true }
@@ -70,6 +69,9 @@ tower = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "trace"] }
 tracing = { workspace = true }
 url = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+tikv-jemallocator = { workspace = true }
 
 [dev-dependencies]
 configs = { workspace = true, features = ["test-util"] }

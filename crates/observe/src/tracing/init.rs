@@ -1,12 +1,9 @@
 use {
     crate::{
         config::Config,
-        tracing::{
-            distributed::{
-                request_id::RequestIdLayer,
-                trace_id_format::{TraceIdFmt, TraceIdJsonFormat},
-            },
-            reload_handler::spawn_reload_handler,
+        tracing::distributed::{
+            request_id::RequestIdLayer,
+            trace_id_format::{TraceIdFmt, TraceIdJsonFormat},
         },
     },
     opentelemetry::{KeyValue, global, trace::TracerProvider},
@@ -27,6 +24,9 @@ use {
         util::SubscriberInitExt,
     },
 };
+
+#[cfg(unix)]
+use crate::tracing::reload_handler::spawn_reload_handler;
 
 /// Initializes tracing setup that is shared between the binaries.
 /// `env_filter` has similar syntax to env_logger. It is documented at
@@ -54,7 +54,6 @@ fn set_tracing_subscriber(config: &Config) {
     let initial_filter = config.env_filter.to_string();
 
     // The `tracing` APIs are heavily generic to enable zero overhead.
-
     macro_rules! fmt_layer {
         ($env_filter:expr_2021, $stderr_threshold:expr_2021, $use_json_format:expr_2021) => {{
             let stderr_threshold = $stderr_threshold.clone();
@@ -66,6 +65,7 @@ fn set_tracing_subscriber(config: &Config) {
                     stderr_threshold.is_some_and(|min_verbosity| meta.level() <= &min_verbosity)
                 })
                 .or_else(std::io::stdout);
+
             let timer = UtcTime::new(format_description!(
                 "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
             ));
@@ -94,7 +94,7 @@ fn set_tracing_subscriber(config: &Config) {
         }};
     }
 
-    let (env_filter, reload_handle) =
+    let (env_filter, _reload_handle) =
         tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
 
     let tracing_layer = if let Some(tracing_config) = &config.tracing {
@@ -106,6 +106,7 @@ fn set_tracing_subscriber(config: &Config) {
             .with_timeout(tracing_config.export_timeout)
             .build()
             .expect("otlp exporter");
+
         let tracer = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_batch_exporter(otlp_exporter)
             .with_sampler(Sampler::AlwaysOn) // TODO figure out sampling + make configurable
@@ -120,7 +121,9 @@ fn set_tracing_subscriber(config: &Config) {
             )
             .build()
             .tracer("cow_tracing");
+
         tracing::info!("tracing layer set up");
+
         Some(
             tracing_opentelemetry::layer()
                 .with_tracer(tracer)
@@ -168,9 +171,8 @@ fn set_tracing_subscriber(config: &Config) {
         );
     }
 
-    if cfg!(unix) {
-        spawn_reload_handler(initial_filter, reload_handle);
-    }
+    #[cfg(unix)]
+    spawn_reload_handler(initial_filter, reload_handle);
 }
 
 /// Panic hook that prints roughly the same message as the default panic hook
