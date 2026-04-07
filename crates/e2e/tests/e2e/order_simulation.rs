@@ -12,7 +12,7 @@ use {
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
-    number::units::EthUnit,
+    number::{conversions::u256_to_big_decimal, units::EthUnit},
     orderbook::dto::OrderSimulationResult,
     reqwest::StatusCode,
     simulator::tenderly::dto::SimulationType,
@@ -363,8 +363,9 @@ async fn order_simulation_partial_fill(web3: Web3) {
         },
         &Trade {
             order_uid: ByteArray(uid.0),
-            sell_amount_including_fee: BigDecimal::from(1_000_000_000_000_000_000u64),
-            buy_amount: BigDecimal::from(500_000_000_000_000_000u64),
+            sell_amount_including_fee: u256_to_big_decimal(&1u64.eth()),
+            // 0.5 ETH already filled for the order
+            buy_amount: u256_to_big_decimal(&(1u64.eth() / 2u64.atom())),
             fee_amount: BigDecimal::default(),
         },
     )
