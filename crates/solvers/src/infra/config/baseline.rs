@@ -55,6 +55,11 @@ struct Config {
     /// transaction to obtain an accurate gas estimate that includes order
     /// hook costs. Requires `chain-id` to be set.
     gas_simulation_node_url: Option<Url>,
+
+    /// Explicit settlement contract address for gas simulation. When provided,
+    /// `chain-id` is not required for gas simulation. Useful for local test
+    /// environments where contracts are deployed at non-canonical addresses.
+    gas_simulation_settlement: Option<eth::Address>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -81,10 +86,15 @@ pub async fn load(path: &Path) -> solver::Config {
     };
 
     let tx_gas_estimator = if let Some(url) = config.gas_simulation_node_url {
-        let chain_id = config.chain_id.expect(
-            "invalid configuration: `chain-id` is required when `gas-simulation.node-url` is set",
-        );
-        let settlement_addr = contracts::Contracts::for_chain(chain_id).settlement;
+        let settlement_addr = if let Some(addr) = config.gas_simulation_settlement {
+            addr
+        } else {
+            let chain_id = config.chain_id.expect(
+                "invalid configuration: `chain-id` is required when `gas-simulation-node-url` \
+                 is set and `gas-simulation-settlement` is not provided",
+            );
+            contracts::Contracts::for_chain(chain_id).settlement
+        };
         let web3 = ethrpc::web3(Default::default(), &url, Some("tx-gas"));
         #[allow(deprecated)]
         let current_block =
