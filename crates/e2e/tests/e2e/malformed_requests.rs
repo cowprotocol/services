@@ -523,6 +523,14 @@ async fn simulation_not_enabled(web3: Web3) {
     services
         .start_api(configs::orderbook::Configuration {
             order_simulation: None,
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            shared: SharedConfig {
+                gas_estimators: vec![TestDefault::test_default()],
+                ..Default::default()
+            },
             ..configs::orderbook::Configuration::test_default()
         })
         .await;
