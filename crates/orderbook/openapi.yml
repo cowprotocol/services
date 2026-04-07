@@ -819,16 +819,6 @@ paths:
           description: >
             Block number to simulate the order at. If not specified, the
             simulation uses the latest block.
-        - in: query
-          name: executed_amount
-          schema:
-            $ref: "#/components/schemas/TokenAmount"
-          required: false
-          description: >
-            Override for how much of the order has already been filled, expressed
-            in the order's fill token (sell token for sell orders, buy token for
-            buy orders). When absent, the current on-chain fill state from the
-            order metadata is used.
       responses:
         "200":
           description: Simulation request returned.
@@ -2756,14 +2746,6 @@ components:
           description: >
             Full app data JSON string. Defaults to `"{}"` if omitted.
           type: string
-          nullable: true
-        executedAmount:
-          description: >
-            Override for how much of the order has already been filled, expressed
-            in the order's fill token (sell token for sell orders, buy token for
-            buy orders). When absent, no fill is assumed.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
           nullable: true
         blockNumber:
           type: integer

@@ -10,8 +10,7 @@ use {
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
     eth_domain_types::{BlockNo, NonZeroU256},
-    model::order::{Order, OrderKind},
-    number::conversions::big_uint_to_u256,
+    model::order::Order,
     shared::remaining_amounts,
     simulator::{
         encoding::InteractionEncoding,

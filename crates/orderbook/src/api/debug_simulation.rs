@@ -1,6 +1,5 @@
 use {
     crate::{api::AppState, dto::OrderSimulationRequest, orderbook::OrderSimulationError},
-    alloy::primitives::U256,
     axum::{
         Json,
         extract::{Path, Query, State},
@@ -8,7 +7,6 @@ use {
         response::{IntoResponse, Response},
     },
     model::order::OrderUid,
-    number::serialization::HexOrDecimalU256,
     serde::Deserialize,
     serde_with::serde_as,
     std::sync::Arc,

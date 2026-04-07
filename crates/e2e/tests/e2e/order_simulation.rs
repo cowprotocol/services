@@ -1,23 +1,16 @@
 use {
     alloy::{primitives::Address, providers::Provider},
-    bigdecimal::BigDecimal,
     configs::test_util::TestDefault,
-    database::{
-        byte_array::ByteArray,
-        events::{EventIndex, Trade, insert_trade},
-    },
-    e2e::setup::{API_HOST, OnchainComponents, Services, TIMEOUT, run_test, wait_for_condition},
-    eth_domain_types::U256,
+    e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
-        signature::{EcdsaSigningScheme, Signature, SigningScheme},
+        signature::EcdsaSigningScheme,
     },
-    number::{conversions::u256_to_big_decimal, units::EthUnit},
-    orderbook::dto::{OrderSimulationResult, order::Status},
+    number::units::EthUnit,
+    orderbook::dto::OrderSimulationResult,
     reqwest::StatusCode,
     simulator::tenderly::dto::SimulationType,
-    std::ops::DerefMut,
 };
 
 #[tokio::test]

@@ -14,7 +14,6 @@ use {
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    eth_domain_types::U256,
     model::{
         DomainSeparator,
         order::{
