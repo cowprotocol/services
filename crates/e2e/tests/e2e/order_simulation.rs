@@ -1,7 +1,7 @@
 use {
     alloy::{primitives::Address, providers::Provider},
     configs::test_util::TestDefault,
-    e2e::setup::{API_HOST, OnchainComponents, Services, run_test},
+    e2e::setup::{API_HOST, OnchainComponents, Services, TIMEOUT, run_test, wait_for_condition},
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderKind},
@@ -235,56 +235,56 @@ async fn order_simulation(web3: Web3) {
     assert_eq!(tenderly.value, None);
 }
 
-// Trader has 1 WETH; the order is a partially-fillable sell of 2 WETH.
+// Uses a shallow pool to force a partial fill (same setup as partial_fill.rs).
+// The test verifies two things:
 //
-// - executed_amount=0  → simulation must fail (full 2 WETH needed, only 1
-//   available)
-// - executed_amount=1e18 → simulation must pass (only 1 WETH remaining, which
-//   is exactly what the trader holds)
-// - no query param, but DB trade row records 1 WETH executed → simulation must
-//   pass (reads fill state from the database)
+// 1. Before any on-chain fill: filledAmount=0, full 4 WETH needed; trader only
+//    has 1 WETH → simulation must fail.
+//
+// 2. After ~2 WETH is settled on-chain (pool depth limits the fill): the
+//    simulator reads filledAmount from the settlement contract and only
+//    simulates the ~2 WETH remaining.  Trader holds ~2 WETH, so simulation must
+//    pass.  If the simulator did NOT read on-chain state it would try to
+//    simulate the full 4 WETH and revert (trader only has ~2 WETH).
 async fn order_simulation_partial_fill(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(10u64.eth()).await;
+    // Shallow pool forces the solver to only partially fill the order
+    // (same pool size as partial_fill.rs).
     let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .deploy_tokens_with_weth_uni_v2_pools(10u64.eth(), 10u64.eth())
         .await;
 
-    // Fund with 2 WETH so the order passes balance validation on submission.
+    // Fund with 4 WETH so the order passes balance validation on submission.
     onchain
         .contracts()
         .weth
         .deposit()
         .from(trader.address())
-        .value(2u64.eth())
+        .value(4u64.eth())
         .send_and_watch()
         .await
         .unwrap();
     onchain
         .contracts()
         .weth
-        .approve(onchain.contracts().allowance, 2u64.eth())
+        .approve(onchain.contracts().allowance, 4u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
     let services = Services::new(&onchain).await;
-    services
-        .start_protocol_with_args(
-            configs::autopilot::Configuration::test("test_solver", solver.address()),
-            configs::orderbook::Configuration::test_default(),
-            solver,
-        )
-        .await;
+    services.start_protocol(solver.clone()).await;
 
+    // Same order as partial_fill.rs: pool can only fill ~2 WETH at this price.
     let order = OrderCreation {
         sell_token: *onchain.contracts().weth.address(),
-        sell_amount: 2u64.eth(),
+        sell_amount: 4u64.eth(),
         buy_token: *token.address(),
-        buy_amount: 1u64.eth(),
+        buy_amount: 3u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,
@@ -297,12 +297,13 @@ async fn order_simulation_partial_fill(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
-    // Transfer 1 WETH away so the trader now holds only 1 WETH.
+    // Before any block is minted the autopilot has not yet processed the order.
+    // Burn 3 WETH so the trader holds only 1 WETH; filledAmount is still 0.
     let burn = Address::from([0x42u8; 20]);
     onchain
         .contracts()
         .weth
-        .transfer(burn, 1u64.eth())
+        .transfer(burn, 3u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
@@ -310,8 +311,7 @@ async fn order_simulation_partial_fill(web3: Web3) {
 
     let client = services.client();
 
-    // executed_amount=0: simulate the full 2 WETH — must fail because the
-    // trader only holds 1 WETH.
+    // filledAmount=0 on-chain; full 4 WETH needed; trader only has 1 → must fail.
     let response = client
         .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
         .send()
@@ -321,36 +321,40 @@ async fn order_simulation_partial_fill(web3: Web3) {
     let result = response.json::<OrderSimulationResult>().await.unwrap();
     assert!(
         result.error.is_some(),
-        "expected simulation failure with executed_amount=0 (needs 2 WETH, trader has 1)"
+        "expected simulation failure: filledAmount=0 so full 4 WETH is needed, but trader has 1"
     );
     assert!(result.error.unwrap().contains("reverted"));
 
-    /*
-    TODO: Update the test as per partial_fill.rs to account for partial fill and make sure
-    simulation still passes (as the executed amount is fetched by an RPC call)
-    // Insert a fake trade into the database recording 1 WETH as already
-    // executed for this order.
-    let db = services.db();
-    let mut conn = db.acquire().await.unwrap();
-    insert_trade(
-        conn.deref_mut(),
-        &EventIndex {
-            block_number: 1,
-            log_index: 0,
-        },
-        &Trade {
-            order_uid: ByteArray(uid.0),
-            sell_amount_including_fee: u256_to_big_decimal(&1u64.eth()),
-            // 0.5 ETH already filled for the order
-            buy_amount: u256_to_big_decimal(&(1u64.eth() / 2u64.atom())),
-            fee_amount: BigDecimal::default(),
-        },
-    )
-    .await
-    .unwrap();
+    // Restore 4 WETH so the solver can actually execute the partial fill.
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(trader.address())
+        .value(3u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
 
-    // (1 WETH executed), leaving 1 WETH to simulate.  The trader
-    // holds exactly 1 WETH, so the simulation must pass.
+    // Trigger the autopilot to pick up the order and settle a partial fill.
+    onchain.mint_block().await;
+
+    let trade_happened = || async {
+        !token
+            .balanceOf(trader.address())
+            .call()
+            .await
+            .unwrap()
+            .is_zero()
+    };
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
+
+    // Simulation must pass.  After the ~2 WETH partial fill:
+    //   - filledAmount ≈ 2 WETH on-chain
+    //   - remaining sell ≈ 2 WETH
+    //   - trader WETH balance ≈ 2 WETH  (started with 4, ~2 sold)
+    // Without reading on-chain fill state the simulator would need the full
+    // 4 WETH from the trader (who only holds ~2) and revert.
     let response = client
         .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
         .send()
@@ -358,11 +362,11 @@ async fn order_simulation_partial_fill(web3: Web3) {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let result = response.json::<OrderSimulationResult>().await.unwrap();
+
     assert_eq!(
         result.error, None,
-        "expected simulation success when DB shows 1 WETH executed (remaining 1 WETH, trader has \
-         1), got error: {:?}",
+        "expected simulation success after partial fill (on-chain filledAmount reduces the \
+         simulated sell amount to match trader balance), got error: {:?}",
         result.error
     );
-    */
 }

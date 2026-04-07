@@ -227,14 +227,16 @@ impl OrderSimulator {
             },
         );
 
-        // Fund the settlement contract with enough buy tokens to be paid out
+        // Fund the settlement contract with enough buy tokens to be paid out.
+        // Add 1 to account for ceiling division in the settlement contract's
+        // executedBuyAmount calculation, which can be 1 unit above remaining_buy.
         match self
             .simulator
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.buy_token,
                 holder: *self.simulator.settlement.address(),
-                amount: query.buy_amount,
+                amount: query.buy_amount + U256::ONE,
             })
             .await
         {
