@@ -702,6 +702,7 @@ impl Competition {
         );
         tracing::debug!(payload_hex = %hex::encode(solution_data.clone().into_bytes()), "bid payload");
 
+        // Pod runs in shadow mode - bid submission failures should not affect main flow
         match pod_auction_client
             .submit_bid(
                 pod_auction_id,
@@ -713,8 +714,14 @@ impl Competition {
         {
             Ok(_) => tracing::info!(deadline = %deadline, "bid submitted successfully"),
             Err(e) => {
-                tracing::error!(error = %e, deadline = %deadline, "bid submission failed");
-                return Err(e);
+                tracing::warn!(
+                    error = %e,
+                    error_chain = ?e,
+                    deadline = %deadline,
+                    auction_id = %pod_auction_id,
+                    bid_value = %pod_auction_value,
+                    "pod bid submission failed (shadow mode - continuing)"
+                );
             }
         }
 

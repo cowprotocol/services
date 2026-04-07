@@ -239,16 +239,16 @@ impl<'a> Services<'a> {
     /// Starts a basic version of the protocol with pod flow enabled.
     /// Use this for pod_* prefixed tests with a single solver.
     pub async fn start_protocol_with_pod(&self, solver: TestAccount) {
-        self.start_protocol_with_pod_solvers(vec![(solver, vec![])])
+        self.start_protocol_with_pod_solvers(vec![(solver, 0)]) // 0 = no haircut
             .await;
     }
 
     /// Starts the protocol with multiple solvers, all with pod enabled.
-    /// Each solver can have different base tokens to provide different solutions.
+    /// Each solver has a haircut_bps value to differentiate scores.
     /// Use this for testing pod winner selection with competing solvers.
     pub async fn start_protocol_with_pod_multi_solver(
         &self,
-        solvers: Vec<(TestAccount, Vec<Address>)>,
+        solvers: Vec<(TestAccount, u32)>, // (solver_account, haircut_bps)
     ) {
         self.start_protocol_with_pod_solvers(solvers).await;
     }
@@ -256,7 +256,7 @@ impl<'a> Services<'a> {
     /// Internal helper: starts protocol with pod-enabled driver for given solvers.
     async fn start_protocol_with_pod_solvers(
         &self,
-        solvers: Vec<(TestAccount, Vec<Address>)>, // (solver_account, base_tokens)
+        solvers: Vec<(TestAccount, u32)>, // (solver_account, haircut_bps)
     ) {
         use configs::autopilot::solver::Solver;
 
@@ -264,7 +264,7 @@ impl<'a> Services<'a> {
             solvers
                 .iter()
                 .enumerate()
-                .map(|(i, (solver, base_tokens))| {
+                .map(|(i, (solver, haircut_bps))| {
                     let name = if i == 0 {
                         "test_solver".to_string()
                     } else {
@@ -274,10 +274,10 @@ impl<'a> Services<'a> {
                         name,
                         solver.clone(),
                         *self.contracts.weth.address(),
-                        base_tokens.clone(),
+                        vec![], // no special base tokens needed
                         2,
                         true,
-                        0,
+                        *haircut_bps,
                     )
                 }),
         )

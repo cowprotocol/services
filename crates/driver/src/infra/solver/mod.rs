@@ -394,15 +394,28 @@ impl Solver {
             }
         };
 
-        match provider.get_balance(signer_address).await {
-            Ok(balance) => {
+        // Log balance and nonce for debugging pending TX issues
+        let balance = provider.get_balance(signer_address).await;
+        let nonce = provider.get_transaction_count(signer_address).await;
+        
+        match (balance, nonce) {
+            (Ok(bal), Ok(n)) => {
                 tracing::info!(
                     signer_address = %signer_address,
-                    signer_balance = %balance,
+                    signer_balance = %bal,
+                    current_nonce = %n,
                     "pod provider initialized",
                 );
             }
-            Err(e) => {
+            (Ok(bal), Err(e)) => {
+                tracing::warn!(
+                    signer_address = %signer_address,
+                    signer_balance = %bal,
+                    error = %e,
+                    "pod provider initialized but failed to fetch nonce",
+                );
+            }
+            (Err(e), _) => {
                 tracing::warn!(
                     error = %e,
                     signer_address = %signer_address,
