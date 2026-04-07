@@ -235,12 +235,20 @@ impl SwapSimulator {
         })
     }
 
+    /// Simulate settle call on the latest block
+    pub async fn simulate_settle_call_on_latest(
+        &self,
+        swap: EncodedSwap,
+    ) -> Result<SwapSimulation<Bytes>> {
+        let block_number = self.current_block.borrow().number;
+        self.simulate_settle_call(swap, block_number).await
+    }
+
     pub async fn simulate_settle_call(
         &self,
         swap: EncodedSwap,
-        block_number: Option<u64>,
+        block_number: u64,
     ) -> Result<SwapSimulation<Bytes>> {
-        let block_number = block_number.unwrap_or_else(|| self.current_block.borrow().number);
         let (settlement_target, calldata) = self.get_target_and_calldata(&swap);
 
         let overrides = swap.overrides;
