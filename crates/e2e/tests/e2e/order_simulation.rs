@@ -69,6 +69,7 @@ async fn custom_order_simulation(web3: Web3) {
         result.error.is_some(),
         "expected simulation error when trader has no funds"
     );
+    assert!(result.error.unwrap().contains("reverted"));
 
     // Fund the trader and approve the vault relayer.
     token.mint(trader.address(), sell_amount).await;
@@ -188,6 +189,7 @@ async fn order_simulation(web3: Web3) {
         result.error.is_some(),
         "expected simulation failure at block {block_no_funds} (no funds), got success"
     );
+    assert!(result.error.unwrap().contains("reverted"));
 
     // Simulation at the block where the trader has WETH must succeed.
     let response = client

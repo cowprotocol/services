@@ -786,8 +786,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderSimulation"
+        "400":
+          description: >
+            Invalid JSON body, or `appData` is not valid JSON.
         "405":
           description: Order simulation endpoint is not enabled.
+        "422":
+          description: >
+            Request body failed schema validation: missing required field,
+            wrong field type, zero `sellAmount`, or unrecognised `kind` value.
         "500":
           description: Internal error.
   "/api/v1/debug/simulation/{uid}":
@@ -820,7 +827,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/OrderSimulation"
         "400":
-          description: Invalid order UID.
+          description: >
+            Malformed path parameter (invalid order UID format) or invalid
+            `block_number` query parameter.
         "404":
           description: Order not found.
         "405":
@@ -2699,7 +2708,9 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
         sellAmount:
-          description: Amount of sell token (hex- or decimal-encoded uint256).
+          description: >
+            Amount of sell token (hex- or decimal-encoded uint256). Must be
+            greater than zero.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
