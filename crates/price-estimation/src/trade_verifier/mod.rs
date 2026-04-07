@@ -39,8 +39,8 @@ use {
         nonzero::NonZeroU256,
     },
     simulator::{
-        encoding::{EncodedTrade, encode_trade},
-        swap_simulator::{EncodedSwap, SwapSimulator},
+        encoding::{EncodedTrade, InteractionEncoding, encode_trade},
+        swap_simulator::{EncodedSwap, SwapSimulator, TradeEncoding},
         tenderly::{self},
     },
     std::{
@@ -148,12 +148,19 @@ impl TradeVerifier {
             TradeKind::Regular(trade) => trade.clearing_prices.iter().unzip(),
         };
 
+        let (sell_amount, buy_amount) = match query.kind {
+            OrderKind::Sell => (query.in_amount, *out_amount),
+            OrderKind::Buy => (
+                NonZeroU256::try_from(*out_amount).context("computed sell amount is zero")?,
+                query.in_amount.get(),
+            ),
+        };
         let simulator_query = simulator::swap_simulator::Query {
-            in_token: query.sell_token,
-            out_token: query.buy_token,
+            sell_token: query.sell_token,
+            buy_token: query.buy_token,
             kind: query.kind,
-            in_amount: query.in_amount,
-            out_amount: *out_amount,
+            sell_amount,
+            buy_amount,
             receiver: verification.receiver,
             sell_token_source: verification.sell_token_source,
             buy_token_destination: verification.buy_token_destination,
@@ -162,11 +169,12 @@ impl TradeVerifier {
             solver: solver_address,
             tokens: tokens.clone(),
             clearing_prices,
+            wrappers: Default::default(),
         };
 
         let mut swap = self
             .simulator
-            .fake_swap(simulator_query)
+            .fake_swap(&simulator_query, TradeEncoding::Disadvantageous)
             .await
             .map_err(Error::SimulationFailed)?;
 
@@ -177,26 +185,31 @@ impl TradeVerifier {
                 .iter()
                 // pre_interactions introduced by the solver
                 .chain(trade.pre_interactions())
-                .cloned()
-                .map(Interaction::encode)
+                .map(InteractionEncoding::encode)
                 .collect::<Vec<_>>();
 
-        // Join custom pre_interactions
+        // Join custom pre_interactions in the following order:
+        // pre_interactions, trade setup interaction, encoded swap pre interactions
+        pre_interactions.extend([self
+            .trade_setup_interaction(out_amount, &verification, query, trade)
+            .encode()]);
         pre_interactions.extend(swap.settlement.interactions.pre);
         swap.settlement.interactions.pre = pre_interactions;
 
-        // Interactions introduced by the solver
-        let interactions = trade.interactions().cloned().map(Interaction::encode);
+        // Join interactions introduced by the solver, set up in the following order:
+        // trade interactions, encoded swap interactions
+        let interactions = trade.interactions().map(InteractionEncoding::encode);
         swap.settlement.interactions.main = interactions
             .into_iter()
             .chain(swap.settlement.interactions.main)
             .collect();
 
+        // Join post interactions in the following order:
+        // encoded swap post interactions, verification post interactions,
         let post_interactions = verification
             .post_interactions
             .iter()
-            .cloned()
-            .map(Interaction::encode);
+            .map(InteractionEncoding::encode);
         swap.settlement.interactions.post = swap
             .settlement
             .interactions
@@ -214,7 +227,7 @@ impl TradeVerifier {
                 &self.simulator.domain_separator,
             )?);
         }
-        let output = self.simulator.simulate_swap(swap).await?;
+        let output = self.simulator.simulate_swap_with_solver(swap).await?;
 
         if let Some(tenderly) = &self.tenderly
             && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)
@@ -474,6 +487,38 @@ impl TradeVerifier {
         overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
 
         Ok(overrides)
+    }
+
+    /// Create interaction that sets up the trade right before transfering
+    /// funds. This interaction does nothing if the user-provided
+    /// pre-interactions already set everything up (e.g. approvals,
+    /// balances). That way we can correctly verify quotes with or without
+    /// these user pre-interactions with helpful error messages.
+    fn trade_setup_interaction(
+        &self,
+        out_amount: &U256,
+        verification: &Verification,
+        query: &PriceQuery,
+        trade: &TradeKind,
+    ) -> Interaction {
+        let sell_amount = match query.kind {
+            OrderKind::Sell => query.in_amount.get(),
+            OrderKind::Buy => *out_amount,
+        };
+        let setup_call = Solver::Solver::ensureTradePreconditionsCall {
+            trader: verification.from,
+            settlementContract: *self.settlement.address(),
+            sellToken: query.sell_token,
+            sellAmount: sell_amount,
+            nativeToken: self.simulator.native_token,
+            spardose: Self::SPARDOSE,
+        }
+        .abi_encode();
+        Interaction {
+            target: trade.solver(),
+            value: U256::ZERO,
+            data: setup_call,
+        }
     }
 }
 

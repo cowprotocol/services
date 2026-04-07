@@ -5,6 +5,7 @@ use {
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
+        order_simulator::OrderSimulator,
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
@@ -42,6 +43,7 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
     },
+    simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
@@ -196,7 +198,7 @@ pub async fn run(config: Configuration) {
             balances_contract.clone(),
             vault_relayer,
             vault_address,
-            balance_overrider,
+            balance_overrider.clone(),
         ),
     );
 
@@ -373,7 +375,7 @@ pub async fn run(config: Configuration) {
         .await
         .ok();
     let order_validator = Arc::new(OrderValidator::new(
-        native_token,
+        native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             config.banned_users.addresses,
@@ -407,6 +409,28 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
+
+    let order_simulator = if let Some(config) = config.order_simulation {
+        Some(Arc::new(OrderSimulator::new(
+            SwapSimulator::new(
+                balance_overrider.clone(),
+                *settlement_contract.address(),
+                *native_token.address(),
+                current_block_stream.clone(),
+                web3,
+                config
+                    .gas_limit
+                    .try_into()
+                    .expect("gas_limit must fit in u64"),
+            )
+            .await
+            .expect("failed to create SwapSimulator"),
+            chain.id().to_string(),
+        )))
+    } else {
+        None
+    };
+
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         *settlement_contract.address(),
@@ -415,6 +439,7 @@ pub async fn run(config: Configuration) {
         order_validator.clone(),
         app_data.clone(),
         config.active_order_competition_threshold,
+        order_simulator,
     ));
 
     check_database_connection(orderbook.as_ref()).await;

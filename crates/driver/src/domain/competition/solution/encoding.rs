@@ -209,9 +209,6 @@ pub fn tx(
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
-    let has_flashloans = !solution.flashloans.is_empty();
-    let has_wrappers = !solution.wrappers.is_empty();
-
     // Encode the base settlement calldata
     let mut settle_calldata = contracts
         .settlement()
@@ -230,21 +227,24 @@ pub fn tx(
 
     // Append auction ID to settlement calldata
     settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    let has_flashloans = !solution.flashloans.is_empty();
+    let has_wrappers = !solution.wrappers.is_empty();
 
     let (to, calldata) = if has_flashloans && has_wrappers {
         return Err(Error::FlashloanWrappersIncompatible);
     } else if has_flashloans {
         encode_flashloan_settlement(solution, contracts, settle_calldata)?
     } else if has_wrappers {
-        encode_wrapper_settlement(solution, settle_calldata)
+        simulator::encoding::encode_wrapper_settlement(&solution.wrappers, settle_calldata.into())
+            .expect("wrappers is not empty")
     } else {
-        (*contracts.settlement().address(), settle_calldata)
+        (*contracts.settlement().address(), settle_calldata.into())
     };
 
     Ok(eth::Tx {
         from: solution.solver().address(),
         to,
-        input: calldata.into(),
+        input: calldata,
         value: Ether::zero(),
         access_list: Default::default(),
     })
@@ -260,7 +260,7 @@ fn encode_flashloan_settlement(
     solution: &super::Solution,
     contracts: &infra::blockchain::Contracts,
     settle_calldata: Vec<u8>,
-) -> Result<(eth::Address, Vec<u8>), Error> {
+) -> Result<(eth::Address, Bytes), Error> {
     // Get flashloan router contract
     let router = contracts
         .flashloan_router()
@@ -284,7 +284,7 @@ fn encode_flashloan_settlement(
         .calldata()
         .to_vec();
 
-    Ok((*router.address(), calldata))
+    Ok((*router.address(), calldata.into()))
 }
 
 /// Encodes a settlement transaction that uses wrapper contracts.

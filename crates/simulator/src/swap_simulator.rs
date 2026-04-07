@@ -1,11 +1,23 @@
 use {
-    crate::encoding::{EncodedSettlement, EncodedTrade, Interaction, Interactions, encode_trade},
-    alloy_primitives::{Address, U256, address},
+    crate::encoding::{
+        EncodedSettlement,
+        EncodedTrade,
+        Interactions,
+        WrapperCall,
+        encode_trade,
+        encode_wrapper_settlement,
+    },
+    alloy_primitives::{Address, Bytes, U256},
+    alloy_provider::Provider,
     alloy_rpc_types::{TransactionRequest, state::StateOverride},
     alloy_sol_types::SolCall,
     anyhow::{Context, Result, anyhow},
     balance_overrides::BalanceOverriding,
-    contracts::{GPv2Settlement, WETH9, support::Solver},
+    contracts::{
+        GPv2Settlement::{self},
+        WETH9,
+        support::Solver::{self, Solver::swapReturn},
+    },
     eth_domain_types::NonZeroU256,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
@@ -18,28 +30,35 @@ use {
 
 /// Query for the Swap Simulator to prepare a fake settlement with
 /// Contains the minimum data required to encode a fake settlement
+#[derive(Debug)]
 pub struct Query {
-    /// The input token, transferred into settlement contract
-    pub in_token: Address,
-    pub in_amount: NonZeroU256,
-    /// The output token, transferred out of settlemetn contract
-    pub out_token: Address,
-    pub out_amount: U256,
+    pub sell_token: Address,
+    pub sell_amount: NonZeroU256,
+    pub buy_token: Address,
+    pub buy_amount: U256,
     pub kind: OrderKind,
     pub receiver: Address,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub from: Address,
     pub tx_origin: Option<Address>,
-    /// These interactions will be executed before the trade.
-    // pub pre_interactions: Vec<Interaction>,
-    /// Interactions needed to produce the expected trade amount.
-    // pub interactions: Vec<Interaction>,
-    /// These interactions will be executed after the trade.
-    // pub post_interactions: Vec<Interaction>,
     pub solver: Address,
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
+    pub wrappers: Vec<WrapperCall>,
+}
+
+/// Controls how the trade is encoded for the provided Query
+#[derive(Clone, Debug)]
+pub enum TradeEncoding {
+    /// Encodes the trade amounts exactly as in the Query
+    Simple,
+    /// Encodes a trade with the most disadvantageous in and out amounts
+    /// possible (while taking possible overflows into account). Should the
+    /// trader not receive the amount promised by the [`Query`] the
+    /// simulation will still work and the actual out amount can be computed
+    /// afterwards.
+    Disadvantageous,
 }
 
 #[derive(Clone)]
@@ -56,20 +75,25 @@ pub struct SwapSimulator {
 pub struct EncodedSwap {
     pub settlement: EncodedSettlement,
     pub overrides: StateOverride,
+    pub wrappers: Vec<WrapperCall>,
     pub solver: Address,
     pub receiver: Address,
 }
 
-// Look into driver encoding logic for wrappers
-pub struct SwapSimulation {
+/// The output of a swap simulation.
+///
+/// Contains the transaction request that was used to perform the simulation
+/// (useful for introspection), The used state overrides and simulation result
+/// The result is of generic type O, and depends on the type of simulation:
+/// - solver swap simulation returns Solver::swapResult
+/// - generic simulation returns Bytes
+pub struct SwapSimulation<O> {
     pub tx: TransactionRequest,
     pub overrides: StateOverride,
-    pub result: Result<Solver::Solver::swapReturn, anyhow::Error>,
+    pub result: Result<O, anyhow::Error>,
 }
 
 impl SwapSimulator {
-    const SPARDOSE: Address = address!("0000000000000000000000000000000000020000");
-
     pub async fn new(
         balance_overrides: Arc<dyn BalanceOverriding>,
         settlement: Address,
@@ -96,27 +120,37 @@ impl SwapSimulator {
     /// The result can be further post processed depending on the needs
     ///
     /// It can then be simulated with SwapSimulator::simulate_swap
-    pub async fn fake_swap(&self, query: Query) -> Result<EncodedSwap> {
+    ///
+    /// The trade_encoding controls if the trade should be encoded as-is,
+    /// based on the Query or if it should be encoded as the most
+    /// disadvantegous trade possible.
+    ///
+    /// The TradeEncoding::Disadvantegous is useful for price verification since
+    /// the resulting out amounts can be calculated later while allowing the
+    /// simulation to pass.
+    pub async fn fake_swap(
+        &self,
+        query: &Query,
+        trade_encoding: TradeEncoding,
+    ) -> Result<EncodedSwap> {
         let overrides = StateOverride::default();
 
-        let pre_interactions = vec![self.trade_setup_interaction(&query).encode()];
-        let mut interactions = vec![];
+        let pre_interactions = Vec::new();
+        let mut interactions = Vec::new();
 
-        if query.out_token == BUY_ETH_ADDRESS {
+        if query.buy_token == BUY_ETH_ADDRESS {
             // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
             // does not have to emit unwraps to pay out `ETH` in a trade.
             // However, for the simulation to be successful this has to happen so we do it
             // ourselves here.
-            let buy_amount = match query.kind {
-                OrderKind::Sell => query.out_amount,
-                OrderKind::Buy => query.in_amount.get(),
-            };
             interactions.push((
                 self.native_token,
                 U256::ZERO,
-                WETH9::WETH9::withdrawCall { wad: buy_amount }
-                    .abi_encode()
-                    .into(),
+                WETH9::WETH9::withdrawCall {
+                    wad: query.buy_amount,
+                }
+                .abi_encode()
+                .into(),
             ));
             tracing::trace!("adding unwrap interaction for paying out ETH");
         }
@@ -125,38 +159,57 @@ impl SwapSimulator {
             settlement: EncodedSettlement {
                 tokens: query.tokens.to_vec(),
                 clearing_prices: query.clearing_prices.to_vec(),
-                trades: vec![encode_fake_trade(&query)?],
+                trades: vec![encode_fake_trade(query, trade_encoding)?],
                 interactions: Interactions {
                     pre: pre_interactions,
                     main: interactions,
-                    post: vec![],
+                    post: Vec::new(),
                 },
             },
             solver: query.tx_origin.unwrap_or(query.solver),
             receiver: query.receiver,
             overrides,
+            wrappers: query.wrappers.clone(),
         })
+    }
+
+    /// For wrapped settlements, the Solver contract must call the first wrapper
+    /// (not the settlement directly). The wrapper then chains to the
+    /// settlement. For non-wrapped settlements, the Solver calls the
+    /// settlement contract directly.
+    fn get_target_and_calldata(&self, swap: &EncodedSwap) -> (Address, Bytes) {
+        if !swap.wrappers.is_empty() {
+            encode_wrapper_settlement(&swap.wrappers, swap.settlement.into_settle_call())
+                .expect("wrappers is not empty")
+        } else {
+            (
+                *self.settlement.address(),
+                swap.settlement.into_settle_call(),
+            )
+        }
     }
 
     /// Simulates a solver call to settlement contract with the provided swap
     /// data. The swap call result is contained in the returned
     /// SwapSimulation struct, along with the original TransactionRequest
     /// and State overrides (if needed to be logged, or processed elsewhere)
-    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<SwapSimulation> {
+    pub async fn simulate_swap_with_solver(
+        &self,
+        swap: EncodedSwap,
+    ) -> Result<SwapSimulation<swapReturn>> {
         let block = *self.current_block.borrow();
+        let (settlement_target, calldata) = self.get_target_and_calldata(&swap);
         let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
-        let calldata = swap.settlement.into_settle_call();
         let overrides = swap.overrides;
 
         let swap = solver
             .swap(
-                *self.settlement.address(),
+                settlement_target,
                 swap.settlement.tokens.clone(),
                 swap.receiver,
                 calldata,
             )
             .from(swap.solver)
-            .to(swap.solver)
             .gas(self.gas_limit)
             .gas_price(
                 u128::try_from(block.gas_price.saturating_mul(U256::from(2)))
@@ -182,49 +235,56 @@ impl SwapSimulator {
         })
     }
 
-    /// Create interaction that sets up the trade right before transfering
-    /// funds. This interaction does nothing if the user-provided
-    /// pre-interactions already set everything up (e.g. approvals,
-    /// balances). That way we can correctly verify quotes with or without
-    /// these user pre-interactions with helpful error messages.
-    fn trade_setup_interaction(&self, query: &Query) -> Interaction {
-        let sell_amount = match query.kind {
-            OrderKind::Sell => query.in_amount.get(),
-            OrderKind::Buy => query.out_amount,
+    pub async fn simulate_settle_call(
+        &self,
+        swap: EncodedSwap,
+        block_number: Option<u64>,
+    ) -> Result<SwapSimulation<Bytes>> {
+        let block_number = block_number.unwrap_or_else(|| self.current_block.borrow().number);
+        let (settlement_target, calldata) = self.get_target_and_calldata(&swap);
+
+        let overrides = swap.overrides;
+        let tx = TransactionRequest {
+            from: Some(swap.solver),
+            to: Some(settlement_target.into()),
+            input: calldata.into(),
+            gas: Some(self.gas_limit),
+            ..Default::default()
         };
-        let setup_call = Solver::Solver::ensureTradePreconditionsCall {
-            trader: query.from,
-            settlementContract: *self.settlement.address(),
-            sellToken: query.in_token,
-            sellAmount: sell_amount,
-            nativeToken: self.native_token,
-            spardose: Self::SPARDOSE,
-        }
-        .abi_encode();
-        Interaction {
-            target: query.solver,
-            value: U256::ZERO,
-            data: setup_call,
-        }
+
+        let result = self
+            .web3
+            .provider
+            .call(tx.clone())
+            .overrides(overrides.clone())
+            .block(block_number.into())
+            .await
+            .map_err(|err| anyhow!(err));
+
+        Ok(SwapSimulation {
+            tx,
+            overrides,
+            result,
+        })
     }
 }
 
-/// Encodes a trade with the most disadvantageous in and out amounts possible
-/// (while taking possible overflows into account). Should the trader not
-/// receive the amount promised by the [`Trade`] the simulation will still work
-/// and the actual [`Trade::out_amount`] can be computed afterwards.
-fn encode_fake_trade(query: &Query) -> Result<EncodedTrade> {
-    let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Sell => (query.in_amount.get(), U256::ZERO),
-        OrderKind::Buy => (
-            (query.out_amount).max(U256::from(u128::MAX)),
-            query.in_amount.get(),
-        ),
+fn encode_fake_trade(query: &Query, trade_encoding: TradeEncoding) -> Result<EncodedTrade> {
+    let (sell_amount, buy_amount) = match trade_encoding {
+        TradeEncoding::Simple => (query.sell_amount.into(), query.buy_amount),
+        TradeEncoding::Disadvantageous => match query.kind {
+            OrderKind::Sell => (query.sell_amount.get(), U256::ZERO),
+            OrderKind::Buy => (
+                query.sell_amount.get().max(U256::from(u128::MAX)),
+                query.buy_amount,
+            ),
+        },
     };
+
     let fake_order = OrderData {
-        sell_token: query.in_token,
+        sell_token: query.sell_token,
         sell_amount,
-        buy_token: query.out_token,
+        buy_token: query.buy_token,
         buy_amount,
         receiver: Some(query.receiver),
         valid_to: u32::MAX,
@@ -245,14 +305,17 @@ fn encode_fake_trade(query: &Query) -> Result<EncodedTrade> {
         query
             .tokens
             .iter()
-            .position(|token| token == &query.in_token)
+            .position(|token| token == &query.sell_token)
             .context("missing sell token index")?,
         query
             .tokens
             .iter()
-            .position(|token| token == &query.out_token)
+            .position(|token| token == &query.buy_token)
             .context("missing buy token index")?,
-        query.in_amount.get(),
+        match query.kind {
+            OrderKind::Sell => query.sell_amount.get(),
+            OrderKind::Buy => query.buy_amount,
+        },
     );
 
     Ok(encoded_trade)
