@@ -51,12 +51,6 @@ pub struct OrderSimulationRequest {
     /// The block number at which the simulation should happen
     #[serde(default)]
     pub block_number: Option<u64>,
-    /// Override for how much of the order has already been filled, expressed
-    /// in the order's fill token (sell token for sell orders, buy token for
-    /// buy orders). When absent, no fill is assumed.
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    #[serde(default)]
-    pub executed_amount: Option<U256>,
 }
 
 /// The result of Order simulation, contains the error (if any)

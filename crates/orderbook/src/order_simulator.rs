@@ -1,7 +1,8 @@
 use {
     crate::dto::OrderSimulationResult,
     alloy::{
-        primitives::{Address, U256},
+        eips::BlockId,
+        primitives::{Address, Bytes, U256},
         rpc::types::state::AccountOverride,
     },
     anyhow::{Context, Result, anyhow},
@@ -41,16 +42,24 @@ impl OrderSimulator {
 
     /// Calculates the remaining sell and buy amounts
     /// Returns a tuple of (remaining_sell, remaining_buy)
-    fn remaining_amounts(
+    async fn remaining_amounts(
         &self,
         order: &Order,
-        executed_amount: Option<U256>,
+        block: Option<BlockId>,
     ) -> Result<(U256, U256), Error> {
-        let executed_amount = executed_amount.unwrap_or_else(|| match order.data.kind {
-            OrderKind::Buy => big_uint_to_u256(&order.metadata.executed_buy_amount)
-                .unwrap_or(order.data.buy_amount),
-            OrderKind::Sell => order.metadata.executed_sell_amount_before_fees,
-        });
+        let mut filled_amount_call = self
+            .simulator
+            .settlement
+            .filledAmount(Bytes::from(order.metadata.uid.0));
+
+        if let Some(block) = block {
+            filled_amount_call = filled_amount_call.block(block);
+        }
+        let executed_amount = filled_amount_call
+            .call()
+            .await
+            .map_err(|err| Error::Other(anyhow!(err)))?;
+
         let remaining_order = remaining_amounts::Order {
             kind: order.data.kind,
             buy_amount: order.data.buy_amount,
@@ -89,7 +98,7 @@ impl OrderSimulator {
         &self,
         order: &Order,
         wrappers: Vec<WrapperCall>,
-        executed_amount: Option<U256>,
+        block: Option<u64>,
     ) -> Result<EncodedSwap, Error> {
         let tokens = vec![order.data.sell_token, order.data.buy_token];
         // Clearing prices represent the limit price of the order; both order kinds
@@ -97,7 +106,8 @@ impl OrderSimulator {
         // buy_token].
         let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
         let solver = Address::random();
-        let (remaining_sell, remaining_buy) = self.remaining_amounts(order, executed_amount)?;
+        let (remaining_sell, remaining_buy) =
+            self.remaining_amounts(order, block.map(Into::into)).await?;
         let query = Query {
             sell_amount: NonZeroU256::try_from(remaining_sell).map_err(|err| {
                 Error::MalformedInput(anyhow!("sell_amount `{}`: {err}", order.data.sell_amount))

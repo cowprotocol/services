@@ -641,7 +641,6 @@ impl Orderbook {
         &self,
         uid: &OrderUid,
         block_number: Option<u64>,
-        executed_amount: Option<U256>,
     ) -> Result<Option<OrderSimulationResult>, OrderSimulationError> {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
@@ -661,7 +660,7 @@ impl Orderbook {
             .map_err(OrderSimulationError::Other)?;
 
         let swap = order_simulator
-            .encode_order(&order, wrappers, executed_amount)
+            .encode_order(&order, wrappers, block_number)
             .await?;
         Ok(Some(
             order_simulator.simulate_swap(swap, block_number).await?,
@@ -705,7 +704,7 @@ impl Orderbook {
         };
 
         let swap = order_simulator
-            .encode_order(&order, wrappers, request.executed_amount)
+            .encode_order(&order, wrappers, request.block_number)
             .await
             .map_err(|err| match err {
                 order_simulator::Error::Other(err) => OrderSimulationError::Other(err),

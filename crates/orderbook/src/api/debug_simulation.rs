@@ -18,12 +18,6 @@ use {
 #[derive(Deserialize)]
 pub struct SimulationQuery {
     pub block_number: Option<u64>,
-    /// Override for how much of the order has already been filled, expressed
-    /// in the order's fill token (sell token for sell orders, buy token for
-    /// buy orders). When absent, the current on-chain fill state from the
-    /// order metadata is used.
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub executed_amount: Option<U256>,
 }
 
 pub async fn debug_simulation_handler(
@@ -33,7 +27,7 @@ pub async fn debug_simulation_handler(
 ) -> Response {
     match state
         .orderbook
-        .simulate_order(&uid, params.block_number, params.executed_amount)
+        .simulate_order(&uid, params.block_number)
         .await
     {
         Ok(Some(result)) => (StatusCode::OK, Json(result)).into_response(),
