@@ -39,7 +39,7 @@ use {
     },
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
-    std::{ops::DerefMut, str::FromStr, time::Duration},
+    std::{str::FromStr, time::Duration},
     tokio::task::JoinHandle,
 };
 
@@ -92,7 +92,6 @@ impl ServicesBuilder {
             contracts: onchain_components.contracts(),
             http: Client::builder().timeout(self.timeout).build().unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
-            web3: onchain_components.web3(),
         }
     }
 }
@@ -109,7 +108,6 @@ pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
     db: Db,
-    web3: &'a Web3,
 }
 
 impl<'a> Services<'a> {
@@ -121,7 +119,6 @@ impl<'a> Services<'a> {
                 .build()
                 .unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
-            web3: onchain_components.web3(),
         }
     }
 
@@ -904,11 +901,6 @@ impl<'a> Services<'a> {
     /// execute raw SQL queries.
     pub fn db(&self) -> &Db {
         &self.db
-    }
-
-    async fn mint_block(&self) {
-        tracing::info!("mining block");
-        self.web3.provider.evm_mine(None).await.unwrap();
     }
 }
 
