@@ -105,6 +105,7 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls"
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
+rustls = { version = "0.23.36", default-features = false, features = ["ring"] }
 s3 = { path = "crates/s3" }
 scopeguard = "1.2.0"
 serde = { version = "1.0.203", features = ["derive"] }
