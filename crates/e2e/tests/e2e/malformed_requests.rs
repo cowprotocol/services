@@ -342,4 +342,6 @@ async fn http_validation(web3: Web3) {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Order simulation request error cases
 }

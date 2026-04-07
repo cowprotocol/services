@@ -46,20 +46,20 @@ async fn custom_order_simulation(web3: Web3) {
 
     let client = services.client();
     let sell_amount = 1u64.eth();
-
-    let body = json!({
-        "sellToken": token.address(),
-        "buyToken": onchain.contracts().weth.address(),
-        "sellAmount": sell_amount.to_string(),
-        "buyAmount": "1",
-        "kind": "sell",
-        "owner": trader.address(),
-    });
+    let request = orderbook::dto::OrderSimulationRequest {
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
+        sell_amount: sell_amount.try_into().expect("Sell amount is non zero"),
+        buy_amount: 1u64.eth(),
+        kind: OrderKind::Sell,
+        owner: trader.address(),
+        ..Default::default()
+    };
 
     // Trader has no sell tokens — simulation should revert.
     let response = client
         .post(format!("{API_HOST}/api/v1/debug/simulation"))
-        .json(&body)
+        .json(&request)
         .send()
         .await
         .unwrap();
@@ -82,7 +82,7 @@ async fn custom_order_simulation(web3: Web3) {
     // Simulation should now succeed.
     let response = client
         .post(format!("{API_HOST}/api/v1/debug/simulation"))
-        .json(&body)
+        .json(&request)
         .send()
         .await
         .unwrap();
