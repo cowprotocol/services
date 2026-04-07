@@ -4,7 +4,6 @@ use {
         infra::Solver,
     },
     eth_domain_types as eth,
-    autopilot::domain::eth::Address,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
@@ -114,7 +113,7 @@ pub enum Side {
 impl HashableSolution for Solution {
     type Order = TradedOrder;
     type OrderId = OrderId;
-    type TokenAddr = Address;
+    type TokenAddr = eth::Address;
 
     fn solution_id(&self) -> u64 {
         self.solution_id

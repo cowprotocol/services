@@ -6,7 +6,8 @@ node-url = "http://localhost:8545"
 simulation-node-url = "http://localhost:8545"
 
 [database]
-write-url = "postgresql://localhost:5432/aryan"
+write-url = "postgresql://aryan:123@localhost:5432/aryan"
+read-url = "postgresql://aryan:123@localhost:5432/aryan"
 
 [native-price-estimation]
 estimators = [[{ type = "Driver", name = "baseline", url = "http://localhost:11088/baseline" }]]

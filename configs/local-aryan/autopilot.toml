@@ -1,0 +1,34 @@
+node-url = "http://localhost:8545"
+simulation-node-url = "http://localhost:8545"
+
+[logging]
+filter = "warn,autopilot=debug,shared=info,price_estimation=info,driver=debug,pod=debug"
+
+[current-block]
+poll-interval = "1s"
+
+[[gas-estimators]]
+type = "Web3"
+
+[[gas-estimators]]
+type = "Alloy"
+
+[[drivers]]
+name = "baseline"
+url = "http://localhost:11088/baseline"
+address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
+
+[fee-policies]
+
+[database]
+write-url = "postgresql://aryan:123@localhost:5432/aryan"
+read-url = "postgresql://aryan:123@localhost:5432/aryan"
+
+[native-price-estimation]
+estimators = [[{ type = "Driver", name = "baseline", url = "http://localhost:11088/baseline" }]]
+
+[native-price-estimation.cache]
+max-age = "20m"
+
+[order-quoting]
+price-estimation-drivers = [{ name = "baseline", url = "http://localhost:11088/baseline" }]
