@@ -197,21 +197,37 @@ pub struct Interaction {
     pub data: Vec<u8>,
 }
 
-impl Interaction {
-    pub fn encode(&self) -> EncodedInteraction {
-        (
-            self.target,
-            self.value,
-            Bytes::copy_from_slice(self.data.as_slice()),
-        )
-    }
+pub trait InteractionEncoding {
+    fn encode(&self) -> EncodedInteraction;
+}
 
+impl Interaction {
     pub fn to_interaction_data(&self) -> InteractionData {
         InteractionData {
             target: self.target,
             value: self.value,
             call_data: self.data.clone(),
         }
+    }
+}
+
+impl InteractionEncoding for Interaction {
+    fn encode(&self) -> EncodedInteraction {
+        (
+            self.target,
+            self.value,
+            Bytes::copy_from_slice(self.data.as_slice()),
+        )
+    }
+}
+
+impl InteractionEncoding for InteractionData {
+    fn encode(&self) -> EncodedInteraction {
+        (
+            self.target,
+            self.value,
+            Bytes::copy_from_slice(&self.call_data),
+        )
     }
 }
 
@@ -229,4 +245,80 @@ pub fn encode_interactions<'a>(
     interactions: impl IntoIterator<Item = &'a Interaction>,
 ) -> Vec<EncodedInteraction> {
     interactions.into_iter().map(|i| i.encode()).collect()
+}
+
+#[derive(Clone, Debug)]
+pub struct WrapperCall {
+    pub address: Address,
+    pub data: Bytes,
+}
+
+/// Encodes a settlement transaction that uses wrapper contracts.
+///
+/// Takes the base settlement calldata and wraps it in a wrappedSettleCall
+/// with encoded wrapper metadata. Since wrappers are a chain, the wrapper
+/// address to call is also processed by this function.
+///
+/// Returns (first_wrapper_address, wrapped_calldata)
+pub fn encode_wrapper_settlement(
+    wrappers: &[WrapperCall],
+    settle_calldata: Bytes,
+) -> Option<(Address, Bytes)> {
+    if wrappers.is_empty() {
+        return None;
+    };
+    let wrapper_data = encode_wrapper_data(wrappers);
+
+    // Create wrappedSettleCall
+    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+        settleData: settle_calldata,
+        wrapperData: wrapper_data,
+    }
+    .abi_encode();
+
+    Some((wrappers[0].address, calldata.into()))
+}
+
+/// Encodes wrapper metadata for wrapper settlement calls.
+/// As wrappers are called, each wrapper reads from wrapper calldata and
+/// consumes only their needed portion (however much data that is). Once wrapper
+/// is ready to call the settlement contract (or downstream wrapper) it calls
+/// the _internalSettle function provided in the CowWrapper abstract contract
+///
+/// Generally wrappers are encoded with a pair of Address (20 bytes) and then
+/// calldata (u16 length + data itself).
+///
+/// Since the first wrapper's address is the target of the transaction, it is
+/// not encoded.
+///
+/// The encoding format thus is:
+/// - The calldata of the first wrapper.
+/// - The address and calldata for each subsequent wrapper
+///
+/// Example: Encoding of 2 wrapper calls, the wrappers are named A, B and are
+/// called in the order A -> B
+///
+/// | A calldata length | A calldata | B address | B calldata length | B calldata |
+/// | u16               | &[u8]      | [u8; 20]  | u16               | &[u8]      |
+///
+/// Any additional wrappers will follow the same scheme: (address, length,
+/// calldata)
+///
+/// More information about wrapper encoding:
+/// https://docs.cow.fi/cow-protocol/integrate/wrappers#manual-encoding
+pub fn encode_wrapper_data(wrappers: &[WrapperCall]) -> Bytes {
+    let mut wrapper_data = Vec::new();
+
+    for (index, w) in wrappers.iter().enumerate() {
+        // Skip first wrapper's address (it's the transaction target)
+        if index != 0 {
+            wrapper_data.extend(w.address.as_slice());
+        }
+
+        // Encode data length as u16 in native endian, then the data itself
+        wrapper_data.extend((w.data.len() as u16).to_be_bytes().to_vec());
+        wrapper_data.extend(w.data.clone());
+    }
+
+    wrapper_data.into()
 }

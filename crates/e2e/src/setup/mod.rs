@@ -94,6 +94,7 @@ const DEFAULT_FILTERS: &[&str] = &[
     "solver=debug",
     "solvers=debug",
     "orderbook::api::request_summary=off",
+    "simulator=debug",
 ];
 
 fn with_default_filters<T>(custom_filters: impl IntoIterator<Item = T>) -> Vec<String>
