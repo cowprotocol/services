@@ -1,21 +1,32 @@
 use {
+    crate::dto::OrderSimulationResult,
     alloy::{
         primitives::{Address, U256},
         rpc::types::state::AccountOverride,
     },
-    anyhow::{Context, Result},
+    anyhow::{Context, Result, anyhow},
+    app_data::WrapperCall,
     balance_overrides::BalanceOverrideRequest,
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
-    model::{order::Order, order_simulator::OrderSimulation},
+    eth_domain_types::{BlockNo, NonZeroU256},
+    model::order::Order,
     simulator::{
         encoding::InteractionEncoding,
         swap_simulator::{EncodedSwap, Query, SwapSimulator, TradeEncoding},
     },
+    thiserror::Error,
 };
-
 pub struct OrderSimulator {
     simulator: SwapSimulator,
     chain_id: String,
+}
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("simulation could not be created")]
+    Other(anyhow::Error),
+    #[error("malformed input")]
+    MalformedInput(anyhow::Error),
 }
 
 impl OrderSimulator {
@@ -26,12 +37,11 @@ impl OrderSimulator {
         }
     }
 
-    pub async fn encode_order(&self, order: &Order) -> Result<EncodedSwap> {
-        let Some(app_data) = &order.metadata.full_app_data else {
-            anyhow::bail!("App data is not known for order {}", order.metadata.uid)
-        };
-        let app_data = serde_json::from_str::<app_data::Root>(app_data)?;
-
+    pub async fn encode_order(
+        &self,
+        order: &Order,
+        wrappers: Vec<WrapperCall>,
+    ) -> Result<EncodedSwap, Error> {
         let tokens = vec![order.data.sell_token, order.data.buy_token];
         // Clearing prices represent the limit price of the order; both order kinds
         // produce the same ratio: [buy_amount, sell_amount] for [sell_token,
@@ -39,8 +49,12 @@ impl OrderSimulator {
         let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
 
         let solver = Address::random();
+        // TODO(m-sz): Add support for specifying a partially filled order (current fill
+        // status or custom amount)
         let query = Query {
-            sell_amount: order.data.sell_amount.try_into()?,
+            sell_amount: NonZeroU256::try_from(order.data.sell_amount).map_err(|err| {
+                Error::MalformedInput(anyhow!("sell_amount `{}`: {err}", order.data.sell_amount))
+            })?,
             sell_token: order.data.sell_token,
             buy_amount: order.data.buy_amount,
             buy_token: order.data.buy_token,
@@ -53,8 +67,7 @@ impl OrderSimulator {
             clearing_prices,
             solver,
             tokens,
-            wrappers: app_data
-                .wrappers()
+            wrappers: wrappers
                 .iter()
                 .map(|wrapper| simulator::encoding::WrapperCall {
                     address: wrapper.address,
@@ -66,19 +79,31 @@ impl OrderSimulator {
         let swap = self
             .simulator
             .fake_swap(&query, TradeEncoding::Simple)
-            .await?;
+            .await
+            .map_err(Error::Other)?;
         let swap = add_interactions(swap, order);
         let swap = self.add_state_overrides(&query, swap).await?;
 
         Ok(swap)
     }
 
-    /// Simulates a swap of the provided EncodedSwap
+    /// Simulates a swap of the provided EncodedSwap.
+    ///
     /// The result contains the transaction simulation error (if any)
     /// and a full API request object that can be used to resimulate the swap
     /// using Tenderly.
-    pub async fn simulate_swap(&self, swap: EncodedSwap) -> Result<OrderSimulation> {
-        let result = self.simulator.simulate_settle_call(swap).await?;
+    pub async fn simulate_swap(
+        &self,
+        swap: EncodedSwap,
+        block_number: Option<u64>,
+    ) -> Result<OrderSimulationResult, Error> {
+        let block_number =
+            block_number.unwrap_or_else(|| self.simulator.current_block.borrow().number);
+        let result = self
+            .simulator
+            .simulate_settle_call(swap, block_number)
+            .await
+            .map_err(Error::Other)?;
 
         let tenderly_request = simulator::tenderly::dto::Request {
             transaction_index: None,
@@ -88,12 +113,13 @@ impl OrderSimulator {
                 self.chain_id.clone(),
                 &result.tx,
                 result.overrides,
-                None,
-            )?
+                Some(BlockNo(block_number)),
+            )
+            .map_err(|err| Error::Other(anyhow!(err)))?
         };
 
-        Ok(OrderSimulation {
-            tenderly_request: tenderly_request.into(),
+        Ok(OrderSimulationResult {
+            tenderly_request,
             error: result.result.err().map(|err| err.to_string()),
         })
     }
@@ -102,7 +128,7 @@ impl OrderSimulator {
         &self,
         query: &Query,
         mut swap: EncodedSwap,
-    ) -> Result<EncodedSwap> {
+    ) -> Result<EncodedSwap, Error> {
         // Override authenticator with AnyoneAuthenticator so our fake solver is
         // accepted.
         let authenticator = self
@@ -111,7 +137,8 @@ impl OrderSimulator {
             .authenticator()
             .call()
             .await
-            .context("could not fetch authenticator")?;
+            .context("could not fetch authenticator")
+            .map_err(Error::Other)?;
         swap.overrides.insert(
             authenticator,
             AccountOverride {
@@ -144,8 +171,9 @@ impl OrderSimulator {
             },
         );
 
-        // Fund the settlement contract with enough out tokens to pay out
-        self.simulator
+        // Fund the settlement contract with enough buy tokens to be paid out
+        match self
+            .simulator
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.buy_token,
@@ -153,7 +181,14 @@ impl OrderSimulator {
                 amount: query.buy_amount,
             })
             .await
-            .map(|(token, balance_override)| swap.overrides.insert(token, balance_override));
+        {
+            Some((token, balance_override)) => {
+                swap.overrides.insert(token, balance_override);
+            }
+            None => {
+                tracing::warn!("Could not set state balance override for the settlement contract");
+            }
+        };
 
         Ok(swap)
     }
@@ -165,11 +200,15 @@ fn add_interactions(mut swap: EncodedSwap, order: &Order) -> EncodedSwap {
         .interactions
         .pre
         .iter()
-        .map(InteractionEncoding::encode);
-    swap.settlement.interactions.pre = pre_interactions
-        .into_iter()
-        .chain(std::mem::take(&mut swap.settlement.interactions.pre))
+        .map(InteractionEncoding::encode)
         .collect();
+    // Prepend order pre_interactions so they run first
+    let settlement_pre_interactions =
+        std::mem::replace(&mut swap.settlement.interactions.pre, pre_interactions);
+    swap.settlement
+        .interactions
+        .pre
+        .extend(settlement_pre_interactions);
 
     // Add order post interactions after encoded swap's post interactions
     let post_interactions = order

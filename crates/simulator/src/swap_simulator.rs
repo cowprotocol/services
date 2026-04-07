@@ -80,7 +80,8 @@ pub struct EncodedSwap {
     pub receiver: Address,
 }
 
-/// The output of a swap simulation
+/// The output of a swap simulation.
+///
 /// Contains the transaction request that was used to perform the simulation
 /// (useful for introspection), The used state overrides and simulation result
 /// The result is of generic type O, and depends on the type of simulation:
@@ -234,8 +235,20 @@ impl SwapSimulator {
         })
     }
 
-    pub async fn simulate_settle_call(&self, swap: EncodedSwap) -> Result<SwapSimulation<Bytes>> {
-        let block = *self.current_block.borrow();
+    /// Simulate settle call on the latest block
+    pub async fn simulate_settle_call_on_latest(
+        &self,
+        swap: EncodedSwap,
+    ) -> Result<SwapSimulation<Bytes>> {
+        let block_number = self.current_block.borrow().number;
+        self.simulate_settle_call(swap, block_number).await
+    }
+
+    pub async fn simulate_settle_call(
+        &self,
+        swap: EncodedSwap,
+        block_number: u64,
+    ) -> Result<SwapSimulation<Bytes>> {
         let (settlement_target, calldata) = self.get_target_and_calldata(&swap);
 
         let overrides = swap.overrides;
@@ -252,7 +265,7 @@ impl SwapSimulator {
             .provider
             .call(tx.clone())
             .overrides(overrides.clone())
-            .block(block.number.into())
+            .block(block_number.into())
             .await
             .map_err(|err| anyhow!(err));
 

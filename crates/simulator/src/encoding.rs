@@ -226,7 +226,11 @@ impl InteractionEncoding for Interaction {
 
 impl InteractionEncoding for InteractionData {
     fn encode(&self) -> EncodedInteraction {
-        Interaction::from(self.clone()).encode()
+        (
+            self.target,
+            self.value,
+            Bytes::copy_from_slice(&self.call_data),
+        )
     }
 }
 

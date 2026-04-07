@@ -86,7 +86,11 @@ impl TxGasEstimator {
 
         // simulate_settle_call gives us back the encoded tx + overrides;
         // re-use those to call eth_estimateGas.
-        let sim = self.simulator.simulate_settle_call(swap).await.ok()?;
+        let sim = self
+            .simulator
+            .simulate_settle_call_on_latest(swap)
+            .await
+            .ok()?;
         let block = *self.simulator.current_block.borrow();
         let gas: u64 = self
             .simulator
