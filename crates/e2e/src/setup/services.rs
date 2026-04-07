@@ -185,10 +185,7 @@ impl<'a> Services<'a> {
             ..config
         };
 
-        let join_handle = tokio::task::spawn(autopilot::run(config, control));
-        self.wait_until_autopilot_ready().await;
-
-        join_handle
+        tokio::task::spawn(autopilot::run(config, control))
     }
 
     /// Start the autopilot service in a background task.
@@ -420,22 +417,6 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
-    }
-
-    async fn wait_until_autopilot_ready(&self) {
-        let is_up = || async {
-            let mut db = self.db.acquire().await.unwrap();
-            const QUERY: &str = "SELECT COUNT(*) FROM auctions";
-            let count: i64 = sqlx::query_scalar(QUERY)
-                .fetch_one(db.deref_mut())
-                .await
-                .unwrap();
-            self.mint_block().await;
-            count > 0
-        };
-        wait_for_condition(TIMEOUT, is_up)
-            .await
-            .expect("waiting for autopilot timed out");
     }
 
     /// Fetches the current auction. Don't use this as a synchronization
