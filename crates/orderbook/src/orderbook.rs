@@ -616,7 +616,7 @@ impl Orderbook {
         &self,
         full_app_data: &str,
     ) -> Result<(Interactions, Vec<WrapperCall>)> {
-        Ok(if !full_app_data.is_empty() {
+        if !full_app_data.is_empty() {
             let app_data = self
                 .order_validator
                 .validate_app_data(
@@ -626,10 +626,10 @@ impl Orderbook {
                     &None,
                 )
                 .map_err(|err| anyhow::anyhow!("{:?}", err))?;
-            (app_data.interactions, app_data.inner.protocol.wrappers)
+            Ok((app_data.interactions, app_data.inner.protocol.wrappers))
         } else {
-            (Interactions::default(), Vec::default())
-        })
+            Ok((Interactions::default(), Vec::default()))
+        }
     }
 
     /// Simulates an order based on its Uid using the OrderSimulator.
