@@ -61,7 +61,7 @@ impl IntoResponse for OrderSimulationError {
                 tracing::warn!(?err, "failed to parse order simulation input");
                 (
                     StatusCode::BAD_REQUEST,
-                    super::error("BadRequest", &format!("malformed input: {err}")),
+                    super::error("BadRequest", format!("malformed input: {err}")),
                 )
                     .into_response()
             }
