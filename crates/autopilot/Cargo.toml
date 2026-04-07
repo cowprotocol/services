@@ -92,9 +92,9 @@ anyhow = { workspace = true }
 vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
+jemalloc = ["observe/jemalloc", "tikv-jemallocator"]
 test-util = ["configs/test-util", "dep:tempfile", "price-estimation/test-util"]
 tokio-console = ["observe/tokio-console"]
-jemalloc = ["tikv-jemallocator", "observe/jemalloc"]
 
 [lints]
 workspace = true

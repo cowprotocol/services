@@ -35,8 +35,8 @@ rand = { workspace = true }
 rstest = { workspace = true }
 
 [features]
+jemalloc = ["observe/jemalloc", "tikv-jemallocator"]
 tokio-console = ["observe/tokio-console"]
-jemalloc = ["tikv-jemallocator", "observe/jemalloc"]
 
 [lints]
 workspace = true

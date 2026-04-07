@@ -83,9 +83,9 @@ vergen = { workspace = true, features = ["git", "gitcl"] }
 
 [features]
 e2e = []
+jemalloc = ["observe/jemalloc", "tikv-jemallocator"]
 test-util = ["dep:tempfile", "shared/test-util"]
 tokio-console = ["observe/tokio-console"]
-jemalloc = ["tikv-jemallocator", "observe/jemalloc"]
 
 [lints]
 workspace = true
