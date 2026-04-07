@@ -88,8 +88,9 @@ impl OrderSimulator {
             .map_err(Error::Other)?;
         let solver = Address::random();
         let query = Query {
-            sell_amount: NonZeroU256::try_from(remaining_sell)
-                .map_err(|err| Error::MalformedInput(anyhow!(err)))?,
+            sell_amount: NonZeroU256::try_from(remaining_sell).map_err(|err| {
+                Error::MalformedInput(anyhow!("sell_amount `{}`: {err}", order.data.sell_amount))
+            })?,
             sell_token: order.data.sell_token,
             buy_amount: remaining_buy,
             buy_token: order.data.buy_token,
@@ -136,7 +137,7 @@ impl OrderSimulator {
             block_number.unwrap_or_else(|| self.simulator.current_block.borrow().number);
         let result = self
             .simulator
-            .simulate_settle_call(swap, Some(block_number))
+            .simulate_settle_call(swap, block_number)
             .await
             .map_err(Error::Other)?;
 

@@ -8,12 +8,13 @@ use {
         order_simulator::{self, OrderSimulator},
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
-    alloy::primitives::{Address, B256, U256},
-    anyhow::{Context, Result},
+    alloy::primitives::{Address, B256},
+    anyhow::{Context, Result, anyhow},
     app_data::{AppDataHash, Validator, WrapperCall},
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
+    eth_domain_types::U256,
     model::{
         DomainSeparator,
         order::{
@@ -679,7 +680,9 @@ impl Orderbook {
         let full_app_data = request.app_data.unwrap_or_default();
         let (interactions, wrappers) = self
             .parse_interactions_and_wrappers(&full_app_data)
-            .map_err(OrderSimulationError::MalformedInput)?;
+            .map_err(|err| {
+                OrderSimulationError::MalformedInput(anyhow!("app_data `{}`: {err}", full_app_data))
+            })?;
         let order = Order {
             metadata: OrderMetadata {
                 owner: request.owner,
