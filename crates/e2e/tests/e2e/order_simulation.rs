@@ -10,7 +10,6 @@ use {
     number::units::EthUnit,
     orderbook::dto::OrderSimulationResult,
     reqwest::StatusCode,
-    serde_json::json,
     simulator::tenderly::dto::SimulationType,
 };
 
