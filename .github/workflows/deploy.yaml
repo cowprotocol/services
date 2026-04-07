@@ -10,9 +10,9 @@ on:
         type: choice
         options:
           - 'None'
-          - 'mimalloc-allocator'
+          - 'jemalloc'
           - 'tokio-console'
-        default: 'None'
+        default: 'jemalloc'
         required: false
       custom_features:
         description: 'Additional custom features (space-separated, e.g., "feature1 feature2")'
