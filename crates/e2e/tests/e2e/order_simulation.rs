@@ -331,6 +331,7 @@ async fn order_simulation_partial_fill(web3: Web3) {
         result.error.is_some(),
         "expected simulation failure with executed_amount=0 (needs 2 WETH, trader has 1)"
     );
+    assert!(result.error.unwrap().contains("reverted"));
 
     // executed_amount=1 WETH: only 1 WETH left to sell — must pass because
     // the trader holds exactly 1 WETH.

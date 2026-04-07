@@ -39,24 +39,13 @@ impl OrderSimulator {
         }
     }
 
-    /// Encodes an order for simulation.
-    ///
-    /// `executed_amount` overrides how much of the order has already been
-    /// filled (in the order's fill token: sell token for sell orders, buy
-    /// token for buy orders). When `None`, the executed amount is taken from
-    /// the order's metadata, which reflects the actual on-chain fill state.
-    pub async fn encode_order(
+    /// Calculates the remaining sell and buy amounts
+    /// Returns a tuple of (remaining_sell, remaining_buy)
+    fn remaining_amounts(
         &self,
         order: &Order,
-        wrappers: Vec<WrapperCall>,
         executed_amount: Option<U256>,
-    ) -> Result<EncodedSwap, Error> {
-        let tokens = vec![order.data.sell_token, order.data.buy_token];
-        // Clearing prices represent the limit price of the order; both order kinds
-        // produce the same ratio: [buy_amount, sell_amount] for [sell_token,
-        // buy_token].
-        let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
-
+    ) -> Result<(U256, U256), Error> {
         let executed_amount = executed_amount.unwrap_or_else(|| match order.data.kind {
             OrderKind::Buy => big_uint_to_u256(&order.metadata.executed_buy_amount)
                 .unwrap_or(order.data.buy_amount),
@@ -86,7 +75,29 @@ impl OrderSimulator {
             .remaining(order.data.buy_amount)
             .context("overflow computing remaining buy amount")
             .map_err(Error::Other)?;
+
+        Ok((remaining_sell, remaining_buy))
+    }
+
+    /// Encodes an order for simulation.
+    ///
+    /// `executed_amount` overrides how much of the order has already been
+    /// filled (in the order's fill token: sell token for sell orders, buy
+    /// token for buy orders). When `None`, the executed amount is taken from
+    /// the order's metadata, which reflects the actual on-chain fill state.
+    pub async fn encode_order(
+        &self,
+        order: &Order,
+        wrappers: Vec<WrapperCall>,
+        executed_amount: Option<U256>,
+    ) -> Result<EncodedSwap, Error> {
+        let tokens = vec![order.data.sell_token, order.data.buy_token];
+        // Clearing prices represent the limit price of the order; both order kinds
+        // produce the same ratio: [buy_amount, sell_amount] for [sell_token,
+        // buy_token].
+        let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
         let solver = Address::random();
+        let (remaining_sell, remaining_buy) = self.remaining_amounts(order, executed_amount)?;
         let query = Query {
             sell_amount: NonZeroU256::try_from(remaining_sell).map_err(|err| {
                 Error::MalformedInput(anyhow!("sell_amount `{}`: {err}", order.data.sell_amount))
