@@ -28,7 +28,7 @@ use {
 pub struct Config {
     pub max_pool_size: u32,
     /// Maps directly to Postgres' `statement_timeout` parameter, applied on a
-    /// per-connectionb basis, but *only* if the pool was created using
+    /// per-connection basis, but *only* if the pool was created using
     /// [`Postgres::try_new_with_timeout`].
     pub statement_timeout: Duration,
 }
@@ -64,7 +64,7 @@ impl Postgres {
     }
 
     /// Creates a Postgres connection pool, but applies the [`Config`]'s
-    /// `read_query_timeout` to all queries.
+    /// `statement_timeout` to all queries.
     pub fn try_new_with_timeout(uri: &str, config: Config) -> Result<Self> {
         let read_query_timeout = config.statement_timeout;
 
