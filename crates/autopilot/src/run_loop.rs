@@ -282,19 +282,19 @@ impl RunLoop {
             return None;
         };
 
+        if auction.orders.is_empty() {
+            // Updating liveness probe to not report unhealthy due to this optimization
+            self.probes.liveness.auction();
+            tracing::debug!("skipping empty auction");
+            return None;
+        }
+
         let id = self
             .persistence
             .get_next_auction_id()
             .await
             .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
             .ok()?;
-
-        if auction.orders.is_empty() {
-            // Updating liveness probe to not report unhealthy due to this optimization
-            self.probes.liveness.auction();
-            tracing::debug!(auction_id = id, "skipping empty auction");
-            return None;
-        }
 
         Metrics::auction(id);
         self.persistence.replace_current_auction_in_db(id, &auction);
