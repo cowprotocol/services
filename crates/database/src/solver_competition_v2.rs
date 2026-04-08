@@ -151,7 +151,7 @@ pub async fn load_by_id(
         .await?;
 
     const FETCH_TRADES: &str = r#"
-        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy, 
+        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy,
             COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
             COALESCE(o.buy_token, pjo.buy_token) AS buy_token
         FROM proposed_trade_executions AS pte
@@ -262,7 +262,7 @@ async fn save_solutions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_solutions 
+        r#"INSERT INTO proposed_solutions
         (auction_id, uid, id, solver, is_winner, filtered_out, score, price_tokens, price_values)"#,
     );
 
@@ -290,7 +290,7 @@ async fn save_trade_executions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_trade_executions 
+        r#"INSERT INTO proposed_trade_executions
         (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
     );
 
@@ -326,7 +326,7 @@ async fn save_jit_orders(
             // Order data is saved to `proposed_jit_orders` table only if the order is not
             // already in the `orders` table.
             const QUERY_JIT: &str = r#"
-                INSERT INTO proposed_jit_orders 
+                INSERT INTO proposed_jit_orders
                 (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
                 SELECT $1, $2, $3, $4, $5, $6, $7, $8
                     WHERE NOT EXISTS (SELECT 1 FROM orders WHERE uid = $3)
