@@ -1,4 +1,10 @@
-#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
+#![allow(
+    unused_imports,
+    unused_attributes,
+    clippy::all,
+    rustdoc::all,
+    non_snake_case
+)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -190,8 +196,7 @@ interface GnosisSafeProxyFactory {
     clippy::empty_structs_with_brackets
 )]
 pub mod GnosisSafeProxyFactory {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -204,9 +209,9 @@ pub mod GnosisSafeProxyFactory {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ProxyCreation(address,address)` and selector `0x4f51faf6c4561ff95f067657e43439f0f856d97c04d9ec9070a6199ad418e235`.
-```solidity
-event ProxyCreation(address proxy, address singleton);
-```*/
+    ```solidity
+    event ProxyCreation(address proxy, address singleton);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -227,24 +232,25 @@ event ProxyCreation(address proxy, address singleton);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for ProxyCreation {
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Address,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "ProxyCreation(address,address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                79u8, 81u8, 250u8, 246u8, 196u8, 86u8, 31u8, 249u8, 95u8, 6u8, 118u8,
-                87u8, 228u8, 52u8, 57u8, 240u8, 248u8, 86u8, 217u8, 124u8, 4u8, 217u8,
-                236u8, 144u8, 112u8, 166u8, 25u8, 154u8, 212u8, 24u8, 226u8, 53u8,
-            ]);
+
             const ANONYMOUS: bool = false;
+            const SIGNATURE: &'static str = "ProxyCreation(address,address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    79u8, 81u8, 250u8, 246u8, 196u8, 86u8, 31u8, 249u8, 95u8, 6u8, 118u8, 87u8,
+                    228u8, 52u8, 57u8, 240u8, 248u8, 86u8, 217u8, 124u8, 4u8, 217u8, 236u8, 144u8,
+                    112u8, 166u8, 25u8, 154u8, 212u8, 24u8, 226u8, 53u8,
+                ]);
+
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -256,21 +262,21 @@ event ProxyCreation(address proxy, address singleton);
                     singleton: data.1,
                 }
             }
+
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
+
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
@@ -282,10 +288,12 @@ event ProxyCreation(address proxy, address singleton);
                     ),
                 )
             }
+
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (Self::SIGNATURE_HASH.into(),)
             }
+
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -294,9 +302,7 @@ event ProxyCreation(address proxy, address singleton);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -305,6 +311,7 @@ event ProxyCreation(address proxy, address singleton);
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
+
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -319,9 +326,9 @@ event ProxyCreation(address proxy, address singleton);
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `calculateCreateProxyWithNonceAddress(address,bytes,uint256)` and selector `0x2500510e`.
-```solidity
-function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory initializer, uint256 saltNonce) external returns (address proxy);
-```*/
+    ```solidity
+    function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory initializer, uint256 saltNonce) external returns (address proxy);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct calculateCreateProxyWithNonceAddressCall {
@@ -333,7 +340,9 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
         pub saltNonce: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`calculateCreateProxyWithNonceAddress(address,bytes,uint256)`](calculateCreateProxyWithNonceAddressCall) function.
+    ///Container type for the return parameters of the
+    /// [`calculateCreateProxyWithNonceAddress(address,bytes,
+    /// uint256)`](calculateCreateProxyWithNonceAddressCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct calculateCreateProxyWithNonceAddressReturn {
@@ -347,7 +356,7 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -364,9 +373,7 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -375,16 +382,14 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<calculateCreateProxyWithNonceAddressCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<calculateCreateProxyWithNonceAddressCall> for UnderlyingRustTuple<'_> {
                 fn from(value: calculateCreateProxyWithNonceAddressCall) -> Self {
                     (value._singleton, value.initializer, value.saltNonce)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for calculateCreateProxyWithNonceAddressCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for calculateCreateProxyWithNonceAddressCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _singleton: tuple.0,
@@ -402,9 +407,7 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -413,16 +416,14 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<calculateCreateProxyWithNonceAddressReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<calculateCreateProxyWithNonceAddressReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: calculateCreateProxyWithNonceAddressReturn) -> Self {
                     (value.proxy,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for calculateCreateProxyWithNonceAddressReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for calculateCreateProxyWithNonceAddressReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { proxy: tuple.0 }
                 }
@@ -435,22 +436,22 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
                 alloy_sol_types::sol_data::Bytes,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "calculateCreateProxyWithNonceAddress(address,bytes,uint256)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [37u8, 0u8, 81u8, 14u8];
+            const SIGNATURE: &'static str =
+                "calculateCreateProxyWithNonceAddress(address,bytes,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -460,48 +461,44 @@ function calculateCreateProxyWithNonceAddress(address _singleton, bytes memory i
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.initializer,
                     ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.saltNonce),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.saltNonce,
                     ),
                 )
             }
+
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+            }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: calculateCreateProxyWithNonceAddressReturn = r.into();
                         r.proxy
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: calculateCreateProxyWithNonceAddressReturn = r.into();
-                        r.proxy
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: calculateCreateProxyWithNonceAddressReturn = r.into();
+                    r.proxy
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `createProxy(address,bytes)` and selector `0x61b69abd`.
-```solidity
-function createProxy(address singleton, bytes memory data) external returns (address proxy);
-```*/
+    ```solidity
+    function createProxy(address singleton, bytes memory data) external returns (address proxy);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createProxyCall {
@@ -511,7 +508,8 @@ function createProxy(address singleton, bytes memory data) external returns (add
         pub data: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`createProxy(address,bytes)`](createProxyCall) function.
+    ///Container type for the return parameters of the
+    /// [`createProxy(address,bytes)`](createProxyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createProxyReturn {
@@ -525,7 +523,7 @@ function createProxy(address singleton, bytes memory data) external returns (add
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -540,9 +538,7 @@ function createProxy(address singleton, bytes memory data) external returns (add
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -575,9 +571,7 @@ function createProxy(address singleton, bytes memory data) external returns (add
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -605,22 +599,21 @@ function createProxy(address singleton, bytes memory data) external returns (add
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "createProxy(address,bytes)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [97u8, 182u8, 154u8, 189u8];
+            const SIGNATURE: &'static str = "createProxy(address,bytes)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -632,43 +625,39 @@ function createProxy(address singleton, bytes memory data) external returns (add
                     ),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: createProxyReturn = r.into();
                         r.proxy
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: createProxyReturn = r.into();
-                        r.proxy
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: createProxyReturn = r.into();
+                    r.proxy
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `createProxyWithCallback(address,bytes,uint256,address)` and selector `0xd18af54d`.
-```solidity
-function createProxyWithCallback(address _singleton, bytes memory initializer, uint256 saltNonce, address callback) external returns (address proxy);
-```*/
+    ```solidity
+    function createProxyWithCallback(address _singleton, bytes memory initializer, uint256 saltNonce, address callback) external returns (address proxy);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createProxyWithCallbackCall {
@@ -682,7 +671,9 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
         pub callback: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`createProxyWithCallback(address,bytes,uint256,address)`](createProxyWithCallbackCall) function.
+    ///Container type for the return parameters of the
+    /// [`createProxyWithCallback(address,bytes,uint256,
+    /// address)`](createProxyWithCallbackCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createProxyWithCallbackReturn {
@@ -696,7 +687,7 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -715,9 +706,7 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -726,8 +715,7 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<createProxyWithCallbackCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<createProxyWithCallbackCall> for UnderlyingRustTuple<'_> {
                 fn from(value: createProxyWithCallbackCall) -> Self {
                     (
                         value._singleton,
@@ -739,8 +727,7 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for createProxyWithCallbackCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for createProxyWithCallbackCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _singleton: tuple.0,
@@ -759,9 +746,7 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -770,16 +755,14 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<createProxyWithCallbackReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<createProxyWithCallbackReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: createProxyWithCallbackReturn) -> Self {
                     (value.proxy,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for createProxyWithCallbackReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for createProxyWithCallbackReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { proxy: tuple.0 }
                 }
@@ -793,22 +776,22 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "createProxyWithCallback(address,bytes,uint256,address)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [209u8, 138u8, 245u8, 77u8];
+            const SIGNATURE: &'static str =
+                "createProxyWithCallback(address,bytes,uint256,address)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -818,51 +801,47 @@ function createProxyWithCallback(address _singleton, bytes memory initializer, u
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.initializer,
                     ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.saltNonce),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.saltNonce,
+                    ),
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.callback,
                     ),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: createProxyWithCallbackReturn = r.into();
                         r.proxy
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: createProxyWithCallbackReturn = r.into();
-                        r.proxy
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: createProxyWithCallbackReturn = r.into();
+                    r.proxy
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `createProxyWithNonce(address,bytes,uint256)` and selector `0x1688f0b9`.
-```solidity
-function createProxyWithNonce(address _singleton, bytes memory initializer, uint256 saltNonce) external returns (address proxy);
-```*/
+    ```solidity
+    function createProxyWithNonce(address _singleton, bytes memory initializer, uint256 saltNonce) external returns (address proxy);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createProxyWithNonceCall {
@@ -874,7 +853,9 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
         pub saltNonce: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`createProxyWithNonce(address,bytes,uint256)`](createProxyWithNonceCall) function.
+    ///Container type for the return parameters of the
+    /// [`createProxyWithNonce(address,bytes,
+    /// uint256)`](createProxyWithNonceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createProxyWithNonceReturn {
@@ -888,7 +869,7 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -905,9 +886,7 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -916,16 +895,14 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<createProxyWithNonceCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<createProxyWithNonceCall> for UnderlyingRustTuple<'_> {
                 fn from(value: createProxyWithNonceCall) -> Self {
                     (value._singleton, value.initializer, value.saltNonce)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for createProxyWithNonceCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for createProxyWithNonceCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _singleton: tuple.0,
@@ -943,9 +920,7 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -954,16 +929,14 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<createProxyWithNonceReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<createProxyWithNonceReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: createProxyWithNonceReturn) -> Self {
                     (value.proxy,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for createProxyWithNonceReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for createProxyWithNonceReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { proxy: tuple.0 }
                 }
@@ -976,22 +949,21 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
                 alloy_sol_types::sol_data::Bytes,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "createProxyWithNonce(address,bytes,uint256)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [22u8, 136u8, 240u8, 185u8];
+            const SIGNATURE: &'static str = "createProxyWithNonce(address,bytes,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1001,53 +973,50 @@ function createProxyWithNonce(address _singleton, bytes memory initializer, uint
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.initializer,
                     ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.saltNonce),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.saltNonce,
                     ),
                 )
             }
+
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+            }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: createProxyWithNonceReturn = r.into();
                         r.proxy
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: createProxyWithNonceReturn = r.into();
-                        r.proxy
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: createProxyWithNonceReturn = r.into();
+                    r.proxy
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `proxyCreationCode()` and selector `0x53e5d935`.
-```solidity
-function proxyCreationCode() external pure returns (bytes memory);
-```*/
+    ```solidity
+    function proxyCreationCode() external pure returns (bytes memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proxyCreationCodeCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`proxyCreationCode()`](proxyCreationCodeCall) function.
+    ///Container type for the return parameters of the
+    /// [`proxyCreationCode()`](proxyCreationCodeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proxyCreationCodeReturn {
@@ -1061,7 +1030,7 @@ function proxyCreationCode() external pure returns (bytes memory);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1070,9 +1039,7 @@ function proxyCreationCode() external pure returns (bytes memory);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1081,16 +1048,14 @@ function proxyCreationCode() external pure returns (bytes memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<proxyCreationCodeCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<proxyCreationCodeCall> for UnderlyingRustTuple<'_> {
                 fn from(value: proxyCreationCodeCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for proxyCreationCodeCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for proxyCreationCodeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -1104,9 +1069,7 @@ function proxyCreationCode() external pure returns (bytes memory);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1115,16 +1078,14 @@ function proxyCreationCode() external pure returns (bytes memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<proxyCreationCodeReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<proxyCreationCodeReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: proxyCreationCodeReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for proxyCreationCodeReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for proxyCreationCodeReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1133,68 +1094,64 @@ function proxyCreationCode() external pure returns (bytes memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for proxyCreationCodeCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Bytes;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "proxyCreationCode()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [83u8, 229u8, 217u8, 53u8];
+            const SIGNATURE: &'static str = "proxyCreationCode()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: proxyCreationCodeReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: proxyCreationCodeReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: proxyCreationCodeReturn = r.into();
+                    r._0
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `proxyRuntimeCode()` and selector `0xaddacc0f`.
-```solidity
-function proxyRuntimeCode() external pure returns (bytes memory);
-```*/
+    ```solidity
+    function proxyRuntimeCode() external pure returns (bytes memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proxyRuntimeCodeCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`proxyRuntimeCode()`](proxyRuntimeCodeCall) function.
+    ///Container type for the return parameters of the
+    /// [`proxyRuntimeCode()`](proxyRuntimeCodeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proxyRuntimeCodeReturn {
@@ -1208,7 +1165,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1217,9 +1174,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1228,16 +1183,14 @@ function proxyRuntimeCode() external pure returns (bytes memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<proxyRuntimeCodeCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<proxyRuntimeCodeCall> for UnderlyingRustTuple<'_> {
                 fn from(value: proxyRuntimeCodeCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for proxyRuntimeCodeCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for proxyRuntimeCodeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -1251,9 +1204,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1262,16 +1213,14 @@ function proxyRuntimeCode() external pure returns (bytes memory);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<proxyRuntimeCodeReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<proxyRuntimeCodeReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: proxyRuntimeCodeReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for proxyRuntimeCodeReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for proxyRuntimeCodeReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1280,61 +1229,55 @@ function proxyRuntimeCode() external pure returns (bytes memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for proxyRuntimeCodeCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Bytes;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "proxyRuntimeCode()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [173u8, 218u8, 204u8, 15u8];
+            const SIGNATURE: &'static str = "proxyRuntimeCode()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: proxyRuntimeCodeReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: proxyRuntimeCodeReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: proxyRuntimeCodeReturn = r.into();
+                    r._0
+                })
             }
         }
     };
     ///Container for all the [`GnosisSafeProxyFactory`](self) function calls.
     #[derive(Clone)]
-    #[derive()]
     pub enum GnosisSafeProxyFactoryCalls {
         #[allow(missing_docs)]
         calculateCreateProxyWithNonceAddress(calculateCreateProxyWithNonceAddressCall),
@@ -1352,8 +1295,9 @@ function proxyRuntimeCode() external pure returns (bytes memory);
     impl GnosisSafeProxyFactoryCalls {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the variants.
-        /// No guarantees are made about the order of the selectors.
+        /// Note that the selectors might not be in the same order as the
+        /// variants. No guarantees are made about the order of the
+        /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
@@ -1364,15 +1308,6 @@ function proxyRuntimeCode() external pure returns (bytes memory);
             [173u8, 218u8, 204u8, 15u8],
             [209u8, 138u8, 245u8, 77u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(createProxyWithNonce),
-            ::core::stringify!(calculateCreateProxyWithNonceAddress),
-            ::core::stringify!(proxyCreationCode),
-            ::core::stringify!(createProxy),
-            ::core::stringify!(proxyRuntimeCode),
-            ::core::stringify!(createProxyWithCallback),
-        ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <createProxyWithNonceCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -1382,6 +1317,16 @@ function proxyRuntimeCode() external pure returns (bytes memory);
             <proxyRuntimeCodeCall as alloy_sol_types::SolCall>::SIGNATURE,
             <createProxyWithCallbackCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(createProxyWithNonce),
+            ::core::stringify!(calculateCreateProxyWithNonceAddress),
+            ::core::stringify!(proxyCreationCode),
+            ::core::stringify!(createProxy),
+            ::core::stringify!(proxyRuntimeCode),
+            ::core::stringify!(createProxyWithCallback),
+        ];
+
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1394,29 +1339,27 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
+
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for GnosisSafeProxyFactoryCalls {
-        const NAME: &'static str = "GnosisSafeProxyFactoryCalls";
-        const MIN_DATA_LENGTH: usize = 0usize;
         const COUNT: usize = 6usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const NAME: &'static str = "GnosisSafeProxyFactoryCalls";
+
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::calculateCreateProxyWithNonceAddress(_) => {
                     <calculateCreateProxyWithNonceAddressCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::createProxy(_) => {
-                    <createProxyCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::createProxy(_) => <createProxyCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::createProxyWithCallback(_) => {
                     <createProxyWithCallbackCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -1431,30 +1374,29 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                 }
             }
         }
+
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
+
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
+
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls>] = &[
+            )
+                -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls>] = &[
                 {
                     fn createProxyWithNonce(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls> {
-                        <createProxyWithNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <createProxyWithNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GnosisSafeProxyFactoryCalls::createProxyWithNonce)
                     }
                     createProxyWithNonce
@@ -1476,9 +1418,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                     fn proxyCreationCode(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls> {
-                        <proxyCreationCodeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <proxyCreationCodeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GnosisSafeProxyFactoryCalls::proxyCreationCode)
                     }
                     proxyCreationCode
@@ -1487,9 +1427,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                     fn createProxy(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls> {
-                        <createProxyCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <createProxyCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GnosisSafeProxyFactoryCalls::createProxy)
                     }
                     createProxy
@@ -1498,9 +1436,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                     fn proxyRuntimeCode(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls> {
-                        <proxyRuntimeCodeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                        <proxyRuntimeCodeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GnosisSafeProxyFactoryCalls::proxyRuntimeCode)
                     }
                     proxyRuntimeCode
@@ -1510,23 +1446,22 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls> {
                         <createProxyWithCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(GnosisSafeProxyFactoryCalls::createProxyWithCallback)
+                            data,
+                        )
+                        .map(GnosisSafeProxyFactoryCalls::createProxyWithCallback)
                     }
                     createProxyWithCallback
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
+
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -1535,7 +1470,9 @@ function proxyRuntimeCode() external pure returns (bytes memory);
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls>] = &[
+            ) -> alloy_sol_types::Result<
+                GnosisSafeProxyFactoryCalls,
+            >] = &[
                 {
                     fn createProxyWithNonce(
                         data: &[u8],
@@ -1575,9 +1512,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                     fn createProxy(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls> {
-                        <createProxyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <createProxyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(GnosisSafeProxyFactoryCalls::createProxy)
                     }
                     createProxy
@@ -1587,9 +1522,9 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GnosisSafeProxyFactoryCalls> {
                         <proxyRuntimeCodeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GnosisSafeProxyFactoryCalls::proxyRuntimeCode)
+                            data,
+                        )
+                        .map(GnosisSafeProxyFactoryCalls::proxyRuntimeCode)
                     }
                     proxyRuntimeCode
                 },
@@ -1606,15 +1541,14 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
+
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
@@ -1650,6 +1584,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                 }
             }
         }
+
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
@@ -1693,8 +1628,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
         }
     }
     ///Container for all the [`GnosisSafeProxyFactory`](self) events.
-    #[derive(Clone)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     pub enum GnosisSafeProxyFactoryEvents {
         #[allow(missing_docs)]
         ProxyCreation(ProxyCreation),
@@ -1702,25 +1636,22 @@ function proxyRuntimeCode() external pure returns (bytes memory);
     impl GnosisSafeProxyFactoryEvents {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the variants.
-        /// No guarantees are made about the order of the selectors.
+        /// Note that the selectors might not be in the same order as the
+        /// variants. No guarantees are made about the order of the
+        /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 32usize]] = &[
-            [
-                79u8, 81u8, 250u8, 246u8, 196u8, 86u8, 31u8, 249u8, 95u8, 6u8, 118u8,
-                87u8, 228u8, 52u8, 57u8, 240u8, 248u8, 86u8, 217u8, 124u8, 4u8, 217u8,
-                236u8, 144u8, 112u8, 166u8, 25u8, 154u8, 212u8, 24u8, 226u8, 53u8,
-            ],
-        ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(ProxyCreation),
-        ];
+        pub const SELECTORS: &'static [[u8; 32usize]] = &[[
+            79u8, 81u8, 250u8, 246u8, 196u8, 86u8, 31u8, 249u8, 95u8, 6u8, 118u8, 87u8, 228u8,
+            52u8, 57u8, 240u8, 248u8, 86u8, 217u8, 124u8, 4u8, 217u8, 236u8, 144u8, 112u8, 166u8,
+            25u8, 154u8, 212u8, 24u8, 226u8, 53u8,
+        ]];
         /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <ProxyCreation as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
+        pub const SIGNATURES: &'static [&'static str] =
+            &[<ProxyCreation as alloy_sol_types::SolEvent>::SIGNATURE];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[::core::stringify!(ProxyCreation)];
+
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1733,42 +1664,37 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
+
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for GnosisSafeProxyFactoryEvents {
-        const NAME: &'static str = "GnosisSafeProxyFactoryEvents";
         const COUNT: usize = 1usize;
+        const NAME: &'static str = "GnosisSafeProxyFactoryEvents";
+
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<ProxyCreation as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <ProxyCreation as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <ProxyCreation as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::ProxyCreation)
                 }
-                _ => {
-                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                        log: alloy_sol_types::private::Box::new(
-                            alloy_sol_types::private::LogData::new_unchecked(
-                                topics.to_vec(),
-                                data.to_vec().into(),
-                            ),
+                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                    log: alloy_sol_types::private::Box::new(
+                        alloy_sol_types::private::LogData::new_unchecked(
+                            topics.to_vec(),
+                            data.to_vec().into(),
                         ),
-                    })
-                }
+                    ),
+                }),
             }
         }
     }
@@ -1781,6 +1707,7 @@ function proxyRuntimeCode() external pure returns (bytes memory);
                 }
             }
         }
+
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
                 Self::ProxyCreation(inner) => {
@@ -1789,10 +1716,10 @@ function proxyRuntimeCode() external pure returns (bytes memory);
             }
         }
     }
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`GnosisSafeProxyFactory`](self) contract instance.
 
-See the [wrapper's documentation](`GnosisSafeProxyFactoryInstance`) for more details.*/
+    See the [wrapper's documentation](`GnosisSafeProxyFactoryInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1805,43 +1732,41 @@ See the [wrapper's documentation](`GnosisSafeProxyFactoryInstance`) for more det
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<GnosisSafeProxyFactoryInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<GnosisSafeProxyFactoryInstance<P, N>>>
+    {
         GnosisSafeProxyFactoryInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        __provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         GnosisSafeProxyFactoryInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`GnosisSafeProxyFactory`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`GnosisSafeProxyFactory`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`GnosisSafeProxyFactory`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct GnosisSafeProxyFactoryInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1852,33 +1777,32 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for GnosisSafeProxyFactoryInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("GnosisSafeProxyFactoryInstance").field(&self.address).finish()
+            f.debug_tuple("GnosisSafeProxyFactoryInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GnosisSafeProxyFactoryInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GnosisSafeProxyFactoryInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`GnosisSafeProxyFactory`](self) contract instance.
 
-See the [wrapper's documentation](`GnosisSafeProxyFactoryInstance`) for more details.*/
+        See the [wrapper's documentation](`GnosisSafeProxyFactoryInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -1887,11 +1811,12 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+        and constructor arguments, if any.
+
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -1899,21 +1824,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -1921,7 +1850,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     impl<P: ::core::clone::Clone, N> GnosisSafeProxyFactoryInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> GnosisSafeProxyFactoryInstance<P, N> {
             GnosisSafeProxyFactoryInstance {
@@ -1932,39 +1862,38 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GnosisSafeProxyFactoryInstance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GnosisSafeProxyFactoryInstance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-        ///Creates a new call builder for the [`calculateCreateProxyWithNonceAddress`] function.
+
+        ///Creates a new call builder for the
+        /// [`calculateCreateProxyWithNonceAddress`] function.
         pub fn calculateCreateProxyWithNonceAddress(
             &self,
             _singleton: alloy_sol_types::private::Address,
             initializer: alloy_sol_types::private::Bytes,
             saltNonce: alloy_sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<
-            &P,
-            calculateCreateProxyWithNonceAddressCall,
-            N,
-        > {
-            self.call_builder(
-                &calculateCreateProxyWithNonceAddressCall {
-                    _singleton,
-                    initializer,
-                    saltNonce,
-                },
-            )
+        ) -> alloy_contract::SolCallBuilder<&P, calculateCreateProxyWithNonceAddressCall, N>
+        {
+            self.call_builder(&calculateCreateProxyWithNonceAddressCall {
+                _singleton,
+                initializer,
+                saltNonce,
+            })
         }
+
         ///Creates a new call builder for the [`createProxy`] function.
         pub fn createProxy(
             &self,
@@ -1973,7 +1902,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, createProxyCall, N> {
             self.call_builder(&createProxyCall { singleton, data })
         }
-        ///Creates a new call builder for the [`createProxyWithCallback`] function.
+
+        ///Creates a new call builder for the [`createProxyWithCallback`]
+        /// function.
         pub fn createProxyWithCallback(
             &self,
             _singleton: alloy_sol_types::private::Address,
@@ -1981,36 +1912,36 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             saltNonce: alloy_sol_types::private::primitives::aliases::U256,
             callback: alloy_sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, createProxyWithCallbackCall, N> {
-            self.call_builder(
-                &createProxyWithCallbackCall {
-                    _singleton,
-                    initializer,
-                    saltNonce,
-                    callback,
-                },
-            )
+            self.call_builder(&createProxyWithCallbackCall {
+                _singleton,
+                initializer,
+                saltNonce,
+                callback,
+            })
         }
-        ///Creates a new call builder for the [`createProxyWithNonce`] function.
+
+        ///Creates a new call builder for the [`createProxyWithNonce`]
+        /// function.
         pub fn createProxyWithNonce(
             &self,
             _singleton: alloy_sol_types::private::Address,
             initializer: alloy_sol_types::private::Bytes,
             saltNonce: alloy_sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, createProxyWithNonceCall, N> {
-            self.call_builder(
-                &createProxyWithNonceCall {
-                    _singleton,
-                    initializer,
-                    saltNonce,
-                },
-            )
+            self.call_builder(&createProxyWithNonceCall {
+                _singleton,
+                initializer,
+                saltNonce,
+            })
         }
+
         ///Creates a new call builder for the [`proxyCreationCode`] function.
         pub fn proxyCreationCode(
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, proxyCreationCodeCall, N> {
             self.call_builder(&proxyCreationCodeCall)
         }
+
         ///Creates a new call builder for the [`proxyRuntimeCode`] function.
         pub fn proxyRuntimeCode(
             &self,
@@ -2019,27 +1950,26 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GnosisSafeProxyFactoryInstance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GnosisSafeProxyFactoryInstance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
+
         ///Creates a new event filter for the [`ProxyCreation`] event.
-        pub fn ProxyCreation_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, ProxyCreation, N> {
+        pub fn ProxyCreation_filter(&self) -> alloy_contract::Event<&P, ProxyCreation, N> {
             self.event_filter::<ProxyCreation>()
         }
     }
 }
-pub type Instance = GnosisSafeProxyFactory::GnosisSafeProxyFactoryInstance<
-    ::alloy_provider::DynProvider,
->;
+pub type Instance =
+    GnosisSafeProxyFactory::GnosisSafeProxyFactoryInstance<::alloy_provider::DynProvider>;

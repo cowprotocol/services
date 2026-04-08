@@ -1,2 +1,0 @@
-# Applying our custom formatting to the generated code is broken.
-# That's why we specifically unset those rules for this directory.

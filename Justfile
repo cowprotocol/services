@@ -7,6 +7,8 @@ setup:
     cargo r -r -- vendor && \
     cargo r -r -- generate && \
     cargo +nightly fmt --all && \
+    cd generated && cargo +nightly fmt --all && \
+    cd ../.. && \
     tombi format
 
 # Generate contract bindings
@@ -48,6 +50,7 @@ clippy:
 # Format the repository
 fmt *extra:
     cargo +nightly fmt --all -- {{extra}}
+    cd contracts && cargo +nightly fmt --all -- {{extra}}
 
 # Format .toml files in the repository
 fmt-toml *extra:

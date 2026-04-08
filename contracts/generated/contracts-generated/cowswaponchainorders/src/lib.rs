@@ -1,4 +1,10 @@
-#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
+#![allow(
+    unused_imports,
+    unused_attributes,
+    clippy::all,
+    rustdoc::all,
+    non_snake_case
+)]
 //! Auto-generated contract bindings. Do not edit.
 ///Module containing a contract's types and functions.
 /**
@@ -16,12 +22,11 @@ library GPv2Order {
     clippy::empty_structs_with_brackets
 )]
 pub mod GPv2Order {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct Data { address sellToken; address buyToken; address receiver; uint256 sellAmount; uint256 buyAmount; uint32 validTo; bytes32 appData; uint256 feeAmount; bytes32 kind; bool partiallyFillable; bytes32 sellTokenBalance; bytes32 buyTokenBalance; }
-```*/
+    struct Data { address sellToken; address buyToken; address receiver; uint256 sellAmount; uint256 buyAmount; uint32 validTo; bytes32 appData; uint256 feeAmount; bytes32 kind; bool partiallyFillable; bytes32 sellTokenBalance; bytes32 buyTokenBalance; }
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Data {
@@ -57,7 +62,7 @@ struct Data { address sellToken; address buyToken; address receiver; uint256 sel
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
@@ -91,9 +96,7 @@ struct Data { address sellToken; address buyToken; address receiver; uint256 sel
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -187,91 +190,91 @@ struct Data { address sellToken; address buyToken; address receiver; uint256 sel
                     > as alloy_sol_types::SolType>::tokenize(&self.buyTokenBalance),
                 )
             }
+
             #[inline]
             fn stv_abi_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
                     return size;
                 }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
             }
+
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
                 <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
             }
+
             #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
+            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
+                    &tuple, out,
+                )
             }
+
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
                     return size;
                 }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
+                    &tuple,
+                )
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolType for Data {
             type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+
+            const ENCODED_SIZE: Option<usize> =
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> =
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
             const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+
             #[inline]
             fn valid_token(token: &Self::Token<'_>) -> bool {
                 <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
             }
+
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::detokenize(token);
+                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
                 <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolStruct for Data {
             const NAME: &'static str = "Data";
+
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "Data(address sellToken,address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,uint32 validTo,bytes32 appData,uint256 feeAmount,bytes32 kind,bool partiallyFillable,bytes32 sellTokenBalance,bytes32 buyTokenBalance)",
+                    "Data(address sellToken,address buyToken,address receiver,uint256 \
+                     sellAmount,uint256 buyAmount,uint32 validTo,bytes32 appData,uint256 \
+                     feeAmount,bytes32 kind,bool partiallyFillable,bytes32 \
+                     sellTokenBalance,bytes32 buyTokenBalance)",
                 )
             }
+
             #[inline]
-            fn eip712_components() -> alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Cow<'static, str>,
-            > {
+            fn eip712_components()
+            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
+            {
                 alloy_sol_types::private::Vec::new()
             }
+
             #[inline]
             fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
                 <Self as alloy_sol_types::SolStruct>::eip712_root_type()
             }
+
             #[inline]
             fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
                 [
@@ -387,14 +390,13 @@ struct Data { address sellToken; address buyToken; address receiver; uint256 sel
                         &rust.buyTokenBalance,
                     )
             }
+
             #[inline]
             fn encode_topic_preimage(
                 rust: &Self::RustType,
                 out: &mut alloy_sol_types::private::Vec<u8>,
             ) {
-                out.reserve(
-                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
-                );
+                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
                 <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.sellToken,
                     out,
@@ -460,25 +462,19 @@ struct Data { address sellToken; address buyToken; address receiver; uint256 sel
                     out,
                 );
             }
+
             #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
+            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
                 let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    rust,
-                    &mut out,
-                );
-                alloy_sol_types::abi::token::WordToken(
-                    alloy_sol_types::private::keccak256(out),
-                )
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
+                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
             }
         }
     };
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`GPv2Order`](self) contract instance.
 
-See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
+    See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -491,15 +487,15 @@ See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
     }
     /**A [`GPv2Order`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`GPv2Order`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`GPv2Order`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct GPv2OrderInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -510,43 +506,45 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for GPv2OrderInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("GPv2OrderInstance").field(&self.address).finish()
+            f.debug_tuple("GPv2OrderInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GPv2OrderInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GPv2OrderInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`GPv2Order`](self) contract instance.
 
-See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
+        See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -554,7 +552,8 @@ See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
         }
     }
     impl<P: ::core::clone::Clone, N> GPv2OrderInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> GPv2OrderInstance<P, N> {
             GPv2OrderInstance {
@@ -565,14 +564,15 @@ See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GPv2OrderInstance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GPv2OrderInstance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -581,14 +581,15 @@ See the [wrapper's documentation](`GPv2OrderInstance`) for more details.*/
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GPv2OrderInstance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GPv2OrderInstance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -613,68 +614,67 @@ library ICoWSwapOnchainOrders {
     clippy::empty_structs_with_brackets
 )]
 pub mod ICoWSwapOnchainOrders {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct OnchainSigningScheme(u8);
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::private::SolTypeValue<OnchainSigningScheme> for u8 {
             #[inline]
             fn stv_to_tokens(
                 &self,
-            ) -> <alloy_sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'_> {
+            ) -> <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'_>
+            {
                 alloy_sol_types::private::SolTypeValue::<
                     alloy_sol_types::sol_data::Uint<8>,
                 >::stv_to_tokens(self)
             }
+
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <alloy_sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::tokenize(self)
-                    .0
+                <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(self).0
             }
+
             #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
+            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
                 <alloy_sol_types::sol_data::Uint<
                     8,
                 > as alloy_sol_types::SolType>::abi_encode_packed_to(self, out)
             }
+
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
-                <alloy_sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::abi_encoded_size(self)
+                <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::abi_encoded_size(
+                    self,
+                )
             }
         }
         impl OnchainSigningScheme {
             /// The Solidity type name.
             pub const NAME: &'static str = stringify!(@ name);
+
             /// Convert from the underlying value type.
             #[inline]
             pub const fn from_underlying(value: u8) -> Self {
                 Self(value)
             }
+
             /// Return the underlying value.
             #[inline]
             pub const fn into_underlying(self) -> u8 {
                 self.0
             }
+
             /// Return the single encoding of this value, delegating to the
             /// underlying type.
             #[inline]
             pub fn abi_encode(&self) -> alloy_sol_types::private::Vec<u8> {
                 <Self as alloy_sol_types::SolType>::abi_encode(&self.0)
             }
+
             /// Return the packed encoding of this value, delegating to the
             /// underlying type.
             #[inline]
@@ -697,31 +697,29 @@ pub mod ICoWSwapOnchainOrders {
         #[automatically_derived]
         impl alloy_sol_types::SolType for OnchainSigningScheme {
             type RustType = u8;
-            type Token<'a> = <alloy_sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SOL_NAME: &'static str = Self::NAME;
-            const ENCODED_SIZE: Option<usize> = <alloy_sol_types::sol_data::Uint<
-                8,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            type Token<'a> =
+                <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::Token<'a>;
+
+            const ENCODED_SIZE: Option<usize> =
+                <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::ENCODED_SIZE;
             const PACKED_ENCODED_SIZE: Option<usize> = <alloy_sol_types::sol_data::Uint<
                 8,
             > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            const SOL_NAME: &'static str = Self::NAME;
+
             #[inline]
             fn valid_token(token: &Self::Token<'_>) -> bool {
                 Self::type_check(token).is_ok()
             }
+
             #[inline]
             fn type_check(token: &Self::Token<'_>) -> alloy_sol_types::Result<()> {
-                <alloy_sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::type_check(token)
+                <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::type_check(token)
             }
+
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                <alloy_sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::SolType>::detokenize(token)
+                <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::detokenize(token)
             }
         }
         #[automatically_derived]
@@ -732,6 +730,7 @@ pub mod ICoWSwapOnchainOrders {
                     8,
                 > as alloy_sol_types::EventTopic>::topic_preimage_length(rust)
             }
+
             #[inline]
             fn encode_topic_preimage(
                 rust: &Self::RustType,
@@ -741,20 +740,19 @@ pub mod ICoWSwapOnchainOrders {
                     8,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, out)
             }
+
             #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
-                <alloy_sol_types::sol_data::Uint<
-                    8,
-                > as alloy_sol_types::EventTopic>::encode_topic(rust)
+            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
+                <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::EventTopic>::encode_topic(
+                    rust,
+                )
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct OnchainSignature { OnchainSigningScheme scheme; bytes data; }
-```*/
+    struct OnchainSignature { OnchainSigningScheme scheme; bytes data; }
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct OnchainSignature {
@@ -770,13 +768,10 @@ struct OnchainSignature { OnchainSigningScheme scheme; bytes data; }
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            OnchainSigningScheme,
-            alloy_sol_types::sol_data::Bytes,
-        );
+        type UnderlyingSolTuple<'a> = (OnchainSigningScheme, alloy_sol_types::sol_data::Bytes);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             <OnchainSigningScheme as alloy_sol_types::SolType>::RustType,
@@ -784,9 +779,7 @@ struct OnchainSignature { OnchainSigningScheme scheme; bytes data; }
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -819,99 +812,92 @@ struct OnchainSignature { OnchainSigningScheme scheme; bytes data; }
             #[inline]
             fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
                 (
-                    <OnchainSigningScheme as alloy_sol_types::SolType>::tokenize(
-                        &self.scheme,
-                    ),
+                    <OnchainSigningScheme as alloy_sol_types::SolType>::tokenize(&self.scheme),
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.data,
                     ),
                 )
             }
+
             #[inline]
             fn stv_abi_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
                     return size;
                 }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
             }
+
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
                 <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
             }
+
             #[inline]
-            fn stv_abi_encode_packed_to(
-                &self,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
+            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
+                    &tuple, out,
+                )
             }
+
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
                     return size;
                 }
-                let tuple = <UnderlyingRustTuple<
-                    '_,
-                > as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
+                let tuple =
+                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
+                    &tuple,
+                )
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolType for OnchainSignature {
             type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+
+            const ENCODED_SIZE: Option<usize> =
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> =
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
             const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
-                '_,
-            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+
             #[inline]
             fn valid_token(token: &Self::Token<'_>) -> bool {
                 <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
             }
+
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::detokenize(token);
+                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
                 <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolStruct for OnchainSignature {
             const NAME: &'static str = "OnchainSignature";
+
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "OnchainSignature(uint8 scheme,bytes data)",
-                )
+                alloy_sol_types::private::Cow::Borrowed("OnchainSignature(uint8 scheme,bytes data)")
             }
+
             #[inline]
-            fn eip712_components() -> alloy_sol_types::private::Vec<
-                alloy_sol_types::private::Cow<'static, str>,
-            > {
+            fn eip712_components()
+            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
+            {
                 alloy_sol_types::private::Vec::new()
             }
+
             #[inline]
             fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
                 <Self as alloy_sol_types::SolStruct>::eip712_root_type()
             }
+
             #[inline]
             fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
                 [
@@ -939,14 +925,13 @@ struct OnchainSignature { OnchainSigningScheme scheme; bytes data; }
                         &rust.data,
                     )
             }
+
             #[inline]
             fn encode_topic_preimage(
                 rust: &Self::RustType,
                 out: &mut alloy_sol_types::private::Vec<u8>,
             ) {
-                out.reserve(
-                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
-                );
+                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
                 <OnchainSigningScheme as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.scheme,
                     out,
@@ -956,25 +941,19 @@ struct OnchainSignature { OnchainSigningScheme scheme; bytes data; }
                     out,
                 );
             }
+
             #[inline]
-            fn encode_topic(
-                rust: &Self::RustType,
-            ) -> alloy_sol_types::abi::token::WordToken {
+            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
                 let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    rust,
-                    &mut out,
-                );
-                alloy_sol_types::abi::token::WordToken(
-                    alloy_sol_types::private::keccak256(out),
-                )
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
+                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
             }
         }
     };
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`ICoWSwapOnchainOrders`](self) contract instance.
 
-See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more details.*/
+    See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -987,15 +966,15 @@ See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more deta
     }
     /**A [`ICoWSwapOnchainOrders`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`ICoWSwapOnchainOrders`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`ICoWSwapOnchainOrders`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct ICoWSwapOnchainOrdersInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1006,43 +985,45 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for ICoWSwapOnchainOrdersInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("ICoWSwapOnchainOrdersInstance").field(&self.address).finish()
+            f.debug_tuple("ICoWSwapOnchainOrdersInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ICoWSwapOnchainOrdersInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ICoWSwapOnchainOrdersInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`ICoWSwapOnchainOrders`](self) contract instance.
 
-See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more details.*/
+        See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -1050,7 +1031,8 @@ See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more deta
         }
     }
     impl<P: ::core::clone::Clone, N> ICoWSwapOnchainOrdersInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> ICoWSwapOnchainOrdersInstance<P, N> {
             ICoWSwapOnchainOrdersInstance {
@@ -1061,14 +1043,15 @@ See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more deta
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ICoWSwapOnchainOrdersInstance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ICoWSwapOnchainOrdersInstance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -1077,14 +1060,15 @@ See the [wrapper's documentation](`ICoWSwapOnchainOrdersInstance`) for more deta
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ICoWSwapOnchainOrdersInstance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ICoWSwapOnchainOrdersInstance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -1271,13 +1255,12 @@ interface CoWSwapOnchainOrders {
     clippy::empty_structs_with_brackets
 )]
 pub mod CoWSwapOnchainOrders {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `OrderInvalidation(bytes)` and selector `0xb8bad102ac8bbacfef31ff1c906ec6d951c230b4dce750bb0376b812ad35852a`.
-```solidity
-event OrderInvalidation(bytes orderUid);
-```*/
+    ```solidity
+    event OrderInvalidation(bytes orderUid);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1296,21 +1279,22 @@ event OrderInvalidation(bytes orderUid);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for OrderInvalidation {
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "OrderInvalidation(bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                184u8, 186u8, 209u8, 2u8, 172u8, 139u8, 186u8, 207u8, 239u8, 49u8, 255u8,
-                28u8, 144u8, 110u8, 198u8, 217u8, 81u8, 194u8, 48u8, 180u8, 220u8, 231u8,
-                80u8, 187u8, 3u8, 118u8, 184u8, 18u8, 173u8, 53u8, 133u8, 42u8,
-            ]);
+
             const ANONYMOUS: bool = false;
+            const SIGNATURE: &'static str = "OrderInvalidation(bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    184u8, 186u8, 209u8, 2u8, 172u8, 139u8, 186u8, 207u8, 239u8, 49u8, 255u8, 28u8,
+                    144u8, 110u8, 198u8, 217u8, 81u8, 194u8, 48u8, 180u8, 220u8, 231u8, 80u8,
+                    187u8, 3u8, 118u8, 184u8, 18u8, 173u8, 53u8, 133u8, 42u8,
+                ]);
+
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -1319,21 +1303,21 @@ event OrderInvalidation(bytes orderUid);
             ) -> Self {
                 Self { orderUid: data.0 }
             }
+
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
+
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
@@ -1342,10 +1326,12 @@ event OrderInvalidation(bytes orderUid);
                     ),
                 )
             }
+
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (Self::SIGNATURE_HASH.into(),)
             }
+
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -1354,9 +1340,7 @@ event OrderInvalidation(bytes orderUid);
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 Ok(())
             }
         }
@@ -1365,6 +1349,7 @@ event OrderInvalidation(bytes orderUid);
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
+
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -1379,9 +1364,9 @@ event OrderInvalidation(bytes orderUid);
     };
     #[derive()]
     /**Event with signature `OrderPlacement(address,(address,address,address,uint256,uint256,uint32,bytes32,uint256,bytes32,bool,bytes32,bytes32),(uint8,bytes),bytes)` and selector `0xcf5f9de2984132265203b5c335b25727702ca77262ff622e136baa7362bf1da9`.
-```solidity
-event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOnchainOrders.OnchainSignature signature, bytes data);
-```*/
+    ```solidity
+    event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOnchainOrders.OnchainSignature signature, bytes data);
+    ```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1395,7 +1380,8 @@ event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOncha
         #[allow(missing_docs)]
         pub order: <GPv2Order::Data as alloy_sol_types::SolType>::RustType,
         #[allow(missing_docs)]
-        pub signature: <ICoWSwapOnchainOrders::OnchainSignature as alloy_sol_types::SolType>::RustType,
+        pub signature:
+            <ICoWSwapOnchainOrders::OnchainSignature as alloy_sol_types::SolType>::RustType,
         #[allow(missing_docs)]
         pub data: alloy_sol_types::private::Bytes,
     }
@@ -1406,28 +1392,31 @@ event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOncha
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for OrderPlacement {
+            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (
                 GPv2Order::Data,
                 ICoWSwapOnchainOrders::OnchainSignature,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy_sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "OrderPlacement(address,(address,address,address,uint256,uint256,uint32,bytes32,uint256,bytes32,bool,bytes32,bytes32),(uint8,bytes),bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                207u8, 95u8, 157u8, 226u8, 152u8, 65u8, 50u8, 38u8, 82u8, 3u8, 181u8,
-                195u8, 53u8, 178u8, 87u8, 39u8, 112u8, 44u8, 167u8, 114u8, 98u8, 255u8,
-                98u8, 46u8, 19u8, 107u8, 170u8, 115u8, 98u8, 191u8, 29u8, 169u8,
-            ]);
+
             const ANONYMOUS: bool = false;
+            const SIGNATURE: &'static str = "OrderPlacement(address,(address,address,address,\
+                                             uint256,uint256,uint32,bytes32,uint256,bytes32,bool,\
+                                             bytes32,bytes32),(uint8,bytes),bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
+                alloy_sol_types::private::B256::new([
+                    207u8, 95u8, 157u8, 226u8, 152u8, 65u8, 50u8, 38u8, 82u8, 3u8, 181u8, 195u8,
+                    53u8, 178u8, 87u8, 39u8, 112u8, 44u8, 167u8, 114u8, 98u8, 255u8, 98u8, 46u8,
+                    19u8, 107u8, 170u8, 115u8, 98u8, 191u8, 29u8, 169u8,
+                ]);
+
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -1441,21 +1430,21 @@ event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOncha
                     data: data.2,
                 }
             }
+
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
+                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
+                        Self::SIGNATURE,
+                        topics.0,
+                        Self::SIGNATURE_HASH,
+                    ));
                 }
                 Ok(())
             }
+
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
@@ -1468,10 +1457,12 @@ event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOncha
                     ),
                 )
             }
+
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (Self::SIGNATURE_HASH.into(), self.sender.clone())
             }
+
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -1480,9 +1471,7 @@ event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOncha
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
+                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
                 out[1usize] = <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.sender,
                 );
@@ -1494,6 +1483,7 @@ event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOncha
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
+
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -1507,9 +1497,9 @@ event OrderPlacement(address indexed sender, GPv2Order.Data order, ICoWSwapOncha
         }
     };
     /**Constructor`.
-```solidity
-constructor(address settlementContractAddress);
-```*/
+    ```solidity
+    constructor(address settlementContractAddress);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -1517,7 +1507,7 @@ constructor(address settlementContractAddress);
         pub settlementContractAddress: alloy_sol_types::private::Address,
     }
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1526,9 +1516,7 @@ constructor(address settlementContractAddress);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1555,15 +1543,15 @@ constructor(address settlementContractAddress);
         #[automatically_derived]
         impl alloy_sol_types::SolConstructor for constructorCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1576,7 +1564,6 @@ constructor(address settlementContractAddress);
     };
     ///Container for all the [`CoWSwapOnchainOrders`](self) events.
     #[derive(Clone)]
-    #[derive()]
     pub enum CoWSwapOnchainOrdersEvents {
         #[allow(missing_docs)]
         OrderInvalidation(OrderInvalidation),
@@ -1586,32 +1573,34 @@ constructor(address settlementContractAddress);
     impl CoWSwapOnchainOrdersEvents {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the variants.
-        /// No guarantees are made about the order of the selectors.
+        /// Note that the selectors might not be in the same order as the
+        /// variants. No guarantees are made about the order of the
+        /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                184u8, 186u8, 209u8, 2u8, 172u8, 139u8, 186u8, 207u8, 239u8, 49u8, 255u8,
-                28u8, 144u8, 110u8, 198u8, 217u8, 81u8, 194u8, 48u8, 180u8, 220u8, 231u8,
-                80u8, 187u8, 3u8, 118u8, 184u8, 18u8, 173u8, 53u8, 133u8, 42u8,
+                184u8, 186u8, 209u8, 2u8, 172u8, 139u8, 186u8, 207u8, 239u8, 49u8, 255u8, 28u8,
+                144u8, 110u8, 198u8, 217u8, 81u8, 194u8, 48u8, 180u8, 220u8, 231u8, 80u8, 187u8,
+                3u8, 118u8, 184u8, 18u8, 173u8, 53u8, 133u8, 42u8,
             ],
             [
-                207u8, 95u8, 157u8, 226u8, 152u8, 65u8, 50u8, 38u8, 82u8, 3u8, 181u8,
-                195u8, 53u8, 178u8, 87u8, 39u8, 112u8, 44u8, 167u8, 114u8, 98u8, 255u8,
-                98u8, 46u8, 19u8, 107u8, 170u8, 115u8, 98u8, 191u8, 29u8, 169u8,
+                207u8, 95u8, 157u8, 226u8, 152u8, 65u8, 50u8, 38u8, 82u8, 3u8, 181u8, 195u8, 53u8,
+                178u8, 87u8, 39u8, 112u8, 44u8, 167u8, 114u8, 98u8, 255u8, 98u8, 46u8, 19u8, 107u8,
+                170u8, 115u8, 98u8, 191u8, 29u8, 169u8,
             ],
-        ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(OrderInvalidation),
-            ::core::stringify!(OrderPlacement),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <OrderInvalidation as alloy_sol_types::SolEvent>::SIGNATURE,
             <OrderPlacement as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(OrderInvalidation),
+            ::core::stringify!(OrderPlacement),
+        ];
+
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1624,51 +1613,41 @@ constructor(address settlementContractAddress);
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
+
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for CoWSwapOnchainOrdersEvents {
-        const NAME: &'static str = "CoWSwapOnchainOrdersEvents";
         const COUNT: usize = 2usize;
+        const NAME: &'static str = "CoWSwapOnchainOrdersEvents";
+
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
-                Some(
-                    <OrderInvalidation as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <OrderInvalidation as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                Some(<OrderInvalidation as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <OrderInvalidation as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::OrderInvalidation)
                 }
                 Some(<OrderPlacement as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <OrderPlacement as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
+                    <OrderPlacement as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::OrderPlacement)
                 }
-                _ => {
-                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                        log: alloy_sol_types::private::Box::new(
-                            alloy_sol_types::private::LogData::new_unchecked(
-                                topics.to_vec(),
-                                data.to_vec().into(),
-                            ),
+                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                    log: alloy_sol_types::private::Box::new(
+                        alloy_sol_types::private::LogData::new_unchecked(
+                            topics.to_vec(),
+                            data.to_vec().into(),
                         ),
-                    })
-                }
+                    ),
+                }),
             }
         }
     }
@@ -1684,6 +1663,7 @@ constructor(address settlementContractAddress);
                 }
             }
         }
+
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
                 Self::OrderInvalidation(inner) => {
@@ -1695,10 +1675,10 @@ constructor(address settlementContractAddress);
             }
         }
     }
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`CoWSwapOnchainOrders`](self) contract instance.
 
-See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more details.*/
+    See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1711,15 +1691,15 @@ See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more detai
     }
     /**A [`CoWSwapOnchainOrders`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`CoWSwapOnchainOrders`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`CoWSwapOnchainOrders`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct CoWSwapOnchainOrdersInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1730,43 +1710,45 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for CoWSwapOnchainOrdersInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("CoWSwapOnchainOrdersInstance").field(&self.address).finish()
+            f.debug_tuple("CoWSwapOnchainOrdersInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > CoWSwapOnchainOrdersInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        CoWSwapOnchainOrdersInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`CoWSwapOnchainOrders`](self) contract instance.
 
-See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more details.*/
+        See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -1774,7 +1756,8 @@ See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more detai
         }
     }
     impl<P: ::core::clone::Clone, N> CoWSwapOnchainOrdersInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> CoWSwapOnchainOrdersInstance<P, N> {
             CoWSwapOnchainOrdersInstance {
@@ -1785,14 +1768,15 @@ See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more detai
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > CoWSwapOnchainOrdersInstance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        CoWSwapOnchainOrdersInstance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -1801,33 +1785,31 @@ See the [wrapper's documentation](`CoWSwapOnchainOrdersInstance`) for more detai
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > CoWSwapOnchainOrdersInstance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        CoWSwapOnchainOrdersInstance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
+
         ///Creates a new event filter for the [`OrderInvalidation`] event.
-        pub fn OrderInvalidation_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, OrderInvalidation, N> {
+        pub fn OrderInvalidation_filter(&self) -> alloy_contract::Event<&P, OrderInvalidation, N> {
             self.event_filter::<OrderInvalidation>()
         }
+
         ///Creates a new event filter for the [`OrderPlacement`] event.
-        pub fn OrderPlacement_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, OrderPlacement, N> {
+        pub fn OrderPlacement_filter(&self) -> alloy_contract::Event<&P, OrderPlacement, N> {
             self.event_filter::<OrderPlacement>()
         }
     }
 }
-pub type Instance = CoWSwapOnchainOrders::CoWSwapOnchainOrdersInstance<
-    ::alloy_provider::DynProvider,
->;
+pub type Instance =
+    CoWSwapOnchainOrders::CoWSwapOnchainOrdersInstance<::alloy_provider::DynProvider>;

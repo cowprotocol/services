@@ -313,10 +313,13 @@ impl Contract {
         expansion.extend(instance);
 
         if !self.networks.is_empty() {
-            let networks = self
+            let mut networks: Vec<_> = self
                 .networks
                 .iter()
-                .map(|(&chain_id, info)| NetworkArm(chain_id, (info.0.clone(), info.1)));
+                .map(|(&chain_id, info)| NetworkArm(chain_id, (info.0.clone(), info.1)))
+                .collect();
+            // Sorting is required to keep generation stable and changes to a minimum
+            networks.sort_by_key(|arm| arm.0);
             let deployment_info = quote::quote! {
                 use {
                     std::{

@@ -12,9 +12,7 @@ use {
         infra::{self, solver::ManageNativeToken},
     },
     allowance::Allowance,
-    alloy::{
-        primitives::{Address, Bytes, FixedBytes, U256},
-    },
+    alloy::primitives::{Address, Bytes, FixedBytes, U256},
     contracts::{FlashLoanRouter::LoanRequest, WETH9},
     eth_domain_types::{self as eth, Ether, allowance},
     itertools::Itertools,
