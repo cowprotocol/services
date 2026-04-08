@@ -52,6 +52,8 @@ orderbook = { workspace = true, features = ["e2e", "test-util"] }
 pod-sdk = { workspace = true }
 price-estimation = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "query"] }
+# Force rustls to use ring crypto provider for WebSocket TLS (required by rustls 0.23+)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
@@ -61,8 +63,6 @@ solver = { workspace = true }
 solvers = { workspace = true }
 solvers-dto = { workspace = true }
 sqlx = { workspace = true }
-# Force rustls to use ring crypto provider for WebSocket TLS (required by rustls 0.23+)
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tempfile = { workspace = true }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
