@@ -60,13 +60,22 @@ impl Ethereum {
         // extremely rare that tokens behave that way we are fine with falling back to
         // the node specific fallback value instead of failing the whole call.
         //
-        // We use max_fee_per_gas rather than the effective gas price because
-        // effective() relies on a potentially stale base fee from the block
-        // watcher. On fast-block chains like Arbitrum (~250ms blocks) the base
-        // fee can increase between estimation and the actual eth_call, causing
-        // "max fee per gas less than block base fee" errors. max_fee_per_gas is
-        // always >= base_fee and is fine for simulation purposes.
-        Some(self.inner.gas.estimate().await.ok()?.max_fee_per_gas)
+        // We double the estimated max_fee_per_gas to provide headroom against
+        // base fee fluctuations between estimation and execution. This is
+        // especially important on fast-block chains like Arbitrum (~250ms
+        // blocks) where the base fee changes constantly, and the web3 gas
+        // estimator returns values very close to the current base fee. Since
+        // this is only used for simulations (not real transactions), overpaying
+        // has no cost.
+        Some(
+            self.inner
+                .gas
+                .estimate()
+                .await
+                .ok()?
+                .max_fee_per_gas
+                .saturating_mul(2),
+        )
     }
 
     pub fn chain(&self) -> Chain {
