@@ -1,3 +1,4 @@
+pub use winner_selection::Unscored;
 use {
     crate::domain::competition::order::FeePolicy,
     eth_domain_types::{self as eth, Address, Ether},
@@ -9,8 +10,6 @@ use {
         state::{self, HasState, RankedItem, ScoredItem, UnscoredItem},
     },
 };
-
-pub use winner_selection::Unscored;
 
 /// Score for a solution, wrapping the surplus value.
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +45,7 @@ impl SolverArbitrator {
     pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
         Self(winsel::Arbitrator {
             max_winners,
-            weth: wrapped_native_token.0.into(),
+            weth: wrapped_native_token.0,
         })
     }
 

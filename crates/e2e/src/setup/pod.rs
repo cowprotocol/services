@@ -1,13 +1,6 @@
 use {
-    alloy::{
-        network::EthereumWallet,
-        primitives::Address,
-        signers::local::PrivateKeySigner,
-    },
-    pod_sdk::{
-        auctions::client::AuctionClient,
-        provider::PodProviderBuilder,
-    },
+    alloy::{network::EthereumWallet, primitives::Address, signers::local::PrivateKeySigner},
+    pod_sdk::{auctions::client::AuctionClient, provider::PodProviderBuilder},
     std::str::FromStr,
     url::Url,
 };
@@ -22,9 +15,7 @@ impl Default for PodConfig {
     fn default() -> Self {
         Self {
             endpoint: Url::from_str(super::config::pod::POD_ENDPOINT).unwrap(),
-            auction_contract: super::config::pod::POD_AUCTION_CONTRACT
-                .parse()
-                .unwrap(),
+            auction_contract: super::config::pod::POD_AUCTION_CONTRACT.parse().unwrap(),
         }
     }
 }
@@ -60,7 +51,7 @@ impl PodTestClient {
             .on_url(config.endpoint)
             .await?;
 
-        let client = AuctionClient::new(provider, config.auction_contract.into());
+        let client = AuctionClient::new(provider, config.auction_contract);
         Ok(Self { client })
     }
 
@@ -73,7 +64,7 @@ impl PodTestClient {
         let bid_infos: Vec<PodBidInfo> = bids
             .into_iter()
             .map(|bid| PodBidInfo {
-                submission_address: bid.bidder.into(),
+                submission_address: bid.bidder,
                 score: bid.amount,
                 data_len: bid.data.len(),
             })
@@ -89,9 +80,7 @@ impl PodTestClient {
         solver_address: Address,
     ) -> anyhow::Result<bool> {
         let bids = self.fetch_bids(auction_id).await?;
-        Ok(bids
-            .iter()
-            .any(|b| b.submission_address == solver_address))
+        Ok(bids.iter().any(|b| b.submission_address == solver_address))
     }
 
     /// Get the number of bids submitted for an auction
