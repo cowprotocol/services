@@ -409,6 +409,7 @@ mod tests {
                 Detector::new(mock_web3, 60),
                 Mutex::new(SizedCache::with_size(100)),
             )),
+            detection_timeout: DEFAULT_DETECTION_TIMEOUT,
         };
 
         // Manually populate the cache as if detector found this holder-agnostic
@@ -457,6 +458,7 @@ mod tests {
                 Detector::new(mock_web3, 60),
                 Mutex::new(SizedCache::with_size(100)),
             )),
+            detection_timeout: DEFAULT_DETECTION_TIMEOUT,
         };
 
         // Manually populate cache with holder-specific strategies
