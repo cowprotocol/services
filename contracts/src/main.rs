@@ -175,7 +175,7 @@ fn build_module() -> Module {
                 .with_networks(networks![
                     MAINNET => ("0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e", 13730248),
                     GNOSIS => ("0x85a80afee867aDf27B50BdB7b76DA70f1E853062", 25415236),
-                    SEPOLIA => ("0x45fFd460cC6642B8D8Fb12373DFd77Ceb0f4932B", 25415236),
+                    SEPOLIA => ("0x45fFd460cC6642B8D8Fb12373DFd77Ceb0f4932B", 3419649),
                     ARBITRUM_ONE => ("0x1802953277FD955f9a254B80Aa0582f193cF1d77", 4859669),
                     BASE => ("0x0c6052254551EAe3ECac77B01DFcf1025418828f", 1206531),
                     AVALANCHE => ("0x0F3e0c4218b7b0108a3643cFe9D3ec0d4F57c54e", 26386552),
