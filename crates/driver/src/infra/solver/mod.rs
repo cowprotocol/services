@@ -397,7 +397,7 @@ impl Solver {
         // Log balance and nonce for debugging pending TX issues
         let balance = provider.get_balance(signer_address).await;
         let nonce = provider.get_transaction_count(signer_address).await;
-        
+
         match (balance, nonce) {
             (Ok(bal), Ok(n)) => {
                 tracing::info!(

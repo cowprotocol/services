@@ -253,18 +253,17 @@ impl<'a> Services<'a> {
         self.start_protocol_with_pod_solvers(solvers).await;
     }
 
-    /// Internal helper: starts protocol with pod-enabled driver for given solvers.
+    /// Internal helper: starts protocol with pod-enabled driver for given
+    /// solvers.
     async fn start_protocol_with_pod_solvers(
         &self,
         solvers: Vec<(TestAccount, u32)>, // (solver_account, haircut_bps)
     ) {
         use configs::autopilot::solver::Solver;
 
-        let solver_engines: Vec<colocation::SolverEngine> = futures::future::join_all(
-            solvers
-                .iter()
-                .enumerate()
-                .map(|(i, (solver, haircut_bps))| {
+        let solver_engines: Vec<colocation::SolverEngine> =
+            futures::future::join_all(solvers.iter().enumerate().map(
+                |(i, (solver, haircut_bps))| {
                     let name = if i == 0 {
                         "test_solver".to_string()
                     } else {
@@ -279,9 +278,9 @@ impl<'a> Services<'a> {
                         true,
                         *haircut_bps,
                     )
-                }),
-        )
-        .await;
+                },
+            ))
+            .await;
 
         let driver_solvers: Vec<Solver> = solver_engines
             .iter()
