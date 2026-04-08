@@ -28,7 +28,14 @@ use contracts::alloy::{GPv2Settlement, ERC20, WETH9};
 
 ## Commands
 
-The `contracts-generate` binary supports the following subcommands:
+From the repository root, use `just`:
+
+```bash
+just setup                # Vendor artifacts, generate bindings, and format everything
+just generate-contracts   # Generate bindings from artifacts only
+```
+
+Or use the `contracts-generate` binary directly:
 
 ```bash
 cargo run -p contracts-generate              # Generate bindings from artifacts
