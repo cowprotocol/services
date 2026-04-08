@@ -7,7 +7,7 @@ use {
     chain::Chain,
     eth_domain_types::AccessList,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
-    gas_price_estimation::{Eip1559EstimationExt, GasPriceEstimating},
+    gas_price_estimation::GasPriceEstimating,
     std::sync::Arc,
     thiserror::Error,
     tracing::{Level, instrument},
@@ -52,7 +52,6 @@ impl Ethereum {
 
     #[instrument(skip(self), ret(level = Level::DEBUG))]
     pub(super) async fn simulation_gas_price(&self) -> Option<u128> {
-        let base_fee = self.inner.current_block.borrow().base_fee;
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
         // paths that detect that case to try to behave differently during simulations
@@ -60,7 +59,14 @@ impl Ethereum {
         // default value we estimate the current gas price upfront. But because it's
         // extremely rare that tokens behave that way we are fine with falling back to
         // the node specific fallback value instead of failing the whole call.
-        Some(self.inner.gas.estimate().await.ok()?.effective(base_fee))
+        //
+        // We use max_fee_per_gas rather than the effective gas price because
+        // effective() relies on a potentially stale base fee from the block
+        // watcher. On fast-block chains like Arbitrum (~250ms blocks) the base
+        // fee can increase between estimation and the actual eth_call, causing
+        // "max fee per gas less than block base fee" errors. max_fee_per_gas is
+        // always >= base_fee and is fine for simulation purposes.
+        Some(self.inner.gas.estimate().await.ok()?.max_fee_per_gas)
     }
 
     pub fn chain(&self) -> Chain {
