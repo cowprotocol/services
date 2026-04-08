@@ -25,19 +25,6 @@
           "internalType": "string",
           "name": "key",
           "type": "string"
-        }
-      ],
-      "name": "incrementCounter",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "key",
-          "type": "string"
         },
         {
           "internalType": "address",
@@ -63,5 +50,20 @@
   },
   "userdoc": {
     "methods": {}
-  }
+  },
+  "_disabled": [
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "key",
+          "type": "string"
+        }
+      ],
+      "name": "incrementCounter",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
 }

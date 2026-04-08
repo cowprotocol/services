@@ -72,7 +72,9 @@
       ],
       "stateMutability": "nonpayable",
       "type": "function"
-    },
+    }
+  ],
+  "_disabled": [
     {
       "inputs": [],
       "name": "getCreationCode",
