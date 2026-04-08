@@ -40,6 +40,8 @@ sequenceDiagram
   participant Solver as solver(s)
   participant Chain as EVM chain + Settlement contract
 
+  User->>Orderbook: GET /quote (fee + price estimate)
+  Orderbook-->>User: quote response
   User->>Orderbook: POST /orders (signed order)
   Orderbook->>Orderbook: validate (signature, app-data, funding/approval, etc.)
   Orderbook->>DB: persist order + order events
@@ -49,16 +51,19 @@ sequenceDiagram
     Autopilot->>DB: fetch eligible orders + state
     Autopilot->>Autopilot: apply policies (fees, filtering, scoring inputs)
     Autopilot->>DB: store current auction + competition metadata
-    Autopilot->>Driver: send auction
-  end
+    Autopilot->>Driver: send auction (or make it available for fetch)
 
-  Driver->>Solver: request solution(s) for auction
-  Solver-->>Driver: proposed solution(s)
-  Driver->>Driver: encode calldata + simulate
-  Driver->>Chain: submit transaction (time-bounded)
-  Chain-->>Chain: execute settle(...) + emit events
-  Autopilot->>Chain: fetch + index relevant events
-  Autopilot->>DB: update competition/settlement tables + order events
+    Driver->>Solver: request solution(s) for auction
+    Solver-->>Driver: proposed solution(s)
+    Driver->>Driver: encode calldata + simulate
+    Driver-->>Autopilot: submit bid(s)
+    Autopilot->>Autopilot: rank bids, pick winner
+    Autopilot->>Driver: tell winner to execute
+    Driver->>Chain: submit transaction (time-bounded)
+    Chain-->>Chain: execute settle(...) + emit events
+    Autopilot->>Chain: fetch + index relevant events
+    Autopilot->>DB: update competition/settlement tables + order events
+  end
 ```
 
 ## Solver types
@@ -143,6 +148,13 @@ Each service follows the same pattern: `main.rs` just sets up the allocator and 
 
 - **Database schema + migrations**
   - Start here: `database/README.md` (schema overview) and `crates/database` (query code)
+
+- **End-to-end tests**
+  - Start here: `crates/e2e/tests/e2e/` (individual test scenarios) and `crates/e2e/src/setup/` (test harness)
+  - The e2e crate spins up a local Anvil node (optionally forking mainnet/Gnosis), deploys contracts, starts services (orderbook, autopilot, driver, solver), and runs full order→settlement flows
+  - Tests are split into `local_node` (clean chain) and `forked_node` (forking a real network via `FORK_URL_MAINNET` / `FORK_URL_GNOSIS`)
+  - Run local e2e tests: `cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only`
+  - Run forked e2e tests: `cargo nextest run -p e2e forked_node --test-threads 1 --run-ignored ignored-only --failure-output final`
 
 ## Local development (recommended path)
 
