@@ -158,8 +158,14 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                     },
                     haircut_bps: solver_config.haircut_bps,
-                    submission_accounts: vec![],
-                    forwarder_contract: None,
+                    submission_accounts: join_all(
+                        solver_config
+                            .submission_accounts
+                            .into_iter()
+                            .map(|acc| load_account(acc, config.chain_id)),
+                    )
+                    .await,
+                    forwarder_contract: solver_config.forwarder_contract,
                     pod: pod_config,
                 }
             }
@@ -384,5 +390,22 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,
         pod: config.pod,
+    }
+}
+
+async fn load_account(account: file::Account, chain_id: Option<u64>) -> Account {
+    match account {
+        file::Account::PrivateKey(pk) => PrivateKeySigner::from_bytes(&pk)
+            .expect("invalid private key")
+            .into(),
+        file::Account::Kms(arn) => {
+            let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
+            let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
+            AwsSigner::new(client, arn.0, chain_id)
+                .await
+                .expect("unable to load kms account")
+                .into()
+        }
+        file::Account::Address(address) => Account::Address(address),
     }
 }
