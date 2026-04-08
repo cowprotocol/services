@@ -8,11 +8,9 @@ use {
     },
     model::order::OrderUid,
     serde::Deserialize,
-    serde_with::serde_as,
     std::sync::Arc,
 };
 
-#[serde_as]
 #[derive(Deserialize)]
 pub struct SimulationQuery {
     pub block_number: Option<u64>,
