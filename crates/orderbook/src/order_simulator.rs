@@ -1,7 +1,8 @@
 use {
     crate::dto::OrderSimulationResult,
     alloy::{
-        primitives::{Address, U256},
+        eips::BlockId,
+        primitives::{Address, Bytes, U256},
         rpc::types::state::AccountOverride,
     },
     anyhow::{Context, Result, anyhow},
@@ -10,6 +11,7 @@ use {
     contracts::alloy::support::{AnyoneAuthenticator, Trader},
     eth_domain_types::{BlockNo, NonZeroU256},
     model::order::Order,
+    shared::remaining_amounts,
     simulator::{
         encoding::InteractionEncoding,
         swap_simulator::{EncodedSwap, Query, SwapSimulator, TradeEncoding},
@@ -37,26 +39,80 @@ impl OrderSimulator {
         }
     }
 
+    /// Calculates the remaining sell and buy amounts
+    /// Returns a tuple of (remaining_sell, remaining_buy)
+    async fn remaining_amounts(
+        &self,
+        order: &Order,
+        block: Option<BlockId>,
+    ) -> Result<(U256, U256), Error> {
+        let mut filled_amount_call = self
+            .simulator
+            .settlement
+            .filledAmount(Bytes::from(order.metadata.uid.0));
+
+        if let Some(block) = block {
+            filled_amount_call = filled_amount_call.block(block);
+        }
+        let executed_amount = filled_amount_call
+            .call()
+            .await
+            .map_err(|err| Error::Other(anyhow!(err)))?;
+
+        let remaining_order = remaining_amounts::Order {
+            kind: order.data.kind,
+            buy_amount: order.data.buy_amount,
+            sell_amount: order.data.sell_amount,
+            fee_amount: order.data.fee_amount,
+            executed_amount,
+            partially_fillable: order.data.partially_fillable,
+        };
+        let remaining = remaining_amounts::Remaining::from_order(&remaining_order)
+            .with_context(|| {
+                format!(
+                    "could not compute remaining amounts for order {}",
+                    order.metadata.uid
+                )
+            })
+            .map_err(Error::Other)?;
+        let remaining_sell = remaining
+            .remaining(order.data.sell_amount)
+            .context("overflow computing remaining sell amount")
+            .map_err(Error::Other)?;
+        let remaining_buy = remaining
+            .remaining(order.data.buy_amount)
+            .context("overflow computing remaining buy amount")
+            .map_err(Error::Other)?;
+
+        Ok((remaining_sell, remaining_buy))
+    }
+
+    /// Encodes an order for simulation.
+    ///
+    /// `executed_amount` overrides how much of the order has already been
+    /// filled (in the order's fill token: sell token for sell orders, buy
+    /// token for buy orders). When `None`, the executed amount is taken from
+    /// the order's metadata, which reflects the actual on-chain fill state.
     pub async fn encode_order(
         &self,
         order: &Order,
         wrappers: Vec<WrapperCall>,
+        block: Option<u64>,
     ) -> Result<EncodedSwap, Error> {
         let tokens = vec![order.data.sell_token, order.data.buy_token];
         // Clearing prices represent the limit price of the order; both order kinds
         // produce the same ratio: [buy_amount, sell_amount] for [sell_token,
         // buy_token].
         let clearing_prices = vec![order.data.buy_amount, order.data.sell_amount];
-
         let solver = Address::random();
-        // TODO(m-sz): Add support for specifying a partially filled order (current fill
-        // status or custom amount)
+        let (remaining_sell, remaining_buy) =
+            self.remaining_amounts(order, block.map(Into::into)).await?;
         let query = Query {
-            sell_amount: NonZeroU256::try_from(order.data.sell_amount).map_err(|err| {
+            sell_amount: NonZeroU256::try_from(remaining_sell).map_err(|err| {
                 Error::MalformedInput(anyhow!("sell_amount `{}`: {err}", order.data.sell_amount))
             })?,
             sell_token: order.data.sell_token,
-            buy_amount: order.data.buy_amount,
+            buy_amount: remaining_buy,
             buy_token: order.data.buy_token,
             kind: order.data.kind,
             receiver: order.data.receiver.unwrap_or(order.metadata.owner),
@@ -171,14 +227,16 @@ impl OrderSimulator {
             },
         );
 
-        // Fund the settlement contract with enough buy tokens to be paid out
+        // Fund the settlement contract with enough buy tokens to be paid out.
+        // Add 1 to account for ceiling division in the settlement contract's
+        // executedBuyAmount calculation, which can be 1 unit above remaining_buy.
         match self
             .simulator
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.buy_token,
                 holder: *self.simulator.settlement.address(),
-                amount: query.buy_amount,
+                amount: query.buy_amount + U256::ONE,
             })
             .await
         {
