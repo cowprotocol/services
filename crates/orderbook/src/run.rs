@@ -178,6 +178,7 @@ pub async fn run(config: Configuration) {
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let db_config = crate::database::Config {
         max_pool_size: config.database.max_connections.get(),
+        statement_timeout: config.database.statement_timeout,
     };
     let postgres_write = Postgres::try_new(config.database.write_url.as_str(), db_config.clone())
         .expect("failed to create database");
@@ -185,7 +186,7 @@ pub async fn run(config: Configuration) {
     let postgres_read = if let Some(db_read_url) = config.database.read_url
         && config.database.write_url != db_read_url
     {
-        Postgres::try_new(db_read_url.as_str(), db_config)
+        Postgres::try_new_with_timeout(db_read_url.as_str(), db_config)
             .expect("failed to create read replica database")
     } else {
         postgres_write.clone()

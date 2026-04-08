@@ -14,7 +14,6 @@ use {
     allowance::Allowance,
     alloy::{
         primitives::{Address, Bytes, FixedBytes, U256},
-        sol_types::SolCall,
     },
     contracts::{FlashLoanRouter::LoanRequest, WETH9},
     eth_domain_types::{self as eth, Ether, allowance},
@@ -285,58 +284,6 @@ fn encode_flashloan_settlement(
         .to_vec();
 
     Ok((*router.address(), calldata.into()))
-}
-
-/// Encodes a settlement transaction that uses wrapper contracts.
-///
-/// Takes the base settlement calldata and wraps it in a wrappedSettleCall
-/// with encoded wrapper metadata. Since wrappers are a chain, the wrapper
-/// address to call is also processed by this function.
-///
-/// Returns (first_wrapper_address, wrapped_calldata)
-fn encode_wrapper_settlement(
-    solution: &super::Solution,
-    settle_calldata: Vec<u8>,
-) -> (eth::Address, Vec<u8>) {
-    // Encode wrapper metadata
-    let wrapper_data = encode_wrapper_data(&solution.wrappers);
-
-    // Create wrappedSettleCall
-    let calldata = contracts::ICowWrapper::ICowWrapper::wrappedSettleCall {
-        settleData: settle_calldata.into(),
-        wrapperData: wrapper_data.into(),
-    }
-    .abi_encode();
-
-    (solution.wrappers[0].address, calldata)
-}
-
-/// Encodes wrapper metadata for wrapper settlement calls.
-///
-/// The format is:
-/// - For wrappers after the first: 20 bytes (address)
-/// - For each wrapper: 2 bytes (data length as u16 in native endian) + data
-///
-/// More information about wrapper encoding:
-/// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
-///
-/// Note: The first wrapper address is omitted from the encoded data since it's
-/// already used as the transaction target.
-fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
-    let mut wrapper_data = Vec::new();
-
-    for (index, w) in wrappers.iter().enumerate() {
-        // Skip first wrapper's address (it's the transaction target)
-        if index != 0 {
-            wrapper_data.extend(w.address.as_slice());
-        }
-
-        // Encode data length as u16 in native endian, then the data itself
-        wrapper_data.extend((w.data.len() as u16).to_be_bytes().to_vec());
-        wrapper_data.extend(w.data.clone());
-    }
-
-    wrapper_data
 }
 
 pub fn liquidity_interaction(

@@ -3,6 +3,7 @@ use {
         fmt::Debug,
         num::{NonZeroU32, NonZeroUsize},
         str::FromStr,
+        time::Duration,
     },
     url::Url,
 };
@@ -14,6 +15,10 @@ const fn default_db_max_connections() -> NonZeroU32 {
 
 fn default_db_write_url() -> Url {
     Url::from_str("postgresql://").expect("url should be valid")
+}
+
+const fn default_statement_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 const fn default_insert_batch_size() -> NonZeroUsize {
@@ -53,6 +58,10 @@ pub struct DatabasePoolConfig {
     /// The number of order events to insert in a single batch.
     #[serde(default = "default_insert_batch_size")]
     pub insert_batch_size: NonZeroUsize,
+
+    /// Timeout for database read queries. Defaults to 30 seconds.
+    #[serde(default = "default_statement_timeout", with = "humantime_serde")]
+    pub statement_timeout: Duration,
 }
 
 impl Default for DatabasePoolConfig {
@@ -62,6 +71,7 @@ impl Default for DatabasePoolConfig {
             read_url: Default::default(),
             max_connections: default_db_max_connections(),
             insert_batch_size: default_insert_batch_size(),
+            statement_timeout: default_statement_timeout(),
         }
     }
 }
@@ -73,6 +83,7 @@ impl Debug for DatabasePoolConfig {
             .field("read_url", &"REDACTED")
             .field("max_connections", &self.max_connections)
             .field("insert_batch_size", &self.insert_batch_size)
+            .field("statement_timeout", &self.statement_timeout)
             .finish()
     }
 }
