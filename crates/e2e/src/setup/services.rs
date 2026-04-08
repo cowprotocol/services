@@ -294,6 +294,10 @@ impl<'a> Services<'a> {
             false,
         );
 
+        // Wait for driver to be ready before proceeding.
+        // The driver with pod config may take longer to start due to pod network connection.
+        Self::wait_for_driver_to_come_up().await;
+
         let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
 
         let autopilot_config = Configuration {
@@ -506,6 +510,20 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
+    }
+
+    async fn wait_for_driver_to_come_up() {
+        const DRIVER_HOST: &str = "http://localhost:11088";
+        let is_up = || async {
+            reqwest::get(format!("{DRIVER_HOST}/healthz"))
+                .await
+                .is_ok()
+        };
+
+        tracing::info!("Waiting for driver to come up.");
+        wait_for_condition(TIMEOUT, is_up)
+            .await
+            .expect("waiting for driver timed out");
     }
 
     async fn wait_until_autopilot_ready(&self) {
