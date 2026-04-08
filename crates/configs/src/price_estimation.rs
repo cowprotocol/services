@@ -211,8 +211,8 @@ const fn default_cache_size() -> usize {
     1000
 }
 
-const fn default_detection_timeout_secs() -> u64 {
-    1
+fn default_detection_timeout() -> Duration {
+    Duration::from_secs(1)
 }
 
 #[derive(Debug, Deserialize)]
@@ -240,11 +240,12 @@ pub struct BalanceOverridesConfig {
     #[serde(default = "default_cache_size")]
     pub cache_size: usize,
 
-    /// Maximum time in seconds to wait for balance override detection before
-    /// giving up. Some tokens (e.g. reflection tokens) can cause the node to
-    /// loop during verification, so this prevents stalling the quote pipeline.
-    #[serde(default = "default_detection_timeout_secs")]
-    pub detection_timeout_secs: u64,
+    /// Maximum time to wait for each balance override strategy verification
+    /// before giving up. Some tokens (e.g. reflection tokens) can cause the
+    /// node to loop during verification, so this prevents stalling the quote
+    /// pipeline.
+    #[serde(default = "default_detection_timeout", with = "humantime_serde")]
+    pub detection_timeout: Duration,
 }
 
 impl Default for BalanceOverridesConfig {
@@ -254,7 +255,7 @@ impl Default for BalanceOverridesConfig {
             autodetect: false,
             probing_depth: default_probing_depth(),
             cache_size: default_cache_size(),
-            detection_timeout_secs: default_detection_timeout_secs(),
+            detection_timeout: default_detection_timeout(),
         }
     }
 }

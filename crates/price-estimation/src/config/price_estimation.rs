@@ -14,11 +14,14 @@ impl BalanceOverridesConfigExt for BalanceOverridesConfig {
             hardcoded: self.token_overrides.inner().clone(),
             detector: self.autodetect.then(|| {
                 (
-                    balance_overrides::detector::Detector::new(web3, self.probing_depth),
+                    balance_overrides::detector::Detector::new(
+                        web3,
+                        self.probing_depth,
+                        self.detection_timeout,
+                    ),
                     std::sync::Mutex::new(cached::SizedCache::with_size(self.cache_size)),
                 )
             }),
-            detection_timeout: std::time::Duration::from_secs(self.detection_timeout_secs),
         })
     }
 }
