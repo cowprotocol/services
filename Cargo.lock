@@ -3176,6 +3176,7 @@ dependencies = [
  "refunder",
  "reqwest 0.13.2",
  "rstest",
+ "rustls",
  "serde",
  "serde_json",
  "shared",
