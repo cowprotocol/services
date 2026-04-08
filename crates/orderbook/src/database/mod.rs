@@ -121,7 +121,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn statement_timeout_cancels_slow_query() {
+    async fn postgres_statement_timeout_cancels_slow_query() {
         let config = Config {
             statement_timeout: Duration::from_millis(100),
             ..Default::default()
