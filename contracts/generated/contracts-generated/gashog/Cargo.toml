@@ -9,10 +9,10 @@ publish = false
 doctest = false
 
 [dependencies]
-alloy-contract = { workspace = true }
 alloy-primitives = { workspace = true }
-alloy-provider = { workspace = true }
 alloy-sol-types = { workspace = true }
+alloy-contract = { workspace = true }
+alloy-provider = { workspace = true }
 anyhow = { workspace = true }
 
 [lints]

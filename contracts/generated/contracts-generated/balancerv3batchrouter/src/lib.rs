@@ -1,2622 +1,9 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
-///Module containing a contract's types and functions.
-/**
-
-```solidity
-library IAllowanceTransfer {
-    struct PermitBatch { PermitDetails[] details; address spender; uint256 sigDeadline; }
-    struct PermitDetails { address token; uint160 amount; uint48 expiration; uint48 nonce; }
-}
-```*/
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    clippy::pub_underscore_fields,
-    clippy::style,
-    clippy::empty_structs_with_brackets
-)]
-pub mod IAllowanceTransfer {
-    use {super::*, alloy_sol_types};
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct PermitBatch { PermitDetails[] details; address spender; uint256 sigDeadline; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct PermitBatch {
-        #[allow(missing_docs)]
-        pub details:
-            alloy_sol_types::private::Vec<<PermitDetails as alloy_sol_types::SolType>::RustType>,
-        #[allow(missing_docs)]
-        pub spender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub sigDeadline: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Array<PermitDetails>,
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Vec<<PermitDetails as alloy_sol_types::SolType>::RustType>,
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<PermitBatch> for UnderlyingRustTuple<'_> {
-            fn from(value: PermitBatch) -> Self {
-                (value.details, value.spender, value.sigDeadline)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for PermitBatch {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    details: tuple.0,
-                    spender: tuple.1,
-                    sigDeadline: tuple.2,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for PermitBatch {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for PermitBatch {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        PermitDetails,
-                    > as alloy_sol_types::SolType>::tokenize(&self.details),
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.spender,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.sigDeadline),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for PermitBatch {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for PermitBatch {
-            const NAME: &'static str = "PermitBatch";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                let mut components = alloy_sol_types::private::Vec::with_capacity(1);
-                components.push(<PermitDetails as alloy_sol_types::SolStruct>::eip712_root_type());
-                components
-                    .extend(<PermitDetails as alloy_sol_types::SolStruct>::eip712_components());
-                components
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Array<
-                        PermitDetails,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.details)
-                        .0,
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.spender,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.sigDeadline)
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for PermitBatch {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Array<
-                        PermitDetails,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.details,
-                    )
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.spender,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.sigDeadline,
-                    )
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Array<
-                    PermitDetails,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.details,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.spender,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.sigDeadline,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct PermitDetails { address token; uint160 amount; uint48 expiration; uint48 nonce; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct PermitDetails {
-        #[allow(missing_docs)]
-        pub token: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub amount: alloy_sol_types::private::primitives::aliases::U160,
-        #[allow(missing_docs)]
-        pub expiration: alloy_sol_types::private::primitives::aliases::U48,
-        #[allow(missing_docs)]
-        pub nonce: alloy_sol_types::private::primitives::aliases::U48,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Uint<160>,
-            alloy_sol_types::sol_data::Uint<48>,
-            alloy_sol_types::sol_data::Uint<48>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::primitives::aliases::U160,
-            alloy_sol_types::private::primitives::aliases::U48,
-            alloy_sol_types::private::primitives::aliases::U48,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<PermitDetails> for UnderlyingRustTuple<'_> {
-            fn from(value: PermitDetails) -> Self {
-                (value.token, value.amount, value.expiration, value.nonce)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for PermitDetails {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    token: tuple.0,
-                    amount: tuple.1,
-                    expiration: tuple.2,
-                    nonce: tuple.3,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for PermitDetails {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for PermitDetails {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.token,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<160> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
-                        &self.expiration,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<48> as alloy_sol_types::SolType>::tokenize(
-                        &self.nonce,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for PermitDetails {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for PermitDetails {
-            const NAME: &'static str = "PermitDetails";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                alloy_sol_types::private::Vec::new()
-            }
-
-            #[inline]
-            fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
-                <Self as alloy_sol_types::SolStruct>::eip712_root_type()
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.token,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        160,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.amount)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.expiration)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.nonce)
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for PermitDetails {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.token,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        160,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.amount,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.expiration,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(&rust.nonce)
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.token,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    160,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.amount,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    48,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.expiration,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    48,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.nonce,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    use alloy_contract;
-    /**Creates a new wrapper around an on-chain [`IAllowanceTransfer`](self) contract instance.
-
-    See the [wrapper's documentation](`IAllowanceTransferInstance`) for more details.*/
-    #[inline]
-    pub const fn new<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        address: alloy_sol_types::private::Address,
-        __provider: P,
-    ) -> IAllowanceTransferInstance<P, N> {
-        IAllowanceTransferInstance::<P, N>::new(address, __provider)
-    }
-    /**A [`IAllowanceTransfer`](self) instance.
-
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`IAllowanceTransfer`](self) contract located at a given `address`, using a given
-    provider `P`.
-
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
-
-    See the [module-level documentation](self) for all the available methods.*/
-    #[derive(Clone)]
-    pub struct IAllowanceTransferInstance<P, N = alloy_contract::private::Ethereum> {
-        address: alloy_sol_types::private::Address,
-        provider: P,
-        _network: ::core::marker::PhantomData<N>,
-    }
-    #[automatically_derived]
-    impl<P, N> ::core::fmt::Debug for IAllowanceTransferInstance<P, N> {
-        #[inline]
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IAllowanceTransferInstance")
-                .field(&self.address)
-                .finish()
-        }
-    }
-    /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IAllowanceTransferInstance<P, N>
-    {
-        /**Creates a new wrapper around an on-chain [`IAllowanceTransfer`](self) contract instance.
-
-        See the [wrapper's documentation](`IAllowanceTransferInstance`) for more details.*/
-        #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
-            Self {
-                address,
-                provider: __provider,
-                _network: ::core::marker::PhantomData,
-            }
-        }
-
-        /// Returns a reference to the address.
-        #[inline]
-        pub const fn address(&self) -> &alloy_sol_types::private::Address {
-            &self.address
-        }
-
-        /// Sets the address.
-        #[inline]
-        pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
-            self.address = address;
-        }
-
-        /// Sets the address and returns `self`.
-        pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
-            self.set_address(address);
-            self
-        }
-
-        /// Returns a reference to the provider.
-        #[inline]
-        pub const fn provider(&self) -> &P {
-            &self.provider
-        }
-    }
-    impl<P: ::core::clone::Clone, N> IAllowanceTransferInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned
-        /// provider.
-        #[inline]
-        pub fn with_cloned_provider(self) -> IAllowanceTransferInstance<P, N> {
-            IAllowanceTransferInstance {
-                address: self.address,
-                provider: ::core::clone::Clone::clone(&self.provider),
-                _network: ::core::marker::PhantomData,
-            }
-        }
-    }
-    /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IAllowanceTransferInstance<P, N>
-    {
-        /// Creates a new call builder using this contract instance's provider
-        /// and address.
-        ///
-        /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
-        pub fn call_builder<C: alloy_sol_types::SolCall>(
-            &self,
-            call: &C,
-        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
-            alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
-        }
-    }
-    /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IAllowanceTransferInstance<P, N>
-    {
-        /// Creates a new event filter using this contract instance's provider
-        /// and address.
-        ///
-        /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
-        pub fn event_filter<E: alloy_sol_types::SolEvent>(
-            &self,
-        ) -> alloy_contract::Event<&P, E, N> {
-            alloy_contract::Event::new_sol(&self.provider, &self.address)
-        }
-    }
-}
-///Module containing a contract's types and functions.
-/**
-
-```solidity
-library IBatchRouter {
-    struct SwapExactInHookParams { address sender; SwapPathExactAmountIn[] paths; uint256 deadline; bool wethIsEth; bytes userData; }
-    struct SwapExactOutHookParams { address sender; SwapPathExactAmountOut[] paths; uint256 deadline; bool wethIsEth; bytes userData; }
-    struct SwapPathExactAmountIn { address tokenIn; SwapPathStep[] steps; uint256 exactAmountIn; uint256 minAmountOut; }
-    struct SwapPathExactAmountOut { address tokenIn; SwapPathStep[] steps; uint256 maxAmountIn; uint256 exactAmountOut; }
-    struct SwapPathStep { address pool; address tokenOut; bool isBuffer; }
-}
-```*/
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    clippy::pub_underscore_fields,
-    clippy::style,
-    clippy::empty_structs_with_brackets
-)]
-pub mod IBatchRouter {
-    use {super::*, alloy_sol_types};
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct SwapExactInHookParams { address sender; SwapPathExactAmountIn[] paths; uint256 deadline; bool wethIsEth; bytes userData; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct SwapExactInHookParams {
-        #[allow(missing_docs)]
-        pub sender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub paths: alloy_sol_types::private::Vec<
-            <SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub deadline: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub wethIsEth: bool,
-        #[allow(missing_docs)]
-        pub userData: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Array<SwapPathExactAmountIn>,
-            alloy_sol_types::sol_data::Uint<256>,
-            alloy_sol_types::sol_data::Bool,
-            alloy_sol_types::sol_data::Bytes,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::Vec<
-                <SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-            >,
-            alloy_sol_types::private::primitives::aliases::U256,
-            bool,
-            alloy_sol_types::private::Bytes,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<SwapExactInHookParams> for UnderlyingRustTuple<'_> {
-            fn from(value: SwapExactInHookParams) -> Self {
-                (
-                    value.sender,
-                    value.paths,
-                    value.deadline,
-                    value.wethIsEth,
-                    value.userData,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SwapExactInHookParams {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    sender: tuple.0,
-                    paths: tuple.1,
-                    deadline: tuple.2,
-                    wethIsEth: tuple.3,
-                    userData: tuple.4,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for SwapExactInHookParams {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for SwapExactInHookParams {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.sender,
-                    ),
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathExactAmountIn,
-                    > as alloy_sol_types::SolType>::tokenize(&self.paths),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.wethIsEth,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.userData,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for SwapExactInHookParams {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for SwapExactInHookParams {
-            const NAME: &'static str = "SwapExactInHookParams";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "SwapExactInHookParams(address sender,SwapPathExactAmountIn[] paths,uint256 \
-                     deadline,bool wethIsEth,bytes userData)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                let mut components = alloy_sol_types::private::Vec::with_capacity(1);
-                components.push(
-                    <SwapPathExactAmountIn as alloy_sol_types::SolStruct>::eip712_root_type(),
-                );
-                components.extend(
-                    <SwapPathExactAmountIn as alloy_sol_types::SolStruct>::eip712_components(),
-                );
-                components
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.sender,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathExactAmountIn,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.paths)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.deadline)
-                        .0,
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.wethIsEth,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.userData,
-                        )
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for SwapExactInHookParams {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.sender,
-                    )
-                    + <alloy_sol_types::sol_data::Array<
-                        SwapPathExactAmountIn,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(&rust.paths)
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.deadline,
-                    )
-                    + <alloy_sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.wethIsEth,
-                    )
-                    + <alloy_sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.userData,
-                    )
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.sender,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Array<
-                    SwapPathExactAmountIn,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.paths,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.deadline,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.wethIsEth,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.userData,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct SwapExactOutHookParams { address sender; SwapPathExactAmountOut[] paths; uint256 deadline; bool wethIsEth; bytes userData; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct SwapExactOutHookParams {
-        #[allow(missing_docs)]
-        pub sender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub paths: alloy_sol_types::private::Vec<
-            <SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub deadline: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub wethIsEth: bool,
-        #[allow(missing_docs)]
-        pub userData: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Array<SwapPathExactAmountOut>,
-            alloy_sol_types::sol_data::Uint<256>,
-            alloy_sol_types::sol_data::Bool,
-            alloy_sol_types::sol_data::Bytes,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::Vec<
-                <SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-            >,
-            alloy_sol_types::private::primitives::aliases::U256,
-            bool,
-            alloy_sol_types::private::Bytes,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<SwapExactOutHookParams> for UnderlyingRustTuple<'_> {
-            fn from(value: SwapExactOutHookParams) -> Self {
-                (
-                    value.sender,
-                    value.paths,
-                    value.deadline,
-                    value.wethIsEth,
-                    value.userData,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SwapExactOutHookParams {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    sender: tuple.0,
-                    paths: tuple.1,
-                    deadline: tuple.2,
-                    wethIsEth: tuple.3,
-                    userData: tuple.4,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for SwapExactOutHookParams {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for SwapExactOutHookParams {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.sender,
-                    ),
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathExactAmountOut,
-                    > as alloy_sol_types::SolType>::tokenize(&self.paths),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.wethIsEth,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.userData,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for SwapExactOutHookParams {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for SwapExactOutHookParams {
-            const NAME: &'static str = "SwapExactOutHookParams";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "SwapExactOutHookParams(address sender,SwapPathExactAmountOut[] paths,uint256 \
-                     deadline,bool wethIsEth,bytes userData)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                let mut components = alloy_sol_types::private::Vec::with_capacity(1);
-                components.push(
-                    <SwapPathExactAmountOut as alloy_sol_types::SolStruct>::eip712_root_type(),
-                );
-                components.extend(
-                    <SwapPathExactAmountOut as alloy_sol_types::SolStruct>::eip712_components(),
-                );
-                components
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.sender,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathExactAmountOut,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.paths)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.deadline)
-                        .0,
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.wethIsEth,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.userData,
-                        )
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for SwapExactOutHookParams {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.sender,
-                    )
-                    + <alloy_sol_types::sol_data::Array<
-                        SwapPathExactAmountOut,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(&rust.paths)
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.deadline,
-                    )
-                    + <alloy_sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.wethIsEth,
-                    )
-                    + <alloy_sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.userData,
-                    )
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.sender,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Array<
-                    SwapPathExactAmountOut,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.paths,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.deadline,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.wethIsEth,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.userData,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct SwapPathExactAmountIn { address tokenIn; SwapPathStep[] steps; uint256 exactAmountIn; uint256 minAmountOut; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct SwapPathExactAmountIn {
-        #[allow(missing_docs)]
-        pub tokenIn: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub steps:
-            alloy_sol_types::private::Vec<<SwapPathStep as alloy_sol_types::SolType>::RustType>,
-        #[allow(missing_docs)]
-        pub exactAmountIn: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub minAmountOut: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Array<SwapPathStep>,
-            alloy_sol_types::sol_data::Uint<256>,
-            alloy_sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::Vec<<SwapPathStep as alloy_sol_types::SolType>::RustType>,
-            alloy_sol_types::private::primitives::aliases::U256,
-            alloy_sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<SwapPathExactAmountIn> for UnderlyingRustTuple<'_> {
-            fn from(value: SwapPathExactAmountIn) -> Self {
-                (
-                    value.tokenIn,
-                    value.steps,
-                    value.exactAmountIn,
-                    value.minAmountOut,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SwapPathExactAmountIn {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    tokenIn: tuple.0,
-                    steps: tuple.1,
-                    exactAmountIn: tuple.2,
-                    minAmountOut: tuple.3,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for SwapPathExactAmountIn {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for SwapPathExactAmountIn {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.tokenIn,
-                    ),
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathStep,
-                    > as alloy_sol_types::SolType>::tokenize(&self.steps),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.exactAmountIn),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.minAmountOut),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for SwapPathExactAmountIn {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for SwapPathExactAmountIn {
-            const NAME: &'static str = "SwapPathExactAmountIn";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "SwapPathExactAmountIn(address tokenIn,SwapPathStep[] steps,uint256 \
-                     exactAmountIn,uint256 minAmountOut)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                let mut components = alloy_sol_types::private::Vec::with_capacity(1);
-                components.push(<SwapPathStep as alloy_sol_types::SolStruct>::eip712_root_type());
-                components
-                    .extend(<SwapPathStep as alloy_sol_types::SolStruct>::eip712_components());
-                components
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.tokenIn,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathStep,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.steps)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.exactAmountIn)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.minAmountOut)
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for SwapPathExactAmountIn {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.tokenIn,
-                    )
-                    + <alloy_sol_types::sol_data::Array<
-                        SwapPathStep,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(&rust.steps)
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.exactAmountIn,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.minAmountOut,
-                    )
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.tokenIn,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Array<
-                    SwapPathStep,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.steps,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.exactAmountIn,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.minAmountOut,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct SwapPathExactAmountOut { address tokenIn; SwapPathStep[] steps; uint256 maxAmountIn; uint256 exactAmountOut; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct SwapPathExactAmountOut {
-        #[allow(missing_docs)]
-        pub tokenIn: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub steps:
-            alloy_sol_types::private::Vec<<SwapPathStep as alloy_sol_types::SolType>::RustType>,
-        #[allow(missing_docs)]
-        pub maxAmountIn: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub exactAmountOut: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Array<SwapPathStep>,
-            alloy_sol_types::sol_data::Uint<256>,
-            alloy_sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::Vec<<SwapPathStep as alloy_sol_types::SolType>::RustType>,
-            alloy_sol_types::private::primitives::aliases::U256,
-            alloy_sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<SwapPathExactAmountOut> for UnderlyingRustTuple<'_> {
-            fn from(value: SwapPathExactAmountOut) -> Self {
-                (
-                    value.tokenIn,
-                    value.steps,
-                    value.maxAmountIn,
-                    value.exactAmountOut,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SwapPathExactAmountOut {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    tokenIn: tuple.0,
-                    steps: tuple.1,
-                    maxAmountIn: tuple.2,
-                    exactAmountOut: tuple.3,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for SwapPathExactAmountOut {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for SwapPathExactAmountOut {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.tokenIn,
-                    ),
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathStep,
-                    > as alloy_sol_types::SolType>::tokenize(&self.steps),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxAmountIn),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.exactAmountOut),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for SwapPathExactAmountOut {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for SwapPathExactAmountOut {
-            const NAME: &'static str = "SwapPathExactAmountOut";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "SwapPathExactAmountOut(address tokenIn,SwapPathStep[] steps,uint256 \
-                     maxAmountIn,uint256 exactAmountOut)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                let mut components = alloy_sol_types::private::Vec::with_capacity(1);
-                components.push(<SwapPathStep as alloy_sol_types::SolStruct>::eip712_root_type());
-                components
-                    .extend(<SwapPathStep as alloy_sol_types::SolStruct>::eip712_components());
-                components
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.tokenIn,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Array<
-                        SwapPathStep,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.steps)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.maxAmountIn)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.exactAmountOut,
-                        )
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for SwapPathExactAmountOut {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.tokenIn,
-                    )
-                    + <alloy_sol_types::sol_data::Array<
-                        SwapPathStep,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(&rust.steps)
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.maxAmountIn,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.exactAmountOut,
-                    )
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.tokenIn,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Array<
-                    SwapPathStep,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.steps,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.maxAmountIn,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.exactAmountOut,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct SwapPathStep { address pool; address tokenOut; bool isBuffer; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct SwapPathStep {
-        #[allow(missing_docs)]
-        pub pool: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub tokenOut: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub isBuffer: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Bool,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::Address,
-            bool,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<SwapPathStep> for UnderlyingRustTuple<'_> {
-            fn from(value: SwapPathStep) -> Self {
-                (value.pool, value.tokenOut, value.isBuffer)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SwapPathStep {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    pool: tuple.0,
-                    tokenOut: tuple.1,
-                    isBuffer: tuple.2,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for SwapPathStep {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for SwapPathStep {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.pool,
-                    ),
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.tokenOut,
-                    ),
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.isBuffer,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for SwapPathStep {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for SwapPathStep {
-            const NAME: &'static str = "SwapPathStep";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "SwapPathStep(address pool,address tokenOut,bool isBuffer)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                alloy_sol_types::private::Vec::new()
-            }
-
-            #[inline]
-            fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
-                <Self as alloy_sol_types::SolStruct>::eip712_root_type()
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.pool,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.tokenOut,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.isBuffer,
-                        )
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for SwapPathStep {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.pool,
-                    )
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.tokenOut,
-                    )
-                    + <alloy_sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.isBuffer,
-                    )
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.pool,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.tokenOut,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Bool as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.isBuffer,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    use alloy_contract;
-    /**Creates a new wrapper around an on-chain [`IBatchRouter`](self) contract instance.
-
-    See the [wrapper's documentation](`IBatchRouterInstance`) for more details.*/
-    #[inline]
-    pub const fn new<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        address: alloy_sol_types::private::Address,
-        __provider: P,
-    ) -> IBatchRouterInstance<P, N> {
-        IBatchRouterInstance::<P, N>::new(address, __provider)
-    }
-    /**A [`IBatchRouter`](self) instance.
-
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`IBatchRouter`](self) contract located at a given `address`, using a given
-    provider `P`.
-
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
-
-    See the [module-level documentation](self) for all the available methods.*/
-    #[derive(Clone)]
-    pub struct IBatchRouterInstance<P, N = alloy_contract::private::Ethereum> {
-        address: alloy_sol_types::private::Address,
-        provider: P,
-        _network: ::core::marker::PhantomData<N>,
-    }
-    #[automatically_derived]
-    impl<P, N> ::core::fmt::Debug for IBatchRouterInstance<P, N> {
-        #[inline]
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IBatchRouterInstance")
-                .field(&self.address)
-                .finish()
-        }
-    }
-    /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IBatchRouterInstance<P, N>
-    {
-        /**Creates a new wrapper around an on-chain [`IBatchRouter`](self) contract instance.
-
-        See the [wrapper's documentation](`IBatchRouterInstance`) for more details.*/
-        #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
-            Self {
-                address,
-                provider: __provider,
-                _network: ::core::marker::PhantomData,
-            }
-        }
-
-        /// Returns a reference to the address.
-        #[inline]
-        pub const fn address(&self) -> &alloy_sol_types::private::Address {
-            &self.address
-        }
-
-        /// Sets the address.
-        #[inline]
-        pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
-            self.address = address;
-        }
-
-        /// Sets the address and returns `self`.
-        pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
-            self.set_address(address);
-            self
-        }
-
-        /// Returns a reference to the provider.
-        #[inline]
-        pub const fn provider(&self) -> &P {
-            &self.provider
-        }
-    }
-    impl<P: ::core::clone::Clone, N> IBatchRouterInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned
-        /// provider.
-        #[inline]
-        pub fn with_cloned_provider(self) -> IBatchRouterInstance<P, N> {
-            IBatchRouterInstance {
-                address: self.address,
-                provider: ::core::clone::Clone::clone(&self.provider),
-                _network: ::core::marker::PhantomData,
-            }
-        }
-    }
-    /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IBatchRouterInstance<P, N>
-    {
-        /// Creates a new call builder using this contract instance's provider
-        /// and address.
-        ///
-        /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
-        pub fn call_builder<C: alloy_sol_types::SolCall>(
-            &self,
-            call: &C,
-        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
-            alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
-        }
-    }
-    /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IBatchRouterInstance<P, N>
-    {
-        /// Creates a new event filter using this contract instance's provider
-        /// and address.
-        ///
-        /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
-        pub fn event_filter<E: alloy_sol_types::SolEvent>(
-            &self,
-        ) -> alloy_contract::Event<&P, E, N> {
-            alloy_contract::Event::new_sol(&self.provider, &self.address)
-        }
-    }
-}
-///Module containing a contract's types and functions.
-/**
-
-```solidity
-library IRouterCommon {
-    struct PermitApproval { address token; address owner; address spender; uint256 amount; uint256 nonce; uint256 deadline; }
-}
-```*/
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    clippy::pub_underscore_fields,
-    clippy::style,
-    clippy::empty_structs_with_brackets
-)]
-pub mod IRouterCommon {
-    use {super::*, alloy_sol_types};
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**```solidity
-    struct PermitApproval { address token; address owner; address spender; uint256 amount; uint256 nonce; uint256 deadline; }
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct PermitApproval {
-        #[allow(missing_docs)]
-        pub token: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub owner: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub spender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub amount: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub nonce: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub deadline: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Address,
-            alloy_sol_types::sol_data::Uint<256>,
-            alloy_sol_types::sol_data::Uint<256>,
-            alloy_sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::Address,
-            alloy_sol_types::private::primitives::aliases::U256,
-            alloy_sol_types::private::primitives::aliases::U256,
-            alloy_sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<PermitApproval> for UnderlyingRustTuple<'_> {
-            fn from(value: PermitApproval) -> Self {
-                (
-                    value.token,
-                    value.owner,
-                    value.spender,
-                    value.amount,
-                    value.nonce,
-                    value.deadline,
-                )
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for PermitApproval {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    token: tuple.0,
-                    owner: tuple.1,
-                    spender: tuple.2,
-                    amount: tuple.3,
-                    nonce: tuple.4,
-                    deadline: tuple.5,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolValue for PermitApproval {
-            type SolType = Self;
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::SolTypeValue<Self> for PermitApproval {
-            #[inline]
-            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.token,
-                    ),
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.owner,
-                    ),
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.spender,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.nonce,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.deadline,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn stv_abi_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
-            }
-
-            #[inline]
-            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
-                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
-            }
-
-            #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
-            }
-
-            #[inline]
-            fn stv_abi_packed_encoded_size(&self) -> usize {
-                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
-                    return size;
-                }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolType for PermitApproval {
-            type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
-            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-
-            #[inline]
-            fn valid_token(token: &Self::Token<'_>) -> bool {
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
-            }
-
-            #[inline]
-            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
-                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolStruct for PermitApproval {
-            const NAME: &'static str = "PermitApproval";
-
-            #[inline]
-            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
-                alloy_sol_types::private::Cow::Borrowed(
-                    "PermitApproval(address token,address owner,address spender,uint256 \
-                     amount,uint256 nonce,uint256 deadline)",
-                )
-            }
-
-            #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
-                alloy_sol_types::private::Vec::new()
-            }
-
-            #[inline]
-            fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
-                <Self as alloy_sol_types::SolStruct>::eip712_root_type()
-            }
-
-            #[inline]
-            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
-                [
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.token,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.owner,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.spender,
-                        )
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.amount)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.nonce)
-                        .0,
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.deadline)
-                        .0,
-                ]
-                    .concat()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::EventTopic for PermitApproval {
-            #[inline]
-            fn topic_preimage_length(rust: &Self::RustType) -> usize {
-                0usize
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.token,
-                    )
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.owner,
-                    )
-                    + <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.spender,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.amount,
-                    )
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(&rust.nonce)
-                    + <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.deadline,
-                    )
-            }
-
-            #[inline]
-            fn encode_topic_preimage(
-                rust: &Self::RustType,
-                out: &mut alloy_sol_types::private::Vec<u8>,
-            ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.token,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.owner,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.spender,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.amount,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.nonce,
-                    out,
-                );
-                <alloy_sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.deadline,
-                    out,
-                );
-            }
-
-            #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
-                let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
-            }
-        }
-    };
-    use alloy_contract;
-    /**Creates a new wrapper around an on-chain [`IRouterCommon`](self) contract instance.
-
-    See the [wrapper's documentation](`IRouterCommonInstance`) for more details.*/
-    #[inline]
-    pub const fn new<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        address: alloy_sol_types::private::Address,
-        __provider: P,
-    ) -> IRouterCommonInstance<P, N> {
-        IRouterCommonInstance::<P, N>::new(address, __provider)
-    }
-    /**A [`IRouterCommon`](self) instance.
-
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`IRouterCommon`](self) contract located at a given `address`, using a given
-    provider `P`.
-
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
-
-    See the [module-level documentation](self) for all the available methods.*/
-    #[derive(Clone)]
-    pub struct IRouterCommonInstance<P, N = alloy_contract::private::Ethereum> {
-        address: alloy_sol_types::private::Address,
-        provider: P,
-        _network: ::core::marker::PhantomData<N>,
-    }
-    #[automatically_derived]
-    impl<P, N> ::core::fmt::Debug for IRouterCommonInstance<P, N> {
-        #[inline]
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IRouterCommonInstance")
-                .field(&self.address)
-                .finish()
-        }
-    }
-    /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IRouterCommonInstance<P, N>
-    {
-        /**Creates a new wrapper around an on-chain [`IRouterCommon`](self) contract instance.
-
-        See the [wrapper's documentation](`IRouterCommonInstance`) for more details.*/
-        #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
-            Self {
-                address,
-                provider: __provider,
-                _network: ::core::marker::PhantomData,
-            }
-        }
-
-        /// Returns a reference to the address.
-        #[inline]
-        pub const fn address(&self) -> &alloy_sol_types::private::Address {
-            &self.address
-        }
-
-        /// Sets the address.
-        #[inline]
-        pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
-            self.address = address;
-        }
-
-        /// Sets the address and returns `self`.
-        pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
-            self.set_address(address);
-            self
-        }
-
-        /// Returns a reference to the provider.
-        #[inline]
-        pub const fn provider(&self) -> &P {
-            &self.provider
-        }
-    }
-    impl<P: ::core::clone::Clone, N> IRouterCommonInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned
-        /// provider.
-        #[inline]
-        pub fn with_cloned_provider(self) -> IRouterCommonInstance<P, N> {
-            IRouterCommonInstance {
-                address: self.address,
-                provider: ::core::clone::Clone::clone(&self.provider),
-                _network: ::core::marker::PhantomData,
-            }
-        }
-    }
-    /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IRouterCommonInstance<P, N>
-    {
-        /// Creates a new call builder using this contract instance's provider
-        /// and address.
-        ///
-        /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
-        pub fn call_builder<C: alloy_sol_types::SolCall>(
-            &self,
-            call: &C,
-        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
-            alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
-        }
-    }
-    /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IRouterCommonInstance<P, N>
-    {
-        /// Creates a new event filter using this contract instance's provider
-        /// and address.
-        ///
-        /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
-        pub fn event_filter<E: alloy_sol_types::SolEvent>(
-            &self,
-        ) -> alloy_contract::Event<&P, E, N> {
-            alloy_contract::Event::new_sol(&self.provider, &self.address)
-        }
-    }
-}
 /**
 
 Generated by the following Solidity interface...
 ```solidity
-library IAllowanceTransfer {
-    struct PermitBatch {
-        PermitDetails[] details;
-        address spender;
-        uint256 sigDeadline;
-    }
-    struct PermitDetails {
-        address token;
-        uint160 amount;
-        uint48 expiration;
-        uint48 nonce;
-    }
-}
-
-library IBatchRouter {
-    struct SwapExactInHookParams {
-        address sender;
-        SwapPathExactAmountIn[] paths;
-        uint256 deadline;
-        bool wethIsEth;
-        bytes userData;
-    }
-    struct SwapExactOutHookParams {
-        address sender;
-        SwapPathExactAmountOut[] paths;
-        uint256 deadline;
-        bool wethIsEth;
-        bytes userData;
-    }
-    struct SwapPathExactAmountIn {
-        address tokenIn;
-        SwapPathStep[] steps;
-        uint256 exactAmountIn;
-        uint256 minAmountOut;
-    }
-    struct SwapPathExactAmountOut {
-        address tokenIn;
-        SwapPathStep[] steps;
-        uint256 maxAmountIn;
-        uint256 exactAmountOut;
-    }
-    struct SwapPathStep {
-        address pool;
-        address tokenOut;
-        bool isBuffer;
-    }
-}
-
-library IRouterCommon {
-    struct PermitApproval {
-        address token;
-        address owner;
-        address spender;
-        uint256 amount;
-        uint256 nonce;
-        uint256 deadline;
-    }
-}
-
 interface BalancerV3BatchRouter {
     error AddressEmptyCode(address target);
     error AddressInsufficientBalance(address account);
@@ -2636,17 +23,6 @@ interface BalancerV3BatchRouter {
 
     receive() external payable;
 
-    function getSender() external view returns (address);
-    function multicall(bytes[] memory data) external payable returns (bytes[] memory results);
-    function permitBatchAndCall(IRouterCommon.PermitApproval[] memory permitBatch, bytes[] memory permitSignatures, IAllowanceTransfer.PermitBatch memory permit2Batch, bytes memory permit2Signature, bytes[] memory multicallData) external payable returns (bytes[] memory results);
-    function querySwapExactIn(IBatchRouter.SwapPathExactAmountIn[] memory paths, address sender, bytes memory userData) external returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    function querySwapExactInHook(IBatchRouter.SwapExactInHookParams memory params) external returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    function querySwapExactOut(IBatchRouter.SwapPathExactAmountOut[] memory paths, address sender, bytes memory userData) external returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
-    function querySwapExactOutHook(IBatchRouter.SwapExactOutHookParams memory params) external returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
-    function swapExactIn(IBatchRouter.SwapPathExactAmountIn[] memory paths, uint256 deadline, bool wethIsEth, bytes memory userData) external payable returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    function swapExactInHook(IBatchRouter.SwapExactInHookParams memory params) external returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    function swapExactOut(IBatchRouter.SwapPathExactAmountOut[] memory paths, uint256 deadline, bool wethIsEth, bytes memory userData) external payable returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
-    function swapExactOutHook(IBatchRouter.SwapExactOutHookParams memory params) external returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
     function version() external view returns (string memory);
 }
 ```
@@ -2683,850 +59,6 @@ interface BalancerV3BatchRouter {
   {
     "type": "receive",
     "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "getSender",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "multicall",
-    "inputs": [
-      {
-        "name": "data",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "results",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "permitBatchAndCall",
-    "inputs": [
-      {
-        "name": "permitBatch",
-        "type": "tuple[]",
-        "internalType": "struct IRouterCommon.PermitApproval[]",
-        "components": [
-          {
-            "name": "token",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "owner",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "spender",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "amount",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "nonce",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "permitSignatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      },
-      {
-        "name": "permit2Batch",
-        "type": "tuple",
-        "internalType": "struct IAllowanceTransfer.PermitBatch",
-        "components": [
-          {
-            "name": "details",
-            "type": "tuple[]",
-            "internalType": "struct IAllowanceTransfer.PermitDetails[]",
-            "components": [
-              {
-                "name": "token",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "amount",
-                "type": "uint160",
-                "internalType": "uint160"
-              },
-              {
-                "name": "expiration",
-                "type": "uint48",
-                "internalType": "uint48"
-              },
-              {
-                "name": "nonce",
-                "type": "uint48",
-                "internalType": "uint48"
-              }
-            ]
-          },
-          {
-            "name": "spender",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "sigDeadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "permit2Signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      },
-      {
-        "name": "multicallData",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "results",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "querySwapExactIn",
-    "inputs": [
-      {
-        "name": "paths",
-        "type": "tuple[]",
-        "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
-        "components": [
-          {
-            "name": "tokenIn",
-            "type": "address",
-            "internalType": "contract IERC20"
-          },
-          {
-            "name": "steps",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathStep[]",
-            "components": [
-              {
-                "name": "pool",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "tokenOut",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "isBuffer",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
-          },
-          {
-            "name": "exactAmountIn",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "minAmountOut",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "sender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "userData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensOut",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "querySwapExactInHook",
-    "inputs": [
-      {
-        "name": "params",
-        "type": "tuple",
-        "internalType": "struct IBatchRouter.SwapExactInHookParams",
-        "components": [
-          {
-            "name": "sender",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "paths",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
-            "components": [
-              {
-                "name": "tokenIn",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "steps",
-                "type": "tuple[]",
-                "internalType": "struct IBatchRouter.SwapPathStep[]",
-                "components": [
-                  {
-                    "name": "pool",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "tokenOut",
-                    "type": "address",
-                    "internalType": "contract IERC20"
-                  },
-                  {
-                    "name": "isBuffer",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "exactAmountIn",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "minAmountOut",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "wethIsEth",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "userData",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensOut",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "querySwapExactOut",
-    "inputs": [
-      {
-        "name": "paths",
-        "type": "tuple[]",
-        "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
-        "components": [
-          {
-            "name": "tokenIn",
-            "type": "address",
-            "internalType": "contract IERC20"
-          },
-          {
-            "name": "steps",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathStep[]",
-            "components": [
-              {
-                "name": "pool",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "tokenOut",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "isBuffer",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
-          },
-          {
-            "name": "maxAmountIn",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "exactAmountOut",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "sender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "userData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensIn",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "querySwapExactOutHook",
-    "inputs": [
-      {
-        "name": "params",
-        "type": "tuple",
-        "internalType": "struct IBatchRouter.SwapExactOutHookParams",
-        "components": [
-          {
-            "name": "sender",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "paths",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
-            "components": [
-              {
-                "name": "tokenIn",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "steps",
-                "type": "tuple[]",
-                "internalType": "struct IBatchRouter.SwapPathStep[]",
-                "components": [
-                  {
-                    "name": "pool",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "tokenOut",
-                    "type": "address",
-                    "internalType": "contract IERC20"
-                  },
-                  {
-                    "name": "isBuffer",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "maxAmountIn",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "exactAmountOut",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "wethIsEth",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "userData",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensIn",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "swapExactIn",
-    "inputs": [
-      {
-        "name": "paths",
-        "type": "tuple[]",
-        "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
-        "components": [
-          {
-            "name": "tokenIn",
-            "type": "address",
-            "internalType": "contract IERC20"
-          },
-          {
-            "name": "steps",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathStep[]",
-            "components": [
-              {
-                "name": "pool",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "tokenOut",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "isBuffer",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
-          },
-          {
-            "name": "exactAmountIn",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "minAmountOut",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "wethIsEth",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "userData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensOut",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "swapExactInHook",
-    "inputs": [
-      {
-        "name": "params",
-        "type": "tuple",
-        "internalType": "struct IBatchRouter.SwapExactInHookParams",
-        "components": [
-          {
-            "name": "sender",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "paths",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathExactAmountIn[]",
-            "components": [
-              {
-                "name": "tokenIn",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "steps",
-                "type": "tuple[]",
-                "internalType": "struct IBatchRouter.SwapPathStep[]",
-                "components": [
-                  {
-                    "name": "pool",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "tokenOut",
-                    "type": "address",
-                    "internalType": "contract IERC20"
-                  },
-                  {
-                    "name": "isBuffer",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "exactAmountIn",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "minAmountOut",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "wethIsEth",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "userData",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensOut",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsOut",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "swapExactOut",
-    "inputs": [
-      {
-        "name": "paths",
-        "type": "tuple[]",
-        "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
-        "components": [
-          {
-            "name": "tokenIn",
-            "type": "address",
-            "internalType": "contract IERC20"
-          },
-          {
-            "name": "steps",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathStep[]",
-            "components": [
-              {
-                "name": "pool",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "tokenOut",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "isBuffer",
-                "type": "bool",
-                "internalType": "bool"
-              }
-            ]
-          },
-          {
-            "name": "maxAmountIn",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "exactAmountOut",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "wethIsEth",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "userData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensIn",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "swapExactOutHook",
-    "inputs": [
-      {
-        "name": "params",
-        "type": "tuple",
-        "internalType": "struct IBatchRouter.SwapExactOutHookParams",
-        "components": [
-          {
-            "name": "sender",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "paths",
-            "type": "tuple[]",
-            "internalType": "struct IBatchRouter.SwapPathExactAmountOut[]",
-            "components": [
-              {
-                "name": "tokenIn",
-                "type": "address",
-                "internalType": "contract IERC20"
-              },
-              {
-                "name": "steps",
-                "type": "tuple[]",
-                "internalType": "struct IBatchRouter.SwapPathStep[]",
-                "components": [
-                  {
-                    "name": "pool",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "tokenOut",
-                    "type": "address",
-                    "internalType": "contract IERC20"
-                  },
-                  {
-                    "name": "isBuffer",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "maxAmountIn",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "exactAmountOut",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "wethIsEth",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "userData",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pathAmountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "tokensIn",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
-        "name": "amountsIn",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -3651,7 +183,8 @@ interface BalancerV3BatchRouter {
     clippy::empty_structs_with_brackets
 )]
 pub mod BalancerV3BatchRouter {
-    use {super::*, alloy_sol_types};
+    use super::*;
+    use alloy_sol_types as alloy_sol_types;
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -3674,9 +207,9 @@ pub mod BalancerV3BatchRouter {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
-    ```solidity
-    error AddressEmptyCode(address target);
-    ```*/
+```solidity
+error AddressEmptyCode(address target);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AddressEmptyCode {
@@ -3690,7 +223,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -3698,7 +231,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3722,18 +257,17 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for AddressEmptyCode {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [153u8, 150u8, 179u8, 21u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "AddressEmptyCode(address)";
-
+            const SELECTOR: [u8; 4] = [153u8, 150u8, 179u8, 21u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -3742,21 +276,20 @@ pub mod BalancerV3BatchRouter {
                     ),
                 )
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressInsufficientBalance(address)` and selector `0xcd786059`.
-    ```solidity
-    error AddressInsufficientBalance(address account);
-    ```*/
+```solidity
+error AddressInsufficientBalance(address account);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AddressInsufficientBalance {
@@ -3770,7 +303,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -3778,7 +311,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3787,14 +322,16 @@ pub mod BalancerV3BatchRouter {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<AddressInsufficientBalance> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<AddressInsufficientBalance>
+        for UnderlyingRustTuple<'_> {
             fn from(value: AddressInsufficientBalance) -> Self {
                 (value.account,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for AddressInsufficientBalance {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for AddressInsufficientBalance {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { account: tuple.0 }
             }
@@ -3802,18 +339,17 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for AddressInsufficientBalance {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [205u8, 120u8, 96u8, 89u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "AddressInsufficientBalance(address)";
-
+            const SELECTOR: [u8; 4] = [205u8, 120u8, 96u8, 89u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -3822,21 +358,20 @@ pub mod BalancerV3BatchRouter {
                     ),
                 )
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ErrorSelectorNotFound()` and selector `0xa7285689`.
-    ```solidity
-    error ErrorSelectorNotFound();
-    ```*/
+```solidity
+error ErrorSelectorNotFound();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ErrorSelectorNotFound;
@@ -3847,7 +382,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -3855,7 +390,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3879,37 +416,35 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ErrorSelectorNotFound {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [167u8, 40u8, 86u8, 137u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ErrorSelectorNotFound()";
-
+            const SELECTOR: [u8; 4] = [167u8, 40u8, 86u8, 137u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EthTransfer()` and selector `0x0540ddf6`.
-    ```solidity
-    error EthTransfer();
-    ```*/
+```solidity
+error EthTransfer();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct EthTransfer;
@@ -3920,7 +455,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -3928,7 +463,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -3952,37 +489,35 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for EthTransfer {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [5u8, 64u8, 221u8, 246u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "EthTransfer()";
-
+            const SELECTOR: [u8; 4] = [5u8, 64u8, 221u8, 246u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedInnerCall()` and selector `0x1425ea42`.
-    ```solidity
-    error FailedInnerCall();
-    ```*/
+```solidity
+error FailedInnerCall();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FailedInnerCall;
@@ -3993,7 +528,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -4001,7 +536,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4025,37 +562,35 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for FailedInnerCall {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [20u8, 37u8, 234u8, 66u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "FailedInnerCall()";
-
+            const SELECTOR: [u8; 4] = [20u8, 37u8, 234u8, 66u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InputLengthMismatch()` and selector `0xaaad13f7`.
-    ```solidity
-    error InputLengthMismatch();
-    ```*/
+```solidity
+error InputLengthMismatch();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InputLengthMismatch;
@@ -4066,7 +601,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -4074,7 +609,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4098,37 +635,35 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for InputLengthMismatch {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [170u8, 173u8, 19u8, 247u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InputLengthMismatch()";
-
+            const SELECTOR: [u8; 4] = [170u8, 173u8, 19u8, 247u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InsufficientEth()` and selector `0xa01a9df6`.
-    ```solidity
-    error InsufficientEth();
-    ```*/
+```solidity
+error InsufficientEth();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InsufficientEth;
@@ -4139,7 +674,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -4147,7 +682,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4171,37 +708,35 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for InsufficientEth {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [160u8, 26u8, 157u8, 246u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "InsufficientEth()";
-
+            const SELECTOR: [u8; 4] = [160u8, 26u8, 157u8, 246u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ReentrancyGuardReentrantCall()` and selector `0x3ee5aeb5`.
-    ```solidity
-    error ReentrancyGuardReentrantCall();
-    ```*/
+```solidity
+error ReentrancyGuardReentrantCall();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ReentrancyGuardReentrantCall;
@@ -4212,7 +747,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -4220,7 +755,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4229,14 +766,16 @@ pub mod BalancerV3BatchRouter {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ReentrancyGuardReentrantCall> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ReentrancyGuardReentrantCall>
+        for UnderlyingRustTuple<'_> {
             fn from(value: ReentrancyGuardReentrantCall) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ReentrancyGuardReentrantCall {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for ReentrancyGuardReentrantCall {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -4244,37 +783,35 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ReentrancyGuardReentrantCall {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [62u8, 229u8, 174u8, 181u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ReentrancyGuardReentrantCall()";
-
+            const SELECTOR: [u8; 4] = [62u8, 229u8, 174u8, 181u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeCastOverflowedUintDowncast(uint8,uint256)` and selector `0x6dfcc650`.
-    ```solidity
-    error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
-    ```*/
+```solidity
+error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SafeCastOverflowedUintDowncast {
@@ -4290,7 +827,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
@@ -4298,10 +835,15 @@ pub mod BalancerV3BatchRouter {
             alloy_sol_types::sol_data::Uint<256>,
         );
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (u8, alloy_sol_types::private::primitives::aliases::U256);
+        type UnderlyingRustTuple<'a> = (
+            u8,
+            alloy_sol_types::private::primitives::aliases::U256,
+        );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4310,14 +852,16 @@ pub mod BalancerV3BatchRouter {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<SafeCastOverflowedUintDowncast> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<SafeCastOverflowedUintDowncast>
+        for UnderlyingRustTuple<'_> {
             fn from(value: SafeCastOverflowedUintDowncast) -> Self {
                 (value.bits, value.value)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SafeCastOverflowedUintDowncast {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for SafeCastOverflowedUintDowncast {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     bits: tuple.0,
@@ -4328,44 +872,42 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for SafeCastOverflowedUintDowncast {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [109u8, 252u8, 198u8, 80u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "SafeCastOverflowedUintDowncast(uint8,uint256)";
-
+            const SELECTOR: [u8; 4] = [109u8, 252u8, 198u8, 80u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(
-                        &self.bits,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.value,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        8,
+                    > as alloy_sol_types::SolType>::tokenize(&self.bits),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.value),
                 )
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeERC20FailedOperation(address)` and selector `0x5274afe7`.
-    ```solidity
-    error SafeERC20FailedOperation(address token);
-    ```*/
+```solidity
+error SafeERC20FailedOperation(address token);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SafeERC20FailedOperation {
@@ -4379,7 +921,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -4387,7 +929,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4396,14 +940,16 @@ pub mod BalancerV3BatchRouter {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<SafeERC20FailedOperation> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<SafeERC20FailedOperation>
+        for UnderlyingRustTuple<'_> {
             fn from(value: SafeERC20FailedOperation) -> Self {
                 (value.token,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SafeERC20FailedOperation {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for SafeERC20FailedOperation {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { token: tuple.0 }
             }
@@ -4411,18 +957,17 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for SafeERC20FailedOperation {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [82u8, 116u8, 175u8, 231u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "SafeERC20FailedOperation(address)";
-
+            const SELECTOR: [u8; 4] = [82u8, 116u8, 175u8, 231u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -4431,21 +976,20 @@ pub mod BalancerV3BatchRouter {
                     ),
                 )
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SenderIsNotVault(address)` and selector `0x089676d5`.
-    ```solidity
-    error SenderIsNotVault(address sender);
-    ```*/
+```solidity
+error SenderIsNotVault(address sender);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SenderIsNotVault {
@@ -4459,7 +1003,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -4467,7 +1011,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4491,18 +1037,17 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for SenderIsNotVault {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [8u8, 150u8, 118u8, 213u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "SenderIsNotVault(address)";
-
+            const SELECTOR: [u8; 4] = [8u8, 150u8, 118u8, 213u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -4511,21 +1056,20 @@ pub mod BalancerV3BatchRouter {
                     ),
                 )
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SwapDeadline()` and selector `0xe08b8af0`.
-    ```solidity
-    error SwapDeadline();
-    ```*/
+```solidity
+error SwapDeadline();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SwapDeadline;
@@ -4536,7 +1080,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -4544,7 +1088,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4568,37 +1114,35 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for SwapDeadline {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [224u8, 139u8, 138u8, 240u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "SwapDeadline()";
-
+            const SELECTOR: [u8; 4] = [224u8, 139u8, 138u8, 240u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `TransientIndexOutOfBounds()` and selector `0x0f4ae0e4`.
-    ```solidity
-    error TransientIndexOutOfBounds();
-    ```*/
+```solidity
+error TransientIndexOutOfBounds();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct TransientIndexOutOfBounds;
@@ -4609,7 +1153,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -4617,7 +1161,9 @@ pub mod BalancerV3BatchRouter {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4626,14 +1172,16 @@ pub mod BalancerV3BatchRouter {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<TransientIndexOutOfBounds> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<TransientIndexOutOfBounds>
+        for UnderlyingRustTuple<'_> {
             fn from(value: TransientIndexOutOfBounds) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for TransientIndexOutOfBounds {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for TransientIndexOutOfBounds {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -4641,36 +1189,34 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolError for TransientIndexOutOfBounds {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [15u8, 74u8, 224u8, 228u8];
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "TransientIndexOutOfBounds()";
-
+            const SELECTOR: [u8; 4] = [15u8, 74u8, 224u8, 228u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     /**Constructor`.
-    ```solidity
-    constructor(address vault, address weth, address permit2, string routerVersion);
-    ```*/
+```solidity
+constructor(address vault, address weth, address permit2, string routerVersion);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -4684,7 +1230,7 @@ pub mod BalancerV3BatchRouter {
         pub routerVersion: alloy_sol_types::private::String,
     }
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -4703,7 +1249,9 @@ pub mod BalancerV3BatchRouter {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -4738,15 +1286,15 @@ pub mod BalancerV3BatchRouter {
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::String,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -4767,2058 +1315,15 @@ pub mod BalancerV3BatchRouter {
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getSender()` and selector `0x5e01eb5a`.
-    ```solidity
-    function getSender() external view returns (address);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getSenderCall;
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getSender()`](getSenderCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getSenderReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getSenderCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getSenderCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getSenderCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getSenderReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getSenderReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getSenderReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getSenderCall {
-            type Parameters<'a> = ();
-            type Return = alloy_sol_types::private::Address;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [94u8, 1u8, 235u8, 90u8];
-            const SIGNATURE: &'static str = "getSender()";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: getSenderReturn = r.into();
-                        r._0
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getSenderReturn = r.into();
-                    r._0
-                })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `multicall(bytes[])` and selector `0xac9650d8`.
-    ```solidity
-    function multicall(bytes[] memory data) external payable returns (bytes[] memory results);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct multicallCall {
-        #[allow(missing_docs)]
-        pub data: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`multicall(bytes[])`](multicallCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct multicallReturn {
-        #[allow(missing_docs)]
-        pub results: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<multicallCall> for UnderlyingRustTuple<'_> {
-                fn from(value: multicallCall) -> Self {
-                    (value.data,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for multicallCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { data: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<multicallReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: multicallReturn) -> Self {
-                    (value.results,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for multicallReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { results: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for multicallCall {
-            type Parameters<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            type Return = alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [172u8, 150u8, 80u8, 216u8];
-            const SIGNATURE: &'static str = "multicall(bytes[])";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (<alloy_sol_types::sol_data::Array<
-                    alloy_sol_types::sol_data::Bytes,
-                > as alloy_sol_types::SolType>::tokenize(
-                    &self.data
-                ),)
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Array<
-                    alloy_sol_types::sol_data::Bytes,
-                > as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: multicallReturn = r.into();
-                        r.results
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: multicallReturn = r.into();
-                    r.results
-                })
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `permitBatchAndCall((address,address,address,uint256,uint256,uint256)[],bytes[],((address,uint160,uint48,uint48)[],address,uint256),bytes,bytes[])` and selector `0x19c6989f`.
-    ```solidity
-    function permitBatchAndCall(IRouterCommon.PermitApproval[] memory permitBatch, bytes[] memory permitSignatures, IAllowanceTransfer.PermitBatch memory permit2Batch, bytes memory permit2Signature, bytes[] memory multicallData) external payable returns (bytes[] memory results);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct permitBatchAndCallCall {
-        #[allow(missing_docs)]
-        pub permitBatch: alloy_sol_types::private::Vec<
-            <IRouterCommon::PermitApproval as alloy_sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub permitSignatures: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-        #[allow(missing_docs)]
-        pub permit2Batch: <IAllowanceTransfer::PermitBatch as alloy_sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub permit2Signature: alloy_sol_types::private::Bytes,
-        #[allow(missing_docs)]
-        pub multicallData: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`permitBatchAndCall((address,address,address,uint256,uint256,
-    /// uint256)[],bytes[],((address,uint160,uint48,uint48)[],address,uint256),
-    /// bytes,bytes[])`](permitBatchAndCallCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct permitBatchAndCallReturn {
-        #[allow(missing_docs)]
-        pub results: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<IRouterCommon::PermitApproval>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,
-                IAllowanceTransfer::PermitBatch,
-                alloy_sol_types::sol_data::Bytes,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<
-                    <IRouterCommon::PermitApproval as alloy_sol_types::SolType>::RustType,
-                >,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-                <IAllowanceTransfer::PermitBatch as alloy_sol_types::SolType>::RustType,
-                alloy_sol_types::private::Bytes,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<permitBatchAndCallCall> for UnderlyingRustTuple<'_> {
-                fn from(value: permitBatchAndCallCall) -> Self {
-                    (
-                        value.permitBatch,
-                        value.permitSignatures,
-                        value.permit2Batch,
-                        value.permit2Signature,
-                        value.multicallData,
-                    )
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for permitBatchAndCallCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        permitBatch: tuple.0,
-                        permitSignatures: tuple.1,
-                        permit2Batch: tuple.2,
-                        permit2Signature: tuple.3,
-                        multicallData: tuple.4,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<permitBatchAndCallReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: permitBatchAndCallReturn) -> Self {
-                    (value.results,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for permitBatchAndCallReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { results: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for permitBatchAndCallCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Array<IRouterCommon::PermitApproval>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,
-                IAllowanceTransfer::PermitBatch,
-                alloy_sol_types::sol_data::Bytes,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,
-            );
-            type Return = alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [25u8, 198u8, 152u8, 159u8];
-            const SIGNATURE: &'static str = "permitBatchAndCall((address,address,address,uint256,\
-                                             uint256,uint256)[],bytes[],((address,uint160,uint48,\
-                                             uint48)[],address,uint256),bytes,bytes[])";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        IRouterCommon::PermitApproval,
-                    > as alloy_sol_types::SolType>::tokenize(&self.permitBatch),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Bytes,
-                    > as alloy_sol_types::SolType>::tokenize(&self.permitSignatures),
-                    <IAllowanceTransfer::PermitBatch as alloy_sol_types::SolType>::tokenize(
-                        &self.permit2Batch,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.permit2Signature,
-                    ),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Bytes,
-                    > as alloy_sol_types::SolType>::tokenize(&self.multicallData),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Array<
-                    alloy_sol_types::sol_data::Bytes,
-                > as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: permitBatchAndCallReturn = r.into();
-                        r.results
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: permitBatchAndCallReturn = r.into();
-                    r.results
-                })
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `querySwapExactIn((address,(address,address,bool)[],uint256,uint256)[],address,bytes)` and selector `0xe3b5dff4`.
-    ```solidity
-    function querySwapExactIn(IBatchRouter.SwapPathExactAmountIn[] memory paths, address sender, bytes memory userData) external returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactInCall {
-        #[allow(missing_docs)]
-        pub paths: alloy_sol_types::private::Vec<
-            <IBatchRouter::SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub sender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub userData: alloy_sol_types::private::Bytes,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`querySwapExactIn((address,(address,address,bool)[],uint256,uint256)[],
-    /// address,bytes)`](querySwapExactInCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactInReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensOut: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountIn>,
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<
-                    <IBatchRouter::SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-                >,
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactInCall> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactInCall) -> Self {
-                    (value.paths, value.sender, value.userData)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactInCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        paths: tuple.0,
-                        sender: tuple.1,
-                        userData: tuple.2,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactInReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactInReturn) -> Self {
-                    (value.pathAmountsOut, value.tokensOut, value.amountsOut)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactInReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsOut: tuple.0,
-                        tokensOut: tuple.1,
-                        amountsOut: tuple.2,
-                    }
-                }
-            }
-        }
-        impl querySwapExactInReturn {
-            fn _tokenize(
-                &self,
-            ) -> <querySwapExactInCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsOut),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for querySwapExactInCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountIn>,
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Return = querySwapExactInReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [227u8, 181u8, 223u8, 244u8];
-            const SIGNATURE: &'static str = "querySwapExactIn((address,(address,address,bool)[],\
-                                             uint256,uint256)[],address,bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        IBatchRouter::SwapPathExactAmountIn,
-                    > as alloy_sol_types::SolType>::tokenize(&self.paths),
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.sender,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.userData,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                querySwapExactInReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `querySwapExactInHook((address,(address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes))` and selector `0x8a12a08c`.
-    ```solidity
-    function querySwapExactInHook(IBatchRouter.SwapExactInHookParams memory params) external returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactInHookCall {
-        #[allow(missing_docs)]
-        pub params: <IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::RustType,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`querySwapExactInHook((address,(address,(address,address,bool)[],
-    /// uint256,uint256)[],uint256,bool,bytes))`](querySwapExactInHookCall)
-    /// function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactInHookReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensOut: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (IBatchRouter::SwapExactInHookParams,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (<IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::RustType,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactInHookCall> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactInHookCall) -> Self {
-                    (value.params,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactInHookCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { params: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactInHookReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactInHookReturn) -> Self {
-                    (value.pathAmountsOut, value.tokensOut, value.amountsOut)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactInHookReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsOut: tuple.0,
-                        tokensOut: tuple.1,
-                        amountsOut: tuple.2,
-                    }
-                }
-            }
-        }
-        impl querySwapExactInHookReturn {
-            fn _tokenize(
-                &self,
-            ) -> <querySwapExactInHookCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsOut),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for querySwapExactInHookCall {
-            type Parameters<'a> = (IBatchRouter::SwapExactInHookParams,);
-            type Return = querySwapExactInHookReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [138u8, 18u8, 160u8, 140u8];
-            const SIGNATURE: &'static str = "querySwapExactInHook((address,(address,(address,\
-                                             address,bool)[],uint256,uint256)[],uint256,bool,\
-                                             bytes))";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::tokenize(
-                        &self.params,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                querySwapExactInHookReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `querySwapExactOut((address,(address,address,bool)[],uint256,uint256)[],address,bytes)` and selector `0x2950286e`.
-    ```solidity
-    function querySwapExactOut(IBatchRouter.SwapPathExactAmountOut[] memory paths, address sender, bytes memory userData) external returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactOutCall {
-        #[allow(missing_docs)]
-        pub paths: alloy_sol_types::private::Vec<
-            <IBatchRouter::SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub sender: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub userData: alloy_sol_types::private::Bytes,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`querySwapExactOut((address,(address,address,bool)[],uint256,
-    /// uint256)[],address,bytes)`](querySwapExactOutCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactOutReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensIn: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountOut>,
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<
-                    <IBatchRouter::SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-                >,
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactOutCall> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactOutCall) -> Self {
-                    (value.paths, value.sender, value.userData)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactOutCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        paths: tuple.0,
-                        sender: tuple.1,
-                        userData: tuple.2,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactOutReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactOutReturn) -> Self {
-                    (value.pathAmountsIn, value.tokensIn, value.amountsIn)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactOutReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsIn: tuple.0,
-                        tokensIn: tuple.1,
-                        amountsIn: tuple.2,
-                    }
-                }
-            }
-        }
-        impl querySwapExactOutReturn {
-            fn _tokenize(
-                &self,
-            ) -> <querySwapExactOutCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsIn),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for querySwapExactOutCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountOut>,
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Return = querySwapExactOutReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [41u8, 80u8, 40u8, 110u8];
-            const SIGNATURE: &'static str = "querySwapExactOut((address,(address,address,bool)[],\
-                                             uint256,uint256)[],address,bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        IBatchRouter::SwapPathExactAmountOut,
-                    > as alloy_sol_types::SolType>::tokenize(&self.paths),
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.sender,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.userData,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                querySwapExactOutReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `querySwapExactOutHook((address,(address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes))` and selector `0x5a3c3987`.
-    ```solidity
-    function querySwapExactOutHook(IBatchRouter.SwapExactOutHookParams memory params) external returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactOutHookCall {
-        #[allow(missing_docs)]
-        pub params: <IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::RustType,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`querySwapExactOutHook((address,(address,(address,address,bool)[],
-    /// uint256,uint256)[],uint256,bool,bytes))`](querySwapExactOutHookCall)
-    /// function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct querySwapExactOutHookReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensIn: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (IBatchRouter::SwapExactOutHookParams,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (<IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::RustType,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactOutHookCall> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactOutHookCall) -> Self {
-                    (value.params,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactOutHookCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { params: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<querySwapExactOutHookReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: querySwapExactOutHookReturn) -> Self {
-                    (value.pathAmountsIn, value.tokensIn, value.amountsIn)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for querySwapExactOutHookReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsIn: tuple.0,
-                        tokensIn: tuple.1,
-                        amountsIn: tuple.2,
-                    }
-                }
-            }
-        }
-        impl querySwapExactOutHookReturn {
-            fn _tokenize(
-                &self,
-            ) -> <querySwapExactOutHookCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsIn),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for querySwapExactOutHookCall {
-            type Parameters<'a> = (IBatchRouter::SwapExactOutHookParams,);
-            type Return = querySwapExactOutHookReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [90u8, 60u8, 57u8, 135u8];
-            const SIGNATURE: &'static str = "querySwapExactOutHook((address,(address,(address,\
-                                             address,bool)[],uint256,uint256)[],uint256,bool,\
-                                             bytes))";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::tokenize(
-                        &self.params,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                querySwapExactOutHookReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `swapExactIn((address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes)` and selector `0x286f580d`.
-    ```solidity
-    function swapExactIn(IBatchRouter.SwapPathExactAmountIn[] memory paths, uint256 deadline, bool wethIsEth, bytes memory userData) external payable returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactInCall {
-        #[allow(missing_docs)]
-        pub paths: alloy_sol_types::private::Vec<
-            <IBatchRouter::SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub deadline: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub wethIsEth: bool,
-        #[allow(missing_docs)]
-        pub userData: alloy_sol_types::private::Bytes,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapExactIn((address,(address,address,bool)[],uint256,uint256)[],
-    /// uint256,bool,bytes)`](swapExactInCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactInReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensOut: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountIn>,
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Bool,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<
-                    <IBatchRouter::SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-                >,
-                alloy_sol_types::private::primitives::aliases::U256,
-                bool,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactInCall> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactInCall) -> Self {
-                    (value.paths, value.deadline, value.wethIsEth, value.userData)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactInCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        paths: tuple.0,
-                        deadline: tuple.1,
-                        wethIsEth: tuple.2,
-                        userData: tuple.3,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactInReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactInReturn) -> Self {
-                    (value.pathAmountsOut, value.tokensOut, value.amountsOut)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactInReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsOut: tuple.0,
-                        tokensOut: tuple.1,
-                        amountsOut: tuple.2,
-                    }
-                }
-            }
-        }
-        impl swapExactInReturn {
-            fn _tokenize(&self) -> <swapExactInCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsOut),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for swapExactInCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountIn>,
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Bool,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Return = swapExactInReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [40u8, 111u8, 88u8, 13u8];
-            const SIGNATURE: &'static str = "swapExactIn((address,(address,address,bool)[],\
-                                             uint256,uint256)[],uint256,bool,bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        IBatchRouter::SwapPathExactAmountIn,
-                    > as alloy_sol_types::SolType>::tokenize(&self.paths),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.wethIsEth,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.userData,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                swapExactInReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `swapExactInHook((address,(address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes))` and selector `0x08a465f6`.
-    ```solidity
-    function swapExactInHook(IBatchRouter.SwapExactInHookParams memory params) external returns (uint256[] memory pathAmountsOut, address[] memory tokensOut, uint256[] memory amountsOut);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactInHookCall {
-        #[allow(missing_docs)]
-        pub params: <IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::RustType,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapExactInHook((address,(address,(address,address,bool)[],uint256,
-    /// uint256)[],uint256,bool,bytes))`](swapExactInHookCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactInHookReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensOut: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsOut:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (IBatchRouter::SwapExactInHookParams,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (<IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::RustType,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactInHookCall> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactInHookCall) -> Self {
-                    (value.params,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactInHookCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { params: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactInHookReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactInHookReturn) -> Self {
-                    (value.pathAmountsOut, value.tokensOut, value.amountsOut)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactInHookReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsOut: tuple.0,
-                        tokensOut: tuple.1,
-                        amountsOut: tuple.2,
-                    }
-                }
-            }
-        }
-        impl swapExactInHookReturn {
-            fn _tokenize(
-                &self,
-            ) -> <swapExactInHookCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensOut),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsOut),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for swapExactInHookCall {
-            type Parameters<'a> = (IBatchRouter::SwapExactInHookParams,);
-            type Return = swapExactInHookReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [8u8, 164u8, 101u8, 246u8];
-            const SIGNATURE: &'static str = "swapExactInHook((address,(address,(address,address,\
-                                             bool)[],uint256,uint256)[],uint256,bool,bytes))";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::tokenize(
-                        &self.params,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                swapExactInHookReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `swapExactOut((address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes)` and selector `0x8eb1b65e`.
-    ```solidity
-    function swapExactOut(IBatchRouter.SwapPathExactAmountOut[] memory paths, uint256 deadline, bool wethIsEth, bytes memory userData) external payable returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactOutCall {
-        #[allow(missing_docs)]
-        pub paths: alloy_sol_types::private::Vec<
-            <IBatchRouter::SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub deadline: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub wethIsEth: bool,
-        #[allow(missing_docs)]
-        pub userData: alloy_sol_types::private::Bytes,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapExactOut((address,(address,address,bool)[],uint256,uint256)[],
-    /// uint256,bool,bytes)`](swapExactOutCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactOutReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensIn: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountOut>,
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Bool,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<
-                    <IBatchRouter::SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-                >,
-                alloy_sol_types::private::primitives::aliases::U256,
-                bool,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactOutCall> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactOutCall) -> Self {
-                    (value.paths, value.deadline, value.wethIsEth, value.userData)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactOutCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        paths: tuple.0,
-                        deadline: tuple.1,
-                        wethIsEth: tuple.2,
-                        userData: tuple.3,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactOutReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactOutReturn) -> Self {
-                    (value.pathAmountsIn, value.tokensIn, value.amountsIn)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactOutReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsIn: tuple.0,
-                        tokensIn: tuple.1,
-                        amountsIn: tuple.2,
-                    }
-                }
-            }
-        }
-        impl swapExactOutReturn {
-            fn _tokenize(&self) -> <swapExactOutCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsIn),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for swapExactOutCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Array<IBatchRouter::SwapPathExactAmountOut>,
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Bool,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Return = swapExactOutReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [142u8, 177u8, 182u8, 94u8];
-            const SIGNATURE: &'static str = "swapExactOut((address,(address,address,bool)[],\
-                                             uint256,uint256)[],uint256,bool,bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        IBatchRouter::SwapPathExactAmountOut,
-                    > as alloy_sol_types::SolType>::tokenize(&self.paths),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
-                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.wethIsEth,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.userData,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                swapExactOutReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive()]
-    /**Function with signature `swapExactOutHook((address,(address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes))` and selector `0x945ed33f`.
-    ```solidity
-    function swapExactOutHook(IBatchRouter.SwapExactOutHookParams memory params) external returns (uint256[] memory pathAmountsIn, address[] memory tokensIn, uint256[] memory amountsIn);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactOutHookCall {
-        #[allow(missing_docs)]
-        pub params: <IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::RustType,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapExactOutHook((address,(address,(address,address,bool)[],uint256,
-    /// uint256)[],uint256,bool,bytes))`](swapExactOutHookCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct swapExactOutHookReturn {
-        #[allow(missing_docs)]
-        pub pathAmountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-        #[allow(missing_docs)]
-        pub tokensIn: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-        #[allow(missing_docs)]
-        pub amountsIn:
-            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (IBatchRouter::SwapExactOutHookParams,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (<IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::RustType,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactOutHookCall> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactOutHookCall) -> Self {
-                    (value.params,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactOutHookCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { params: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<swapExactOutHookReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: swapExactOutHookReturn) -> Self {
-                    (value.pathAmountsIn, value.tokensIn, value.amountsIn)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapExactOutHookReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        pathAmountsIn: tuple.0,
-                        tokensIn: tuple.1,
-                        amountsIn: tuple.2,
-                    }
-                }
-            }
-        }
-        impl swapExactOutHookReturn {
-            fn _tokenize(
-                &self,
-            ) -> <swapExactOutHookCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pathAmountsIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokensIn),
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountsIn),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for swapExactOutHookCall {
-            type Parameters<'a> = (IBatchRouter::SwapExactOutHookParams,);
-            type Return = swapExactOutHookReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [148u8, 94u8, 211u8, 63u8];
-            const SIGNATURE: &'static str = "swapExactOutHook((address,(address,(address,address,\
-                                             bool)[],uint256,uint256)[],uint256,bool,bytes))";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::tokenize(
-                        &self.params,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                swapExactOutHookReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `version()` and selector `0x54fd4d50`.
-    ```solidity
-    function version() external view returns (string memory);
-    ```*/
+```solidity
+function version() external view returns (string memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct versionCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`version()`](versionCall) function.
+    ///Container type for the return parameters of the [`version()`](versionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct versionReturn {
@@ -6832,7 +1337,7 @@ pub mod BalancerV3BatchRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -6841,7 +1346,9 @@ pub mod BalancerV3BatchRouter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6871,7 +1378,9 @@ pub mod BalancerV3BatchRouter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -6896,134 +1405,81 @@ pub mod BalancerV3BatchRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for versionCall {
             type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::String;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::String,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [84u8, 253u8, 77u8, 80u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "version()";
-
+            const SELECTOR: [u8; 4] = [84u8, 253u8, 77u8, 80u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: versionReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: versionReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: versionReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`BalancerV3BatchRouter`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum BalancerV3BatchRouterCalls {
-        #[allow(missing_docs)]
-        getSender(getSenderCall),
-        #[allow(missing_docs)]
-        multicall(multicallCall),
-        #[allow(missing_docs)]
-        permitBatchAndCall(permitBatchAndCallCall),
-        #[allow(missing_docs)]
-        querySwapExactIn(querySwapExactInCall),
-        #[allow(missing_docs)]
-        querySwapExactInHook(querySwapExactInHookCall),
-        #[allow(missing_docs)]
-        querySwapExactOut(querySwapExactOutCall),
-        #[allow(missing_docs)]
-        querySwapExactOutHook(querySwapExactOutHookCall),
-        #[allow(missing_docs)]
-        swapExactIn(swapExactInCall),
-        #[allow(missing_docs)]
-        swapExactInHook(swapExactInHookCall),
-        #[allow(missing_docs)]
-        swapExactOut(swapExactOutCall),
-        #[allow(missing_docs)]
-        swapExactOutHook(swapExactOutHookCall),
         #[allow(missing_docs)]
         version(versionCall),
     }
     impl BalancerV3BatchRouterCalls {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// Note that the selectors might not be in the same order as the variants.
+        /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [8u8, 164u8, 101u8, 246u8],
-            [25u8, 198u8, 152u8, 159u8],
-            [40u8, 111u8, 88u8, 13u8],
-            [41u8, 80u8, 40u8, 110u8],
-            [84u8, 253u8, 77u8, 80u8],
-            [90u8, 60u8, 57u8, 135u8],
-            [94u8, 1u8, 235u8, 90u8],
-            [138u8, 18u8, 160u8, 140u8],
-            [142u8, 177u8, 182u8, 94u8],
-            [148u8, 94u8, 211u8, 63u8],
-            [172u8, 150u8, 80u8, 216u8],
-            [227u8, 181u8, 223u8, 244u8],
+        pub const SELECTORS: &'static [[u8; 4usize]] = &[[84u8, 253u8, 77u8, 80u8]];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(version),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
-            <swapExactInHookCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <permitBatchAndCallCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <swapExactInCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <querySwapExactOutCall as alloy_sol_types::SolCall>::SIGNATURE,
             <versionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <querySwapExactOutHookCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getSenderCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <querySwapExactInHookCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <swapExactOutCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <swapExactOutHookCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <multicallCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <querySwapExactInCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(swapExactInHook),
-            ::core::stringify!(permitBatchAndCall),
-            ::core::stringify!(swapExactIn),
-            ::core::stringify!(querySwapExactOut),
-            ::core::stringify!(version),
-            ::core::stringify!(querySwapExactOutHook),
-            ::core::stringify!(getSender),
-            ::core::stringify!(querySwapExactInHook),
-            ::core::stringify!(swapExactOut),
-            ::core::stringify!(swapExactOutHook),
-            ::core::stringify!(multicall),
-            ::core::stringify!(querySwapExactIn),
-        ];
-
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -7036,187 +1492,63 @@ pub mod BalancerV3BatchRouter {
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
-
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for BalancerV3BatchRouterCalls {
-        const COUNT: usize = 12usize;
-        const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "BalancerV3BatchRouterCalls";
-
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 1usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::getSender(_) => <getSenderCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::multicall(_) => <multicallCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::permitBatchAndCall(_) => {
-                    <permitBatchAndCallCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::querySwapExactIn(_) => {
-                    <querySwapExactInCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::querySwapExactInHook(_) => {
-                    <querySwapExactInHookCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::querySwapExactOut(_) => {
-                    <querySwapExactOutCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::querySwapExactOutHook(_) => {
-                    <querySwapExactOutHookCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::swapExactIn(_) => <swapExactInCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::swapExactInHook(_) => {
-                    <swapExactInHookCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::swapExactOut(_) => <swapExactOutCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::swapExactOutHook(_) => {
-                    <swapExactOutHookCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::version(_) => <versionCall as alloy_sol_types::SolCall>::SELECTOR,
             }
         }
-
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
-
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
-
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<BalancerV3BatchRouterCalls>] = &[
+            ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls>] = &[
                 {
-                    fn swapExactInHook(
+                    fn version(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactInHookCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::swapExactInHook)
-                    }
-                    swapExactInHook
-                },
-                {
-                    fn permitBatchAndCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <permitBatchAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::permitBatchAndCall)
-                    }
-                    permitBatchAndCall
-                },
-                {
-                    fn swapExactIn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactInCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::swapExactIn)
-                    }
-                    swapExactIn
-                },
-                {
-                    fn querySwapExactOut(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactOutCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::querySwapExactOut)
-                    }
-                    querySwapExactOut
-                },
-                {
-                    fn version(data: &[u8]) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
                         <versionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(BalancerV3BatchRouterCalls::version)
                     }
                     version
                 },
-                {
-                    fn querySwapExactOutHook(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactOutHookCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterCalls::querySwapExactOutHook)
-                    }
-                    querySwapExactOutHook
-                },
-                {
-                    fn getSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <getSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::getSender)
-                    }
-                    getSender
-                },
-                {
-                    fn querySwapExactInHook(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactInHookCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::querySwapExactInHook)
-                    }
-                    querySwapExactInHook
-                },
-                {
-                    fn swapExactOut(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactOutCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::swapExactOut)
-                    }
-                    swapExactOut
-                },
-                {
-                    fn swapExactOutHook(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactOutHookCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::swapExactOutHook)
-                    }
-                    swapExactOutHook
-                },
-                {
-                    fn multicall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <multicallCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::multicall)
-                    }
-                    multicall
-                },
-                {
-                    fn querySwapExactIn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactInCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::querySwapExactIn)
-                    }
-                    querySwapExactIn
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
-
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -7225,223 +1557,40 @@ pub mod BalancerV3BatchRouter {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                BalancerV3BatchRouterCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls>] = &[
                 {
-                    fn swapExactInHook(
+                    fn version(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactInHookCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterCalls::swapExactInHook)
-                    }
-                    swapExactInHook
-                },
-                {
-                    fn permitBatchAndCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <permitBatchAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <versionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(BalancerV3BatchRouterCalls::permitBatchAndCall)
-                    }
-                    permitBatchAndCall
-                },
-                {
-                    fn swapExactIn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactInCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                            .map(BalancerV3BatchRouterCalls::swapExactIn)
-                    }
-                    swapExactIn
-                },
-                {
-                    fn querySwapExactOut(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactOutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterCalls::querySwapExactOut)
-                    }
-                    querySwapExactOut
-                },
-                {
-                    fn version(data: &[u8]) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <versionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(BalancerV3BatchRouterCalls::version)
                     }
                     version
                 },
-                {
-                    fn querySwapExactOutHook(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactOutHookCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterCalls::querySwapExactOutHook)
-                    }
-                    querySwapExactOutHook
-                },
-                {
-                    fn getSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <getSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                            .map(BalancerV3BatchRouterCalls::getSender)
-                    }
-                    getSender
-                },
-                {
-                    fn querySwapExactInHook(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactInHookCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterCalls::querySwapExactInHook)
-                    }
-                    querySwapExactInHook
-                },
-                {
-                    fn swapExactOut(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactOutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterCalls::swapExactOut)
-                    }
-                    swapExactOut
-                },
-                {
-                    fn swapExactOutHook(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <swapExactOutHookCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterCalls::swapExactOutHook)
-                    }
-                    swapExactOutHook
-                },
-                {
-                    fn multicall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <multicallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                            .map(BalancerV3BatchRouterCalls::multicall)
-                    }
-                    multicall
-                },
-                {
-                    fn querySwapExactIn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <querySwapExactInCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterCalls::querySwapExactIn)
-                    }
-                    querySwapExactIn
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
-
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::getSender(inner) => {
-                    <getSenderCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::multicall(inner) => {
-                    <multicallCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::permitBatchAndCall(inner) => {
-                    <permitBatchAndCallCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::querySwapExactIn(inner) => {
-                    <querySwapExactInCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::querySwapExactInHook(inner) => {
-                    <querySwapExactInHookCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::querySwapExactOut(inner) => {
-                    <querySwapExactOutCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::querySwapExactOutHook(inner) => {
-                    <querySwapExactOutHookCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::swapExactIn(inner) => {
-                    <swapExactInCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::swapExactInHook(inner) => {
-                    <swapExactInHookCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::swapExactOut(inner) => {
-                    <swapExactOutCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::swapExactOutHook(inner) => {
-                    <swapExactOutHookCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
                 Self::version(inner) => {
                     <versionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
             }
         }
-
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::getSender(inner) => {
-                    <getSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::multicall(inner) => {
-                    <multicallCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::permitBatchAndCall(inner) => {
-                    <permitBatchAndCallCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::querySwapExactIn(inner) => {
-                    <querySwapExactInCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::querySwapExactInHook(inner) => {
-                    <querySwapExactInHookCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
-                    )
-                }
-                Self::querySwapExactOut(inner) => {
-                    <querySwapExactOutCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::querySwapExactOutHook(inner) => {
-                    <querySwapExactOutHookCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
-                    )
-                }
-                Self::swapExactIn(inner) => {
-                    <swapExactInCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::swapExactInHook(inner) => {
-                    <swapExactInHookCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::swapExactOut(inner) => {
-                    <swapExactOutCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::swapExactOutHook(inner) => {
-                    <swapExactOutHookCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
                 Self::version(inner) => {
                     <versionCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
@@ -7449,7 +1598,8 @@ pub mod BalancerV3BatchRouter {
         }
     }
     ///Container for all the [`BalancerV3BatchRouter`](self) custom errors.
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum BalancerV3BatchRouterErrors {
         #[allow(missing_docs)]
         AddressEmptyCode(AddressEmptyCode),
@@ -7481,9 +1631,8 @@ pub mod BalancerV3BatchRouter {
     impl BalancerV3BatchRouterErrors {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// Note that the selectors might not be in the same order as the variants.
+        /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
@@ -7501,22 +1650,6 @@ pub mod BalancerV3BatchRouter {
             [205u8, 120u8, 96u8, 89u8],
             [224u8, 139u8, 138u8, 240u8],
         ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <EthTransfer as alloy_sol_types::SolError>::SIGNATURE,
-            <SenderIsNotVault as alloy_sol_types::SolError>::SIGNATURE,
-            <TransientIndexOutOfBounds as alloy_sol_types::SolError>::SIGNATURE,
-            <FailedInnerCall as alloy_sol_types::SolError>::SIGNATURE,
-            <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::SIGNATURE,
-            <SafeERC20FailedOperation as alloy_sol_types::SolError>::SIGNATURE,
-            <SafeCastOverflowedUintDowncast as alloy_sol_types::SolError>::SIGNATURE,
-            <AddressEmptyCode as alloy_sol_types::SolError>::SIGNATURE,
-            <InsufficientEth as alloy_sol_types::SolError>::SIGNATURE,
-            <ErrorSelectorNotFound as alloy_sol_types::SolError>::SIGNATURE,
-            <InputLengthMismatch as alloy_sol_types::SolError>::SIGNATURE,
-            <AddressInsufficientBalance as alloy_sol_types::SolError>::SIGNATURE,
-            <SwapDeadline as alloy_sol_types::SolError>::SIGNATURE,
-        ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(EthTransfer),
@@ -7533,7 +1666,22 @@ pub mod BalancerV3BatchRouter {
             ::core::stringify!(AddressInsufficientBalance),
             ::core::stringify!(SwapDeadline),
         ];
-
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <EthTransfer as alloy_sol_types::SolError>::SIGNATURE,
+            <SenderIsNotVault as alloy_sol_types::SolError>::SIGNATURE,
+            <TransientIndexOutOfBounds as alloy_sol_types::SolError>::SIGNATURE,
+            <FailedInnerCall as alloy_sol_types::SolError>::SIGNATURE,
+            <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::SIGNATURE,
+            <SafeERC20FailedOperation as alloy_sol_types::SolError>::SIGNATURE,
+            <SafeCastOverflowedUintDowncast as alloy_sol_types::SolError>::SIGNATURE,
+            <AddressEmptyCode as alloy_sol_types::SolError>::SIGNATURE,
+            <InsufficientEth as alloy_sol_types::SolError>::SIGNATURE,
+            <ErrorSelectorNotFound as alloy_sol_types::SolError>::SIGNATURE,
+            <InputLengthMismatch as alloy_sol_types::SolError>::SIGNATURE,
+            <AddressInsufficientBalance as alloy_sol_types::SolError>::SIGNATURE,
+            <SwapDeadline as alloy_sol_types::SolError>::SIGNATURE,
+        ];
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -7546,20 +1694,20 @@ pub mod BalancerV3BatchRouter {
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
-
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for BalancerV3BatchRouterErrors {
-        const COUNT: usize = 13usize;
-        const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "BalancerV3BatchRouterErrors";
-
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -7572,7 +1720,9 @@ pub mod BalancerV3BatchRouter {
                 Self::ErrorSelectorNotFound(_) => {
                     <ErrorSelectorNotFound as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::EthTransfer(_) => <EthTransfer as alloy_sol_types::SolError>::SELECTOR,
+                Self::EthTransfer(_) => {
+                    <EthTransfer as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::FailedInnerCall(_) => {
                     <FailedInnerCall as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -7594,30 +1744,31 @@ pub mod BalancerV3BatchRouter {
                 Self::SenderIsNotVault(_) => {
                     <SenderIsNotVault as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::SwapDeadline(_) => <SwapDeadline as alloy_sol_types::SolError>::SELECTOR,
+                Self::SwapDeadline(_) => {
+                    <SwapDeadline as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::TransientIndexOutOfBounds(_) => {
                     <TransientIndexOutOfBounds as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
-
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
-
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
-
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<BalancerV3BatchRouterErrors>] = &[
+            ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors>] = &[
                 {
                     fn EthTransfer(
                         data: &[u8],
@@ -7631,7 +1782,9 @@ pub mod BalancerV3BatchRouter {
                     fn SenderIsNotVault(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <SenderIsNotVault as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <SenderIsNotVault as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::SenderIsNotVault)
                     }
                     SenderIsNotVault
@@ -7641,9 +1794,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <TransientIndexOutOfBounds as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::TransientIndexOutOfBounds)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::TransientIndexOutOfBounds)
                     }
                     TransientIndexOutOfBounds
                 },
@@ -7651,7 +1804,9 @@ pub mod BalancerV3BatchRouter {
                     fn FailedInnerCall(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <FailedInnerCall as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <FailedInnerCall as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::FailedInnerCall)
                     }
                     FailedInnerCall
@@ -7661,9 +1816,11 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::ReentrancyGuardReentrantCall)
+                                data,
+                            )
+                            .map(
+                                BalancerV3BatchRouterErrors::ReentrancyGuardReentrantCall,
+                            )
                     }
                     ReentrancyGuardReentrantCall
                 },
@@ -7672,9 +1829,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::SafeERC20FailedOperation)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::SafeERC20FailedOperation)
                     }
                     SafeERC20FailedOperation
                 },
@@ -7695,7 +1852,9 @@ pub mod BalancerV3BatchRouter {
                     fn AddressEmptyCode(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
@@ -7704,7 +1863,9 @@ pub mod BalancerV3BatchRouter {
                     fn InsufficientEth(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <InsufficientEth as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <InsufficientEth as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::InsufficientEth)
                     }
                     InsufficientEth
@@ -7713,7 +1874,9 @@ pub mod BalancerV3BatchRouter {
                     fn ErrorSelectorNotFound(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::ErrorSelectorNotFound)
                     }
                     ErrorSelectorNotFound
@@ -7722,7 +1885,9 @@ pub mod BalancerV3BatchRouter {
                     fn InputLengthMismatch(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <InputLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <InputLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::InputLengthMismatch)
                     }
                     InputLengthMismatch
@@ -7732,9 +1897,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <AddressInsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::AddressInsufficientBalance)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::AddressInsufficientBalance)
                     }
                     AddressInsufficientBalance
                 },
@@ -7749,14 +1914,15 @@ pub mod BalancerV3BatchRouter {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
-
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -7765,14 +1931,14 @@ pub mod BalancerV3BatchRouter {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                BalancerV3BatchRouterErrors,
-            >] = &[
+            ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors>] = &[
                 {
                     fn EthTransfer(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <EthTransfer as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
+                        <EthTransfer as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::EthTransfer)
                     }
                     EthTransfer
@@ -7782,9 +1948,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <SenderIsNotVault as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::SenderIsNotVault)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::SenderIsNotVault)
                     }
                     SenderIsNotVault
                 },
@@ -7804,9 +1970,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <FailedInnerCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::FailedInnerCall)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::FailedInnerCall)
                     }
                     FailedInnerCall
                 },
@@ -7852,9 +2018,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::AddressEmptyCode)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
                 },
@@ -7863,9 +2029,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <InsufficientEth as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::InsufficientEth)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::InsufficientEth)
                     }
                     InsufficientEth
                 },
@@ -7885,9 +2051,9 @@ pub mod BalancerV3BatchRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <InputLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV3BatchRouterErrors::InputLengthMismatch)
+                                data,
+                            )
+                            .map(BalancerV3BatchRouterErrors::InputLengthMismatch)
                     }
                     InputLengthMismatch
                 },
@@ -7906,26 +2072,31 @@ pub mod BalancerV3BatchRouter {
                     fn SwapDeadline(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <SwapDeadline as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
+                        <SwapDeadline as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(BalancerV3BatchRouterErrors::SwapDeadline)
                     }
                     SwapDeadline
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
-
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::AddressEmptyCode(inner) => {
-                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::AddressInsufficientBalance(inner) => {
                     <AddressInsufficientBalance as alloy_sol_types::SolError>::abi_encoded_size(
@@ -7933,19 +2104,27 @@ pub mod BalancerV3BatchRouter {
                     )
                 }
                 Self::ErrorSelectorNotFound(inner) => {
-                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::EthTransfer(inner) => {
                     <EthTransfer as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::FailedInnerCall(inner) => {
-                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::InputLengthMismatch(inner) => {
-                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::InsufficientEth(inner) => {
-                    <InsufficientEth as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <InsufficientEth as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::ReentrancyGuardReentrantCall(inner) => {
                     <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::abi_encoded_size(
@@ -7958,10 +2137,14 @@ pub mod BalancerV3BatchRouter {
                     )
                 }
                 Self::SafeERC20FailedOperation(inner) => {
-                    <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::SenderIsNotVault(inner) => {
-                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::SwapDeadline(inner) => {
                     <SwapDeadline as alloy_sol_types::SolError>::abi_encoded_size(inner)
@@ -7973,66 +2156,94 @@ pub mod BalancerV3BatchRouter {
                 }
             }
         }
-
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::AddressEmptyCode(inner) => {
-                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::AddressInsufficientBalance(inner) => {
                     <AddressInsufficientBalance as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::ErrorSelectorNotFound(inner) => {
-                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::EthTransfer(inner) => {
-                    <EthTransfer as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <EthTransfer as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::FailedInnerCall(inner) => {
-                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::InputLengthMismatch(inner) => {
-                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::InsufficientEth(inner) => {
-                    <InsufficientEth as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <InsufficientEth as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::ReentrancyGuardReentrantCall(inner) => {
                     <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::SafeCastOverflowedUintDowncast(inner) => {
                     <SafeCastOverflowedUintDowncast as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::SafeERC20FailedOperation(inner) => {
                     <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::SenderIsNotVault(inner) => {
-                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::SwapDeadline(inner) => {
-                    <SwapDeadline as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <SwapDeadline as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::TransientIndexOutOfBounds(inner) => {
                     <TransientIndexOutOfBounds as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`BalancerV3BatchRouter`](self) contract instance.
 
-    See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
+See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -8045,31 +2256,32 @@ pub mod BalancerV3BatchRouter {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+    pub fn deploy<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(
         __provider: P,
         vault: alloy_sol_types::private::Address,
         weth: alloy_sol_types::private::Address,
         permit2: alloy_sol_types::private::Address,
         routerVersion: alloy_sol_types::private::String,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<BalancerV3BatchRouterInstance<P, N>>>
-    {
-        BalancerV3BatchRouterInstance::<P, N>::deploy(
-            __provider,
-            vault,
-            weth,
-            permit2,
-            routerVersion,
-        )
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<BalancerV3BatchRouterInstance<P, N>>,
+    > {
+        BalancerV3BatchRouterInstance::<
+            P,
+            N,
+        >::deploy(__provider, vault, weth, permit2, routerVersion)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
+and constructor arguments, if any.
 
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
@@ -8081,25 +2293,22 @@ pub mod BalancerV3BatchRouter {
         permit2: alloy_sol_types::private::Address,
         routerVersion: alloy_sol_types::private::String,
     ) -> alloy_contract::RawCallBuilder<P, N> {
-        BalancerV3BatchRouterInstance::<P, N>::deploy_builder(
-            __provider,
-            vault,
-            weth,
-            permit2,
-            routerVersion,
-        )
+        BalancerV3BatchRouterInstance::<
+            P,
+            N,
+        >::deploy_builder(__provider, vault, weth, permit2, routerVersion)
     }
     /**A [`BalancerV3BatchRouter`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`BalancerV3BatchRouter`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`BalancerV3BatchRouter`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct BalancerV3BatchRouterInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -8110,32 +2319,33 @@ pub mod BalancerV3BatchRouter {
     impl<P, N> ::core::fmt::Debug for BalancerV3BatchRouterInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("BalancerV3BatchRouterInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("BalancerV3BatchRouterInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BalancerV3BatchRouterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BalancerV3BatchRouterInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`BalancerV3BatchRouter`](self) contract instance.
 
-        See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
+See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
-
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -8144,17 +2354,21 @@ pub mod BalancerV3BatchRouter {
             permit2: alloy_sol_types::private::Address,
             routerVersion: alloy_sol_types::private::String,
         ) -> alloy_contract::Result<BalancerV3BatchRouterInstance<P, N>> {
-            let call_builder =
-                Self::deploy_builder(__provider, vault, weth, permit2, routerVersion);
+            let call_builder = Self::deploy_builder(
+                __provider,
+                vault,
+                weth,
+                permit2,
+                routerVersion,
+            );
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
-
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(
             __provider: P,
@@ -8167,36 +2381,34 @@ pub mod BalancerV3BatchRouter {
                 __provider,
                 [
                     &BYTECODE[..],
-                    &alloy_sol_types::SolConstructor::abi_encode(&constructorCall {
-                        vault,
-                        weth,
-                        permit2,
-                        routerVersion,
-                    })[..],
+                    &alloy_sol_types::SolConstructor::abi_encode(
+                        &constructorCall {
+                            vault,
+                            weth,
+                            permit2,
+                            routerVersion,
+                        },
+                    )[..],
                 ]
-                .concat()
-                .into(),
+                    .concat()
+                    .into(),
             )
         }
-
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
-
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
-
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
-
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -8204,8 +2416,7 @@ pub mod BalancerV3BatchRouter {
         }
     }
     impl<P: ::core::clone::Clone, N> BalancerV3BatchRouterInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned
-        /// provider.
+        /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
         pub fn with_cloned_provider(self) -> BalancerV3BatchRouterInstance<P, N> {
             BalancerV3BatchRouterInstance {
@@ -8216,172 +2427,34 @@ pub mod BalancerV3BatchRouter {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BalancerV3BatchRouterInstance<P, N>
-    {
-        /// Creates a new call builder using this contract instance's provider
-        /// and address.
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BalancerV3BatchRouterInstance<P, N> {
+        /// Creates a new call builder using this contract instance's provider and address.
         ///
-        /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined in this
+        /// contract. Prefer using the other methods for building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-
-        ///Creates a new call builder for the [`getSender`] function.
-        pub fn getSender(&self) -> alloy_contract::SolCallBuilder<&P, getSenderCall, N> {
-            self.call_builder(&getSenderCall)
-        }
-
-        ///Creates a new call builder for the [`multicall`] function.
-        pub fn multicall(
-            &self,
-            data: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-        ) -> alloy_contract::SolCallBuilder<&P, multicallCall, N> {
-            self.call_builder(&multicallCall { data })
-        }
-
-        ///Creates a new call builder for the [`permitBatchAndCall`] function.
-        pub fn permitBatchAndCall(
-            &self,
-            permitBatch: alloy_sol_types::private::Vec<
-                <IRouterCommon::PermitApproval as alloy_sol_types::SolType>::RustType,
-            >,
-            permitSignatures: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-            permit2Batch: <IAllowanceTransfer::PermitBatch as alloy_sol_types::SolType>::RustType,
-            permit2Signature: alloy_sol_types::private::Bytes,
-            multicallData: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-        ) -> alloy_contract::SolCallBuilder<&P, permitBatchAndCallCall, N> {
-            self.call_builder(&permitBatchAndCallCall {
-                permitBatch,
-                permitSignatures,
-                permit2Batch,
-                permit2Signature,
-                multicallData,
-            })
-        }
-
-        ///Creates a new call builder for the [`querySwapExactIn`] function.
-        pub fn querySwapExactIn(
-            &self,
-            paths: alloy_sol_types::private::Vec<
-                <IBatchRouter::SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-            >,
-            sender: alloy_sol_types::private::Address,
-            userData: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, querySwapExactInCall, N> {
-            self.call_builder(&querySwapExactInCall {
-                paths,
-                sender,
-                userData,
-            })
-        }
-
-        ///Creates a new call builder for the [`querySwapExactInHook`]
-        /// function.
-        pub fn querySwapExactInHook(
-            &self,
-            params: <IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::RustType,
-        ) -> alloy_contract::SolCallBuilder<&P, querySwapExactInHookCall, N> {
-            self.call_builder(&querySwapExactInHookCall { params })
-        }
-
-        ///Creates a new call builder for the [`querySwapExactOut`] function.
-        pub fn querySwapExactOut(
-            &self,
-            paths: alloy_sol_types::private::Vec<
-                <IBatchRouter::SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-            >,
-            sender: alloy_sol_types::private::Address,
-            userData: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, querySwapExactOutCall, N> {
-            self.call_builder(&querySwapExactOutCall {
-                paths,
-                sender,
-                userData,
-            })
-        }
-
-        ///Creates a new call builder for the [`querySwapExactOutHook`]
-        /// function.
-        pub fn querySwapExactOutHook(
-            &self,
-            params: <IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::RustType,
-        ) -> alloy_contract::SolCallBuilder<&P, querySwapExactOutHookCall, N> {
-            self.call_builder(&querySwapExactOutHookCall { params })
-        }
-
-        ///Creates a new call builder for the [`swapExactIn`] function.
-        pub fn swapExactIn(
-            &self,
-            paths: alloy_sol_types::private::Vec<
-                <IBatchRouter::SwapPathExactAmountIn as alloy_sol_types::SolType>::RustType,
-            >,
-            deadline: alloy_sol_types::private::primitives::aliases::U256,
-            wethIsEth: bool,
-            userData: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, swapExactInCall, N> {
-            self.call_builder(&swapExactInCall {
-                paths,
-                deadline,
-                wethIsEth,
-                userData,
-            })
-        }
-
-        ///Creates a new call builder for the [`swapExactInHook`] function.
-        pub fn swapExactInHook(
-            &self,
-            params: <IBatchRouter::SwapExactInHookParams as alloy_sol_types::SolType>::RustType,
-        ) -> alloy_contract::SolCallBuilder<&P, swapExactInHookCall, N> {
-            self.call_builder(&swapExactInHookCall { params })
-        }
-
-        ///Creates a new call builder for the [`swapExactOut`] function.
-        pub fn swapExactOut(
-            &self,
-            paths: alloy_sol_types::private::Vec<
-                <IBatchRouter::SwapPathExactAmountOut as alloy_sol_types::SolType>::RustType,
-            >,
-            deadline: alloy_sol_types::private::primitives::aliases::U256,
-            wethIsEth: bool,
-            userData: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, swapExactOutCall, N> {
-            self.call_builder(&swapExactOutCall {
-                paths,
-                deadline,
-                wethIsEth,
-                userData,
-            })
-        }
-
-        ///Creates a new call builder for the [`swapExactOutHook`] function.
-        pub fn swapExactOutHook(
-            &self,
-            params: <IBatchRouter::SwapExactOutHookParams as alloy_sol_types::SolType>::RustType,
-        ) -> alloy_contract::SolCallBuilder<&P, swapExactOutHookCall, N> {
-            self.call_builder(&swapExactOutHookCall { params })
-        }
-
         ///Creates a new call builder for the [`version`] function.
         pub fn version(&self) -> alloy_contract::SolCallBuilder<&P, versionCall, N> {
             self.call_builder(&versionCall)
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BalancerV3BatchRouterInstance<P, N>
-    {
-        /// Creates a new event filter using this contract instance's provider
-        /// and address.
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BalancerV3BatchRouterInstance<P, N> {
+        /// Creates a new event filter using this contract instance's provider and address.
         ///
-        /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this contract.
+        /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -8389,48 +2462,81 @@ pub mod BalancerV3BatchRouter {
         }
     }
 }
-pub type Instance =
-    BalancerV3BatchRouter::BalancerV3BatchRouterInstance<::alloy_provider::DynProvider>;
+pub type Instance = BalancerV3BatchRouter::BalancerV3BatchRouterInstance<
+    ::alloy_provider::DynProvider,
+>;
 use {
-    alloy_primitives::{Address, address},
-    alloy_provider::{DynProvider, Provider},
-    anyhow::{Context, Result},
-    std::{collections::HashMap, sync::LazyLock},
+    std::{sync::LazyLock, collections::HashMap},
+    anyhow::{Result, Context},
+    alloy_primitives::{address, Address},
+    alloy_provider::{Provider, DynProvider},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        1u64 => Some((
-            ::alloy_primitives::address!("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"),
-            Some(21339510u64),
-        )),
-        10u64 => Some((
-            ::alloy_primitives::address!("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
-            Some(133969588u64),
-        )),
-        100u64 => Some((
-            ::alloy_primitives::address!("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"),
-            Some(37377506u64),
-        )),
-        8453u64 => Some((
-            ::alloy_primitives::address!("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"),
-            Some(25347205u64),
-        )),
-        9745u64 => Some((
-            ::alloy_primitives::address!("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"),
-            Some(782312u64),
-        )),
-        42161u64 => Some((
-            ::alloy_primitives::address!("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
-            Some(297828544u64),
-        )),
-        43114u64 => Some((
-            ::alloy_primitives::address!("0xc9b36096f5201ea332Db35d6D195774ea0D5988f"),
-            Some(59965747u64),
-        )),
-        11155111u64 => Some((
-            ::alloy_primitives::address!("0xC85b652685567C1B074e8c0D4389f83a2E458b1C"),
-            Some(7219301u64),
-        )),
+        1u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"
+                ),
+                Some(21339510u64),
+            ))
+        }
+        10u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"
+                ),
+                Some(133969588u64),
+            ))
+        }
+        100u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"
+                ),
+                Some(37377506u64),
+            ))
+        }
+        8453u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x85a80afee867aDf27B50BdB7b76DA70f1E853062"
+                ),
+                Some(25347205u64),
+            ))
+        }
+        9745u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x85a80afee867aDf27B50BdB7b76DA70f1E853062"
+                ),
+                Some(782312u64),
+            ))
+        }
+        42161u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"
+                ),
+                Some(297828544u64),
+            ))
+        }
+        43114u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xc9b36096f5201ea332Db35d6D195774ea0D5988f"
+                ),
+                Some(59965747u64),
+            ))
+        }
+        11155111u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xC85b652685567C1B074e8c0D4389f83a2E458b1C"
+                ),
+                Some(7219301u64),
+            ))
+        }
         _ => None,
     }
 }
@@ -8447,7 +2553,9 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(
+        provider: &DynProvider,
+    ) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()
