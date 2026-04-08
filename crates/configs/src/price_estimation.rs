@@ -211,6 +211,10 @@ const fn default_cache_size() -> usize {
     1000
 }
 
+const fn default_detection_timeout_secs() -> u64 {
+    1
+}
+
 #[derive(Debug, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -235,6 +239,12 @@ pub struct BalanceOverridesConfig {
     /// balance override detection before evicting less used entries.
     #[serde(default = "default_cache_size")]
     pub cache_size: usize,
+
+    /// Maximum time in seconds to wait for balance override detection before
+    /// giving up. Some tokens (e.g. reflection tokens) can cause the node to
+    /// loop during verification, so this prevents stalling the quote pipeline.
+    #[serde(default = "default_detection_timeout_secs")]
+    pub detection_timeout_secs: u64,
 }
 
 impl Default for BalanceOverridesConfig {
@@ -244,6 +254,7 @@ impl Default for BalanceOverridesConfig {
             autodetect: false,
             probing_depth: default_probing_depth(),
             cache_size: default_cache_size(),
+            detection_timeout_secs: default_detection_timeout_secs(),
         }
     }
 }

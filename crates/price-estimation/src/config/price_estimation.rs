@@ -18,6 +18,7 @@ impl BalanceOverridesConfigExt for BalanceOverridesConfig {
                     std::sync::Mutex::new(cached::SizedCache::with_size(self.cache_size)),
                 )
             }),
+            detection_timeout: std::time::Duration::from_secs(self.detection_timeout_secs),
         })
     }
 }

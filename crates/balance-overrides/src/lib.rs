@@ -6,7 +6,7 @@ use {
     alloy_rpc_types::state::AccountOverride,
     cached::{Cached, SizedCache},
     configs::balance_overrides::Strategy,
-    std::{collections::HashMap, iter, sync::Mutex},
+    std::{collections::HashMap, iter, sync::Mutex, time::Duration},
 };
 /// Token configurations for the `BalanceOverriding` component.
 #[derive(Clone, Debug, Default)]
@@ -93,7 +93,7 @@ impl StrategyExt for Strategy {
 type DetectorCache = Mutex<SizedCache<(Address, Option<Address>), Option<Strategy>>>;
 
 /// The default balance override provider.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct BalanceOverrides {
     /// The configured balance override strategies for tokens.
     ///
@@ -104,7 +104,21 @@ pub struct BalanceOverrides {
     /// The balance override detector and its cache. Set to `None` if
     /// auto-detection is not enabled.
     pub detector: Option<(Detector, DetectorCache)>,
+    /// Maximum time to wait for balance override detection before giving up.
+    pub detection_timeout: Duration,
 }
+
+impl Default for BalanceOverrides {
+    fn default() -> Self {
+        Self {
+            hardcoded: Default::default(),
+            detector: Default::default(),
+            detection_timeout: DEFAULT_DETECTION_TIMEOUT,
+        }
+    }
+}
+
+pub const DEFAULT_DETECTION_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl BalanceOverrides {
     /// Creates a new instance with sensible defaults.
@@ -115,6 +129,7 @@ impl BalanceOverrides {
                 Detector::new(web3, 60),
                 Mutex::new(SizedCache::with_size(1000)),
             )),
+            detection_timeout: DEFAULT_DETECTION_TIMEOUT,
         }
     }
 
@@ -138,7 +153,26 @@ impl BalanceOverrides {
             }
         }
 
-        let strategy = detector.detect(token, holder).await;
+        // Some tokens (e.g. reflection tokens like LuckyBlock) have `balanceOf`
+        // implementations that iterate over storage arrays. During strategy
+        // verification we override storage slots with a test value — if that
+        // value lands on an array-length slot the EVM loops until the node's
+        // execution timeout (typically 5s). Because all verification calls are
+        // batched into a single JSON-RPC request, one slow call blocks the
+        // entire batch. A 5s timeout here prevents that from stalling the
+        // quote pipeline.
+        let strategy = match tokio::time::timeout(
+            self.detection_timeout,
+            detector.detect(token, holder),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(?token, ?holder, "balance override detection timed out");
+                Err(DetectionError::NotFound)
+            }
+        };
 
         // Only cache when we successfully detect the token, or we can't find
         // it. Anything else is likely a temporary simulator (i.e. node) failure
