@@ -4,6 +4,7 @@ pub mod debug_report;
 pub mod fee_policy;
 pub mod interaction;
 pub mod order;
+pub mod order_simulator;
 pub mod quote;
 pub mod signature;
 pub mod solver_competition;

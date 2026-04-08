@@ -28,6 +28,9 @@ pub type EncodedTrade = (
     Bytes,   // signature
 );
 
+// TODO: Change Vec into VecDeque for easy sandwitching of custom pre, main,
+// post interaction at the callsite.
+// This can't work elegantly until `extend_front` of VecDeque becomes stabilized
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Interactions {
     pub pre: Vec<EncodedInteraction>,

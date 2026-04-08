@@ -241,6 +241,7 @@ mod tests {
         active-order-competition-threshold = 10
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
+        order-simulation-gas-limit = "123456789"
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]

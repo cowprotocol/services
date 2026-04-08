@@ -77,6 +77,41 @@ uni-v3-node-url = "http://localhost:8545"
     }
 }
 
+pub async fn start_baseline_solver_with_gas_simulation(
+    name: String,
+    account: TestAccount,
+    weth: Address,
+    base_tokens: Vec<Address>,
+    max_hops: usize,
+    merge_solutions: bool,
+    settlement: Address,
+) -> SolverEngine {
+    let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
+    let config_file = config_tmp_file(format!(
+        r#"
+weth = "{weth:?}"
+base-tokens = [{encoded_base_tokens}]
+max-hops = {max_hops}
+max-partial-attempts = 5
+native-token-price-estimation-amount = "100000000000000000"
+uni-v3-node-url = "http://localhost:8545"
+gas-simulation-node-url = "http://localhost:8545"
+gas-simulation-settlement = "{settlement:?}"
+        "#,
+    ));
+    let endpoint = start_solver(config_file, "baseline".to_string()).await;
+    SolverEngine {
+        name,
+        endpoint,
+        account,
+        base_tokens,
+        merge_solutions,
+        haircut_bps: 0,
+        submission_keys: vec![],
+        forwarder_contract: None,
+    }
+}
+
 async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
     let args = vec![
         "solvers".to_string(),
