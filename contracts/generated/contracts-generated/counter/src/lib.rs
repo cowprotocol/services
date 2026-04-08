@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -86,7 +80,7 @@ interface Counter {
 )]
 pub mod Counter {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -109,9 +103,9 @@ pub mod Counter {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `counters(string)` and selector `0x57cedf40`.
-    ```solidity
-    function counters(string memory) external view returns (uint256);
-    ```*/
+```solidity
+function counters(string memory) external view returns (uint256);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct countersCall(pub alloy_sol_types::private::String);
@@ -130,7 +124,7 @@ pub mod Counter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -139,7 +133,9 @@ pub mod Counter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -166,10 +162,14 @@ pub mod Counter {
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::primitives::aliases::U256,);
+            type UnderlyingRustTuple<'a> = (
+                alloy_sol_types::private::primitives::aliases::U256,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -194,10 +194,14 @@ pub mod Counter {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for countersCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::String,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::primitives::aliases::U256;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "counters(string)";
             const SELECTOR: [u8; 4] = [87u8, 206u8, 223u8, 64u8];
             #[inline]
@@ -217,37 +221,40 @@ pub mod Counter {
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
                 )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: countersReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: countersReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: countersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `incrementCounter(string)` and selector `0x9424c8c8`.
-    ```solidity
-    function incrementCounter(string memory key) external;
-    ```*/
+```solidity
+function incrementCounter(string memory key) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct incrementCounterCall {
@@ -265,7 +272,7 @@ pub mod Counter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -274,7 +281,9 @@ pub mod Counter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -283,14 +292,16 @@ pub mod Counter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<incrementCounterCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<incrementCounterCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: incrementCounterCall) -> Self {
                     (value.key,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for incrementCounterCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for incrementCounterCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { key: tuple.0 }
                 }
@@ -304,7 +315,9 @@ pub mod Counter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -313,14 +326,16 @@ pub mod Counter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<incrementCounterReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<incrementCounterReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: incrementCounterReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for incrementCounterReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for incrementCounterReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -336,10 +351,14 @@ pub mod Counter {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for incrementCounterCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::String,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = incrementCounterReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "incrementCounter(string)";
             const SELECTOR: [u8; 4] = [148u8, 36u8, 200u8, 200u8];
             #[inline]
@@ -362,23 +381,27 @@ pub mod Counter {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `setCounterToBalance(string,address,address)` and selector `0x0931831e`.
-    ```solidity
-    function setCounterToBalance(string memory key, address token, address owner) external;
-    ```*/
+```solidity
+function setCounterToBalance(string memory key, address token, address owner) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setCounterToBalanceCall {
@@ -400,7 +423,7 @@ pub mod Counter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -417,7 +440,9 @@ pub mod Counter {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -426,14 +451,16 @@ pub mod Counter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setCounterToBalanceCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setCounterToBalanceCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: setCounterToBalanceCall) -> Self {
                     (value.key, value.token, value.owner)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setCounterToBalanceCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setCounterToBalanceCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         key: tuple.0,
@@ -451,7 +478,9 @@ pub mod Counter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -460,14 +489,16 @@ pub mod Counter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<setCounterToBalanceReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<setCounterToBalanceReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: setCounterToBalanceReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setCounterToBalanceReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setCounterToBalanceReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -476,8 +507,7 @@ pub mod Counter {
         impl setCounterToBalanceReturn {
             fn _tokenize(
                 &self,
-            ) -> <setCounterToBalanceCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
+            ) -> <setCounterToBalanceCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -488,10 +518,14 @@ pub mod Counter {
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = setCounterToBalanceReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "setCounterToBalance(string,address,address)";
             const SELECTOR: [u8; 4] = [9u8, 49u8, 131u8, 30u8];
             #[inline]
@@ -520,20 +554,25 @@ pub mod Counter {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     ///Container for all the [`Counter`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum CounterCalls {
         #[allow(missing_docs)]
         counters(countersCall),
@@ -580,7 +619,9 @@ pub mod Counter {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -612,11 +653,18 @@ pub mod Counter {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<CounterCalls>] = &[
                 {
-                    fn setCounterToBalance(data: &[u8]) -> alloy_sol_types::Result<CounterCalls> {
-                        <setCounterToBalanceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn setCounterToBalance(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<CounterCalls> {
+                        <setCounterToBalanceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(CounterCalls::setCounterToBalance)
                     }
                     setCounterToBalance
@@ -629,18 +677,24 @@ pub mod Counter {
                     counters
                 },
                 {
-                    fn incrementCounter(data: &[u8]) -> alloy_sol_types::Result<CounterCalls> {
-                        <incrementCounterCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn incrementCounter(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<CounterCalls> {
+                        <incrementCounterCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(CounterCalls::incrementCounter)
                     }
                     incrementCounter
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -650,9 +704,13 @@ pub mod Counter {
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<CounterCalls>] = &[
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<CounterCalls>] = &[
                 {
-                    fn setCounterToBalance(data: &[u8]) -> alloy_sol_types::Result<CounterCalls> {
+                    fn setCounterToBalance(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<CounterCalls> {
                         <setCounterToBalanceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -662,26 +720,32 @@ pub mod Counter {
                 },
                 {
                     fn counters(data: &[u8]) -> alloy_sol_types::Result<CounterCalls> {
-                        <countersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                        <countersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(CounterCalls::counters)
                     }
                     counters
                 },
                 {
-                    fn incrementCounter(data: &[u8]) -> alloy_sol_types::Result<CounterCalls> {
+                    fn incrementCounter(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<CounterCalls> {
                         <incrementCounterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(CounterCalls::incrementCounter)
+                                data,
+                            )
+                            .map(CounterCalls::incrementCounter)
                     }
                     incrementCounter
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -692,10 +756,14 @@ pub mod Counter {
                     <countersCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::incrementCounter(inner) => {
-                    <incrementCounterCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <incrementCounterCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::setCounterToBalance(inner) => {
-                    <setCounterToBalanceCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <setCounterToBalanceCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -703,23 +771,30 @@ pub mod Counter {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::counters(inner) => {
-                    <countersCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <countersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::incrementCounter(inner) => {
-                    <incrementCounterCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <incrementCounterCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::setCounterToBalance(inner) => {
                     <setCounterToBalanceCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`Counter`](self) contract instance.
 
-    See the [wrapper's documentation](`CounterInstance`) for more details.*/
+See the [wrapper's documentation](`CounterInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -732,40 +807,43 @@ pub mod Counter {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        __provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<CounterInstance<P, N>>> {
-        CounterInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         __provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<CounterInstance<P, N>>,
+    > {
+        CounterInstance::<P, N>::deploy(__provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         CounterInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`Counter`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`Counter`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`Counter`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct CounterInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -776,20 +854,22 @@ pub mod Counter {
     impl<P, N> ::core::fmt::Debug for CounterInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("CounterInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("CounterInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        CounterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > CounterInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`Counter`](self) contract instance.
 
-        See the [wrapper's documentation](`CounterInstance`) for more details.*/
+See the [wrapper's documentation](`CounterInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -798,20 +878,22 @@ pub mod Counter {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(__provider: P) -> alloy_contract::Result<CounterInstance<P, N>> {
+        pub async fn deploy(
+            __provider: P,
+        ) -> alloy_contract::Result<CounterInstance<P, N>> {
             let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -852,9 +934,10 @@ pub mod Counter {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        CounterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > CounterInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -886,13 +969,20 @@ pub mod Counter {
             token: alloy_sol_types::private::Address,
             owner: alloy_sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, setCounterToBalanceCall, N> {
-            self.call_builder(&setCounterToBalanceCall { key, token, owner })
+            self.call_builder(
+                &setCounterToBalanceCall {
+                    key,
+                    token,
+                    owner,
+                },
+            )
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        CounterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > CounterInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

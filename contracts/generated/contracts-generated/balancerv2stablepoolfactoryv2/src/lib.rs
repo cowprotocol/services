@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -250,12 +244,12 @@ interface BalancerV2StablePoolFactoryV2 {
 )]
 pub mod BalancerV2StablePoolFactoryV2 {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FactoryDisabled()` and selector `0x432acbfd662dbb5d8b378384a67159b47ca9d0f1b79f97cf64cf8585fa362d50`.
-    ```solidity
-    event FactoryDisabled();
-    ```*/
+```solidity
+event FactoryDisabled();
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -271,19 +265,20 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for FactoryDisabled {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
             const SIGNATURE: &'static str = "FactoryDisabled()";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    67u8, 42u8, 203u8, 253u8, 102u8, 45u8, 187u8, 93u8, 139u8, 55u8, 131u8, 132u8,
-                    166u8, 113u8, 89u8, 180u8, 124u8, 169u8, 208u8, 241u8, 183u8, 159u8, 151u8,
-                    207u8, 100u8, 207u8, 133u8, 133u8, 250u8, 54u8, 45u8, 80u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                67u8, 42u8, 203u8, 253u8, 102u8, 45u8, 187u8, 93u8, 139u8, 55u8, 131u8,
+                132u8, 166u8, 113u8, 89u8, 180u8, 124u8, 169u8, 208u8, 241u8, 183u8,
+                159u8, 151u8, 207u8, 100u8, 207u8, 133u8, 133u8, 250u8, 54u8, 45u8, 80u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -298,11 +293,13 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -322,7 +319,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 Ok(())
             }
         }
@@ -345,9 +344,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PoolCreated(address)` and selector `0x83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc`.
-    ```solidity
-    event PoolCreated(address indexed pool);
-    ```*/
+```solidity
+event PoolCreated(address indexed pool);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -366,22 +365,24 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for PoolCreated {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy_sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "PoolCreated(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    131u8, 164u8, 143u8, 188u8, 252u8, 153u8, 19u8, 53u8, 49u8, 78u8, 116u8, 208u8,
-                    73u8, 106u8, 171u8, 106u8, 25u8, 135u8, 233u8, 146u8, 221u8, 200u8, 93u8,
-                    221u8, 188u8, 196u8, 214u8, 221u8, 110u8, 242u8, 233u8, 252u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                131u8, 164u8, 143u8, 188u8, 252u8, 153u8, 19u8, 53u8, 49u8, 78u8, 116u8,
+                208u8, 73u8, 106u8, 171u8, 106u8, 25u8, 135u8, 233u8, 146u8, 221u8,
+                200u8, 93u8, 221u8, 188u8, 196u8, 214u8, 221u8, 110u8, 242u8, 233u8,
+                252u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -396,11 +397,13 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -420,7 +423,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.pool,
                 );
@@ -445,9 +450,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
         }
     };
     /**Constructor`.
-    ```solidity
-    constructor(address vault);
-    ```*/
+```solidity
+constructor(address vault);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -455,7 +460,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         pub vault: alloy_sol_types::private::Address,
     }
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -464,7 +469,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -489,7 +496,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolConstructor for constructorCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -508,9 +517,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `create(string,string,address[],uint256,uint256,address)` and selector `0x7932c7f3`.
-    ```solidity
-    function create(string memory name, string memory symbol, address[] memory tokens, uint256 amplificationParameter, uint256 swapFeePercentage, address owner) external returns (address);
-    ```*/
+```solidity
+function create(string memory name, string memory symbol, address[] memory tokens, uint256 amplificationParameter, uint256 swapFeePercentage, address owner) external returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createCall {
@@ -542,7 +551,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -565,7 +574,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -609,7 +620,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -641,12 +654,15 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "create(string,string,address[],uint256,uint256,address)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "create(string,string,address[],uint256,uint256,address)";
             const SELECTOR: [u8; 4] = [121u8, 50u8, 199u8, 243u8];
             #[inline]
             fn new<'a>(
@@ -681,34 +697,41 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: createReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: createReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: createReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `disable()` and selector `0x2f2770db`.
-    ```solidity
-    function disable() external;
-    ```*/
+```solidity
+function disable() external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct disableCall;
@@ -723,7 +746,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -732,7 +755,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -762,7 +787,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -785,17 +812,23 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
         }
         impl disableReturn {
-            fn _tokenize(&self) -> <disableCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <disableCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for disableCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = disableReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "disable()";
             const SELECTOR: [u8; 4] = [47u8, 39u8, 112u8, 219u8];
             #[inline]
@@ -814,23 +847,27 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getActionId(bytes4)` and selector `0x851c1bb3`.
-    ```solidity
-    function getActionId(bytes4 selector) external view returns (bytes32);
-    ```*/
+```solidity
+function getActionId(bytes4 selector) external view returns (bytes32);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getActionIdCall {
@@ -852,7 +889,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -861,7 +898,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -891,7 +930,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -916,10 +957,14 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getActionIdCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getActionId(bytes4)";
             const SELECTOR: [u8; 4] = [133u8, 28u8, 27u8, 179u8];
             #[inline]
@@ -946,30 +991,33 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getActionIdReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getActionIdReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getActionIdReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getAuthorizer()` and selector `0xaaabadc5`.
-    ```solidity
-    function getAuthorizer() external view returns (address);
-    ```*/
+```solidity
+function getAuthorizer() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getAuthorizerCall;
@@ -988,7 +1036,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -997,7 +1045,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1027,7 +1077,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1052,10 +1104,14 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getAuthorizerCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getAuthorizer()";
             const SELECTOR: [u8; 4] = [170u8, 171u8, 173u8, 197u8];
             #[inline]
@@ -1070,34 +1126,41 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getAuthorizerReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getAuthorizerReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getAuthorizerReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCreationCode()` and selector `0x00c194db`.
-    ```solidity
-    function getCreationCode() external view returns (bytes memory);
-    ```*/
+```solidity
+function getCreationCode() external view returns (bytes memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCreationCodeCall;
@@ -1116,7 +1179,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1125,7 +1188,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1155,7 +1220,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1164,14 +1231,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getCreationCodeReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getCreationCodeReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getCreationCodeReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getCreationCodeReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCreationCodeReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1180,10 +1249,14 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getCreationCodeCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Bytes;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getCreationCode()";
             const SELECTOR: [u8; 4] = [0u8, 193u8, 148u8, 219u8];
             #[inline]
@@ -1198,34 +1271,41 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getCreationCodeReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getCreationCodeReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getCreationCodeReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCreationCodeContracts()` and selector `0x174481fa`.
-    ```solidity
-    function getCreationCodeContracts() external view returns (address contractA, address contractB);
-    ```*/
+```solidity
+function getCreationCodeContracts() external view returns (address contractA, address contractB);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCreationCodeContractsCall;
@@ -1246,7 +1326,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1255,7 +1335,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1264,14 +1346,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getCreationCodeContractsCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getCreationCodeContractsCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getCreationCodeContractsCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getCreationCodeContractsCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCreationCodeContractsCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -1291,7 +1375,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1300,14 +1386,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getCreationCodeContractsReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getCreationCodeContractsReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getCreationCodeContractsReturn) -> Self {
                     (value.contractA, value.contractB)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getCreationCodeContractsReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCreationCodeContractsReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         contractA: tuple.0,
@@ -1319,8 +1407,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
         impl getCreationCodeContractsReturn {
             fn _tokenize(
                 &self,
-            ) -> <getCreationCodeContractsCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
+            ) -> <getCreationCodeContractsCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
                 (
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.contractA,
@@ -1334,13 +1423,17 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getCreationCodeContractsCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = getCreationCodeContractsReturn;
             type ReturnTuple<'a> = (
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Address,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getCreationCodeContracts()";
             const SELECTOR: [u8; 4] = [23u8, 68u8, 129u8, 250u8];
             #[inline]
@@ -1359,23 +1452,27 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getPauseConfiguration()` and selector `0x2da47c40`.
-    ```solidity
-    function getPauseConfiguration() external view returns (uint256 pauseWindowDuration, uint256 bufferPeriodDuration);
-    ```*/
+```solidity
+function getPauseConfiguration() external view returns (uint256 pauseWindowDuration, uint256 bufferPeriodDuration);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getPauseConfigurationCall;
@@ -1396,7 +1493,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1405,7 +1502,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1414,14 +1513,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getPauseConfigurationCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getPauseConfigurationCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getPauseConfigurationCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getPauseConfigurationCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPauseConfigurationCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -1441,7 +1542,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1450,14 +1553,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getPauseConfigurationReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getPauseConfigurationReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getPauseConfigurationReturn) -> Self {
                     (value.pauseWindowDuration, value.bufferPeriodDuration)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getPauseConfigurationReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPauseConfigurationReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         pauseWindowDuration: tuple.0,
@@ -1469,28 +1574,33 @@ pub mod BalancerV2StablePoolFactoryV2 {
         impl getPauseConfigurationReturn {
             fn _tokenize(
                 &self,
-            ) -> <getPauseConfigurationCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
+            ) -> <getPauseConfigurationCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
                 (
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.pauseWindowDuration,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.bufferPeriodDuration,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.pauseWindowDuration),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.bufferPeriodDuration),
                 )
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getPauseConfigurationCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = getPauseConfigurationReturn;
             type ReturnTuple<'a> = (
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getPauseConfiguration()";
             const SELECTOR: [u8; 4] = [45u8, 164u8, 124u8, 64u8];
             #[inline]
@@ -1509,23 +1619,27 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVault()` and selector `0x8d928af8`.
-    ```solidity
-    function getVault() external view returns (address);
-    ```*/
+```solidity
+function getVault() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVaultCall;
@@ -1544,7 +1658,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1553,7 +1667,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1583,7 +1699,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1608,10 +1726,14 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getVaultCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getVault()";
             const SELECTOR: [u8; 4] = [141u8, 146u8, 138u8, 248u8];
             #[inline]
@@ -1626,34 +1748,41 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getVaultReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getVaultReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVaultReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isDisabled()` and selector `0x6c57f5a9`.
-    ```solidity
-    function isDisabled() external view returns (bool);
-    ```*/
+```solidity
+function isDisabled() external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isDisabledCall;
@@ -1672,7 +1801,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1681,7 +1810,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1711,7 +1842,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1736,10 +1869,14 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isDisabledCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isDisabled()";
             const SELECTOR: [u8; 4] = [108u8, 87u8, 245u8, 169u8];
             #[inline]
@@ -1754,34 +1891,41 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isDisabledReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isDisabledReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isDisabledReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isPoolFromFactory(address)` and selector `0x6634b753`.
-    ```solidity
-    function isPoolFromFactory(address pool) external view returns (bool);
-    ```*/
+```solidity
+function isPoolFromFactory(address pool) external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isPoolFromFactoryCall {
@@ -1803,7 +1947,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1812,7 +1956,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1821,14 +1967,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isPoolFromFactoryCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isPoolFromFactoryCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isPoolFromFactoryCall) -> Self {
                     (value.pool,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isPoolFromFactoryCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isPoolFromFactoryCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { pool: tuple.0 }
                 }
@@ -1842,7 +1990,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1851,14 +2001,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isPoolFromFactoryReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isPoolFromFactoryReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isPoolFromFactoryReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isPoolFromFactoryReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isPoolFromFactoryReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1867,10 +2019,14 @@ pub mod BalancerV2StablePoolFactoryV2 {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isPoolFromFactoryCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isPoolFromFactory(address)";
             const SELECTOR: [u8; 4] = [102u8, 52u8, 183u8, 83u8];
             #[inline]
@@ -1889,31 +2045,39 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isPoolFromFactoryReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isPoolFromFactoryReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isPoolFromFactoryReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`BalancerV2StablePoolFactoryV2`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum BalancerV2StablePoolFactoryV2Calls {
         #[allow(missing_docs)]
         create(createCall),
@@ -1995,7 +2159,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -2010,8 +2176,12 @@ pub mod BalancerV2StablePoolFactoryV2 {
             match self {
                 Self::create(_) => <createCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::disable(_) => <disableCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::getActionId(_) => <getActionIdCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::getAuthorizer(_) => <getAuthorizerCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::getActionId(_) => {
+                    <getActionIdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getAuthorizer(_) => {
+                    <getAuthorizerCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getCreationCode(_) => {
                     <getCreationCodeCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -2022,7 +2192,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
                     <getPauseConfigurationCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getVault(_) => <getVaultCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::isDisabled(_) => <isDisabledCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::isDisabled(_) => {
+                    <isDisabledCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::isPoolFromFactory(_) => {
                     <isPoolFromFactoryCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -2038,18 +2210,20 @@ pub mod BalancerV2StablePoolFactoryV2 {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                BalancerV2StablePoolFactoryV2Calls,
-            >] = &[
+            ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>] = &[
                 {
                     fn getCreationCode(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <getCreationCodeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <getCreationCodeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::getCreationCode)
                     }
                     getCreationCode
@@ -2057,32 +2231,33 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getCreationCodeContracts(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(BalancerV2StablePoolFactoryV2Calls::getCreationCodeContracts)
+                                data,
+                            )
+                            .map(
+                                BalancerV2StablePoolFactoryV2Calls::getCreationCodeContracts,
+                            )
                     }
                     getCreationCodeContracts
                 },
                 {
                     fn getPauseConfiguration(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(BalancerV2StablePoolFactoryV2Calls::getPauseConfiguration)
+                                data,
+                            )
+                            .map(
+                                BalancerV2StablePoolFactoryV2Calls::getPauseConfiguration,
+                            )
                     }
                     getPauseConfiguration
                 },
                 {
                     fn disable(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <disableCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(BalancerV2StablePoolFactoryV2Calls::disable)
                     }
@@ -2091,9 +2266,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn isPoolFromFactory(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::isPoolFromFactory)
                     }
                     isPoolFromFactory
@@ -2101,9 +2277,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn isDisabled(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <isDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <isDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::isDisabled)
                     }
                     isDisabled
@@ -2111,8 +2288,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn create(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <createCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(BalancerV2StablePoolFactoryV2Calls::create)
                     }
@@ -2121,9 +2297,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getActionId(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <getActionIdCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <getActionIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::getActionId)
                     }
                     getActionId
@@ -2131,8 +2308,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getVault(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <getVaultCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(BalancerV2StablePoolFactoryV2Calls::getVault)
                     }
@@ -2141,19 +2317,22 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getAuthorizer(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <getAuthorizerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <getAuthorizerCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::getAuthorizer)
                     }
                     getAuthorizer
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -2165,26 +2344,22 @@ pub mod BalancerV2StablePoolFactoryV2 {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                BalancerV2StablePoolFactoryV2Calls,
-            >] = &[
+            ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>] = &[
                 {
                     fn getCreationCode(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <getCreationCodeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV2StablePoolFactoryV2Calls::getCreationCode)
+                                data,
+                            )
+                            .map(BalancerV2StablePoolFactoryV2Calls::getCreationCode)
                     }
                     getCreationCode
                 },
                 {
                     fn getCreationCodeContracts(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2197,8 +2372,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getPauseConfiguration(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2211,9 +2385,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn disable(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <disableCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <disableCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::disable)
                     }
                     disable
@@ -2221,8 +2396,7 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn isPoolFromFactory(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2233,9 +2407,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn isDisabled(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <isDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <isDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::isDisabled)
                     }
                     isDisabled
@@ -2243,9 +2418,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn create(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <createCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <createCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::create)
                     }
                     create
@@ -2253,9 +2429,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getActionId(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <getActionIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <getActionIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::getActionId)
                     }
                     getActionId
@@ -2263,9 +2440,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getVault(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
-                        <getVaultCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
+                        <getVaultCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(BalancerV2StablePoolFactoryV2Calls::getVault)
                     }
                     getVault
@@ -2273,21 +2451,22 @@ pub mod BalancerV2StablePoolFactoryV2 {
                 {
                     fn getAuthorizer(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls>
-                    {
+                    ) -> alloy_sol_types::Result<BalancerV2StablePoolFactoryV2Calls> {
                         <getAuthorizerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(BalancerV2StablePoolFactoryV2Calls::getAuthorizer)
+                                data,
+                            )
+                            .map(BalancerV2StablePoolFactoryV2Calls::getAuthorizer)
                     }
                     getAuthorizer
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -2301,13 +2480,19 @@ pub mod BalancerV2StablePoolFactoryV2 {
                     <disableCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getActionId(inner) => {
-                    <getActionIdCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <getActionIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::getAuthorizer(inner) => {
-                    <getAuthorizerCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <getAuthorizerCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::getCreationCode(inner) => {
-                    <getCreationCodeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <getCreationCodeCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::getCreationCodeContracts(inner) => {
                     <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -2315,7 +2500,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
                     )
                 }
                 Self::getPauseConfiguration(inner) => {
-                    <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::getVault(inner) => {
                     <getVaultCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -2324,7 +2511,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
                     <isDisabledCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::isPoolFromFactory(inner) => {
-                    <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -2338,38 +2527,59 @@ pub mod BalancerV2StablePoolFactoryV2 {
                     <disableCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getActionId(inner) => {
-                    <getActionIdCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <getActionIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::getAuthorizer(inner) => {
-                    <getAuthorizerCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <getAuthorizerCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::getCreationCode(inner) => {
-                    <getCreationCodeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <getCreationCodeCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::getCreationCodeContracts(inner) => {
                     <getCreationCodeContractsCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::getPauseConfiguration(inner) => {
                     <getPauseConfigurationCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::getVault(inner) => {
-                    <getVaultCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <getVaultCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::isDisabled(inner) => {
-                    <isDisabledCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <isDisabledCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::isPoolFromFactory(inner) => {
-                    <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <isPoolFromFactoryCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
     }
     ///Container for all the [`BalancerV2StablePoolFactoryV2`](self) events.
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum BalancerV2StablePoolFactoryV2Events {
         #[allow(missing_docs)]
         FactoryDisabled(FactoryDisabled),
@@ -2385,14 +2595,15 @@ pub mod BalancerV2StablePoolFactoryV2 {
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                67u8, 42u8, 203u8, 253u8, 102u8, 45u8, 187u8, 93u8, 139u8, 55u8, 131u8, 132u8,
-                166u8, 113u8, 89u8, 180u8, 124u8, 169u8, 208u8, 241u8, 183u8, 159u8, 151u8, 207u8,
-                100u8, 207u8, 133u8, 133u8, 250u8, 54u8, 45u8, 80u8,
+                67u8, 42u8, 203u8, 253u8, 102u8, 45u8, 187u8, 93u8, 139u8, 55u8, 131u8,
+                132u8, 166u8, 113u8, 89u8, 180u8, 124u8, 169u8, 208u8, 241u8, 183u8,
+                159u8, 151u8, 207u8, 100u8, 207u8, 133u8, 133u8, 250u8, 54u8, 45u8, 80u8,
             ],
             [
-                131u8, 164u8, 143u8, 188u8, 252u8, 153u8, 19u8, 53u8, 49u8, 78u8, 116u8, 208u8,
-                73u8, 106u8, 171u8, 106u8, 25u8, 135u8, 233u8, 146u8, 221u8, 200u8, 93u8, 221u8,
-                188u8, 196u8, 214u8, 221u8, 110u8, 242u8, 233u8, 252u8,
+                131u8, 164u8, 143u8, 188u8, 252u8, 153u8, 19u8, 53u8, 49u8, 78u8, 116u8,
+                208u8, 73u8, 106u8, 171u8, 106u8, 25u8, 135u8, 233u8, 146u8, 221u8,
+                200u8, 93u8, 221u8, 188u8, 196u8, 214u8, 221u8, 110u8, 242u8, 233u8,
+                252u8,
             ],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
@@ -2419,7 +2630,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -2434,22 +2647,30 @@ pub mod BalancerV2StablePoolFactoryV2 {
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<FactoryDisabled as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <FactoryDisabled as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <FactoryDisabled as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::FactoryDisabled)
                 }
                 Some(<PoolCreated as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <PoolCreated as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <PoolCreated as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::PoolCreated)
                 }
-                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                    log: alloy_sol_types::private::Box::new(
-                        alloy_sol_types::private::LogData::new_unchecked(
-                            topics.to_vec(),
-                            data.to_vec().into(),
+                _ => {
+                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                        log: alloy_sol_types::private::Box::new(
+                            alloy_sol_types::private::LogData::new_unchecked(
+                                topics.to_vec(),
+                                data.to_vec().into(),
+                            ),
                         ),
-                    ),
-                }),
+                    })
+                }
             }
         }
     }
@@ -2476,10 +2697,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`BalancerV2StablePoolFactoryV2`](self) contract instance.
 
-    See the [wrapper's documentation](`BalancerV2StablePoolFactoryV2Instance`) for more details.*/
+See the [wrapper's documentation](`BalancerV2StablePoolFactoryV2Instance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -2492,17 +2713,20 @@ pub mod BalancerV2StablePoolFactoryV2 {
     }
     /**A [`BalancerV2StablePoolFactoryV2`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`BalancerV2StablePoolFactoryV2`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`BalancerV2StablePoolFactoryV2`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct BalancerV2StablePoolFactoryV2Instance<P, N = alloy_contract::private::Ethereum> {
+    pub struct BalancerV2StablePoolFactoryV2Instance<
+        P,
+        N = alloy_contract::private::Ethereum,
+    > {
         address: alloy_sol_types::private::Address,
         provider: P,
         _network: ::core::marker::PhantomData<N>,
@@ -2517,14 +2741,18 @@ pub mod BalancerV2StablePoolFactoryV2 {
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BalancerV2StablePoolFactoryV2Instance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BalancerV2StablePoolFactoryV2Instance<P, N> {
         /**Creates a new wrapper around an on-chain [`BalancerV2StablePoolFactoryV2`](self) contract instance.
 
-        See the [wrapper's documentation](`BalancerV2StablePoolFactoryV2Instance`) for more details.*/
+See the [wrapper's documentation](`BalancerV2StablePoolFactoryV2Instance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -2555,7 +2783,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
     impl<P: ::core::clone::Clone, N> BalancerV2StablePoolFactoryV2Instance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> BalancerV2StablePoolFactoryV2Instance<P, N> {
+        pub fn with_cloned_provider(
+            self,
+        ) -> BalancerV2StablePoolFactoryV2Instance<P, N> {
             BalancerV2StablePoolFactoryV2Instance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
@@ -2564,9 +2794,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BalancerV2StablePoolFactoryV2Instance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BalancerV2StablePoolFactoryV2Instance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -2587,14 +2818,16 @@ pub mod BalancerV2StablePoolFactoryV2 {
             swapFeePercentage: alloy_sol_types::private::primitives::aliases::U256,
             owner: alloy_sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, createCall, N> {
-            self.call_builder(&createCall {
-                name,
-                symbol,
-                tokens,
-                amplificationParameter,
-                swapFeePercentage,
-                owner,
-            })
+            self.call_builder(
+                &createCall {
+                    name,
+                    symbol,
+                    tokens,
+                    amplificationParameter,
+                    swapFeePercentage,
+                    owner,
+                },
+            )
         }
         ///Creates a new call builder for the [`disable`] function.
         pub fn disable(&self) -> alloy_contract::SolCallBuilder<&P, disableCall, N> {
@@ -2608,7 +2841,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             self.call_builder(&getActionIdCall { selector })
         }
         ///Creates a new call builder for the [`getAuthorizer`] function.
-        pub fn getAuthorizer(&self) -> alloy_contract::SolCallBuilder<&P, getAuthorizerCall, N> {
+        pub fn getAuthorizer(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getAuthorizerCall, N> {
             self.call_builder(&getAuthorizerCall)
         }
         ///Creates a new call builder for the [`getCreationCode`] function.
@@ -2634,7 +2869,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             self.call_builder(&getVaultCall)
         }
         ///Creates a new call builder for the [`isDisabled`] function.
-        pub fn isDisabled(&self) -> alloy_contract::SolCallBuilder<&P, isDisabledCall, N> {
+        pub fn isDisabled(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, isDisabledCall, N> {
             self.call_builder(&isDisabledCall)
         }
         ///Creates a new call builder for the [`isPoolFromFactory`] function.
@@ -2646,9 +2883,10 @@ pub mod BalancerV2StablePoolFactoryV2 {
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BalancerV2StablePoolFactoryV2Instance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BalancerV2StablePoolFactoryV2Instance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -2659,7 +2897,9 @@ pub mod BalancerV2StablePoolFactoryV2 {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
         ///Creates a new event filter for the [`FactoryDisabled`] event.
-        pub fn FactoryDisabled_filter(&self) -> alloy_contract::Event<&P, FactoryDisabled, N> {
+        pub fn FactoryDisabled_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, FactoryDisabled, N> {
             self.event_filter::<FactoryDisabled>()
         }
         ///Creates a new event filter for the [`PoolCreated`] event.
@@ -2672,33 +2912,53 @@ pub type Instance = BalancerV2StablePoolFactoryV2::BalancerV2StablePoolFactoryV2
     ::alloy_provider::DynProvider,
 >;
 use {
-    alloy_primitives::{Address, address},
-    alloy_provider::{DynProvider, Provider},
-    anyhow::{Context, Result},
-    std::{collections::HashMap, sync::LazyLock},
+    std::{sync::LazyLock, collections::HashMap},
+    anyhow::{Result, Context},
+    alloy_primitives::{address, Address},
+    alloy_provider::{Provider, DynProvider},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        1u64 => Some((
-            ::alloy_primitives::address!("0x8df6efec5547e31b0eb7d1291b511ff8a2bf987c"),
-            Some(14934936u64),
-        )),
-        137u64 => Some((
-            ::alloy_primitives::address!("0xcA96C4f198d343E251b1a01F3EBA061ef3DA73C1"),
-            Some(29371951u64),
-        )),
-        100u64 => Some((
-            ::alloy_primitives::address!("0xf23b4DB826DbA14c0e857029dfF076b1c0264843"),
-            Some(25415344u64),
-        )),
-        10u64 => Some((
-            ::alloy_primitives::address!("0xeb151668006CD04DAdD098AFd0a82e78F77076c3"),
-            Some(11088891u64),
-        )),
-        42161u64 => Some((
-            ::alloy_primitives::address!("0xEF44D6786b2b4d544b7850Fe67CE6381626Bf2D6"),
-            Some(14244664u64),
-        )),
+        1u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x8df6efec5547e31b0eb7d1291b511ff8a2bf987c"
+                ),
+                Some(14934936u64),
+            ))
+        }
+        10u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xeb151668006CD04DAdD098AFd0a82e78F77076c3"
+                ),
+                Some(11088891u64),
+            ))
+        }
+        100u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xf23b4DB826DbA14c0e857029dfF076b1c0264843"
+                ),
+                Some(25415344u64),
+            ))
+        }
+        137u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xcA96C4f198d343E251b1a01F3EBA061ef3DA73C1"
+                ),
+                Some(29371951u64),
+            ))
+        }
+        42161u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0xEF44D6786b2b4d544b7850Fe67CE6381626Bf2D6"
+                ),
+                Some(14244664u64),
+            ))
+        }
         _ => None,
     }
 }
@@ -2715,7 +2975,9 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(
+        provider: &DynProvider,
+    ) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()

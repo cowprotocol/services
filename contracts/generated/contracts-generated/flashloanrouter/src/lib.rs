@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 ///Module containing a contract's types and functions.
 /**
@@ -23,11 +17,11 @@ library LoanRequest {
 )]
 pub mod LoanRequest {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-    struct Data { uint256 amount; address borrower; address lender; address token; }
-    ```*/
+struct Data { uint256 amount; address borrower; address lender; address token; }
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Data {
@@ -47,7 +41,7 @@ pub mod LoanRequest {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
@@ -65,7 +59,9 @@ pub mod LoanRequest {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -100,9 +96,9 @@ pub mod LoanRequest {
             #[inline]
             fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.amount),
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.borrower,
                     ),
@@ -119,50 +115,64 @@ pub mod LoanRequest {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
                     return size;
                 }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
             }
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
                 <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
             }
             #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
+            fn stv_abi_encode_packed_to(
+                &self,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
             }
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
                     return size;
                 }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolType for Data {
             type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <UnderlyingSolTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
             #[inline]
             fn valid_token(token: &Self::Token<'_>) -> bool {
                 <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
             }
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
+                let tuple = <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::detokenize(token);
                 <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
             }
         }
@@ -176,9 +186,9 @@ pub mod LoanRequest {
                 )
             }
             #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
+            fn eip712_components() -> alloy_sol_types::private::Vec<
+                alloy_sol_types::private::Cow<'static, str>,
+            > {
                 alloy_sol_types::private::Vec::new()
             }
             #[inline]
@@ -233,7 +243,9 @@ pub mod LoanRequest {
                 rust: &Self::RustType,
                 out: &mut alloy_sol_types::private::Vec<u8>,
             ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
+                out.reserve(
+                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
+                );
                 <alloy_sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(
@@ -254,17 +266,24 @@ pub mod LoanRequest {
                 );
             }
             #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
+            fn encode_topic(
+                rust: &Self::RustType,
+            ) -> alloy_sol_types::abi::token::WordToken {
                 let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    rust,
+                    &mut out,
+                );
+                alloy_sol_types::abi::token::WordToken(
+                    alloy_sol_types::private::keccak256(out),
+                )
             }
         }
     };
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`LoanRequest`](self) contract instance.
 
-    See the [wrapper's documentation](`LoanRequestInstance`) for more details.*/
+See the [wrapper's documentation](`LoanRequestInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -277,15 +296,15 @@ pub mod LoanRequest {
     }
     /**A [`LoanRequest`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`LoanRequest`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`LoanRequest`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct LoanRequestInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -296,20 +315,22 @@ pub mod LoanRequest {
     impl<P, N> ::core::fmt::Debug for LoanRequestInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("LoanRequestInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("LoanRequestInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        LoanRequestInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > LoanRequestInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`LoanRequest`](self) contract instance.
 
-        See the [wrapper's documentation](`LoanRequestInstance`) for more details.*/
+See the [wrapper's documentation](`LoanRequestInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -349,9 +370,10 @@ pub mod LoanRequest {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        LoanRequestInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > LoanRequestInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -364,9 +386,10 @@ pub mod LoanRequest {
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        LoanRequestInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > LoanRequestInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -505,7 +528,7 @@ interface FlashLoanRouter {
 )]
 pub mod FlashLoanRouter {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -527,9 +550,9 @@ pub mod FlashLoanRouter {
         b"`\x80`@R4\x80\x15a\0\x0FW__\xFD[P`\x046\x10a\0JW_5`\xE0\x1C\x80c\x02\xEB\xCB\xEA\x14a\0NW\x80c\x0E\xFB\x1F\xB6\x14a\0\x9EW\x80c\xE7\xC48\xC9\x14a\0\xB3W\x80c\xEABA\x8B\x14a\0\xC6W[__\xFD[a\0u\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81V[`@Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x90\x91\x16\x81R` \x01`@Q\x80\x91\x03\x90\xF3[a\0\xB1a\0\xAC6`\x04a\x08\xB0V[a\0\xEDV[\0[a\0\xB1a\0\xC16`\x04a\t\xE5V[a\x022V[a\0u\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81V[3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF_\\\x16\x14a\x01rW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x19`$\x82\x01R\x7FOnly callable by borrower\0\0\0\0\0\0\0`D\x82\x01R`d\x01[`@Q\x80\x91\x03\x90\xFD[_\x80Ts\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81\\\x16\x82\x17\x90]P\x80Q` \x82\x01 `\x01\\\x14a\x02&W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x16`$\x82\x01R\x7FBad data from borrower\0\0\0\0\0\0\0\0\0\0`D\x82\x01R`d\x01a\x01iV[a\x02/\x81a\x03cV[PV[`@Q\x7F\x02\xCC%\r\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R3`\x04\x82\x01R\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90c\x02\xCC%\r\x90`$\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x02\xBAW=__>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x02\xDE\x91\x90a\n\x80V[a\x03DW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x19`$\x82\x01R\x7FOnly callable by a solver\0\0\0\0\0\0\0`D\x82\x01R`d\x01a\x01iV[_a\x03Q\x85\x85\x85\x85a\x04\x8DV[\x90Pa\x03\\\x81a\x03cV[PPPPPV[` \x81\x01Q_\x03a\x03\x7FWa\x02/a\x03z\x82a\x05IV[a\x05\x8BV[_a\x03\x89\x82a\x071V[` \x81\x81\x01Q\x84Q\x91\x85\x01\x91\x90\x91 \x91\x92P\x90\x81_\x80\\\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x17\x90]P\x80\x80`\x01]P`@\x80Q\x80\x82\x01\x82R``\x85\x01Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x90\x81\x16\x82R\x85Q` \x83\x01R\x85\x83\x01Q\x92Q\x7F\xE0\xBB\xECw\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R\x91\x92\x90\x85\x16\x91c\xE0\xBB\xECw\x91a\x04Y\x91\x85\x90\x87\x90\x8B\x90`\x04\x01a\n\xA6V[_`@Q\x80\x83\x03\x81_\x87\x80;\x15\x80\x15a\x04pW__\xFD[PZ\xF1\x15\x80\x15a\x04\x82W=__>=_\xFD[PPPPPPPPPV[``a\x04\xC4a\x04\x9D`\\\x86a\x0BrV[a\x04\xA8\x84` a\x0B\x8FV[a\x04\xB2\x91\x90a\x0B\x8FV[`@\x80Q\x82\x81R\x91\x82\x01` \x01\x90R\x90V[` \x80\x82\x01\x86\x81R\x91\x92Pa\x04\xD9\x90\x82a\x0B\x8FV[\x90P\x82\x84\x827a\x04\xE9\x83\x82a\x0B\x8FV[\x90P\x84[\x80\x15a\x05?W\x80a\x04\xFD\x81a\x0B\xA2V[\x91P\x82\x90Pa\x05,\x88\x88\x84\x81\x81\x10a\x05\x17Wa\x05\x17a\x0B\xD6V[\x90P`\x80\x02\x01\x82a\x08\x18\x90\x91\x90c\xFF\xFF\xFF\xFF\x16V[a\x057`\\\x84a\x0B\x8FV[\x92PPa\x04\xEDV[PP\x94\x93PPPPV[``_`\\a\x05Y\x84` \x01Q\x90V[a\x05c\x91\x90a\x0BrV[` \x84Qa\x05q\x91\x90a\x0C\x03V[a\x05{\x91\x90a\x0C\x03V[` \x93\x90\x93\x01\x92\x83RP\x90\x91\x90PV[\x7F\x13\xD7\x9A\x0B\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0a\x05\xB5\x82a\x08gV[\x7F\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a\x06>W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FOnly settle() is allowed\0\0\0\0\0\0\0\0`D\x82\x01R`d\x01a\x01iV[_\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x82`@Qa\x06\x84\x91\x90a\x0C\x16V[_`@Q\x80\x83\x03\x81_\x86Z\xF1\x91PP=\x80_\x81\x14a\x06\xBDW`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>a\x06\xC2V[``\x91P[PP\x90P\x80a\x07-W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x13`$\x82\x01R\x7FSettlement reverted\0\0\0\0\0\0\0\0\0\0\0\0\0`D\x82\x01R`d\x01a\x01iV[PPV[`@\x80Q`\x80\x81\x01\x82R_\x80\x82R` \x82\x01\x81\x90R\x91\x81\x01\x82\x90R``\x81\x01\x82\x90R\x90`\x01a\x07a\x84` \x01Q\x90V[a\x07k\x91\x90a\x0C\x03V[\x90P_`\\\x84Qa\x07|\x91\x90a\x0C\x03V[\x90P` \x84\x01_a\x07\x8D\x83\x83a\x0B\x8FV[\x90P\x82\x86R\x83\x82Ra\x08\x0E\x81`@\x80Q`\x80\x81\x01\x82R_\x80\x82R` \x82\x01\x81\x90R\x91\x81\x01\x82\x90R``\x81\x01\x91\x90\x91RP\x80Q`\x14\x82\x01Q`(\x83\x01Q`<\x90\x93\x01Q`@\x80Q`\x80\x81\x01\x82R\x93\x84Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x92\x83\x16` \x85\x01R\x93\x82\x16\x93\x83\x01\x93\x90\x93R\x90\x91\x16``\x82\x01R\x90V[\x96\x95PPPPPPV[\x805_a\x08+`@\x84\x01` \x85\x01a\x0CMV[\x90P_a\x08>``\x85\x01`@\x86\x01a\x0CMV[\x90P_a\x08Q`\x80\x86\x01``\x87\x01a\x0CMV[`<\x87\x01RP`(\x85\x01R`\x14\x84\x01R\x90\x91RPV[_\x80` \x83\x01\x90P`\x04\x83Q\x10a\x08}W\x80Q\x91P[P\x91\x90PV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`A`\x04R`$_\xFD[_` \x82\x84\x03\x12\x15a\x08\xC0W__\xFD[\x815g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\x08\xD6W__\xFD[\x82\x01`\x1F\x81\x01\x84\x13a\x08\xE6W__\xFD[\x805g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\t\0Wa\t\0a\x08\x83V[`@Q\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xE0`?\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xE0`\x1F\x85\x01\x16\x01\x16\x81\x01\x81\x81\x10g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x11\x17\x15a\tlWa\tla\x08\x83V[`@R\x81\x81R\x82\x82\x01` \x01\x86\x10\x15a\t\x83W__\xFD[\x81` \x84\x01` \x83\x017_\x91\x81\x01` \x01\x91\x90\x91R\x94\x93PPPPV[__\x83`\x1F\x84\x01\x12a\t\xB0W__\xFD[P\x815g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\t\xC7W__\xFD[` \x83\x01\x91P\x83` \x82\x85\x01\x01\x11\x15a\t\xDEW__\xFD[\x92P\x92\x90PV[____`@\x85\x87\x03\x12\x15a\t\xF8W__\xFD[\x845g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\n\x0EW__\xFD[\x85\x01`\x1F\x81\x01\x87\x13a\n\x1EW__\xFD[\x805g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\n4W__\xFD[\x87` \x82`\x07\x1B\x84\x01\x01\x11\x15a\nHW__\xFD[` \x91\x82\x01\x95P\x93P\x85\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x15a\nhW__\xFD[a\nt\x87\x82\x88\x01a\t\xA0V[\x95\x98\x94\x97P\x95PPPPV[_` \x82\x84\x03\x12\x15a\n\x90W__\xFD[\x81Q\x80\x15\x15\x81\x14a\n\x9FW__\xFD[\x93\x92PPPV[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x85\x16\x81Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x84Q\x16` \x82\x01R` \x84\x01Q`@\x82\x01R\x82``\x82\x01R`\xA0`\x80\x82\x01R_\x82Q\x80`\xA0\x84\x01R\x80` \x85\x01`\xC0\x85\x01^_`\xC0\x82\x85\x01\x01R`\xC0\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xE0`\x1F\x83\x01\x16\x84\x01\x01\x91PP\x95\x94PPPPPV[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`\x11`\x04R`$_\xFD[\x80\x82\x02\x81\x15\x82\x82\x04\x84\x14\x17a\x0B\x89Wa\x0B\x89a\x0BEV[\x92\x91PPV[\x80\x82\x01\x80\x82\x11\x15a\x0B\x89Wa\x0B\x89a\x0BEV[_\x81a\x0B\xB0Wa\x0B\xB0a\x0BEV[P\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x01\x90V[\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`2`\x04R`$_\xFD[\x81\x81\x03\x81\x81\x11\x15a\x0B\x89Wa\x0B\x89a\x0BEV[_\x82Q\x80` \x85\x01\x84^_\x92\x01\x91\x82RP\x91\x90PV[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x02/W__\xFD[_` \x82\x84\x03\x12\x15a\x0C]W__\xFD[\x815a\n\x9F\x81a\x0C,V\xFE\xA2dipfsX\"\x12 @\xD87\xBBq#c\x08_\xA1_\x0B)\x0ETY\x08C2\x13B\xF6\x1B/!\xD5$2\xD2\xDC\x8E{dsolcC\0\x08\x1C\x003",
     );
     /**Constructor`.
-    ```solidity
-    constructor(address _settlementContract);
-    ```*/
+```solidity
+constructor(address _settlementContract);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -537,7 +560,7 @@ pub mod FlashLoanRouter {
         pub _settlementContract: alloy_sol_types::private::Address,
     }
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -546,7 +569,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -573,7 +598,9 @@ pub mod FlashLoanRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolConstructor for constructorCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -592,9 +619,9 @@ pub mod FlashLoanRouter {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `borrowerCallback(bytes)` and selector `0x0efb1fb6`.
-    ```solidity
-    function borrowerCallback(bytes memory encodedLoansWithSettlement) external;
-    ```*/
+```solidity
+function borrowerCallback(bytes memory encodedLoansWithSettlement) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct borrowerCallbackCall {
@@ -612,7 +639,7 @@ pub mod FlashLoanRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -621,7 +648,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -630,14 +659,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<borrowerCallbackCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<borrowerCallbackCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: borrowerCallbackCall) -> Self {
                     (value.encodedLoansWithSettlement,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for borrowerCallbackCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for borrowerCallbackCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         encodedLoansWithSettlement: tuple.0,
@@ -653,7 +684,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -662,14 +695,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<borrowerCallbackReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<borrowerCallbackReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: borrowerCallbackReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for borrowerCallbackReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for borrowerCallbackReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -685,10 +720,14 @@ pub mod FlashLoanRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for borrowerCallbackCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = borrowerCallbackReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "borrowerCallback(bytes)";
             const SELECTOR: [u8; 4] = [14u8, 251u8, 31u8, 182u8];
             #[inline]
@@ -711,23 +750,27 @@ pub mod FlashLoanRouter {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `flashLoanAndSettle((uint256,address,address,address)[],bytes)` and selector `0xe7c438c9`.
-    ```solidity
-    function flashLoanAndSettle(LoanRequest.Data[] memory loans, bytes memory settlement) external;
-    ```*/
+```solidity
+function flashLoanAndSettle(LoanRequest.Data[] memory loans, bytes memory settlement) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct flashLoanAndSettleCall {
@@ -749,7 +792,7 @@ pub mod FlashLoanRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -766,7 +809,9 @@ pub mod FlashLoanRouter {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -775,14 +820,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<flashLoanAndSettleCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<flashLoanAndSettleCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: flashLoanAndSettleCall) -> Self {
                     (value.loans, value.settlement)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for flashLoanAndSettleCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for flashLoanAndSettleCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         loans: tuple.0,
@@ -799,7 +846,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -808,14 +857,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<flashLoanAndSettleReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<flashLoanAndSettleReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: flashLoanAndSettleReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for flashLoanAndSettleReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for flashLoanAndSettleReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -834,12 +885,15 @@ pub mod FlashLoanRouter {
                 alloy_sol_types::sol_data::Array<LoanRequest::Data>,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = flashLoanAndSettleReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "flashLoanAndSettle((uint256,address,address,address)[],bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "flashLoanAndSettle((uint256,address,address,address)[],bytes)";
             const SELECTOR: [u8; 4] = [231u8, 196u8, 56u8, 201u8];
             #[inline]
             fn new<'a>(
@@ -864,23 +918,27 @@ pub mod FlashLoanRouter {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `settlementAuthentication()` and selector `0x02ebcbea`.
-    ```solidity
-    function settlementAuthentication() external view returns (address);
-    ```*/
+```solidity
+function settlementAuthentication() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settlementAuthenticationCall;
@@ -899,7 +957,7 @@ pub mod FlashLoanRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -908,7 +966,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -917,14 +977,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<settlementAuthenticationCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<settlementAuthenticationCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: settlementAuthenticationCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for settlementAuthenticationCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for settlementAuthenticationCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -938,7 +1000,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -947,14 +1011,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<settlementAuthenticationReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<settlementAuthenticationReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: settlementAuthenticationReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for settlementAuthenticationReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for settlementAuthenticationReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -963,10 +1029,14 @@ pub mod FlashLoanRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for settlementAuthenticationCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "settlementAuthentication()";
             const SELECTOR: [u8; 4] = [2u8, 235u8, 203u8, 234u8];
             #[inline]
@@ -981,34 +1051,41 @@ pub mod FlashLoanRouter {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: settlementAuthenticationReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: settlementAuthenticationReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: settlementAuthenticationReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `settlementContract()` and selector `0xea42418b`.
-    ```solidity
-    function settlementContract() external view returns (address);
-    ```*/
+```solidity
+function settlementContract() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settlementContractCall;
@@ -1027,7 +1104,7 @@ pub mod FlashLoanRouter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1036,7 +1113,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1045,14 +1124,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<settlementContractCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<settlementContractCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: settlementContractCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for settlementContractCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for settlementContractCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -1066,7 +1147,9 @@ pub mod FlashLoanRouter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1075,14 +1158,16 @@ pub mod FlashLoanRouter {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<settlementContractReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<settlementContractReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: settlementContractReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for settlementContractReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for settlementContractReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1091,10 +1176,14 @@ pub mod FlashLoanRouter {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for settlementContractCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "settlementContract()";
             const SELECTOR: [u8; 4] = [234u8, 66u8, 65u8, 139u8];
             #[inline]
@@ -1109,31 +1198,39 @@ pub mod FlashLoanRouter {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: settlementContractReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: settlementContractReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: settlementContractReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`FlashLoanRouter`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum FlashLoanRouterCalls {
         #[allow(missing_docs)]
         borrowerCallback(borrowerCallbackCall),
@@ -1185,7 +1282,9 @@ pub mod FlashLoanRouter {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -1222,16 +1321,21 @@ pub mod FlashLoanRouter {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<FlashLoanRouterCalls>] = &[
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<FlashLoanRouterCalls>] = &[
                 {
                     fn settlementAuthentication(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
                         <settlementAuthenticationCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(FlashLoanRouterCalls::settlementAuthentication)
+                                data,
+                            )
+                            .map(FlashLoanRouterCalls::settlementAuthentication)
                     }
                     settlementAuthentication
                 },
@@ -1239,7 +1343,9 @@ pub mod FlashLoanRouter {
                     fn borrowerCallback(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
-                        <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(FlashLoanRouterCalls::borrowerCallback)
                     }
                     borrowerCallback
@@ -1248,7 +1354,9 @@ pub mod FlashLoanRouter {
                     fn flashLoanAndSettle(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
-                        <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(FlashLoanRouterCalls::flashLoanAndSettle)
                     }
                     flashLoanAndSettle
@@ -1257,17 +1365,21 @@ pub mod FlashLoanRouter {
                     fn settlementContract(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
-                        <settlementContractCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <settlementContractCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(FlashLoanRouterCalls::settlementContract)
                     }
                     settlementContract
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -1279,8 +1391,7 @@ pub mod FlashLoanRouter {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<FlashLoanRouterCalls>] = &[
+            ) -> alloy_sol_types::Result<FlashLoanRouterCalls>] = &[
                 {
                     fn settlementAuthentication(
                         data: &[u8],
@@ -1297,9 +1408,9 @@ pub mod FlashLoanRouter {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<FlashLoanRouterCalls> {
                         <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(FlashLoanRouterCalls::borrowerCallback)
+                                data,
+                            )
+                            .map(FlashLoanRouterCalls::borrowerCallback)
                     }
                     borrowerCallback
                 },
@@ -1327,10 +1438,12 @@ pub mod FlashLoanRouter {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -1338,10 +1451,14 @@ pub mod FlashLoanRouter {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::borrowerCallback(inner) => {
-                    <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::flashLoanAndSettle(inner) => {
-                    <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::settlementAuthentication(inner) => {
                     <settlementAuthenticationCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -1349,7 +1466,9 @@ pub mod FlashLoanRouter {
                     )
                 }
                 Self::settlementContract(inner) => {
-                    <settlementContractCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <settlementContractCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -1357,26 +1476,36 @@ pub mod FlashLoanRouter {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::borrowerCallback(inner) => {
-                    <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <borrowerCallbackCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::flashLoanAndSettle(inner) => {
-                    <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <flashLoanAndSettleCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::settlementAuthentication(inner) => {
                     <settlementAuthenticationCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::settlementContract(inner) => {
-                    <settlementContractCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <settlementContractCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`FlashLoanRouter`](self) contract instance.
 
-    See the [wrapper's documentation](`FlashLoanRouterInstance`) for more details.*/
+See the [wrapper's documentation](`FlashLoanRouterInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1389,22 +1518,26 @@ pub mod FlashLoanRouter {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+    pub fn deploy<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(
         __provider: P,
         _settlementContract: alloy_sol_types::private::Address,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<FlashLoanRouterInstance<P, N>>>
-    {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<FlashLoanRouterInstance<P, N>>,
+    > {
         FlashLoanRouterInstance::<P, N>::deploy(__provider, _settlementContract)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
+and constructor arguments, if any.
 
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
@@ -1417,15 +1550,15 @@ pub mod FlashLoanRouter {
     }
     /**A [`FlashLoanRouter`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`FlashLoanRouter`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`FlashLoanRouter`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct FlashLoanRouterInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1436,20 +1569,22 @@ pub mod FlashLoanRouter {
     impl<P, N> ::core::fmt::Debug for FlashLoanRouterInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("FlashLoanRouterInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("FlashLoanRouterInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        FlashLoanRouterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > FlashLoanRouterInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`FlashLoanRouter`](self) contract instance.
 
-        See the [wrapper's documentation](`FlashLoanRouterInstance`) for more details.*/
+See the [wrapper's documentation](`FlashLoanRouterInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -1458,9 +1593,9 @@ pub mod FlashLoanRouter {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -1471,10 +1606,10 @@ pub mod FlashLoanRouter {
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(
             __provider: P,
@@ -1484,12 +1619,14 @@ pub mod FlashLoanRouter {
                 __provider,
                 [
                     &BYTECODE[..],
-                    &alloy_sol_types::SolConstructor::abi_encode(&constructorCall {
-                        _settlementContract,
-                    })[..],
+                    &alloy_sol_types::SolConstructor::abi_encode(
+                        &constructorCall {
+                            _settlementContract,
+                        },
+                    )[..],
                 ]
-                .concat()
-                .into(),
+                    .concat()
+                    .into(),
             )
         }
         /// Returns a reference to the address.
@@ -1525,9 +1662,10 @@ pub mod FlashLoanRouter {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        FlashLoanRouterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > FlashLoanRouterInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1543,9 +1681,11 @@ pub mod FlashLoanRouter {
             &self,
             encodedLoansWithSettlement: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, borrowerCallbackCall, N> {
-            self.call_builder(&borrowerCallbackCall {
-                encodedLoansWithSettlement,
-            })
+            self.call_builder(
+                &borrowerCallbackCall {
+                    encodedLoansWithSettlement,
+                },
+            )
         }
         ///Creates a new call builder for the [`flashLoanAndSettle`] function.
         pub fn flashLoanAndSettle(
@@ -1555,7 +1695,12 @@ pub mod FlashLoanRouter {
             >,
             settlement: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, flashLoanAndSettleCall, N> {
-            self.call_builder(&flashLoanAndSettleCall { loans, settlement })
+            self.call_builder(
+                &flashLoanAndSettleCall {
+                    loans,
+                    settlement,
+                },
+            )
         }
         ///Creates a new call builder for the [`settlementAuthentication`] function.
         pub fn settlementAuthentication(
@@ -1571,9 +1716,10 @@ pub mod FlashLoanRouter {
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        FlashLoanRouterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > FlashLoanRouterInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -1585,43 +1731,73 @@ pub mod FlashLoanRouter {
         }
     }
 }
-pub type Instance = FlashLoanRouter::FlashLoanRouterInstance<::alloy_provider::DynProvider>;
+pub type Instance = FlashLoanRouter::FlashLoanRouterInstance<
+    ::alloy_provider::DynProvider,
+>;
 use {
-    alloy_primitives::{Address, address},
-    alloy_provider::{DynProvider, Provider},
-    anyhow::{Context, Result},
-    std::{collections::HashMap, sync::LazyLock},
+    std::{sync::LazyLock, collections::HashMap},
+    anyhow::{Result, Context},
+    alloy_primitives::{address, Address},
+    alloy_provider::{Provider, DynProvider},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        1u64 => Some((
-            ::alloy_primitives::address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-            None,
-        )),
-        11155111u64 => Some((
-            ::alloy_primitives::address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-            None,
-        )),
-        8453u64 => Some((
-            ::alloy_primitives::address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-            None,
-        )),
-        42161u64 => Some((
-            ::alloy_primitives::address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-            None,
-        )),
-        100u64 => Some((
-            ::alloy_primitives::address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-            None,
-        )),
-        137u64 => Some((
-            ::alloy_primitives::address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-            None,
-        )),
-        43114u64 => Some((
-            ::alloy_primitives::address!("0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"),
-            None,
-        )),
+        137u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        43114u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        42161u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        11155111u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        1u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        100u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
+        8453u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69"
+                ),
+                None,
+            ))
+        }
         _ => None,
     }
 }
@@ -1638,7 +1814,9 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(
+        provider: &DynProvider,
+    ) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()

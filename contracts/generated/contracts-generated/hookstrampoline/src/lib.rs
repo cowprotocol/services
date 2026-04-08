@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -99,7 +93,7 @@ interface HooksTrampoline {
 )]
 pub mod HooksTrampoline {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -112,8 +106,8 @@ pub mod HooksTrampoline {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-    struct Hook { address target; bytes callData; uint256 gasLimit; }
-    ```*/
+struct Hook { address target; bytes callData; uint256 gasLimit; }
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct Hook {
@@ -131,7 +125,7 @@ pub mod HooksTrampoline {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
@@ -147,7 +141,9 @@ pub mod HooksTrampoline {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -187,9 +183,9 @@ pub mod HooksTrampoline {
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.callData,
                     ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.gasLimit,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.gasLimit),
                 )
             }
             #[inline]
@@ -197,50 +193,64 @@ pub mod HooksTrampoline {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
                     return size;
                 }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
             }
             #[inline]
             fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
                 <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
             }
             #[inline]
-            fn stv_abi_encode_packed_to(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_encode_packed_to(
-                    &tuple, out,
-                )
+            fn stv_abi_encode_packed_to(
+                &self,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
             }
             #[inline]
             fn stv_abi_packed_encoded_size(&self) -> usize {
                 if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
                     return size;
                 }
-                let tuple =
-                    <UnderlyingRustTuple<'_> as ::core::convert::From<Self>>::from(self.clone());
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::abi_packed_encoded_size(
-                    &tuple,
-                )
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolType for Hook {
             type RustType = Self;
-            type Token<'a> = <UnderlyingSolTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <UnderlyingSolTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
-            const ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::ENCODED_SIZE;
-            const PACKED_ENCODED_SIZE: Option<usize> =
-                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
             #[inline]
             fn valid_token(token: &Self::Token<'_>) -> bool {
                 <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
             }
             #[inline]
             fn detokenize(token: Self::Token<'_>) -> Self::RustType {
-                let tuple = <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::detokenize(token);
+                let tuple = <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::detokenize(token);
                 <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
             }
         }
@@ -254,9 +264,9 @@ pub mod HooksTrampoline {
                 )
             }
             #[inline]
-            fn eip712_components()
-            -> alloy_sol_types::private::Vec<alloy_sol_types::private::Cow<'static, str>>
-            {
+            fn eip712_components() -> alloy_sol_types::private::Vec<
+                alloy_sol_types::private::Cow<'static, str>,
+            > {
                 alloy_sol_types::private::Vec::new()
             }
             #[inline]
@@ -304,7 +314,9 @@ pub mod HooksTrampoline {
                 rust: &Self::RustType,
                 out: &mut alloy_sol_types::private::Vec<u8>,
             ) {
-                out.reserve(<Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust));
+                out.reserve(
+                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
+                );
                 <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.target,
                     out,
@@ -321,18 +333,25 @@ pub mod HooksTrampoline {
                 );
             }
             #[inline]
-            fn encode_topic(rust: &Self::RustType) -> alloy_sol_types::abi::token::WordToken {
+            fn encode_topic(
+                rust: &Self::RustType,
+            ) -> alloy_sol_types::abi::token::WordToken {
                 let mut out = alloy_sol_types::private::Vec::new();
-                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(rust, &mut out);
-                alloy_sol_types::abi::token::WordToken(alloy_sol_types::private::keccak256(out))
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    rust,
+                    &mut out,
+                );
+                alloy_sol_types::abi::token::WordToken(
+                    alloy_sol_types::private::keccak256(out),
+                )
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotASettlement()` and selector `0x0cd41ec0`.
-    ```solidity
-    error NotASettlement();
-    ```*/
+```solidity
+error NotASettlement();
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotASettlement;
@@ -343,7 +362,7 @@ pub mod HooksTrampoline {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -351,7 +370,9 @@ pub mod HooksTrampoline {
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -375,7 +396,9 @@ pub mod HooksTrampoline {
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotASettlement {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotASettlement()";
             const SELECTOR: [u8; 4] = [12u8, 212u8, 30u8, 192u8];
             #[inline]
@@ -390,17 +413,17 @@ pub mod HooksTrampoline {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     /**Constructor`.
-    ```solidity
-    constructor(address settlement_);
-    ```*/
+```solidity
+constructor(address settlement_);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -408,7 +431,7 @@ pub mod HooksTrampoline {
         pub settlement_: alloy_sol_types::private::Address,
     }
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -417,7 +440,9 @@ pub mod HooksTrampoline {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -435,16 +460,16 @@ pub mod HooksTrampoline {
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for constructorCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        settlement_: tuple.0,
-                    }
+                    Self { settlement_: tuple.0 }
                 }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolConstructor for constructorCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -463,14 +488,16 @@ pub mod HooksTrampoline {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `execute((address,bytes,uint256)[])` and selector `0x760f2a0b`.
-    ```solidity
-    function execute(Hook[] memory hooks) external;
-    ```*/
+```solidity
+function execute(Hook[] memory hooks) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct executeCall {
         #[allow(missing_docs)]
-        pub hooks: alloy_sol_types::private::Vec<<Hook as alloy_sol_types::SolType>::RustType>,
+        pub hooks: alloy_sol_types::private::Vec<
+            <Hook as alloy_sol_types::SolType>::RustType,
+        >,
     }
     ///Container type for the return parameters of the [`execute((address,bytes,uint256)[])`](executeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -483,17 +510,22 @@ pub mod HooksTrampoline {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Array<Hook>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy_sol_types::private::Vec<<Hook as alloy_sol_types::SolType>::RustType>,);
+            type UnderlyingRustTuple<'a> = (
+                alloy_sol_types::private::Vec<
+                    <Hook as alloy_sol_types::SolType>::RustType,
+                >,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -523,7 +555,9 @@ pub mod HooksTrampoline {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -546,17 +580,23 @@ pub mod HooksTrampoline {
             }
         }
         impl executeReturn {
-            fn _tokenize(&self) -> <executeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <executeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for executeCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Array<Hook>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = executeReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "execute((address,bytes,uint256)[])";
             const SELECTOR: [u8; 4] = [118u8, 15u8, 42u8, 11u8];
             #[inline]
@@ -568,9 +608,9 @@ pub mod HooksTrampoline {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy_sol_types::sol_data::Array<Hook> as alloy_sol_types::SolType>::tokenize(
-                        &self.hooks,
-                    ),
+                    <alloy_sol_types::sol_data::Array<
+                        Hook,
+                    > as alloy_sol_types::SolType>::tokenize(&self.hooks),
                 )
             }
             #[inline]
@@ -579,23 +619,27 @@ pub mod HooksTrampoline {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `settlement()` and selector `0x51160630`.
-    ```solidity
-    function settlement() external view returns (address);
-    ```*/
+```solidity
+function settlement() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settlementCall;
@@ -614,7 +658,7 @@ pub mod HooksTrampoline {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -623,7 +667,9 @@ pub mod HooksTrampoline {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -653,7 +699,9 @@ pub mod HooksTrampoline {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -678,10 +726,14 @@ pub mod HooksTrampoline {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for settlementCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "settlement()";
             const SELECTOR: [u8; 4] = [81u8, 22u8, 6u8, 48u8];
             #[inline]
@@ -696,31 +748,39 @@ pub mod HooksTrampoline {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: settlementReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: settlementReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: settlementReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`HooksTrampoline`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum HooksTrampolineCalls {
         #[allow(missing_docs)]
         execute(executeCall),
@@ -734,11 +794,15 @@ pub mod HooksTrampoline {
         /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 4usize]] =
-            &[[81u8, 22u8, 6u8, 48u8], [118u8, 15u8, 42u8, 11u8]];
+        pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [81u8, 22u8, 6u8, 48u8],
+            [118u8, 15u8, 42u8, 11u8],
+        ];
         /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] =
-            &[::core::stringify!(settlement), ::core::stringify!(execute)];
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(settlement),
+            ::core::stringify!(execute),
+        ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <settlementCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -758,7 +822,9 @@ pub mod HooksTrampoline {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -772,7 +838,9 @@ pub mod HooksTrampoline {
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::execute(_) => <executeCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::settlement(_) => <settlementCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::settlement(_) => {
+                    <settlementCall as alloy_sol_types::SolCall>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -785,17 +853,28 @@ pub mod HooksTrampoline {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<HooksTrampolineCalls>] = &[
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<HooksTrampolineCalls>] = &[
                 {
-                    fn settlement(data: &[u8]) -> alloy_sol_types::Result<HooksTrampolineCalls> {
-                        <settlementCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn settlement(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HooksTrampolineCalls> {
+                        <settlementCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(HooksTrampolineCalls::settlement)
                     }
                     settlement
                 },
                 {
-                    fn execute(data: &[u8]) -> alloy_sol_types::Result<HooksTrampolineCalls> {
+                    fn execute(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HooksTrampolineCalls> {
                         <executeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(HooksTrampolineCalls::execute)
                     }
@@ -803,10 +882,12 @@ pub mod HooksTrampoline {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -818,28 +899,37 @@ pub mod HooksTrampoline {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<HooksTrampolineCalls>] = &[
+            ) -> alloy_sol_types::Result<HooksTrampolineCalls>] = &[
                 {
-                    fn settlement(data: &[u8]) -> alloy_sol_types::Result<HooksTrampolineCalls> {
-                        <settlementCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn settlement(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HooksTrampolineCalls> {
+                        <settlementCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(HooksTrampolineCalls::settlement)
                     }
                     settlement
                 },
                 {
-                    fn execute(data: &[u8]) -> alloy_sol_types::Result<HooksTrampolineCalls> {
-                        <executeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn execute(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HooksTrampolineCalls> {
+                        <executeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(HooksTrampolineCalls::execute)
                     }
                     execute
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -861,13 +951,17 @@ pub mod HooksTrampoline {
                     <executeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::settlement(inner) => {
-                    <settlementCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <settlementCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
     }
     ///Container for all the [`HooksTrampoline`](self) custom errors.
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HooksTrampolineErrors {
         #[allow(missing_docs)]
         NotASettlement(NotASettlement),
@@ -881,10 +975,13 @@ pub mod HooksTrampoline {
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[[12u8, 212u8, 30u8, 192u8]];
         /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[::core::stringify!(NotASettlement)];
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(NotASettlement),
+        ];
         /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] =
-            &[<NotASettlement as alloy_sol_types::SolError>::SIGNATURE];
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <NotASettlement as alloy_sol_types::SolError>::SIGNATURE,
+        ];
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -899,7 +996,9 @@ pub mod HooksTrampoline {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -912,7 +1011,9 @@ pub mod HooksTrampoline {
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::NotASettlement(_) => <NotASettlement as alloy_sol_types::SolError>::SELECTOR,
+                Self::NotASettlement(_) => {
+                    <NotASettlement as alloy_sol_types::SolError>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -925,22 +1026,32 @@ pub mod HooksTrampoline {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<HooksTrampolineErrors>] =
-                &[{
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<HooksTrampolineErrors>] = &[
+                {
                     fn NotASettlement(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HooksTrampolineErrors> {
-                        <NotASettlement as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <NotASettlement as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(HooksTrampolineErrors::NotASettlement)
                     }
                     NotASettlement
-                }];
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -952,20 +1063,26 @@ pub mod HooksTrampoline {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                HooksTrampolineErrors,
-            >] = &[{
-                fn NotASettlement(data: &[u8]) -> alloy_sol_types::Result<HooksTrampolineErrors> {
-                    <NotASettlement as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
-                        .map(HooksTrampolineErrors::NotASettlement)
-                }
-                NotASettlement
-            }];
+            ) -> alloy_sol_types::Result<HooksTrampolineErrors>] = &[
+                {
+                    fn NotASettlement(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HooksTrampolineErrors> {
+                        <NotASettlement as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HooksTrampolineErrors::NotASettlement)
+                    }
+                    NotASettlement
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -973,7 +1090,9 @@ pub mod HooksTrampoline {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::NotASettlement(inner) => {
-                    <NotASettlement as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <NotASettlement as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -981,15 +1100,18 @@ pub mod HooksTrampoline {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::NotASettlement(inner) => {
-                    <NotASettlement as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <NotASettlement as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`HooksTrampoline`](self) contract instance.
 
-    See the [wrapper's documentation](`HooksTrampolineInstance`) for more details.*/
+See the [wrapper's documentation](`HooksTrampolineInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1002,22 +1124,26 @@ pub mod HooksTrampoline {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+    pub fn deploy<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(
         __provider: P,
         settlement_: alloy_sol_types::private::Address,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<HooksTrampolineInstance<P, N>>>
-    {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<HooksTrampolineInstance<P, N>>,
+    > {
         HooksTrampolineInstance::<P, N>::deploy(__provider, settlement_)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
+and constructor arguments, if any.
 
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
@@ -1030,15 +1156,15 @@ pub mod HooksTrampoline {
     }
     /**A [`HooksTrampoline`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`HooksTrampoline`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`HooksTrampoline`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct HooksTrampolineInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1049,20 +1175,22 @@ pub mod HooksTrampoline {
     impl<P, N> ::core::fmt::Debug for HooksTrampolineInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("HooksTrampolineInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("HooksTrampolineInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        HooksTrampolineInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > HooksTrampolineInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`HooksTrampoline`](self) contract instance.
 
-        See the [wrapper's documentation](`HooksTrampolineInstance`) for more details.*/
+See the [wrapper's documentation](`HooksTrampolineInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -1071,9 +1199,9 @@ pub mod HooksTrampoline {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -1084,10 +1212,10 @@ pub mod HooksTrampoline {
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(
             __provider: P,
@@ -1097,11 +1225,12 @@ pub mod HooksTrampoline {
                 __provider,
                 [
                     &BYTECODE[..],
-                    &alloy_sol_types::SolConstructor::abi_encode(&constructorCall { settlement_ })
-                        [..],
+                    &alloy_sol_types::SolConstructor::abi_encode(
+                        &constructorCall { settlement_ },
+                    )[..],
                 ]
-                .concat()
-                .into(),
+                    .concat()
+                    .into(),
             )
         }
         /// Returns a reference to the address.
@@ -1137,9 +1266,10 @@ pub mod HooksTrampoline {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        HooksTrampolineInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > HooksTrampolineInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1153,19 +1283,24 @@ pub mod HooksTrampoline {
         ///Creates a new call builder for the [`execute`] function.
         pub fn execute(
             &self,
-            hooks: alloy_sol_types::private::Vec<<Hook as alloy_sol_types::SolType>::RustType>,
+            hooks: alloy_sol_types::private::Vec<
+                <Hook as alloy_sol_types::SolType>::RustType,
+            >,
         ) -> alloy_contract::SolCallBuilder<&P, executeCall, N> {
             self.call_builder(&executeCall { hooks })
         }
         ///Creates a new call builder for the [`settlement`] function.
-        pub fn settlement(&self) -> alloy_contract::SolCallBuilder<&P, settlementCall, N> {
+        pub fn settlement(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, settlementCall, N> {
             self.call_builder(&settlementCall)
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        HooksTrampolineInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > HooksTrampolineInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -1177,67 +1312,121 @@ pub mod HooksTrampoline {
         }
     }
 }
-pub type Instance = HooksTrampoline::HooksTrampolineInstance<::alloy_provider::DynProvider>;
+pub type Instance = HooksTrampoline::HooksTrampolineInstance<
+    ::alloy_provider::DynProvider,
+>;
 use {
-    alloy_primitives::{Address, address},
-    alloy_provider::{DynProvider, Provider},
-    anyhow::{Context, Result},
-    std::{collections::HashMap, sync::LazyLock},
+    std::{sync::LazyLock, collections::HashMap},
+    anyhow::{Result, Context},
+    alloy_primitives::{address, Address},
+    alloy_provider::{Provider, DynProvider},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        59144u64 => Some((
-            ::alloy_primitives::address!("0x60bf78233f48ec42ee3f101b9a05ec7878728006"),
-            None,
-        )),
-        100u64 => Some((
-            ::alloy_primitives::address!("0x01DcB88678aedD0C4cC9552B20F4718550250574"),
-            None,
-        )),
-        42161u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        8453u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        43114u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        137u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        9745u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        11155111u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        232u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        10u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        57073u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        1u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
-        56u64 => Some((
-            ::alloy_primitives::address!("0x60Bf78233f48eC42eE3F101b9a05eC7878728006"),
-            None,
-        )),
+        8453u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        43114u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        1u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        59144u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60bf78233f48ec42ee3f101b9a05ec7878728006"
+                ),
+                None,
+            ))
+        }
+        42161u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        100u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x01DcB88678aedD0C4cC9552B20F4718550250574"
+                ),
+                None,
+            ))
+        }
+        11155111u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        137u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        9745u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        56u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        232u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        57073u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
+        10u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x60Bf78233f48eC42eE3F101b9a05eC7878728006"
+                ),
+                None,
+            ))
+        }
         _ => None,
     }
 }
@@ -1254,7 +1443,9 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(
+        provider: &DynProvider,
+    ) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()

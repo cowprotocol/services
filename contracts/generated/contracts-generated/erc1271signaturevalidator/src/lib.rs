@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -53,12 +47,12 @@ interface ERC1271SignatureValidator {
 )]
 pub mod ERC1271SignatureValidator {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isValidSignature(bytes32,bytes)` and selector `0x1626ba7e`.
-    ```solidity
-    function isValidSignature(bytes32 hash, bytes memory signature) external view returns (bytes4 magicValue);
-    ```*/
+```solidity
+function isValidSignature(bytes32 hash, bytes memory signature) external view returns (bytes4 magicValue);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignatureCall {
@@ -82,7 +76,7 @@ pub mod ERC1271SignatureValidator {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -97,7 +91,9 @@ pub mod ERC1271SignatureValidator {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -106,14 +102,16 @@ pub mod ERC1271SignatureValidator {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidSignatureCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidSignatureCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isValidSignatureCall) -> Self {
                     (value.hash, value.signature)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidSignatureCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidSignatureCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         hash: tuple.0,
@@ -130,7 +128,9 @@ pub mod ERC1271SignatureValidator {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -139,18 +139,18 @@ pub mod ERC1271SignatureValidator {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidSignatureReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidSignatureReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isValidSignatureReturn) -> Self {
                     (value.magicValue,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidSignatureReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidSignatureReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        magicValue: tuple.0,
-                    }
+                    Self { magicValue: tuple.0 }
                 }
             }
         }
@@ -160,10 +160,14 @@ pub mod ERC1271SignatureValidator {
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<4>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isValidSignature(bytes32,bytes)";
             const SELECTOR: [u8; 4] = [22u8, 38u8, 186u8, 126u8];
             #[inline]
@@ -193,27 +197,31 @@ pub mod ERC1271SignatureValidator {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isValidSignatureReturn = r.into();
                         r.magicValue
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isValidSignatureReturn = r.into();
-                    r.magicValue
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isValidSignatureReturn = r.into();
+                        r.magicValue
+                    })
             }
         }
     };
     ///Container for all the [`ERC1271SignatureValidator`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum ERC1271SignatureValidatorCalls {
         #[allow(missing_docs)]
         isValidSignature(isValidSignatureCall),
@@ -227,10 +235,13 @@ pub mod ERC1271SignatureValidator {
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[[22u8, 38u8, 186u8, 126u8]];
         /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[::core::stringify!(isValidSignature)];
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(isValidSignature),
+        ];
         /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] =
-            &[<isValidSignatureCall as alloy_sol_types::SolCall>::SIGNATURE];
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <isValidSignatureCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -245,7 +256,9 @@ pub mod ERC1271SignatureValidator {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -273,25 +286,32 @@ pub mod ERC1271SignatureValidator {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                ERC1271SignatureValidatorCalls,
-            >] = &[{
-                fn isValidSignature(
-                    data: &[u8],
-                ) -> alloy_sol_types::Result<ERC1271SignatureValidatorCalls> {
-                    <isValidSignatureCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                        .map(ERC1271SignatureValidatorCalls::isValidSignature)
-                }
-                isValidSignature
-            }];
+            ) -> alloy_sol_types::Result<ERC1271SignatureValidatorCalls>] = &[
+                {
+                    fn isValidSignature(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ERC1271SignatureValidatorCalls> {
+                        <isValidSignatureCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(ERC1271SignatureValidatorCalls::isValidSignature)
+                    }
+                    isValidSignature
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -303,24 +323,26 @@ pub mod ERC1271SignatureValidator {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                ERC1271SignatureValidatorCalls,
-            >] = &[{
-                fn isValidSignature(
-                    data: &[u8],
-                ) -> alloy_sol_types::Result<ERC1271SignatureValidatorCalls> {
-                    <isValidSignatureCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                        data,
-                    )
-                    .map(ERC1271SignatureValidatorCalls::isValidSignature)
-                }
-                isValidSignature
-            }];
+            ) -> alloy_sol_types::Result<ERC1271SignatureValidatorCalls>] = &[
+                {
+                    fn isValidSignature(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ERC1271SignatureValidatorCalls> {
+                        <isValidSignatureCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ERC1271SignatureValidatorCalls::isValidSignature)
+                    }
+                    isValidSignature
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -328,7 +350,9 @@ pub mod ERC1271SignatureValidator {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::isValidSignature(inner) => {
-                    <isValidSignatureCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <isValidSignatureCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -336,15 +360,18 @@ pub mod ERC1271SignatureValidator {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::isValidSignature(inner) => {
-                    <isValidSignatureCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <isValidSignatureCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ERC1271SignatureValidator`](self) contract instance.
 
-    See the [wrapper's documentation](`ERC1271SignatureValidatorInstance`) for more details.*/
+See the [wrapper's documentation](`ERC1271SignatureValidatorInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -357,17 +384,20 @@ pub mod ERC1271SignatureValidator {
     }
     /**A [`ERC1271SignatureValidator`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`ERC1271SignatureValidator`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`ERC1271SignatureValidator`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct ERC1271SignatureValidatorInstance<P, N = alloy_contract::private::Ethereum> {
+    pub struct ERC1271SignatureValidatorInstance<
+        P,
+        N = alloy_contract::private::Ethereum,
+    > {
         address: alloy_sol_types::private::Address,
         provider: P,
         _network: ::core::marker::PhantomData<N>,
@@ -382,14 +412,18 @@ pub mod ERC1271SignatureValidator {
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ERC1271SignatureValidatorInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ERC1271SignatureValidatorInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`ERC1271SignatureValidator`](self) contract instance.
 
-        See the [wrapper's documentation](`ERC1271SignatureValidatorInstance`) for more details.*/
+See the [wrapper's documentation](`ERC1271SignatureValidatorInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -429,9 +463,10 @@ pub mod ERC1271SignatureValidator {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ERC1271SignatureValidatorInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ERC1271SignatureValidatorInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -448,13 +483,19 @@ pub mod ERC1271SignatureValidator {
             hash: alloy_sol_types::private::FixedBytes<32>,
             signature: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, isValidSignatureCall, N> {
-            self.call_builder(&isValidSignatureCall { hash, signature })
+            self.call_builder(
+                &isValidSignatureCall {
+                    hash,
+                    signature,
+                },
+            )
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ERC1271SignatureValidatorInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ERC1271SignatureValidatorInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -466,5 +507,6 @@ pub mod ERC1271SignatureValidator {
         }
     }
 }
-pub type Instance =
-    ERC1271SignatureValidator::ERC1271SignatureValidatorInstance<::alloy_provider::DynProvider>;
+pub type Instance = ERC1271SignatureValidator::ERC1271SignatureValidatorInstance<
+    ::alloy_provider::DynProvider,
+>;

@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -42,12 +36,12 @@ interface CowAmmFactoryGetter {
 )]
 pub mod CowAmmFactoryGetter {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `FACTORY()` and selector `0x2dd31000`.
-    ```solidity
-    function FACTORY() external view returns (address);
-    ```*/
+```solidity
+function FACTORY() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FACTORYCall;
@@ -66,7 +60,7 @@ pub mod CowAmmFactoryGetter {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -75,7 +69,9 @@ pub mod CowAmmFactoryGetter {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -105,7 +101,9 @@ pub mod CowAmmFactoryGetter {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -130,10 +128,14 @@ pub mod CowAmmFactoryGetter {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for FACTORYCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "FACTORY()";
             const SELECTOR: [u8; 4] = [45u8, 211u8, 16u8, 0u8];
             #[inline]
@@ -148,31 +150,39 @@ pub mod CowAmmFactoryGetter {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: FACTORYReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: FACTORYReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: FACTORYReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`CowAmmFactoryGetter`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum CowAmmFactoryGetterCalls {
         #[allow(missing_docs)]
         FACTORY(FACTORYCall),
@@ -186,10 +196,13 @@ pub mod CowAmmFactoryGetter {
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[[45u8, 211u8, 16u8, 0u8]];
         /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[::core::stringify!(FACTORY)];
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(FACTORY),
+        ];
         /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] =
-            &[<FACTORYCall as alloy_sol_types::SolCall>::SIGNATURE];
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <FACTORYCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -204,7 +217,9 @@ pub mod CowAmmFactoryGetter {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -230,22 +245,30 @@ pub mod CowAmmFactoryGetter {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<CowAmmFactoryGetterCalls>] = &[{
-                fn FACTORY(data: &[u8]) -> alloy_sol_types::Result<CowAmmFactoryGetterCalls> {
-                    <FACTORYCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                        .map(CowAmmFactoryGetterCalls::FACTORY)
-                }
-                FACTORY
-            }];
+            ) -> alloy_sol_types::Result<CowAmmFactoryGetterCalls>] = &[
+                {
+                    fn FACTORY(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<CowAmmFactoryGetterCalls> {
+                        <FACTORYCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(CowAmmFactoryGetterCalls::FACTORY)
+                    }
+                    FACTORY
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -257,20 +280,26 @@ pub mod CowAmmFactoryGetter {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                CowAmmFactoryGetterCalls,
-            >] = &[{
-                fn FACTORY(data: &[u8]) -> alloy_sol_types::Result<CowAmmFactoryGetterCalls> {
-                    <FACTORYCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                        .map(CowAmmFactoryGetterCalls::FACTORY)
-                }
-                FACTORY
-            }];
+            ) -> alloy_sol_types::Result<CowAmmFactoryGetterCalls>] = &[
+                {
+                    fn FACTORY(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<CowAmmFactoryGetterCalls> {
+                        <FACTORYCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(CowAmmFactoryGetterCalls::FACTORY)
+                    }
+                    FACTORY
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -291,10 +320,10 @@ pub mod CowAmmFactoryGetter {
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`CowAmmFactoryGetter`](self) contract instance.
 
-    See the [wrapper's documentation](`CowAmmFactoryGetterInstance`) for more details.*/
+See the [wrapper's documentation](`CowAmmFactoryGetterInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -307,15 +336,15 @@ pub mod CowAmmFactoryGetter {
     }
     /**A [`CowAmmFactoryGetter`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`CowAmmFactoryGetter`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`CowAmmFactoryGetter`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct CowAmmFactoryGetterInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -326,20 +355,22 @@ pub mod CowAmmFactoryGetter {
     impl<P, N> ::core::fmt::Debug for CowAmmFactoryGetterInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("CowAmmFactoryGetterInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("CowAmmFactoryGetterInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        CowAmmFactoryGetterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > CowAmmFactoryGetterInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`CowAmmFactoryGetter`](self) contract instance.
 
-        See the [wrapper's documentation](`CowAmmFactoryGetterInstance`) for more details.*/
+See the [wrapper's documentation](`CowAmmFactoryGetterInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -379,9 +410,10 @@ pub mod CowAmmFactoryGetter {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        CowAmmFactoryGetterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > CowAmmFactoryGetterInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -398,9 +430,10 @@ pub mod CowAmmFactoryGetter {
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        CowAmmFactoryGetterInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > CowAmmFactoryGetterInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -412,4 +445,6 @@ pub mod CowAmmFactoryGetter {
         }
     }
 }
-pub type Instance = CowAmmFactoryGetter::CowAmmFactoryGetterInstance<::alloy_provider::DynProvider>;
+pub type Instance = CowAmmFactoryGetter::CowAmmFactoryGetterInstance<
+    ::alloy_provider::DynProvider,
+>;

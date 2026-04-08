@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -364,7 +358,7 @@ interface GnosisSafeCompatibilityFallbackHandler {
 )]
 pub mod GnosisSafeCompatibilityFallbackHandler {
     use super::*;
-    use alloy_sol_types;
+    use alloy_sol_types as alloy_sol_types;
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -377,9 +371,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `NAME()` and selector `0xa3f4df7e`.
-    ```solidity
-    function NAME() external view returns (string memory);
-    ```*/
+```solidity
+function NAME() external view returns (string memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NAMECall;
@@ -398,7 +392,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -407,7 +401,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -437,7 +433,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -462,10 +460,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for NAMECall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::String;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NAME()";
             const SELECTOR: [u8; 4] = [163u8, 244u8, 223u8, 126u8];
             #[inline]
@@ -480,34 +482,41 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: NAMEReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: NAMEReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: NAMEReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `VERSION()` and selector `0xffa1ad74`.
-    ```solidity
-    function VERSION() external view returns (string memory);
-    ```*/
+```solidity
+function VERSION() external view returns (string memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct VERSIONCall;
@@ -526,7 +535,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -535,7 +544,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -565,7 +576,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -590,10 +603,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for VERSIONCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::String;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "VERSION()";
             const SELECTOR: [u8; 4] = [255u8, 161u8, 173u8, 116u8];
             #[inline]
@@ -608,34 +625,41 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: VERSIONReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: VERSIONReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: VERSIONReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getMessageHash(bytes)` and selector `0x0a1028c4`.
-    ```solidity
-    function getMessageHash(bytes memory message) external view returns (bytes32);
-    ```*/
+```solidity
+function getMessageHash(bytes memory message) external view returns (bytes32);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getMessageHashCall {
@@ -657,7 +681,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -666,7 +690,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -696,7 +722,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -705,14 +733,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getMessageHashReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getMessageHashReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getMessageHashReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getMessageHashReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getMessageHashReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -721,10 +751,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getMessageHashCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getMessageHash(bytes)";
             const SELECTOR: [u8; 4] = [10u8, 16u8, 40u8, 196u8];
             #[inline]
@@ -751,30 +785,33 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getMessageHashReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getMessageHashReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getMessageHashReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getMessageHashForSafe(address,bytes)` and selector `0x6ac24784`.
-    ```solidity
-    function getMessageHashForSafe(address safe, bytes memory message) external view returns (bytes32);
-    ```*/
+```solidity
+function getMessageHashForSafe(address safe, bytes memory message) external view returns (bytes32);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getMessageHashForSafeCall {
@@ -798,7 +835,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -813,7 +850,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -822,14 +861,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getMessageHashForSafeCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getMessageHashForSafeCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getMessageHashForSafeCall) -> Self {
                     (value.safe, value.message)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getMessageHashForSafeCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getMessageHashForSafeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         safe: tuple.0,
@@ -846,7 +887,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<32>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -855,14 +898,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getMessageHashForSafeReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getMessageHashForSafeReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getMessageHashForSafeReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getMessageHashForSafeReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getMessageHashForSafeReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -874,10 +919,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getMessageHashForSafe(address,bytes)";
             const SELECTOR: [u8; 4] = [106u8, 194u8, 71u8, 132u8];
             #[inline]
@@ -907,30 +956,33 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getMessageHashForSafeReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getMessageHashForSafeReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getMessageHashForSafeReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getModules()` and selector `0xb2494df3`.
-    ```solidity
-    function getModules() external view returns (address[] memory);
-    ```*/
+```solidity
+function getModules() external view returns (address[] memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getModulesCall;
@@ -949,7 +1001,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -958,7 +1010,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -983,14 +1037,18 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         {
             #[doc(hidden)]
             #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,);
+            type UnderlyingSolTuple<'a> = (
+                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
+            );
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,);
+            type UnderlyingRustTuple<'a> = (
+                alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1015,11 +1073,18 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getModulesCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Vec<alloy_sol_types::private::Address>;
-            type ReturnTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy_sol_types::private::Vec<
+                alloy_sol_types::private::Address,
+            >;
+            type ReturnTuple<'a> = (
+                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getModules()";
             const SELECTOR: [u8; 4] = [178u8, 73u8, 77u8, 243u8];
             #[inline]
@@ -1034,36 +1099,41 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Array<
-                    alloy_sol_types::sol_data::Address,
-                > as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Array<
+                        alloy_sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getModulesReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getModulesReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getModulesReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isValidSignature(bytes32,bytes)` and selector `0x1626ba7e`.
-    ```solidity
-    function isValidSignature(bytes32 _dataHash, bytes memory _signature) external view returns (bytes4);
-    ```*/
+```solidity
+function isValidSignature(bytes32 _dataHash, bytes memory _signature) external view returns (bytes4);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignature_0Call {
@@ -1087,7 +1157,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1102,7 +1172,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1111,14 +1183,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidSignature_0Call> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidSignature_0Call>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isValidSignature_0Call) -> Self {
                     (value._dataHash, value._signature)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidSignature_0Call {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidSignature_0Call {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _dataHash: tuple.0,
@@ -1135,7 +1209,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1144,14 +1220,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidSignature_0Return> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidSignature_0Return>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isValidSignature_0Return) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidSignature_0Return {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidSignature_0Return {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1163,10 +1241,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<4>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isValidSignature(bytes32,bytes)";
             const SELECTOR: [u8; 4] = [22u8, 38u8, 186u8, 126u8];
             #[inline]
@@ -1196,30 +1278,33 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isValidSignature_0Return = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isValidSignature_0Return = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isValidSignature_0Return = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isValidSignature(bytes,bytes)` and selector `0x20c13b0b`.
-    ```solidity
-    function isValidSignature(bytes memory _data, bytes memory _signature) external view returns (bytes4);
-    ```*/
+```solidity
+function isValidSignature(bytes memory _data, bytes memory _signature) external view returns (bytes4);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignature_1Call {
@@ -1243,7 +1328,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1258,7 +1343,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1267,14 +1354,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidSignature_1Call> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidSignature_1Call>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isValidSignature_1Call) -> Self {
                     (value._data, value._signature)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidSignature_1Call {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidSignature_1Call {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _data: tuple.0,
@@ -1291,7 +1380,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1300,14 +1391,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isValidSignature_1Return> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isValidSignature_1Return>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isValidSignature_1Return) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isValidSignature_1Return {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidSignature_1Return {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1319,10 +1412,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::Bytes,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<4>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isValidSignature(bytes,bytes)";
             const SELECTOR: [u8; 4] = [32u8, 193u8, 59u8, 11u8];
             #[inline]
@@ -1352,30 +1449,33 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isValidSignature_1Return = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isValidSignature_1Return = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isValidSignature_1Return = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)` and selector `0xbc197c81`.
-    ```solidity
-    function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes memory) external pure returns (bytes4);
-    ```*/
+```solidity
+function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes memory) external pure returns (bytes4);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct onERC1155BatchReceivedCall {
@@ -1384,9 +1484,13 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         #[allow(missing_docs)]
         pub _1: alloy_sol_types::private::Address,
         #[allow(missing_docs)]
-        pub _2: alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
+        pub _2: alloy_sol_types::private::Vec<
+            alloy_sol_types::private::primitives::aliases::U256,
+        >,
         #[allow(missing_docs)]
-        pub _3: alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
+        pub _3: alloy_sol_types::private::Vec<
+            alloy_sol_types::private::primitives::aliases::U256,
+        >,
         #[allow(missing_docs)]
         pub _4: alloy_sol_types::private::Bytes,
     }
@@ -1405,7 +1509,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1420,13 +1524,19 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (
                 alloy_sol_types::private::Address,
                 alloy_sol_types::private::Address,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
+                alloy_sol_types::private::Vec<
+                    alloy_sol_types::private::primitives::aliases::U256,
+                >,
+                alloy_sol_types::private::Vec<
+                    alloy_sol_types::private::primitives::aliases::U256,
+                >,
                 alloy_sol_types::private::Bytes,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1435,14 +1545,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onERC1155BatchReceivedCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onERC1155BatchReceivedCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: onERC1155BatchReceivedCall) -> Self {
                     (value._0, value._1, value._2, value._3, value._4)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onERC1155BatchReceivedCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for onERC1155BatchReceivedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _0: tuple.0,
@@ -1462,7 +1574,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1471,14 +1585,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onERC1155BatchReceivedReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onERC1155BatchReceivedReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: onERC1155BatchReceivedReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onERC1155BatchReceivedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for onERC1155BatchReceivedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1493,12 +1609,15 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<4>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)";
             const SELECTOR: [u8; 4] = [188u8, 25u8, 124u8, 129u8];
             #[inline]
             fn new<'a>(
@@ -1536,30 +1655,33 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: onERC1155BatchReceivedReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: onERC1155BatchReceivedReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: onERC1155BatchReceivedReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `onERC1155Received(address,address,uint256,uint256,bytes)` and selector `0xf23a6e61`.
-    ```solidity
-    function onERC1155Received(address, address, uint256, uint256, bytes memory) external pure returns (bytes4);
-    ```*/
+```solidity
+function onERC1155Received(address, address, uint256, uint256, bytes memory) external pure returns (bytes4);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct onERC1155ReceivedCall {
@@ -1589,7 +1711,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1610,7 +1732,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1619,14 +1743,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onERC1155ReceivedCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onERC1155ReceivedCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: onERC1155ReceivedCall) -> Self {
                     (value._0, value._1, value._2, value._3, value._4)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onERC1155ReceivedCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for onERC1155ReceivedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _0: tuple.0,
@@ -1646,7 +1772,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1655,14 +1783,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onERC1155ReceivedReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onERC1155ReceivedReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: onERC1155ReceivedReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onERC1155ReceivedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for onERC1155ReceivedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1677,12 +1807,15 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<4>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "onERC1155Received(address,address,uint256,uint256,bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "onERC1155Received(address,address,uint256,uint256,bytes)";
             const SELECTOR: [u8; 4] = [242u8, 58u8, 110u8, 97u8];
             #[inline]
             fn new<'a>(
@@ -1699,12 +1832,12 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._1,
                     ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self._2,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self._3,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self._2),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self._3),
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self._4,
                     ),
@@ -1720,30 +1853,33 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: onERC1155ReceivedReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: onERC1155ReceivedReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: onERC1155ReceivedReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `onERC721Received(address,address,uint256,bytes)` and selector `0x150b7a02`.
-    ```solidity
-    function onERC721Received(address, address, uint256, bytes memory) external pure returns (bytes4);
-    ```*/
+```solidity
+function onERC721Received(address, address, uint256, bytes memory) external pure returns (bytes4);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct onERC721ReceivedCall {
@@ -1771,7 +1907,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1790,7 +1926,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1799,14 +1937,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onERC721ReceivedCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onERC721ReceivedCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: onERC721ReceivedCall) -> Self {
                     (value._0, value._1, value._2, value._3)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onERC721ReceivedCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for onERC721ReceivedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         _0: tuple.0,
@@ -1825,7 +1965,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1834,14 +1976,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<onERC721ReceivedReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<onERC721ReceivedReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: onERC721ReceivedReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for onERC721ReceivedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for onERC721ReceivedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1855,10 +1999,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::FixedBytes<4>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "onERC721Received(address,address,uint256,bytes)";
             const SELECTOR: [u8; 4] = [21u8, 11u8, 122u8, 2u8];
             #[inline]
@@ -1876,9 +2024,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._1,
                     ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self._2,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self._2),
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self._3,
                     ),
@@ -1894,30 +2042,33 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: onERC721ReceivedReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: onERC721ReceivedReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: onERC721ReceivedReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `simulate(address,bytes)` and selector `0xbd61951d`.
-    ```solidity
-    function simulate(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-    ```*/
+```solidity
+function simulate(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct simulateCall {
@@ -1941,7 +2092,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1956,7 +2107,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1989,7 +2142,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2017,10 +2172,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Bytes;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "simulate(address,bytes)";
             const SELECTOR: [u8; 4] = [189u8, 97u8, 149u8, 29u8];
             #[inline]
@@ -2042,34 +2201,41 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: simulateReturn = r.into();
                         r.response
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: simulateReturn = r.into();
-                    r.response
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: simulateReturn = r.into();
+                        r.response
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `supportsInterface(bytes4)` and selector `0x01ffc9a7`.
-    ```solidity
-    function supportsInterface(bytes4 interfaceId) external view returns (bool);
-    ```*/
+```solidity
+function supportsInterface(bytes4 interfaceId) external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct supportsInterfaceCall {
@@ -2091,7 +2257,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -2100,7 +2266,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::FixedBytes<4>,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2109,18 +2277,18 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<supportsInterfaceCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<supportsInterfaceCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: supportsInterfaceCall) -> Self {
                     (value.interfaceId,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for supportsInterfaceCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for supportsInterfaceCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        interfaceId: tuple.0,
-                    }
+                    Self { interfaceId: tuple.0 }
                 }
             }
         }
@@ -2132,7 +2300,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2141,14 +2311,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<supportsInterfaceReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<supportsInterfaceReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: supportsInterfaceReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for supportsInterfaceReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for supportsInterfaceReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -2157,10 +2329,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for supportsInterfaceCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::FixedBytes<4>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "supportsInterface(bytes4)";
             const SELECTOR: [u8; 4] = [1u8, 255u8, 201u8, 167u8];
             #[inline]
@@ -2179,34 +2355,41 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: supportsInterfaceReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: supportsInterfaceReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: supportsInterfaceReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `tokensReceived(address,address,address,uint256,bytes,bytes)` and selector `0x0023de29`.
-    ```solidity
-    function tokensReceived(address, address, address, uint256, bytes memory, bytes memory) external pure;
-    ```*/
+```solidity
+function tokensReceived(address, address, address, uint256, bytes memory, bytes memory) external pure;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct tokensReceivedCall {
@@ -2234,7 +2417,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -2257,7 +2440,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2294,7 +2479,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2303,14 +2490,16 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<tokensReceivedReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<tokensReceivedReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: tokensReceivedReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for tokensReceivedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for tokensReceivedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -2333,12 +2522,15 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 alloy_sol_types::sol_data::Bytes,
                 alloy_sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = tokensReceivedReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "tokensReceived(address,address,address,uint256,bytes,bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "tokensReceived(address,address,address,uint256,bytes,bytes)";
             const SELECTOR: [u8; 4] = [0u8, 35u8, 222u8, 41u8];
             #[inline]
             fn new<'a>(
@@ -2358,9 +2550,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._2,
                     ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self._3,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self._3),
                     <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self._4,
                     ),
@@ -2375,20 +2567,25 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     ///Container for all the [`GnosisSafeCompatibilityFallbackHandler`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum GnosisSafeCompatibilityFallbackHandlerCalls {
         #[allow(missing_docs)]
         NAME(NAMECall),
@@ -2485,7 +2682,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         }
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
@@ -2506,7 +2705,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 Self::getMessageHashForSafe(_) => {
                     <getMessageHashForSafeCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getModules(_) => <getModulesCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::getModules(_) => {
+                    <getModulesCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::isValidSignature_0(_) => {
                     <isValidSignature_0Call as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -2541,89 +2742,124 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                GnosisSafeCompatibilityFallbackHandlerCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>] = &[
                 {
                     fn tokensReceived(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <tokensReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GnosisSafeCompatibilityFallbackHandlerCalls::tokensReceived)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <tokensReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::tokensReceived,
+                            )
                     }
                     tokensReceived
                 },
                 {
                     fn supportsInterface(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <supportsInterfaceCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GnosisSafeCompatibilityFallbackHandlerCalls::supportsInterface)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <supportsInterfaceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::supportsInterface,
+                            )
                     }
                     supportsInterface
                 },
                 {
                     fn getMessageHash(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <getMessageHashCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GnosisSafeCompatibilityFallbackHandlerCalls::getMessageHash)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <getMessageHashCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::getMessageHash,
+                            )
                     }
                     getMessageHash
                 },
                 {
                     fn onERC721Received(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <onERC721ReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GnosisSafeCompatibilityFallbackHandlerCalls::onERC721Received)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <onERC721ReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::onERC721Received,
+                            )
                     }
                     onERC721Received
                 },
                 {
                     fn isValidSignature_0(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <isValidSignature_0Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GnosisSafeCompatibilityFallbackHandlerCalls::isValidSignature_0)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <isValidSignature_0Call as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::isValidSignature_0,
+                            )
                     }
                     isValidSignature_0
                 },
                 {
                     fn isValidSignature_1(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <isValidSignature_1Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GnosisSafeCompatibilityFallbackHandlerCalls::isValidSignature_1)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <isValidSignature_1Call as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::isValidSignature_1,
+                            )
                     }
                     isValidSignature_1
                 },
                 {
                     fn getMessageHashForSafe(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <getMessageHashForSafeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(GnosisSafeCompatibilityFallbackHandlerCalls::getMessageHashForSafe)
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::getMessageHashForSafe,
+                            )
                     }
                     getMessageHashForSafe
                 },
                 {
                     fn NAME(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <NAMECall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::NAME)
                     }
@@ -2632,9 +2868,12 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn getModules(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <getModulesCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <getModulesCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::getModules)
                     }
                     getModules
@@ -2642,20 +2881,24 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn onERC1155BatchReceived(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <onERC1155BatchReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(GnosisSafeCompatibilityFallbackHandlerCalls::onERC1155BatchReceived)
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::onERC1155BatchReceived,
+                            )
                     }
                     onERC1155BatchReceived
                 },
                 {
                     fn simulate(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <simulateCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::simulate)
                     }
@@ -2664,18 +2907,24 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn onERC1155Received(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <onERC1155ReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GnosisSafeCompatibilityFallbackHandlerCalls::onERC1155Received)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <onERC1155ReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::onERC1155Received,
+                            )
                     }
                     onERC1155Received
                 },
                 {
                     fn VERSION(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::VERSION)
                     }
@@ -2683,10 +2932,12 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -2698,26 +2949,28 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                GnosisSafeCompatibilityFallbackHandlerCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>] = &[
                 {
                     fn tokensReceived(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <tokensReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(GnosisSafeCompatibilityFallbackHandlerCalls::tokensReceived)
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::tokensReceived,
+                            )
                     }
                     tokensReceived
                 },
                 {
                     fn supportsInterface(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <supportsInterfaceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2730,32 +2983,39 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn getMessageHash(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <getMessageHashCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(GnosisSafeCompatibilityFallbackHandlerCalls::getMessageHash)
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::getMessageHash,
+                            )
                     }
                     getMessageHash
                 },
                 {
                     fn onERC721Received(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <onERC721ReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(GnosisSafeCompatibilityFallbackHandlerCalls::onERC721Received)
+                                data,
+                            )
+                            .map(
+                                GnosisSafeCompatibilityFallbackHandlerCalls::onERC721Received,
+                            )
                     }
                     onERC721Received
                 },
                 {
                     fn isValidSignature_0(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <isValidSignature_0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2768,8 +3028,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn isValidSignature_1(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <isValidSignature_1Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2782,8 +3043,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn getMessageHashForSafe(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <getMessageHashForSafeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2796,9 +3058,12 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn NAME(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <NAMECall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <NAMECall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::NAME)
                     }
                     NAME
@@ -2806,9 +3071,12 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn getModules(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <getModulesCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <getModulesCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::getModules)
                     }
                     getModules
@@ -2816,8 +3084,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn onERC1155BatchReceived(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <onERC1155BatchReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2830,9 +3099,12 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn simulate(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <simulateCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <simulateCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::simulate)
                     }
                     simulate
@@ -2840,8 +3112,9 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn onERC1155Received(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
                         <onERC1155ReceivedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2854,19 +3127,24 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                 {
                     fn VERSION(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GnosisSafeCompatibilityFallbackHandlerCalls>
-                    {
-                        <VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<
+                        GnosisSafeCompatibilityFallbackHandlerCalls,
+                    > {
+                        <VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(GnosisSafeCompatibilityFallbackHandlerCalls::VERSION)
                     }
                     VERSION
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -2880,19 +3158,27 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                     <VERSIONCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::getMessageHash(inner) => {
-                    <getMessageHashCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <getMessageHashCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::getMessageHashForSafe(inner) => {
-                    <getMessageHashForSafeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <getMessageHashForSafeCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::getModules(inner) => {
                     <getModulesCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::isValidSignature_0(inner) => {
-                    <isValidSignature_0Call as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <isValidSignature_0Call as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::isValidSignature_1(inner) => {
-                    <isValidSignature_1Call as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <isValidSignature_1Call as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::onERC1155BatchReceived(inner) => {
                     <onERC1155BatchReceivedCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -2900,19 +3186,27 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                     )
                 }
                 Self::onERC1155Received(inner) => {
-                    <onERC1155ReceivedCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <onERC1155ReceivedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::onERC721Received(inner) => {
-                    <onERC721ReceivedCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <onERC721ReceivedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::simulate(inner) => {
                     <simulateCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::supportsInterface(inner) => {
-                    <supportsInterfaceCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <supportsInterfaceCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::tokensReceived(inner) => {
-                    <tokensReceivedCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <tokensReceivedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -2926,49 +3220,78 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
                     <VERSIONCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::getMessageHash(inner) => {
-                    <getMessageHashCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <getMessageHashCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::getMessageHashForSafe(inner) => {
                     <getMessageHashForSafeCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::getModules(inner) => {
-                    <getModulesCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <getModulesCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::isValidSignature_0(inner) => {
-                    <isValidSignature_0Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <isValidSignature_0Call as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::isValidSignature_1(inner) => {
-                    <isValidSignature_1Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <isValidSignature_1Call as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::onERC1155BatchReceived(inner) => {
                     <onERC1155BatchReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::onERC1155Received(inner) => {
-                    <onERC1155ReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <onERC1155ReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::onERC721Received(inner) => {
-                    <onERC721ReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <onERC721ReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::simulate(inner) => {
-                    <simulateCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <simulateCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::supportsInterface(inner) => {
-                    <supportsInterfaceCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <supportsInterfaceCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::tokensReceived(inner) => {
-                    <tokensReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <tokensReceivedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`GnosisSafeCompatibilityFallbackHandler`](self) contract instance.
 
-    See the [wrapper's documentation](`GnosisSafeCompatibilityFallbackHandlerInstance`) for more details.*/
+See the [wrapper's documentation](`GnosisSafeCompatibilityFallbackHandlerInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -2981,42 +3304,48 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<GnosisSafeCompatibilityFallbackHandlerInstance<P, N>>,
-    > {
-        GnosisSafeCompatibilityFallbackHandlerInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         __provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
-        GnosisSafeCompatibilityFallbackHandlerInstance::<P, N>::deploy_builder(__provider)
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<
+            GnosisSafeCompatibilityFallbackHandlerInstance<P, N>,
+        >,
+    > {
+        GnosisSafeCompatibilityFallbackHandlerInstance::<P, N>::deploy(__provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        GnosisSafeCompatibilityFallbackHandlerInstance::<
+            P,
+            N,
+        >::deploy_builder(__provider)
     }
     /**A [`GnosisSafeCompatibilityFallbackHandler`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`GnosisSafeCompatibilityFallbackHandler`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`GnosisSafeCompatibilityFallbackHandler`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct GnosisSafeCompatibilityFallbackHandlerInstance<
         P,
@@ -3027,7 +3356,8 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         _network: ::core::marker::PhantomData<N>,
     }
     #[automatically_derived]
-    impl<P, N> ::core::fmt::Debug for GnosisSafeCompatibilityFallbackHandlerInstance<P, N> {
+    impl<P, N> ::core::fmt::Debug
+    for GnosisSafeCompatibilityFallbackHandlerInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple("GnosisSafeCompatibilityFallbackHandlerInstance")
@@ -3036,14 +3366,18 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GnosisSafeCompatibilityFallbackHandlerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GnosisSafeCompatibilityFallbackHandlerInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`GnosisSafeCompatibilityFallbackHandler`](self) contract instance.
 
-        See the [wrapper's documentation](`GnosisSafeCompatibilityFallbackHandlerInstance`) for more details.*/
+See the [wrapper's documentation](`GnosisSafeCompatibilityFallbackHandlerInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
@@ -3052,22 +3386,24 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
-        ) -> alloy_contract::Result<GnosisSafeCompatibilityFallbackHandlerInstance<P, N>> {
+        ) -> alloy_contract::Result<
+            GnosisSafeCompatibilityFallbackHandlerInstance<P, N>,
+        > {
             let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -3096,10 +3432,15 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             &self.provider
         }
     }
-    impl<P: ::core::clone::Clone, N> GnosisSafeCompatibilityFallbackHandlerInstance<&P, N> {
+    impl<
+        P: ::core::clone::Clone,
+        N,
+    > GnosisSafeCompatibilityFallbackHandlerInstance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> GnosisSafeCompatibilityFallbackHandlerInstance<P, N> {
+        pub fn with_cloned_provider(
+            self,
+        ) -> GnosisSafeCompatibilityFallbackHandlerInstance<P, N> {
             GnosisSafeCompatibilityFallbackHandlerInstance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
@@ -3108,9 +3449,10 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GnosisSafeCompatibilityFallbackHandlerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GnosisSafeCompatibilityFallbackHandlerInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -3142,10 +3484,17 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             safe: alloy_sol_types::private::Address,
             message: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, getMessageHashForSafeCall, N> {
-            self.call_builder(&getMessageHashForSafeCall { safe, message })
+            self.call_builder(
+                &getMessageHashForSafeCall {
+                    safe,
+                    message,
+                },
+            )
         }
         ///Creates a new call builder for the [`getModules`] function.
-        pub fn getModules(&self) -> alloy_contract::SolCallBuilder<&P, getModulesCall, N> {
+        pub fn getModules(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getModulesCall, N> {
             self.call_builder(&getModulesCall)
         }
         ///Creates a new call builder for the [`isValidSignature_0`] function.
@@ -3154,10 +3503,12 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             _dataHash: alloy_sol_types::private::FixedBytes<32>,
             _signature: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, isValidSignature_0Call, N> {
-            self.call_builder(&isValidSignature_0Call {
-                _dataHash,
-                _signature,
-            })
+            self.call_builder(
+                &isValidSignature_0Call {
+                    _dataHash,
+                    _signature,
+                },
+            )
         }
         ///Creates a new call builder for the [`isValidSignature_1`] function.
         pub fn isValidSignature_1(
@@ -3165,18 +3516,35 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             _data: alloy_sol_types::private::Bytes,
             _signature: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, isValidSignature_1Call, N> {
-            self.call_builder(&isValidSignature_1Call { _data, _signature })
+            self.call_builder(
+                &isValidSignature_1Call {
+                    _data,
+                    _signature,
+                },
+            )
         }
         ///Creates a new call builder for the [`onERC1155BatchReceived`] function.
         pub fn onERC1155BatchReceived(
             &self,
             _0: alloy_sol_types::private::Address,
             _1: alloy_sol_types::private::Address,
-            _2: alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
-            _3: alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
+            _2: alloy_sol_types::private::Vec<
+                alloy_sol_types::private::primitives::aliases::U256,
+            >,
+            _3: alloy_sol_types::private::Vec<
+                alloy_sol_types::private::primitives::aliases::U256,
+            >,
             _4: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, onERC1155BatchReceivedCall, N> {
-            self.call_builder(&onERC1155BatchReceivedCall { _0, _1, _2, _3, _4 })
+            self.call_builder(
+                &onERC1155BatchReceivedCall {
+                    _0,
+                    _1,
+                    _2,
+                    _3,
+                    _4,
+                },
+            )
         }
         ///Creates a new call builder for the [`onERC1155Received`] function.
         pub fn onERC1155Received(
@@ -3187,7 +3555,15 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             _3: alloy_sol_types::private::primitives::aliases::U256,
             _4: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, onERC1155ReceivedCall, N> {
-            self.call_builder(&onERC1155ReceivedCall { _0, _1, _2, _3, _4 })
+            self.call_builder(
+                &onERC1155ReceivedCall {
+                    _0,
+                    _1,
+                    _2,
+                    _3,
+                    _4,
+                },
+            )
         }
         ///Creates a new call builder for the [`onERC721Received`] function.
         pub fn onERC721Received(
@@ -3197,7 +3573,14 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             _2: alloy_sol_types::private::primitives::aliases::U256,
             _3: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, onERC721ReceivedCall, N> {
-            self.call_builder(&onERC721ReceivedCall { _0, _1, _2, _3 })
+            self.call_builder(
+                &onERC721ReceivedCall {
+                    _0,
+                    _1,
+                    _2,
+                    _3,
+                },
+            )
         }
         ///Creates a new call builder for the [`simulate`] function.
         pub fn simulate(
@@ -3205,17 +3588,23 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             targetContract: alloy_sol_types::private::Address,
             calldataPayload: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, simulateCall, N> {
-            self.call_builder(&simulateCall {
-                targetContract,
-                calldataPayload,
-            })
+            self.call_builder(
+                &simulateCall {
+                    targetContract,
+                    calldataPayload,
+                },
+            )
         }
         ///Creates a new call builder for the [`supportsInterface`] function.
         pub fn supportsInterface(
             &self,
             interfaceId: alloy_sol_types::private::FixedBytes<4>,
         ) -> alloy_contract::SolCallBuilder<&P, supportsInterfaceCall, N> {
-            self.call_builder(&supportsInterfaceCall { interfaceId })
+            self.call_builder(
+                &supportsInterfaceCall {
+                    interfaceId,
+                },
+            )
         }
         ///Creates a new call builder for the [`tokensReceived`] function.
         pub fn tokensReceived(
@@ -3227,20 +3616,23 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             _4: alloy_sol_types::private::Bytes,
             _5: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, tokensReceivedCall, N> {
-            self.call_builder(&tokensReceivedCall {
-                _0,
-                _1,
-                _2,
-                _3,
-                _4,
-                _5,
-            })
+            self.call_builder(
+                &tokensReceivedCall {
+                    _0,
+                    _1,
+                    _2,
+                    _3,
+                    _4,
+                    _5,
+                },
+            )
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GnosisSafeCompatibilityFallbackHandlerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GnosisSafeCompatibilityFallbackHandlerInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -3252,7 +3644,6 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         }
     }
 }
-pub type Instance =
-    GnosisSafeCompatibilityFallbackHandler::GnosisSafeCompatibilityFallbackHandlerInstance<
-        ::alloy_provider::DynProvider,
-    >;
+pub type Instance = GnosisSafeCompatibilityFallbackHandler::GnosisSafeCompatibilityFallbackHandlerInstance<
+    ::alloy_provider::DynProvider,
+>;
