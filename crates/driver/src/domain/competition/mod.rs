@@ -298,7 +298,6 @@ impl Competition {
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let settlement_contract = *self.eth.contracts().settlement().address();
         let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
@@ -306,16 +305,10 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        let settlement = settlement_contract;
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
-            Self::sort_orders(
-                auction,
-                solver_address,
-                order_sorting_strategies,
-                settlement,
-            )
+            Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
         // We can sort the orders and fetch auction data in parallel
@@ -326,7 +319,7 @@ impl Competition {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
+            Self::update_orders(auction, balances, app_data, cow_amm_orders)
         })
         .await;
 
@@ -583,7 +576,6 @@ impl Competition {
         mut auction: Auction,
         solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-        _settlement_contract: eth::Address,
     ) -> Auction {
         sorting::sort_orders(
             &mut auction.orders,
@@ -603,7 +595,6 @@ impl Competition {
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
-        settlement_contract: &eth::Address,
     ) -> Auction {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
@@ -631,13 +622,12 @@ impl Competition {
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
-                if order.app_data.flashloan().is_some() {
-                    // If an order requires a flashloan we assume all the necessary
-                    // sell tokens will come from there. But the receiver must be the
-                    // settlement contract because that is how the driver expects
-                    // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement_contract);
-                }
+            }
+
+            // Flashloan orders get their sell tokens from the flashloan at
+            // settlement time, so skip the balance check.
+            if order.app_data.flashloan().is_some() {
+                return true;
             }
 
             // wrappers can produce the required funds at settlement time
