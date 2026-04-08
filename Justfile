@@ -1,12 +1,18 @@
 help:
     @just --list
 
+# Bootstrap the crate, will vendor contracts, generate the bindings crates and format everything
 setup:
     cd contracts && \
     cargo r -r -- vendor && \
     cargo r -r -- generate && \
     cargo +nightly fmt --all && \
     tombi format
+
+# Generate contract bindings
+generate-contracts:
+    cd contracts && \
+    cargo r -r -- generate
 
 # Run unit tests
 test-unit:

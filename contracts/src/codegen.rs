@@ -70,7 +70,7 @@ all = \"warn\"
 ";
 
 /// Convert a PascalCase contract name to a kebab-case crate name.
-pub fn to_crate_name(contract_name: &str) -> String {
+fn to_crate_name(contract_name: &str) -> String {
     format!("cow-contract-{}", contract_name.to_lowercase())
 }
 
@@ -80,7 +80,7 @@ fn to_dir_name(contract_name: &str) -> String {
 }
 
 /// Convert a crate name (kebab-case) to a Rust identifier (underscore_case).
-pub fn to_rust_ident(crate_name: &str) -> String {
+fn to_rust_ident(crate_name: &str) -> String {
     crate_name.replace('-', "_")
 }
 
@@ -145,7 +145,7 @@ impl Module {
             .collect::<Result<Vec<_>>>()?;
 
         let mut entries = entries;
-        entries.sort_by(|a, b| a.crate_name.cmp(&b.crate_name));
+        entries.sort_by_key(|entry| entry.crate_name.clone());
 
         // Generate the facade crate
         write_facade_lib(&entries, &facade_dir)?;
