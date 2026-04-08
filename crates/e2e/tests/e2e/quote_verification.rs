@@ -716,7 +716,6 @@ async fn trace_based_balance_detection(web3: Web3) {
         let balance_overrides = BalanceOverrides {
             hardcoded: HashMap::from([(token, strategy)]),
             detector: None,
-            ..Default::default()
         };
 
         let override_result = balance_overrides
