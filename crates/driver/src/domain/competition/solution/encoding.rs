@@ -13,7 +13,7 @@ use {
     },
     allowance::Allowance,
     alloy::primitives::{Address, Bytes, FixedBytes, U256},
-    contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
+    contracts::{FlashLoanRouter::LoanRequest, WETH9},
     eth_domain_types::{self as eth, Ether, allowance},
     itertools::Itertools,
     num::Zero,
@@ -370,7 +370,7 @@ pub mod codec {
     use {
         crate::domain::{self, competition::order},
         alloy::primitives::{Bytes, U256},
-        contracts::alloy::GPv2Settlement,
+        contracts::GPv2Settlement,
         eth_domain_types as eth,
     };
 

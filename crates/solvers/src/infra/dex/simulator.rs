@@ -8,7 +8,7 @@ use {
         providers::DynProvider,
         rpc::types::state::{AccountOverride, StateOverridesBuilder},
     },
-    contracts::alloy::support::{
+    contracts::support::{
         AnyoneAuthenticator,
         Swapper::{
             self,

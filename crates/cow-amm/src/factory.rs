@@ -3,7 +3,7 @@ use {
     alloy_provider::DynProvider,
     alloy_rpc_types::{Filter, FilterSet},
     alloy_sol_types::SolEvent,
-    contracts::alloy::cow_amm::CowAmmLegacyHelper::CowAmmLegacyHelper::{
+    contracts::cow_amm::CowAmmLegacyHelper::CowAmmLegacyHelper::{
         self,
         CowAmmLegacyHelperEvents as CowAmmEvent,
     },

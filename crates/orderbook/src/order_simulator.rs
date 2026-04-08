@@ -8,7 +8,7 @@ use {
     anyhow::{Context, Result, anyhow},
     app_data::WrapperCall,
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::support::{AnyoneAuthenticator, Trader},
+    contracts::support::{AnyoneAuthenticator, Trader},
     eth_domain_types::{BlockNo, NonZeroU256},
     model::order::Order,
     shared::remaining_amounts,

@@ -8,7 +8,7 @@ use {
     },
     alloy::{eips::BlockId, primitives::Address},
     anyhow::{Result, anyhow},
-    contracts::alloy::{
+    contracts::{
         BalancerV2WeightedPool,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,

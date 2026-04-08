@@ -16,7 +16,7 @@ use {
         orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     database::byte_array::ByteArray,
     e2e::setup::{
         proxy::{OnRequest, ReverseProxy},

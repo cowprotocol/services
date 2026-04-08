@@ -17,7 +17,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::orderbook::Configuration,
-    contracts::alloy::{
+    contracts::{
         BalancerV2Vault,
         ChainalysisOracle,
         GPv2Settlement,
@@ -125,9 +125,9 @@ pub async fn run(config: Configuration) {
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match config.shared.contracts.signatures {
         Some(address) => {
-            contracts::alloy::support::Signatures::Instance::new(address, web3.provider.clone())
+            contracts::support::Signatures::Instance::new(address, web3.provider.clone())
         }
-        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.provider)
+        None => contracts::support::Signatures::Instance::deployed(&web3.provider)
             .await
             .expect("load signatures contract"),
     };

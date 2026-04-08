@@ -6,7 +6,7 @@ mod registry;
 
 pub use {
     amm::Amm,
-    contracts::alloy::cow_amm::CowAmmLegacyHelper::Instance as Helper,
+    contracts::cow_amm::CowAmmLegacyHelper::Instance as Helper,
     registry::Registry,
 };
 
@@ -34,7 +34,7 @@ pub mod gpv2_order {
     use {
         alloy_primitives::{Address, B256, Keccak256},
         alloy_sol_types::{SolStruct, SolValue},
-        contracts::alloy::cow_amm::CowAmm,
+        contracts::cow_amm::CowAmm,
         model::{DomainSeparator, interaction::InteractionData, signature::hashed_eip712_message},
     };
 

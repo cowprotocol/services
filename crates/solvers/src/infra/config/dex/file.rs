@@ -150,10 +150,8 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         let authenticator =
             {
                 let web3 = blockchain::rpc(&config.node_url);
-                let settlement = ::contracts::alloy::GPv2Settlement::Instance::new(
-                    settlement,
-                    web3.provider.clone(),
-                );
+                let settlement =
+                    ::contracts::GPv2Settlement::Instance::new(settlement, web3.provider.clone());
                 settlement.authenticator().call().await.unwrap_or_else(|e| {
                     panic!("error reading authenticator contract address: {e:?}")
                 })

@@ -4,7 +4,7 @@ use {
     crate::database::{Postgres, events::bytes_to_order_uid},
     alloy::rpc::types::Log,
     anyhow::Result,
-    contracts::alloy::CoWSwapEthFlow::CoWSwapEthFlow::CoWSwapEthFlowEvents,
+    contracts::CoWSwapEthFlow::CoWSwapEthFlow::CoWSwapEthFlowEvents,
     database::ethflow_orders::Refund,
     event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
 };

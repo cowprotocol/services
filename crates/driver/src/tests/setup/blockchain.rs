@@ -11,7 +11,7 @@ use {
         signers::local::{MnemonicBuilder, PrivateKeySigner},
         sol_types::SolCall,
     },
-    contracts::alloy::{
+    contracts::{
         BalancerV2Authorizer,
         BalancerV2Vault,
         ERC20,
@@ -38,7 +38,7 @@ use {
 pub struct Pair {
     token_a: &'static str,
     token_b: &'static str,
-    contract: contracts::alloy::IUniswapLikePair::Instance,
+    contract: contracts::IUniswapLikePair::Instance,
     pool: Pool,
 }
 
@@ -269,7 +269,7 @@ impl Blockchain {
         .await
         .unwrap();
 
-        let weth = contracts::alloy::WETH9::Instance::deploy_builder(web3.provider.clone())
+        let weth = contracts::WETH9::Instance::deploy_builder(web3.provider.clone())
             .from(main_trader_address)
             .deploy()
             .await
@@ -440,7 +440,7 @@ impl Blockchain {
             }
         }
         // Create the uniswap factory.
-        let contract_address = contracts::alloy::UniswapV2Factory::Instance::deploy_builder(
+        let contract_address = contracts::UniswapV2Factory::Instance::deploy_builder(
             web3.provider.clone(),
             main_trader_address,
         )
@@ -448,10 +448,8 @@ impl Blockchain {
         .deploy()
         .await
         .unwrap();
-        let uniswap_factory = contracts::alloy::UniswapV2Factory::Instance::new(
-            contract_address,
-            web3.provider.clone(),
-        );
+        let uniswap_factory =
+            contracts::UniswapV2Factory::Instance::new(contract_address, web3.provider.clone());
         // Create and fund a uniswap pair for each pool. Fund the settlement contract
         // with the same liquidity as the pool, to allow for internalized interactions.
         let mut pairs = Vec::new();
@@ -475,7 +473,7 @@ impl Blockchain {
                 .await
                 .unwrap();
             // Fund the pair and the settlement contract.
-            let pair = contracts::alloy::IUniswapLikePair::Instance::new(
+            let pair = contracts::IUniswapLikePair::Instance::new(
                 uniswap_factory
                     .getPair(token_a, token_b)
                     .call()
