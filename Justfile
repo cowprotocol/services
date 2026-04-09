@@ -14,7 +14,11 @@ setup:
 # Generate contract bindings
 generate-contracts:
     cd contracts && \
-    cargo r -r -- generate
+    cargo r -r -- generate && \
+    cargo +nightly fmt --all && \
+    cd generated && cargo +nightly fmt --all && \
+    cd ../.. && \
+    tombi format
 
 # Run unit tests
 test-unit:
