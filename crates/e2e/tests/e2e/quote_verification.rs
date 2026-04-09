@@ -644,7 +644,11 @@ async fn trace_based_balance_detection(web3: Web3) {
         .await
         .unwrap();
 
-    let detector = Detector::new(web3.clone(), 60);
+    let detector = Detector::new(
+        web3.clone(),
+        60,
+        balance_overrides::detector::DEFAULT_VERIFICATION_TIMEOUT,
+    );
 
     let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
