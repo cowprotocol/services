@@ -183,7 +183,7 @@ impl BalanceSimulator {
                 sol_data::Uint<256>,
                 sol_data::Bool,
                 sol_data::Bytes,
-            )>::abi_decode(&response.0)
+            )>::abi_decode_params(&response.0)
             .map_err(|err| {
                 tracing::error!(?err, "failed to decode balance response");
                 alloy_contract::Error::AbiError(alloy_dyn_abi::Error::SolTypes(err))
