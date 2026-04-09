@@ -1,10 +1,11 @@
 use {
     crate::{
         boundary,
-        domain::{self, auction::order, eth},
+        domain::{self, auction::order, blockchain},
     },
     alloy::{eips::BlockId, sol_types::SolCall},
-    contracts::alloy::{GPv2AllowListAuthentication, GPv2Settlement},
+    contracts::{GPv2AllowListAuthentication, GPv2Settlement},
+    eth_domain_types as eth,
     std::collections::HashSet,
 };
 
@@ -66,7 +67,7 @@ pub struct Transaction {
 
 impl Transaction {
     pub async fn try_new(
-        transaction: &eth::Transaction,
+        transaction: &blockchain::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
         authenticator: &impl Authenticator,
@@ -177,9 +178,9 @@ impl Transaction {
 }
 
 fn find_settlement_trace_and_callers(
-    call_frame: &eth::CallFrame,
+    call_frame: &blockchain::CallFrame,
     settlement_contract: eth::Address,
-) -> Option<(&eth::CallFrame, Vec<eth::Address>)> {
+) -> Option<(&blockchain::CallFrame, Vec<eth::Address>)> {
     // Use a queue (VecDeque) to keep track of frames to process
     let mut queue = std::collections::VecDeque::new();
     queue.push_back((call_frame, vec![call_frame.from]));
@@ -199,7 +200,7 @@ fn find_settlement_trace_and_callers(
     None
 }
 
-fn is_settlement_trace(trace: &eth::CallFrame, settlement_contract: eth::Address) -> bool {
+fn is_settlement_trace(trace: &blockchain::CallFrame, settlement_contract: eth::Address) -> bool {
     let settle_selector = &GPv2Settlement::GPv2Settlement::settleCall::SELECTOR;
     trace.to.unwrap_or_default() == settlement_contract
         && trace.input.0.starts_with(settle_selector)

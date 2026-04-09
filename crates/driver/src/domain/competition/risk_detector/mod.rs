@@ -16,10 +16,8 @@
 //! we were not able to predict issues with orders and pre-emptively
 //! filter them out of the auction.
 use {
-    crate::domain::{
-        competition::{Auction, order::Uid},
-        eth,
-    },
+    crate::domain::competition::{Auction, order::Uid},
+    eth_domain_types as eth,
     futures::{StreamExt, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
 };

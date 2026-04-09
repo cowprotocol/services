@@ -1,4 +1,4 @@
-pub use database::order_events::OrderEventLabel;
+pub use database::order_events::{OrderEventLabel, OrderFilterReason};
 use {
     crate::domain,
     anyhow::Result,
@@ -19,6 +19,7 @@ pub async fn store_order_events(
     ex: &mut PgConnection,
     order_uids: Vec<domain::OrderUid>,
     label: OrderEventLabel,
+    reason: Option<OrderFilterReason>,
     timestamp: DateTime<Utc>,
 ) {
     let start = Instant::now();
@@ -28,7 +29,7 @@ pub async fn store_order_events(
     let insert = async move {
         let mut ex = ex.begin().await?;
         for chunk in order_uids.chunks(1000) {
-            order_events::insert_order_events(&mut ex, chunk, timestamp, label).await?;
+            order_events::insert_order_events(&mut ex, chunk, timestamp, label, reason).await?;
         }
         ex.commit().await
     };

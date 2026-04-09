@@ -342,6 +342,10 @@ pub struct OrderCreation {
     /// The order's AppData (can be an hash, the JSON body or both).
     #[serde(flatten)]
     pub app_data: OrderCreationAppData,
+    /// Should a transfer of the order's full balance be verified before
+    /// placement.
+    #[serde(default)]
+    pub full_balance_check: bool,
 }
 
 impl OrderCreation {
@@ -1224,6 +1228,7 @@ mod tests {
             from: Some(owner),
             signature: Signature::PreSign,
             quote_id: Some(42),
+            full_balance_check: false,
         };
 
         // Test PreSign round-trip (no signature normalization needed)
@@ -1245,6 +1250,7 @@ mod tests {
             "signingScheme": "presign",
             "signature": "0x",
             "from": owner,
+            "fullBalanceCheck": false
         });
         assert_json_matches!(json!(presign_order), presign_json);
         assert_eq!(presign_order, serde_json::from_value(presign_json).unwrap());
@@ -1270,6 +1276,7 @@ mod tests {
                           0000000000000000000000000000000000000000000000000000000000000000\
                           00",
             "from": owner,
+            "fullBalanceCheck": false,
         });
         let expected_order = OrderCreation {
             signature: Signature::Eip712(EcdsaSignature {
@@ -1304,6 +1311,7 @@ mod tests {
                           0000000000000000000000000000000000000000000000000000000000000000\
                           1b",
             "from": owner,
+            "fullBalanceCheck": false,
         });
         assert_json_matches!(json!(expected_order), output_json_v27);
     }

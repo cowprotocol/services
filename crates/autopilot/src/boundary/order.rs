@@ -1,7 +1,4 @@
-use {
-    crate::domain::{self, eth},
-    shared::remaining_amounts,
-};
+use {crate::domain, eth_domain_types as eth, shared::remaining_amounts};
 
 pub fn to_domain(
     order: &model::order::Order,

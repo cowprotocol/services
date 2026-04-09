@@ -8,16 +8,13 @@ use {
     crate::{
         domain::{
             competition::{solution::Settlement, sorting::SortingStrategy},
-            eth,
             time::DeadlineExceeded,
         },
         infra::{
             self,
-            Simulator,
             blockchain::Ethereum,
             notify,
             observe::{self, metrics},
-            simulator::{RevertError, SimulatorError},
             solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
@@ -25,8 +22,10 @@ use {
     alloy::{network::TxSigner as _, primitives::Bytes},
     anyhow::Context as _,
     axum::{body::Body, http::Request},
+    eth_domain_types as eth,
     futures::{FutureExt, StreamExt, future::Either, stream::FuturesUnordered},
     itertools::Itertools,
+    simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
@@ -47,9 +46,11 @@ pub mod risk_detector;
 pub mod solution;
 pub mod sorting;
 
+use {
+    crate::infra::notify::liquidity_sources::LiquiditySourceNotifying,
+    eth_domain_types::BlockNo,
+};
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
-
-use crate::{domain::BlockNo, infra::notify::liquidity_sources::LiquiditySourceNotifying};
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
@@ -297,7 +298,6 @@ impl Competition {
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let settlement_contract = *self.eth.contracts().settlement().address();
         let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
@@ -305,16 +305,10 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        let settlement = settlement_contract;
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
-            Self::sort_orders(
-                auction,
-                solver_address,
-                order_sorting_strategies,
-                settlement,
-            )
+            Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
         // We can sort the orders and fetch auction data in parallel
@@ -325,7 +319,7 @@ impl Competition {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
+            Self::update_orders(auction, balances, app_data, cow_amm_orders)
         })
         .await;
 
@@ -403,14 +397,9 @@ impl Competition {
         let encoded = all_solutions
             .into_iter()
             .map(|solution| async move {
-                let id = solution.id().clone();
-                let orders: Vec<_> = solution
-                    .user_trades()
-                    .map(|trade| trade.order().uid)
-                    .collect();
-                let has_haircut = solution.has_haircut();
-                observe::encoding(&id);
+                observe::encoding(solution.id());
                 let settlement = solution
+                    .clone()
                     .encode(
                         auction,
                         &self.eth,
@@ -418,20 +407,32 @@ impl Competition {
                         self.solver.solver_native_token(),
                     )
                     .await;
-                (id, orders, has_haircut, settlement)
+                (solution, settlement)
             })
             .collect::<FuturesUnordered<_>>()
-            .filter_map(|(id, orders, has_haircut, result)| async move {
+            .filter_map(|(solution, result)| async move {
+                let id = solution.id().clone();
+                let orders: Vec<_> = solution
+                    .user_trades()
+                    .map(|trade| trade.order().uid)
+                    .collect();
+                let has_haircut = solution.has_haircut();
                 match result {
-                    Ok(solution) => {
+                    Ok(encoded) => {
                         self.risk_detector.encoding_succeeded(&orders);
-                        Some(solution)
+                        Some(encoded)
                     }
                     // don't report on errors coming from solution merging
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
                         self.risk_detector.encoding_failed(&orders);
-                        observe::encoding_failed(self.solver.name(), &id, &err, has_haircut);
+                        observe::encoding_failed(
+                            self.solver.name(),
+                            &id,
+                            &err,
+                            has_haircut,
+                            &orders,
+                        );
                         // don't notify on errors for solutions with haircut
                         if !has_haircut {
                             notify::encoding_failed(&self.solver, auction.id(), &id, &err);
@@ -540,7 +541,7 @@ impl Competition {
                 let mut stream =
                     ethrpc::block_stream::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
-                    if let Err(infra::simulator::Error::Revert(err)) =
+                    if let Err(simulator::Error::Revert(err)) =
                         self.simulate_settlement(&settlement).await
                     {
                         observe::winner_voided(self.solver.name(), block, &err, has_haircut);
@@ -555,7 +556,7 @@ impl Competition {
                                 &self.solver,
                                 auction.id(),
                                 settlement.solution(),
-                                &infra::simulator::Error::Revert(err),
+                                &simulator::Error::Revert(err),
                                 true,
                             );
                         }
@@ -575,7 +576,6 @@ impl Competition {
         mut auction: Auction,
         solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-        _settlement_contract: eth::Address,
     ) -> Auction {
         sorting::sort_orders(
             &mut auction.orders,
@@ -595,7 +595,6 @@ impl Competition {
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
-        settlement_contract: &eth::Address,
     ) -> Auction {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
@@ -623,13 +622,12 @@ impl Competition {
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
-                if order.app_data.flashloan().is_some() {
-                    // If an order requires a flashloan we assume all the necessary
-                    // sell tokens will come from there. But the receiver must be the
-                    // settlement contract because that is how the driver expects
-                    // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement_contract);
-                }
+            }
+
+            // Flashloan orders get their sell tokens from the flashloan at
+            // settlement time, so skip the balance check.
+            if order.app_data.flashloan().is_some() {
+                return true;
             }
 
             // wrappers can produce the required funds at settlement time
@@ -805,7 +803,7 @@ impl Competition {
             tracing_span,
         } = request;
         async {
-            if self.eth.current_block().borrow().number >= submission_deadline {
+            if self.eth.current_block().borrow().number >= submission_deadline.0 {
                 if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
                     tracing::error!(
                         ?err,
@@ -926,14 +924,11 @@ impl Competition {
     }
 
     /// Returns whether the settlement can be executed or would revert.
-    async fn simulate_settlement(
-        &self,
-        settlement: &Settlement,
-    ) -> Result<(), infra::simulator::Error> {
+    async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
         let tx = settlement.transaction(settlement::Internalization::Enable);
         let gas_needed_for_tx = self.simulator.gas(tx).await?;
         if gas_needed_for_tx > settlement.gas.limit {
-            return Err(infra::simulator::Error::Revert(RevertError {
+            return Err(simulator::Error::Revert(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
                 tx: tx.clone(),
                 block: self.eth.current_block().borrow().number.into(),

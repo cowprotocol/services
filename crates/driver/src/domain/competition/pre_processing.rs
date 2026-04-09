@@ -4,7 +4,6 @@ use {
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
             cow_amm,
-            eth,
             liquidity,
         },
         infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
@@ -18,6 +17,7 @@ use {
     },
     balance_overrides::BalanceOverrideRequest,
     chrono::Utc,
+    eth_domain_types::{self as eth, Address, TokenAddress},
     futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered},
     itertools::Itertools,
     model::{
@@ -141,7 +141,7 @@ impl DataAggregator {
             eth.web3(),
             signature_validator::Contracts {
                 settlement: eth.contracts().settlement().clone(),
-                vault_relayer: eth.contracts().vault_relayer().0,
+                vault_relayer: *eth.contracts().vault_relayer(),
                 signatures: eth.contracts().signatures().clone(),
             },
             eth.balance_overrider(),
@@ -151,7 +151,7 @@ impl DataAggregator {
             .contracts()
             .cow_amm_helper_by_factory()
             .iter()
-            .map(|(factory, helper)| (factory.0, helper.0))
+            .map(|(factory, helper)| (Address::from(*factory), Address::from(*helper)))
             .collect();
         let cow_amm_cache =
             cow_amm::Cache::new(eth.web3().provider.clone(), cow_amm_helper_by_factory);
@@ -290,7 +290,7 @@ impl Utilities {
                 });
                 Query {
                     owner: trader.0,
-                    token: token.0.0,
+                    token: *token,
                     source: match source {
                         SellTokenBalance::Erc20 => SellTokenSource::Erc20,
                         SellTokenBalance::Internal => SellTokenSource::Internal,
@@ -436,7 +436,7 @@ impl Utilities {
                         .iter()
                         .map(|t| {
                             auction.tokens
-                                .get(&eth::TokenAddress(eth::ContractAddress(*t)))
+                                .get(&TokenAddress::from(*t))
                                 .and_then(|token| token.price)
                                 .map(|price| price.0.0)
                         })

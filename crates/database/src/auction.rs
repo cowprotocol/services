@@ -80,6 +80,14 @@ pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auctio
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+pub async fn fetch_multiple(
+    ex: &mut PgConnection,
+    ids: &[AuctionId],
+) -> Result<Vec<Auction>, sqlx::Error> {
+    const QUERY: &str = r#"SELECT * FROM competition_auctions WHERE id = ANY($1) ORDER BY id"#;
+    sqlx::query_as(QUERY).bind(ids).fetch_all(ex).await
+}
+
 pub async fn get_order_uids(
     ex: &mut PgConnection,
     auction_id: AuctionId,
@@ -90,6 +98,34 @@ pub async fn get_order_uids(
         .fetch_optional(ex)
         .await?;
     Ok(record.map(|(order_uids,)| order_uids))
+}
+
+pub async fn save_auction_orders(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    order_uids: &[OrderUid],
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO auction_orders (auction_id, order_uid)
+SELECT $1, unnest($2::bytea[])
+ON CONFLICT DO NOTHING
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(order_uids)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn fetch_auction_ids_by_order_uid(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+) -> Result<Vec<AuctionId>, sqlx::Error> {
+    const QUERY: &str =
+        "SELECT auction_id FROM auction_orders WHERE order_uid = $1 ORDER BY auction_id";
+    let rows: Vec<(AuctionId,)> = sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 #[cfg(test)]

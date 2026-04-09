@@ -120,7 +120,7 @@ where
                                 .get_mut()
                                 .as_object_mut()
                                 .expect("fields get initialized with an object")
-                                .extend(current_span_fields.into_iter())
+                                .extend(current_span_fields)
                         }
                     }
                 }

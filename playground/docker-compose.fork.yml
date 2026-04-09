@@ -76,22 +76,13 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin orderbook -- --config configs/${ENV}/orderbook.toml",
+        "run --bin orderbook -- --config playground/configs/orderbook.toml",
       ]
     environment:
-      - NODE_URL=http://chain:8545
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - SIMULATION_NODE_URL=http://chain:8545
-      - ENABLE_EIP1271_ORDERS=true
-      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - NATIVE_PRICE_ESTIMATORS=Driver|baseline|http://driver/baseline
-      - DRIVERS=baseline|http://driver/baseline
-      - BIND_ADDRESS=0.0.0.0:80
-      - CHAIN_ID=$CHAIN
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
-      - TRACING_COLLECTOR_ENDPOINT=http://tempo:4317
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
@@ -115,23 +106,13 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin autopilot -- --config configs/${ENV}/autopilot.toml",
+        "run --bin autopilot -- --config playground/configs/autopilot.toml",
       ]
     environment:
       - DB_WRITE_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
       - DB_READ_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - LOG_FILTER=warn,autopilot=debug,shared=info,price_estimation=info
-      - NODE_URL=http://chain:8545
-      - SIMULATION_NODE_URL=http://chain:8545
-      - GAS_ESTIMATORS=Web3,Alloy
-      - BLOCK_STREAM_POLL_INTERVAL=1s
-      - NATIVE_PRICE_CACHE_MAX_AGE=20m
-      - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
-      - SKIP_EVENT_SYNC=true
       - RUST_BACKTRACE=1
       - TOML_TRACE_ERROR=1
-      - ETHFLOW_CONTRACTS
-      - ETHFLOW_INDEXING_START
       - TOKIO_CONSOLE=true
       - TOKIO_CONSOLE_RETENTION=600sec
       - TOKIO_CONSOLE_BIND=0.0.0.0:6669
@@ -157,7 +138,7 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin driver -- --config configs/${ENV}/driver.toml",
+        "run --bin driver -- --config playground/configs/driver.toml",
       ]
     environment:
       - ETHRPC=http://chain:8545
@@ -189,7 +170,7 @@ services:
         "cargo",
         "watch",
         "-x",
-        "run --bin solvers -- baseline --config configs/${ENV}/baseline.toml",
+        "run --bin solvers -- baseline --config playground/configs/baseline.toml",
       ]
     environment:
       - ADDR=0.0.0.0:80

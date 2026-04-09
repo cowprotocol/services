@@ -195,7 +195,7 @@ mod tests {
     use {
         super::*,
         alloy::primitives::U256,
-        contracts::alloy::BalancerV2Vault,
+        contracts::BalancerV2Vault,
         liquidity_sources::{
             balancer_v2::{
                 pool_fetching::{
@@ -447,7 +447,8 @@ mod tests {
 
         let [_, interactions, _] = encoder
             .finish(InternalizationStrategy::SkipInternalizableInteraction)
-            .interactions;
+            .interactions
+            .into_array();
         assert_eq!(
             interactions,
             [

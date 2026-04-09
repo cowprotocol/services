@@ -36,11 +36,13 @@ cow-amm = { workspace = true }
 dashmap = { workspace = true }
 database = { workspace = true }
 derive_more = { workspace = true }
+eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 event-indexing = { workspace = true }
 futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
+http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 indexmap = { workspace = true }
@@ -62,6 +64,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 shared = { workspace = true }
+simulator = { workspace = true }
 sqlx = { workspace = true }
 strum = { workspace = true }
 tempfile = { workspace = true, optional = true }

@@ -1,6 +1,10 @@
 use {
-    autopilot::config::Configuration,
-    configs::test_util::TestDefault,
+    configs::{
+        autopilot::Configuration,
+        fee_factor::FeeFactor,
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
+    },
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
     ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
@@ -10,8 +14,10 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
+    reqwest::StatusCode,
     serde_json::json,
-    shared::{fee_factor::FeeFactor, web3::Web3},
+    shared::web3::Web3,
+    solvers_dto::solution::{SolverError, SolverErrorCode, SolverResponse},
     std::{
         sync::Arc,
         time::{Duration, Instant},
@@ -40,6 +46,24 @@ async fn local_node_quote_timeout() {
 #[ignore]
 async fn local_node_volume_fee() {
     run_test(volume_fee).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_quote_custom_solver_errors() {
+    run_test(quote_custom_solver_errors).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_native_price_custom_solver_errors() {
+    run_test(native_price_custom_solver_errors).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_quote_custom_solver_errors_prioritized() {
+    run_test(quote_custom_solver_errors_prioritized).await;
 }
 
 // Test that quoting works as expected, specifically, that we can quote for a
@@ -78,15 +102,14 @@ async fn test(web3: Web3) {
     // Start API with 0.02% (2 bps) volume fee
     services
         .start_protocol_with_args(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration {
-                volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            configs::orderbook::Configuration {
+                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
                     // Set a far future effective timestamp to ensure the fee is not applied
                     effective_from_timestamp: Some("2099-01-01T10:00:00Z".parse().unwrap()),
                 }),
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver,
         )
@@ -320,25 +343,28 @@ async fn quote_timeout(web3: Web3) {
     const MAX_QUOTE_TIME_MS: u64 = 500;
 
     services
-        .start_api(
-            vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
-                    .to_string(),
-                format!("--quote-timeout={MAX_QUOTE_TIME_MS}ms"),
-            ],
-            orderbook::config::Configuration {
-                native_price_estimation: orderbook::config::native_price::NativePriceConfig {
-                    estimators: price_estimation::NativePriceEstimators::new(vec![vec![
-                        price_estimation::NativePriceEstimator::driver(
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_quoter",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
                             "test_quoter".to_string(),
                             "http://localhost:11088/test_solver".parse().unwrap(),
                         ),
-                    ]]),
-                    ..orderbook::config::native_price::NativePriceConfig::test_default()
-                },
-                ..orderbook::config::Configuration::test_default()
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
-        )
+            price_estimation: configs::price_estimation::PriceEstimation {
+                quote_timeout: Duration::from_millis(MAX_QUOTE_TIME_MS),
+                ..configs::orderbook::Configuration::test_default().price_estimation
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
         .await;
 
     mock_solver.configure_solution_async(Arc::new(|| {
@@ -441,6 +467,349 @@ async fn quote_timeout(web3: Web3) {
     assert_within_variance(start, MAX_QUOTE_TIME_MS);
 }
 
+async fn quote_custom_solver_errors(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(2u64.eth()).await;
+    let [sell_token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+
+    let mock_solver = Mock::new().await;
+
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            SolverEngine {
+                name: "test_solver".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+                base_tokens: vec![*sell_token.address()],
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
+            },
+            SolverEngine {
+                name: "test_quoter".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+                base_tokens: vec![*sell_token.address()],
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    services
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_quoter",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
+                            "test_quoter".to_string(),
+                            "http://localhost:11088/test_quoter".parse().unwrap(),
+                        ),
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
+        .await;
+
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *sell_token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(1u64.eth()).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    let cases = vec![
+        (
+            SolverErrorCode::TradingOutsideAllowedWindow,
+            "TradingOutsideAllowedWindow",
+            None,
+            "Token can only be traded during specific time windows",
+        ),
+        (
+            SolverErrorCode::TokenTemporarilySuspended,
+            "TokenTemporarilySuspended",
+            Some("token is suspended"),
+            "token is suspended",
+        ),
+        (
+            SolverErrorCode::InsufficientLiquidity,
+            "InsufficientLiquidity",
+            Some("not enough liquidity"),
+            "not enough liquidity",
+        ),
+        (
+            SolverErrorCode::Other,
+            "CustomSolverError",
+            Some("some solver specific error"),
+            "some solver specific error",
+        ),
+    ];
+
+    for (code, expected_kind, sent_message, expected_message) in cases {
+        mock_solver.configure_response(SolverResponse::Error {
+            error: SolverError {
+                code,
+                message: sent_message.map(str::to_string),
+            },
+        });
+
+        let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body.contains(expected_kind),
+            "response should include error kind {expected_kind}, got {body}"
+        );
+        assert!(
+            body.contains(expected_message),
+            "response should include error message {expected_message}, got {body}"
+        );
+    }
+}
+
+async fn native_price_custom_solver_errors(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [_trader] = onchain.make_accounts(2u64.eth()).await;
+    let [sell_token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+
+    let mock_solver = Mock::new().await;
+
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            SolverEngine {
+                name: "test_solver".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+                base_tokens: vec![*sell_token.address()],
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
+            },
+            SolverEngine {
+                name: "test_quoter".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+                base_tokens: vec![*sell_token.address()],
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    services
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_quoter",
+            )]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
+                            "test_quoter".to_string(),
+                            "http://localhost:11088/test_quoter".parse().unwrap(),
+                        ),
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
+        .await;
+
+    let cases = vec![
+        (
+            SolverErrorCode::TradingOutsideAllowedWindow,
+            "TradingOutsideAllowedWindow",
+            "native window closed",
+        ),
+        (
+            SolverErrorCode::TokenTemporarilySuspended,
+            "TokenTemporarilySuspended",
+            "native token suspended",
+        ),
+        (
+            SolverErrorCode::InsufficientLiquidity,
+            "InsufficientLiquidity",
+            "native not enough liquidity",
+        ),
+        (
+            SolverErrorCode::Other,
+            "CustomSolverError",
+            "native custom solver reason",
+        ),
+    ];
+
+    for (code, expected_kind, message) in cases {
+        mock_solver.configure_response(SolverResponse::Error {
+            error: SolverError {
+                code,
+                message: Some(message.to_string()),
+            },
+        });
+
+        let (status, body) = services
+            .get_native_price(sell_token.address())
+            .await
+            .unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body.contains(expected_kind),
+            "response should include error kind {expected_kind}, got {body}"
+        );
+        assert!(
+            body.contains(message),
+            "response should include error message {message}, got {body}"
+        );
+    }
+}
+
+async fn quote_custom_solver_errors_prioritized(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(2u64.eth()).await;
+    let [sell_token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+
+    let custom_error_solver = Mock::new().await;
+    let no_liquidity_solver = Mock::new().await;
+
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            SolverEngine {
+                name: "custom_solver".into(),
+                account: solver.clone(),
+                endpoint: custom_error_solver.url.clone(),
+                base_tokens: vec![*sell_token.address()],
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
+            },
+            SolverEngine {
+                name: "no_liquidity_solver".into(),
+                account: solver.clone(),
+                endpoint: no_liquidity_solver.url.clone(),
+                base_tokens: vec![*sell_token.address()],
+                merge_solutions: true,
+                haircut_bps: 0,
+                submission_keys: vec![],
+                forwarder_contract: None,
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    services
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![
+                ExternalSolver::new("custom_solver", "http://localhost:11088/custom_solver"),
+                ExternalSolver::new(
+                    "no_liquidity_solver",
+                    "http://localhost:11088/no_liquidity_solver",
+                ),
+            ]),
+            native_price_estimation: configs::orderbook::native_price::NativePriceConfig {
+                estimators: configs::native_price_estimators::NativePriceEstimators::new(vec![
+                    vec![
+                        configs::native_price_estimators::NativePriceEstimator::driver(
+                            "custom_solver".to_string(),
+                            "http://localhost:11088/custom_solver".parse().unwrap(),
+                        ),
+                        configs::native_price_estimators::NativePriceEstimator::driver(
+                            "no_liquidity_solver".to_string(),
+                            "http://localhost:11088/no_liquidity_solver"
+                                .parse()
+                                .unwrap(),
+                        ),
+                    ],
+                ]),
+                ..configs::orderbook::native_price::NativePriceConfig::test_default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        })
+        .await;
+
+    custom_error_solver.configure_response(SolverResponse::Error {
+        error: SolverError {
+            code: SolverErrorCode::Other,
+            message: Some("priority custom solver error".to_string()),
+        },
+    });
+    no_liquidity_solver.configure_response(SolverResponse::Solutions {
+        solutions: Vec::new(),
+    });
+
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *sell_token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(1u64.eth()).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body.contains("CustomSolverError"),
+        "response should include custom solver error, got {body}"
+    );
+    assert!(
+        body.contains("priority custom solver error"),
+        "response should include prioritized custom error message, got {body}"
+    );
+}
+
 /// Test that volume fees are correctly applied to quotes.
 async fn volume_fee(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -476,22 +845,26 @@ async fn volume_fee(web3: Web3) {
     // in bucket)
     services
         .start_protocol_with_args(
-            ExtraServiceArgs {
-                api: vec![format!(
-                    "--volume-fee-bucket-overrides=0.0005:{};{}",
-                    onchain.contracts().weth.address(),
-                    override_token.address()
-                )],
-                ..Default::default()
-            },
             Configuration::test("test_solver", solver.address()),
-            orderbook::config::Configuration {
-                volume_fee: Some(orderbook::config::VolumeFeeConfig {
+            configs::orderbook::Configuration {
+                shared: configs::shared::SharedConfig {
+                    volume_fee_bucket_overrides: vec![configs::shared::TokenBucketFeeOverride {
+                        tokens: [
+                            *onchain.contracts().weth.address(),
+                            *override_token.address(),
+                        ]
+                        .into_iter()
+                        .collect(),
+                        factor: FeeFactor::new(0.0005),
+                    }],
+                    ..Default::default()
+                },
+                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
                     // Set a past effective timestamp to ensure the fee is applied
                     effective_from_timestamp: Some("2000-01-01T10:00:00Z".parse().unwrap()),
                 }),
-                ..orderbook::config::Configuration::test_default()
+                ..configs::orderbook::Configuration::test_default()
             },
             solver,
         )

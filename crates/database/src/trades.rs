@@ -1,7 +1,6 @@
 use {
     crate::{Address, OrderUid, TransactionHash, auction::AuctionId, events::EventIndex},
     bigdecimal::BigDecimal,
-    futures::stream::BoxStream,
     sqlx::PgConnection,
     tracing::{Instrument, info_span, instrument},
 };
@@ -27,8 +26,8 @@ pub fn trades<'a>(
     order_uid_filter: Option<&'a OrderUid>,
     offset: i64,
     limit: i64,
-) -> instrument::Instrumented<BoxStream<'a, Result<TradesQueryRow, sqlx::Error>>> {
-    const COMMON_QUERY: &str = r#"
+) -> instrument::Instrumented<impl Future<Output = Result<Vec<TradesQueryRow>, sqlx::Error>>> {
+    const SELECT: &str = r#"
 SELECT
     t.block_number,
     t.log_index,
@@ -40,8 +39,9 @@ SELECT
     o.buy_token,
     o.sell_token,
     settlement.tx_hash,
-    settlement.auction_id
-FROM trades t
+    settlement.auction_id"#;
+
+    const SETTLEMENT_JOIN: &str = r#"
 LEFT OUTER JOIN LATERAL (
     SELECT tx_hash, auction_id FROM settlements s
     WHERE s.block_number = t.block_number
@@ -52,30 +52,56 @@ LEFT OUTER JOIN LATERAL (
 
     const QUERY: &str = const_format::concatcp!(
         "(",
-        COMMON_QUERY,
+        SELECT,
+        " FROM trades t",
+        SETTLEMENT_JOIN,
         " JOIN orders o ON o.uid = t.order_uid",
-        " WHERE ($1 IS NULL OR o.owner = $1)",
-        " AND ($2 IS NULL OR o.uid = $2)",
+        // the uid already contains the owner address and we have
+        // an index on this expression so this is very efficient
+        " WHERE ($1 IS NULL OR substring(t.order_uid, 33, 20) = $1)",
+        " AND ($2 IS NULL OR t.order_uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
         " UNION ",
         "(",
-        COMMON_QUERY,
+        SELECT,
+        " FROM trades t",
+        SETTLEMENT_JOIN,
         " JOIN orders o ON o.uid = t.order_uid",
-        " LEFT OUTER JOIN onchain_placed_orders onchain_o",
+        " JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
-        " WHERE onchain_o.sender = $1",
-        " AND ($2 IS NULL OR o.uid = $2)",
+        " WHERE ($1 IS NULL OR onchain_o.sender = $1)",
+        " AND ($2 IS NULL OR t.order_uid = $2)",
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
         " UNION ",
+        // Note that we apply 2 tricks here:
+        // 1. we invert the join order (join `trades` onto `jit_orders` instead
+        // of `jit_orders` onto `trades`). For cases where 1 account has MANY
+        // trades joining `jit_orders` onto the trades means fetching data for
+        // MANY `jit_orders`. But given that `jit_orders` are rare inverting the
+        // join order means we only fetch few or no `jit_orders` at all when
+        // looking them up by `owner`.
+        // 2. we explicitly use a MATERIALIZED CTE to force the query planner
+        // to follow this lookup order. Without using `MATERIALIZED` the query
+        // planner can "inline" this sub-query and which can lead to incorrect
+        // optimization decisions.
+        // Specifically NOT using `MATERIALIZED` can lead to the query
+        // planner doing full scans on the `trades` table instead of searching
+        // via the `owner` index on the `jit_orders` table.
         "(",
-        COMMON_QUERY,
-        " JOIN jit_orders o ON o.uid = t.order_uid",
-        " WHERE ($1 IS NULL OR o.owner = $1)",
-        " AND ($2 IS NULL OR o.uid = $2)",
+        " WITH jit AS MATERIALIZED (",
+        "   SELECT uid, owner, buy_token, sell_token",
+        "   FROM jit_orders",
+        "   WHERE ($1 IS NULL OR owner = $1)",
+        "   AND ($2 IS NULL OR uid = $2)",
+        ")",
+        SELECT,
+        " FROM jit o",
+        " JOIN trades t ON o.uid = t.order_uid",
+        SETTLEMENT_JOIN,
         " ORDER BY t.block_number DESC, t.log_index DESC",
         " LIMIT $3 + $4",
         ")",
@@ -89,7 +115,7 @@ LEFT OUTER JOIN LATERAL (
         .bind(order_uid_filter)
         .bind(limit)
         .bind(offset)
-        .fetch(ex)
+        .fetch_all(ex)
         .instrument(info_span!("trades"))
 }
 
@@ -165,17 +191,31 @@ mod tests {
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
             orders::Order,
         },
-        futures::TryStreamExt,
         sqlx::Connection,
     };
 
+    /// Generates 1 unique user and the provided number of unique orders
+    /// for that user.
     async fn generate_owners_and_order_ids(
-        num_owners: usize,
-        num_orders: usize,
-    ) -> (Vec<Address>, Vec<OrderUid>) {
-        let owners: Vec<Address> = (0..num_owners).map(|t| ByteArray([t as u8; 20])).collect();
-        let order_ids: Vec<OrderUid> = (0..num_orders).map(|i| ByteArray([i as u8; 56])).collect();
-        (owners, order_ids)
+        orders_for_user: &[usize],
+    ) -> Vec<(Address, Vec<OrderUid>)> {
+        orders_for_user
+            .iter()
+            .enumerate()
+            .map(|(index, num_orders)| {
+                let user = ByteArray([index as u8; 20]);
+                let orders = (0usize..*num_orders)
+                    .map(|index| {
+                        let mut uid_bytes = [index as u8; 56];
+                        // make sure to write the owner bytes correctly into
+                        // the order uid since those are used in some queries
+                        uid_bytes[32..52].copy_from_slice(&user.0);
+                        ByteArray(uid_bytes)
+                    })
+                    .collect();
+                (user, orders)
+            })
+            .collect()
     }
 
     async fn add_trade(
@@ -235,7 +275,6 @@ mod tests {
         // Use large limit to get all trades
         let mut filtered = trades(db, owner_filter, order_uid_filter, 0, 1000)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         filtered.sort_by_key(|t| (t.block_number, t.log_index));
@@ -250,22 +289,37 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+        // 1 user with 2 orders
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
         assert_trades(&mut db, None, None, &[]).await;
         let event_index_a = EventIndex {
             block_number: 0,
             log_index: 0,
         };
-        let trade_a =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None, None).await;
+        let trade_a = add_order_and_trade(
+            &mut db,
+            users_and_orders[0].0,
+            users_and_orders[0].1[0],
+            event_index_a,
+            None,
+            None,
+        )
+        .await;
         assert_trades(&mut db, None, None, std::slice::from_ref(&trade_a)).await;
 
         let event_index_b = EventIndex {
             block_number: 1,
             log_index: 0,
         };
-        let trade_b =
-            add_order_and_trade(&mut db, owners[0], order_ids[1], event_index_b, None, None).await;
+        let trade_b = add_order_and_trade(
+            &mut db,
+            users_and_orders[0].0,
+            users_and_orders[0].1[1],
+            event_index_b,
+            None,
+            None,
+        )
+        .await;
         assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
     }
 
@@ -309,7 +363,6 @@ mod tests {
         let now = std::time::Instant::now();
         trades(&mut db, Some(&ByteArray([2u8; 20])), None, 0, 100)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         let elapsed = now.elapsed();
@@ -324,65 +377,80 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(4, 4).await;
+        let users_and_orders = generate_owners_and_order_ids(&[1, 1, 1, 1, 1]).await;
 
         let event_index_0 = EventIndex {
             block_number: 0,
             log_index: 0,
         };
-        let trade_0 =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None, None).await;
+        let trade_0 = add_order_and_trade(
+            &mut db,
+            users_and_orders[0].0,
+            users_and_orders[0].1[0],
+            event_index_0,
+            None,
+            None,
+        )
+        .await;
 
         let event_index_1 = EventIndex {
             block_number: 0,
             log_index: 1,
         };
-        let trade_1 =
-            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None, None).await;
+        let trade_1 = add_order_and_trade(
+            &mut db,
+            users_and_orders[1].0,
+            users_and_orders[1].1[0],
+            event_index_1,
+            None,
+            None,
+        )
+        .await;
 
         assert_trades(
             &mut db,
-            Some(&owners[0]),
+            Some(&users_and_orders[0].0),
             None,
             std::slice::from_ref(&trade_0),
         )
         .await;
         assert_trades(
             &mut db,
-            Some(&owners[1]),
+            Some(&users_and_orders[1].0),
             None,
             std::slice::from_ref(&trade_1),
         )
         .await;
-        assert_trades(&mut db, Some(&owners[2]), None, &[]).await;
+        assert_trades(&mut db, Some(&users_and_orders[2].0), None, &[]).await;
 
         let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(order_ids[0].0),
-            sender: owners[3],
+            order_uid: users_and_orders[3].1[0],
+            sender: users_and_orders[4].0,
             placement_error: None,
         };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &onchain_order)
+        let event_index_2 = EventIndex {
+            block_number: 0,
+            log_index: 2,
+        };
+        let trade_2 = add_order_and_trade(
+            &mut db,
+            users_and_orders[3].0,
+            users_and_orders[3].1[0],
+            event_index_2,
+            None,
+            None,
+        )
+        .await;
+        insert_onchain_order(&mut db, &event_index_2, &onchain_order)
             .await
             .unwrap();
         assert_trades(
             &mut db,
-            Some(&owners[3]),
+            Some(&users_and_orders[4].0),
             None,
-            std::slice::from_ref(&trade_0),
+            std::slice::from_ref(&trade_2),
         )
         .await;
-
-        add_order_and_trade(&mut db, owners[3], order_ids[3], event_index_1, None, None).await;
-        let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(order_ids[3].0),
-            sender: owners[3],
-            placement_error: None,
-        };
-        insert_onchain_order(&mut db, &event_index_1, &onchain_order)
-            .await
-            .unwrap();
-        assert_trades(&mut db, Some(&owners[3]), None, &[trade_0]).await;
     }
 
     #[tokio::test]
@@ -392,25 +460,40 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 3).await;
+        // 3 users with 1 order each
+        let users_and_orders = generate_owners_and_order_ids(&[1, 1, 1]).await;
 
         let event_index_0 = EventIndex {
             block_number: 0,
             log_index: 0,
         };
-        let trade_0 =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None, None).await;
+        let trade_0 = add_order_and_trade(
+            &mut db,
+            users_and_orders[0].0,
+            users_and_orders[0].1[0],
+            event_index_0,
+            None,
+            None,
+        )
+        .await;
 
         let event_index_1 = EventIndex {
             block_number: 0,
             log_index: 1,
         };
-        let trade_1 =
-            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None, None).await;
+        let trade_1 = add_order_and_trade(
+            &mut db,
+            users_and_orders[1].0,
+            users_and_orders[1].1[0],
+            event_index_1,
+            None,
+            None,
+        )
+        .await;
 
-        assert_trades(&mut db, None, Some(&order_ids[0]), &[trade_0]).await;
-        assert_trades(&mut db, None, Some(&order_ids[1]), &[trade_1]).await;
-        assert_trades(&mut db, None, Some(&order_ids[2]), &[]).await;
+        assert_trades(&mut db, None, Some(&users_and_orders[0].1[0]), &[trade_0]).await;
+        assert_trades(&mut db, None, Some(&users_and_orders[1].1[0]), &[trade_1]).await;
+        assert_trades(&mut db, None, Some(&users_and_orders[2].1[0]), &[]).await;
     }
 
     #[tokio::test]
@@ -420,16 +503,25 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(1, 1).await;
+        // 1 user with 1 order
+        let users_and_trades = generate_owners_and_order_ids(&[1]).await;
 
         let event_index = EventIndex {
             block_number: 0,
             log_index: 0,
         };
-        add_trade(&mut db, owners[0], order_ids[0], event_index, None, None).await;
+        add_trade(
+            &mut db,
+            users_and_trades[0].0,
+            users_and_trades[0].1[0],
+            event_index,
+            None,
+            None,
+        )
+        .await;
         // Trade exists in DB but no matching order
-        assert_trades(&mut db, None, Some(&order_ids[0]), &[]).await;
-        assert_trades(&mut db, Some(&owners[0]), None, &[]).await;
+        assert_trades(&mut db, None, Some(&users_and_trades[0].1[0]), &[]).await;
+        assert_trades(&mut db, Some(&users_and_trades[0].0), None, &[]).await;
     }
 
     // Testing Trades with settlements
@@ -465,7 +557,8 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+        // 1 user with 2 orders
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
         assert_trades(&mut db, None, None, &[]).await;
 
         let settlement = add_settlement(
@@ -482,8 +575,8 @@ mod tests {
 
         let trade_a = add_order_and_trade(
             &mut db,
-            owners[0],
-            order_ids[0],
+            users_and_orders[0].0,
+            users_and_orders[0].1[0],
             EventIndex {
                 block_number: 0,
                 log_index: 0,
@@ -496,8 +589,8 @@ mod tests {
 
         let trade_b = add_order_and_trade(
             &mut db,
-            owners[0],
-            order_ids[1],
+            users_and_orders[0].0,
+            users_and_orders[0].1[1],
             EventIndex {
                 block_number: 0,
                 log_index: 1,
@@ -516,7 +609,8 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+        // 1 user with 2 orders
+        let users_and_trades = generate_owners_and_order_ids(&[2]).await;
         assert_trades(&mut db, None, None, &[]).await;
 
         let settlement = add_settlement(
@@ -533,8 +627,8 @@ mod tests {
 
         add_trade(
             &mut db,
-            owners[0],
-            order_ids[0],
+            users_and_trades[0].0,
+            users_and_trades[0].1[0],
             EventIndex {
                 block_number: 0,
                 log_index: 0,
@@ -546,8 +640,8 @@ mod tests {
 
         add_trade(
             &mut db,
-            owners[0],
-            order_ids[1],
+            users_and_trades[0].0,
+            users_and_trades[0].1[1],
             EventIndex {
                 block_number: 0,
                 log_index: 1,
@@ -567,7 +661,8 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+        // 1 user with 2 orders
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
         assert_trades(&mut db, None, None, &[]).await;
 
         let settlement_a_event = EventIndex {
@@ -598,8 +693,8 @@ mod tests {
 
         let trade_a = add_order_and_trade(
             &mut db,
-            owners[0],
-            order_ids[0],
+            users_and_orders[0].0,
+            users_and_orders[0].1[0],
             EventIndex {
                 block_number: 0,
                 log_index: 0,
@@ -612,8 +707,8 @@ mod tests {
 
         let trade_b = add_order_and_trade(
             &mut db,
-            owners[0],
-            order_ids[1],
+            users_and_orders[0].0,
+            users_and_orders[0].1[1],
             EventIndex {
                 block_number: 0,
                 log_index: 2,
@@ -659,7 +754,8 @@ mod tests {
         let token = Default::default();
         assert_eq!(token_first_trade_block(&mut db, token).await.unwrap(), None);
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+        // 2 users with 1 order each
+        let users_and_orders = generate_owners_and_order_ids(&[1, 1]).await;
         let event_index_a = EventIndex {
             block_number: 123,
             log_index: 0,
@@ -668,8 +764,24 @@ mod tests {
             block_number: 124,
             log_index: 0,
         };
-        add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None, None).await;
-        add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_b, None, None).await;
+        add_order_and_trade(
+            &mut db,
+            users_and_orders[0].0,
+            users_and_orders[0].1[0],
+            event_index_a,
+            None,
+            None,
+        )
+        .await;
+        add_order_and_trade(
+            &mut db,
+            users_and_orders[1].0,
+            users_and_orders[1].1[0],
+            event_index_b,
+            None,
+            None,
+        )
+        .await;
         assert_eq!(
             token_first_trade_block(&mut db, token).await.unwrap(),
             Some(123)
@@ -684,11 +796,11 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         // Create 5 trades with the same owner
-        let (owners, order_ids) = generate_owners_and_order_ids(1, 5).await;
-        let owner = owners[0];
+        let users_and_orders = generate_owners_and_order_ids(&[5]).await;
+        let owner = users_and_orders[0].0;
 
         let mut expected_trades = Vec::new();
-        for (i, order_id) in order_ids.iter().enumerate() {
+        for (i, order_id) in users_and_orders[0].1.iter().enumerate() {
             let trade = add_order_and_trade(
                 &mut db,
                 owner,
@@ -710,7 +822,6 @@ mod tests {
         // Test limit: get first 2 trades (blocks 4 and 3 in DESC order)
         let result = trades(&mut db, Some(&owner), None, 0, 2)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 2);
@@ -720,7 +831,6 @@ mod tests {
         // Test offset: skip first 2, get next 2 (blocks 2 and 1 in DESC order)
         let result = trades(&mut db, Some(&owner), None, 2, 2)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 2);
@@ -730,7 +840,6 @@ mod tests {
         // Test offset beyond available trades
         let result = trades(&mut db, Some(&owner), None, 10, 2)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 0);
@@ -738,7 +847,6 @@ mod tests {
         // Test large limit returns all available trades in DESC order
         let result = trades(&mut db, Some(&owner), None, 0, 100)
             .into_inner()
-            .try_collect::<Vec<_>>()
             .await
             .unwrap();
         assert_eq!(result.len(), 5);

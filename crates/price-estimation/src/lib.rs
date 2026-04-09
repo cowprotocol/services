@@ -1,25 +1,19 @@
+pub use configs::{
+    native_price_estimators::{ExternalSolver, NativePriceEstimator, NativePriceEstimators},
+    price_estimation::QuoteVerificationMode,
+};
 use {
-    crate::{
-        trade_finding::{Interaction, QuoteExecution},
-        trade_verifier::tenderly_api,
-        utils::{display_option, display_secret_option},
-    },
+    crate::trade_finding::{Interaction, QuoteExecution},
     alloy::primitives::{Address, U256},
-    anyhow::{Context, Result, ensure},
-    bigdecimal::BigDecimal,
+    anyhow::Result,
     futures::future::BoxFuture,
-    itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     number::nonzero::NonZeroU256,
-    rate_limit::{RateLimiter, Strategy},
-    reqwest::Url,
+    rate_limit::RateLimiter,
     serde::{Deserialize, Serialize},
     std::{
         cmp::{Eq, PartialEq},
-        fmt::{self, Display, Formatter},
         future::Future,
-        hash::Hash,
-        str::FromStr,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -417,6 +411,23 @@ pub enum PriceEstimationError {
     #[error("Rate limited")]
     RateLimited,
 
+    /// Token can only be traded during specific time windows (e.g. xStocks/Ondo
+    /// RWA tokens).
+    #[error("{message}")]
+    TradingOutsideAllowedWindow { message: String },
+
+    /// Token is temporarily suspended from trading by the solver.
+    #[error("{message}")]
+    TokenTemporarilySuspended { message: String },
+
+    /// Insufficient liquidity to fill the requested trade size.
+    #[error("{message}")]
+    InsufficientLiquidity { message: String },
+
+    /// Solver returned a custom error that doesn't map to a known variant.
+    #[error("{message}")]
+    CustomSolverError { message: String },
+
     #[error(transparent)]
     EstimatorInternal(anyhow::Error),
 
@@ -447,12 +458,52 @@ impl Clone for PriceEstimationError {
                 Self::UnsupportedOrderType(order_type.clone())
             }
             Self::RateLimited => Self::RateLimited,
+            Self::TradingOutsideAllowedWindow { message } => Self::TradingOutsideAllowedWindow {
+                message: message.clone(),
+            },
+            Self::TokenTemporarilySuspended { message } => Self::TokenTemporarilySuspended {
+                message: message.clone(),
+            },
+            Self::InsufficientLiquidity { message } => Self::InsufficientLiquidity {
+                message: message.clone(),
+            },
+            Self::CustomSolverError { message } => Self::CustomSolverError {
+                message: message.clone(),
+            },
             Self::EstimatorInternal(err) => {
                 Self::EstimatorInternal(crate::utils::clone_anyhow_error(err))
             }
             Self::ProtocolInternal(err) => {
                 Self::ProtocolInternal(crate::utils::clone_anyhow_error(err))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod price_estimation_error_tests {
+    use super::PriceEstimationError;
+
+    #[test]
+    fn clone_preserves_custom_solver_error_messages() {
+        let cases = [
+            PriceEstimationError::TradingOutsideAllowedWindow {
+                message: "window".to_string(),
+            },
+            PriceEstimationError::TokenTemporarilySuspended {
+                message: "suspended".to_string(),
+            },
+            PriceEstimationError::InsufficientLiquidity {
+                message: "insufficient".to_string(),
+            },
+            PriceEstimationError::CustomSolverError {
+                message: "custom".to_string(),
+            },
+        ];
+
+        for err in cases {
+            let cloned = err.clone();
+            assert_eq!(cloned.to_string(), err.to_string());
         }
     }
 }
@@ -582,41 +633,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, clap::Parser};
-
-    #[test]
-    fn string_repr_round_trip_native_price_estimators() {
-        // We use NativePriceEstimators as one of the types used in an Arguments object
-        // that derives clap::Parser. Clap parsing of an argument using
-        // default_value_t requires that std::fmt::Display roundtrips correctly with the
-        // Arg::value_parser or #[arg(value_enum)]:
-        // https://docs.rs/clap/latest/clap/_derive/index.html#arg-attributes
-
-        let parsed = |arg: &str| NativePriceEstimators::from_str(arg);
-        let stringified = |arg: &NativePriceEstimators| format!("{arg}");
-
-        for repr in [
-            &NativePriceEstimator::Driver(
-                ExternalSolver::from_str(
-                    "baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-                )
-                .unwrap(),
-            )
-            .to_string(),
-            &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
-            &NativePriceEstimator::Forwarder {
-                url: "http://localhost:9588".parse().unwrap(),
-            }
-            .to_string(),
-            "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;Driver|three|http://localhost:3333/,Driver|four|http://localhost:4444/",
-            &format!(
-                "Driver|one|http://localhost:1111/,Driver|two|http://localhost:2222/;{},Driver|four|http://localhost:4444/",
-                NativePriceEstimator::OneInchSpotPriceApi
-            ),
-        ] {
-            assert_eq!(stringified(&parsed(repr).unwrap()), repr);
-        }
-    }
+    use super::*;
 
     #[test]
     fn toml_deserialize_estimators_empty() {
@@ -686,63 +703,5 @@ mod tests {
     fn toml_deserialize_estimators_default() {
         let estimators = NativePriceEstimators::default();
         assert!(estimators.as_slice().is_empty());
-    }
-
-    #[test]
-    fn enable_coin_gecko_buffered() {
-        let args = vec![
-            "test", // Program name
-            "--coin-gecko-api-key",
-            "someapikey",
-            "--coin-gecko-url",
-            "https://api.coingecko.com/api/v3/simple/token_price",
-            "--coin-gecko-debouncing-time",
-            "300ms",
-            "--coin-gecko-broadcast-channel-capacity",
-            "50",
-        ];
-
-        let coin_gecko = CoinGecko::parse_from(args);
-
-        assert!(coin_gecko.coin_gecko_buffered.is_some());
-
-        let buffered = coin_gecko.coin_gecko_buffered.unwrap();
-        assert_eq!(
-            buffered.coin_gecko_debouncing_time.unwrap(),
-            Duration::from_millis(300)
-        );
-        assert_eq!(buffered.coin_gecko_broadcast_channel_capacity.unwrap(), 50);
-    }
-
-    #[test]
-    fn test_without_buffered_present() {
-        let args = vec![
-            "test", // Program name
-            "--coin-gecko-api-key",
-            "someapikey",
-            "--coin-gecko-url",
-            "https://api.coingecko.com/api/v3/simple/token_price",
-        ];
-
-        let coin_gecko = CoinGecko::parse_from(args);
-
-        assert!(coin_gecko.coin_gecko_buffered.is_none());
-    }
-
-    #[test]
-    fn test_invalid_partial_buffered_present() {
-        let args = vec![
-            "test", // Program name
-            "--coin-gecko-api-key",
-            "someapikey",
-            "--coin-gecko-url",
-            "https://api.coingecko.com/api/v3/simple/token_price",
-            "--coin-gecko-debouncing-time",
-            "300ms",
-        ];
-
-        let result = CoinGecko::try_parse_from(args);
-
-        assert!(result.is_err());
     }
 }

@@ -5,7 +5,7 @@ use {
         rpc::types::{Filter, Log},
     },
     anyhow::Result,
-    contracts::alloy::GPv2Settlement::GPv2Settlement::GPv2SettlementEvents,
+    contracts::GPv2Settlement::GPv2Settlement::GPv2SettlementEvents,
     ethrpc::AlloyProvider,
     event_indexing::{
         block_retriever::RangeInclusive,

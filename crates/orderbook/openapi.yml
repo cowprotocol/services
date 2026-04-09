@@ -27,10 +27,6 @@ servers:
     url: "https://api.cow.fi/polygon"
   - description: Polygon (Staging)
     url: "https://barn.api.cow.fi/polygon"
-  - description: Lens (Prod)
-    url: "https://api.cow.fi/lens"
-  - description: Lens (Staging)
-    url: "https://barn.api.cow.fi/lens"
   - description: Linea (Prod)
     url: "https://api.cow.fi/linea"
   - description: Linea (Staging)
@@ -769,6 +765,104 @@ paths:
                 $ref: "#/components/schemas/TotalSurplus"
         "400":
           description: Invalid address.
+  "/api/v1/debug/simulation":
+    post:
+      operationId: debugSimulationPost
+      summary: Simulate an arbitrary order.
+      description: >
+        Simulates an arbitrary order specified in the request body and returns
+        the Tenderly simulation request, along with any simulation error if
+        applicable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulationRequest"
+      responses:
+        "200":
+          description: Simulation request returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderSimulation"
+        "400":
+          description: >
+            Invalid JSON body, or `appData` is not valid JSON.
+        "405":
+          description: Order simulation endpoint is not enabled.
+        "422":
+          description: >
+            Request body failed schema validation: missing required field,
+            wrong field type, zero `sellAmount`, or unrecognised `kind` value.
+        "500":
+          description: Internal error.
+  "/api/v1/debug/simulation/{uid}":
+    get:
+      operationId: debugSimulation
+      summary: Get Tenderly simulation request for an order.
+      description: >
+        Returns the Tenderly simulation request that would be used to simulate
+        the given order, along with any simulation error if applicable.
+      parameters:
+        - in: path
+          name: uid
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: true
+        - in: query
+          name: block_number
+          schema:
+            type: integer
+            format: int64
+          required: false
+          description: >
+            Block number to simulate the order at. If not specified, the
+            simulation uses the latest block.
+      responses:
+        "200":
+          description: Simulation request returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderSimulation"
+        "400":
+          description: >
+            Malformed path parameter (invalid order UID format) or invalid
+            `block_number` query parameter.
+        "404":
+          description: Order not found.
+        "405":
+          description: Order simulation endpoint is not enabled.
+        "500":
+          description: Internal error.
+  "/api/v1/debug/order/{uid}":
+    get:
+      operationId: debugOrder
+      summary: Debug an order's lifecycle.
+      description: >
+        Returns a comprehensive debug report for the given order, including
+        order details, lifecycle events, auction participation, proposed
+        solutions, executions, trades, and settlement attempts.
+      parameters:
+        - in: path
+          name: uid
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: true
+      responses:
+        "200":
+          description: Debug report returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebugOrderResponse"
+        "400":
+          description: Invalid order UID (malformed hex or wrong length).
+        "404":
+          description: Order not found.
+        "500":
+          description: Internal error.
 components:
   schemas:
     TransactionHash:
@@ -1149,6 +1243,14 @@ components:
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
           nullable: true
+        fullBalanceCheck:
+          description: >
+            If set to true, full sell amount will be checked during allowance and balance checking.
+            This will ensure the account has correct allowance and available balance for the order
+            to be created.
+
+          type: boolean
+          default: false
       required:
         - sellToken
         - buyToken
@@ -2271,3 +2373,400 @@ components:
           allOf:
             - description: The token in which the fee is taken
             - $ref: "#/components/schemas/Address"
+    DebugOrderResponse:
+      type: object
+      required:
+        - orderUid
+        - order
+        - events
+        - auctions
+        - trades
+      properties:
+        orderUid:
+          description: The UID of the order being debugged.
+          allOf:
+            - $ref: "#/components/schemas/UID"
+        order:
+          $ref: "#/components/schemas/Order"
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugEvent"
+        auctions:
+          description: >
+            Auctions this order participated in, sorted by ID. Each auction
+            groups all related data: native prices, proposed solutions,
+            executions, settlement attempts, and fee policies.
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugAuction"
+        trades:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugTrade"
+    DebugEvent:
+      type: object
+      required:
+        - label
+        - timestamp
+      properties:
+        label:
+          type: string
+          description: Event type (e.g. created, ready, filtered, traded).
+        timestamp:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          nullable: true
+          description: >
+            Why the order was filtered or marked invalid. Only present for
+            "filtered" and "invalid" events.
+    DebugAuction:
+      type: object
+      required:
+        - id
+        - block
+        - deadline
+        - nativePrices
+        - proposedSolutions
+        - executions
+        - settlementAttempts
+        - feePolicies
+      properties:
+        id:
+          type: integer
+          description: Auction ID.
+        block:
+          type: integer
+          description: Block number of the auction.
+        deadline:
+          type: integer
+          description: Deadline block for the auction.
+        nativePrices:
+          type: object
+          additionalProperties:
+            type: string
+          description: >
+            Native prices for the order's sell and buy tokens in this auction.
+            Keys are hex-encoded token addresses, values are decimal price
+            strings.
+        proposedSolutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugProposedSolution"
+        executions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugExecution"
+        settlementAttempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugSettlementAttempt"
+        feePolicies:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugFeePolicy"
+    DebugProposedSolution:
+      type: object
+      required:
+        - solutionUid
+        - ranking
+        - solver
+        - isWinner
+        - filteredOut
+        - score
+        - executedSell
+        - executedBuy
+      properties:
+        solutionUid:
+          type: integer
+        ranking:
+          type: integer
+        solver:
+          $ref: "#/components/schemas/Address"
+        isWinner:
+          type: boolean
+        filteredOut:
+          type: boolean
+        score:
+          type: string
+          description: Decimal-encoded score.
+        executedSell:
+          $ref: "#/components/schemas/TokenAmount"
+        executedBuy:
+          $ref: "#/components/schemas/TokenAmount"
+    DebugExecution:
+      type: object
+      required:
+        - executedFee
+        - executedFeeToken
+        - blockNumber
+        - protocolFees
+      properties:
+        executedFee:
+          $ref: "#/components/schemas/TokenAmount"
+        executedFeeToken:
+          $ref: "#/components/schemas/Address"
+        blockNumber:
+          type: integer
+        protocolFees:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebugProtocolFee"
+    DebugProtocolFee:
+      type: object
+      required:
+        - token
+        - amount
+      properties:
+        token:
+          $ref: "#/components/schemas/Address"
+        amount:
+          $ref: "#/components/schemas/TokenAmount"
+    DebugTrade:
+      type: object
+      required:
+        - blockNumber
+        - logIndex
+        - buyAmount
+        - sellAmount
+        - sellAmountBeforeFees
+      properties:
+        blockNumber:
+          type: integer
+        logIndex:
+          type: integer
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        sellAmountBeforeFees:
+          $ref: "#/components/schemas/TokenAmount"
+        txHash:
+          $ref: "#/components/schemas/TransactionHash"
+        auctionId:
+          type: integer
+    DebugSettlementAttempt:
+      type: object
+      required:
+        - solver
+        - solutionUid
+        - startTimestamp
+        - startBlock
+        - deadlineBlock
+      properties:
+        solver:
+          $ref: "#/components/schemas/Address"
+        solutionUid:
+          type: integer
+        startTimestamp:
+          type: string
+          format: date-time
+        endTimestamp:
+          type: string
+          format: date-time
+        startBlock:
+          type: integer
+        endBlock:
+          type: integer
+        deadlineBlock:
+          type: integer
+        outcome:
+          type: string
+          description: Settlement outcome (e.g. "success", "revert").
+    DebugFeePolicy:
+      type: object
+      description: Fee policy applied to this order in this auction.
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          enum: [surplus, volume, priceImprovement]
+        surplusFactor:
+          type: number
+        surplusMaxVolumeFactor:
+          type: number
+        volumeFactor:
+          type: number
+        priceImprovementFactor:
+          type: number
+        priceImprovementMaxVolumeFactor:
+          type: number
+    SimulationType:
+      description: The kind of Tenderly simulation to run.
+      type: string
+      enum:
+        - full
+        - quick
+    AccessListItem:
+      type: object
+      properties:
+        address:
+          $ref: "#/components/schemas/Address"
+        storage_keys:
+          type: array
+          items:
+            description: 32 byte storage key encoded as hex with `0x` prefix.
+            type: string
+            example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+      required:
+        - address
+        - storage_keys
+    StateObject:
+      description: State overrides for a given account before simulation.
+      type: object
+      properties:
+        balance:
+          description: Fake balance to set for the account (decimal-encoded uint256).
+          type: string
+          example: "1000000000000000000"
+        code:
+          description: Fake EVM bytecode to inject into the account (hex with `0x` prefix).
+          type: string
+          example: "0x6080604052"
+        storage:
+          description: >
+            Fake key-value mapping to override individual storage slots.
+            Keys and values are 32-byte hex strings with `0x` prefix.
+          type: object
+          additionalProperties:
+            type: string
+    TenderlyRequest:
+      description: A Tenderly transaction simulation request.
+      type: object
+      properties:
+        network_id:
+          description: The network identifier (e.g. "1" for mainnet).
+          type: string
+          example: "1"
+        block_number:
+          description: Block number to simulate the transaction at.
+          type: integer
+        transaction_index:
+          description: Transaction index within the block.
+          type: integer
+        from:
+          $ref: "#/components/schemas/Address"
+        to:
+          $ref: "#/components/schemas/Address"
+        input:
+          allOf:
+            - $ref: "#/components/schemas/CallData"
+          description: Transaction calldata encoded as hex with `0x` prefix.
+        gas:
+          description: Gas limit for the transaction.
+          type: integer
+        gas_price:
+          description: Gas price in Wei.
+          type: integer
+        value:
+          description: ETH value to send with the transaction (decimal-encoded uint256).
+          type: string
+          example: "0"
+        simulation_type:
+          $ref: "#/components/schemas/SimulationType"
+        save:
+          description: Whether to save the simulation on Tenderly.
+          type: boolean
+        save_if_fails:
+          description: Whether to save the simulation only if it fails.
+          type: boolean
+        generate_access_list:
+          description: Whether to generate an access list for the transaction.
+          type: boolean
+        state_objects:
+          description: >
+            State overrides applied before simulation. Keys are account
+            addresses (hex with `0x` prefix).
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/StateObject"
+        access_list:
+          description: EIP-2930 access list for the transaction.
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessListItem"
+      required:
+        - network_id
+        - from
+        - to
+        - input
+    SimulationRequest:
+      description: >
+        Request body for simulating an arbitrary order without it being stored
+        in the orderbook.
+      type: object
+      properties:
+        sellToken:
+          description: The token being sold.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        buyToken:
+          description: The token being bought.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        sellAmount:
+          description: >
+            Amount of sell token (hex- or decimal-encoded uint256). Must be
+            greater than zero.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: Amount of buy token (hex- or decimal-encoded uint256).
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        kind:
+          description: Whether this is a sell or buy order.
+          allOf:
+            - $ref: "#/components/schemas/OrderKind"
+        owner:
+          description: The address of the order owner.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        receiver:
+          description: >
+            The address that will receive the buy tokens. Defaults to the owner
+            if omitted.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: true
+        sellTokenBalance:
+          description: Where the sell token should be drawn from.
+          allOf:
+            - $ref: "#/components/schemas/SellTokenSource"
+          default: erc20
+        buyTokenBalance:
+          description: Where the buy token should be transferred to.
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenDestination"
+          default: erc20
+        appData:
+          description: >
+            Full app data JSON string. Defaults to `"{}"` if omitted.
+          type: string
+          nullable: true
+        blockNumber:
+          type: integer
+      required:
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - kind
+        - owner
+    OrderSimulation:
+      description: >
+        The Tenderly simulation request for an order, along with any
+        simulation error.
+      type: object
+      properties:
+        tenderly_request:
+          $ref: "#/components/schemas/TenderlyRequest"
+        error:
+          description: Simulation error message, if the simulation failed.
+          type: string
+          nullable: true
+      required:
+        - tenderly_request

@@ -13,7 +13,7 @@ use {
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::{HooksTrampoline, WETH9},
+    contracts::{HooksTrampoline, WETH9},
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -210,35 +210,26 @@ pub trait LimitOrderCounting: Send + Sync {
     async fn count(&self, owner: Address) -> Result<u64>;
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SameTokensPolicy {
-    #[default]
-    Disallow,
-    AllowSell,
-    // Allow, TODO: Allow sell and buy orders with the same tokens (https://github.com/cowprotocol/services/issues/3963)
-}
+pub use configs::orderbook::order_validation::SameTokensPolicy;
 
-impl SameTokensPolicy {
-    fn validate_same_sell_and_buy_token(
-        &self,
-        order: &PreOrderData,
-        native_token: &Address,
-    ) -> Result<(), PartialValidationError> {
-        // Check for orders selling wrapped native token for native token.
-        if &order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
+fn validate_same_sell_and_buy_token(
+    policy: &SameTokensPolicy,
+    order: &PreOrderData,
+    native_token: &Address,
+) -> Result<(), PartialValidationError> {
+    // Check for orders selling wrapped native token for native token.
+    if &order.sell_token == native_token && order.buy_token == BUY_ETH_ADDRESS {
+        return Err(PartialValidationError::SameBuyAndSellToken);
+    }
 
-        if order.sell_token != order.buy_token {
-            return Ok(());
-        }
+    if order.sell_token != order.buy_token {
+        return Ok(());
+    }
 
-        match (self, order.kind) {
-            // (Self::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963
-            (Self::AllowSell, OrderKind::Sell) => Ok(()),
-            _ => Err(PartialValidationError::SameBuyAndSellToken),
-        }
+    match (policy, order.kind) {
+        // (SameTokensPolicy::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963
+        (SameTokensPolicy::AllowSell, OrderKind::Sell) => Ok(()),
+        _ => Err(PartialValidationError::SameBuyAndSellToken),
     }
 }
 
@@ -370,7 +361,7 @@ impl OrderValidator {
     ///
     /// This is done by returning the [`HooksTrampoline`] `execute` calldata
     /// with the (pre/post) hooks calldata as the parameter.
-    fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
+    pub fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
         let to_interactions = |hooks: &[Hook]| -> Vec<InteractionData> {
             if hooks.is_empty() {
                 vec![]
@@ -404,6 +395,33 @@ impl OrderValidator {
         }
     }
 
+    async fn simulate_token_transfer(
+        &self,
+        order: &OrderCreation,
+        owner: Address,
+        app_data: &OrderAppData,
+        transfer_amount: U256,
+    ) -> Result<(), TransferSimulationError> {
+        self.balance_fetcher
+            .can_transfer(
+                &account_balances::Query {
+                    token: order.data().sell_token,
+                    owner,
+                    source: order.data().sell_token_balance,
+                    interactions: app_data.interactions.pre.clone(),
+                    balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
+                        BalanceOverrideRequest {
+                            token: loan.token,
+                            holder: loan.receiver,
+                            amount: loan.amount,
+                        }
+                    }),
+                },
+                transfer_amount,
+            )
+            .await
+    }
+
     /// Verifies that tokens can actually be transferred from the user account
     /// to the settlement contract (takes pre-hooks into account).
     async fn ensure_token_is_transferable(
@@ -412,77 +430,74 @@ impl OrderValidator {
         owner: Address,
         app_data: &OrderAppData,
     ) -> Result<(), ValidationError> {
-        let mut res = Ok(());
-        let has_wrappers = !app_data.inner.protocol.wrappers.is_empty();
+        let simulate_transfers = async |transfer_amounts: &[U256]| {
+            let mut res = Ok(());
+            let has_wrappers = !app_data.inner.protocol.wrappers.is_empty();
 
-        // Simulate transferring a small token balance into the settlement contract.
-        // As a spam protection we require that an account must have at least 1 atom
-        // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
-        // into numerical issues with such small amounts. But there are also tokens
-        // where a single atom is already quite expensive (tokenized stocks).
-        // To cover both cases we simulate multiple small transfers. As soon as one
-        // passes we consider the token transferable. If all transfers fail we return
-        // the last error.
-        for transfer_amount in [1, 10, 100].into_iter().map(U256::from) {
-            match self
-                .balance_fetcher
-                .can_transfer(
-                    &account_balances::Query {
-                        token: order.data().sell_token,
-                        owner,
-                        source: order.data().sell_token_balance,
-                        interactions: app_data.interactions.pre.clone(),
-                        balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
-                            BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
-                            }
-                        }),
-                    },
-                    transfer_amount,
-                )
-                .await
-            {
-                Ok(_) => return Ok(()),
-                Err(
+            for transfer_amount in transfer_amounts {
+                let Err(err) = self
+                    .simulate_token_transfer(order, owner, app_data, *transfer_amount)
+                    .await
+                else {
+                    return Ok(());
+                };
+
+                res = match err {
                     TransferSimulationError::InsufficientAllowance
                     | TransferSimulationError::InsufficientBalance
-                    | TransferSimulationError::TransferFailed,
-                ) if order.signature == Signature::PreSign || has_wrappers => {
-                    // Pre-sign orders do not require sufficient balance or allowance.
-                    // The idea is that this allows smart contracts to place orders bundled with
-                    // other transactions that either produce the required balance or set the
-                    // allowance. This would, for example, allow a Gnosis Safe to bundle the
-                    // pre-signature transaction with a WETH wrap and WETH approval to the vault
-                    // relayer contract.
-                    //
-                    // Similarly, orders with wrappers may produce the required balance or
-                    // allowance as part of the wrapper execution.
-                    return Ok(());
-                }
-                Err(err) => match err {
+                    | TransferSimulationError::TransferFailed
+                        if order.signature == Signature::PreSign || has_wrappers =>
+                    {
+                        // Pre-sign orders do not require sufficient balance or allowance.
+                        // The idea is that this allows smart contracts to place orders bundled with
+                        // other transactions that either produce the required balance or set the
+                        // allowance. This would, for example, allow a Gnosis Safe to bundle the
+                        // pre-signature transaction with a WETH wrap and WETH approval to the vault
+                        // relayer contract.
+                        //
+                        // Similarly, orders with wrappers may produce the required balance or
+                        // allowance as part of the wrapper execution.
+                        return Ok(());
+                    }
                     TransferSimulationError::InsufficientAllowance => {
                         // This error will be triggered regardless of the amount
                         return Err(ValidationError::InsufficientAllowance);
                     }
                     TransferSimulationError::InsufficientBalance => {
-                        // Since the amount starts at 1 atom, if this error is triggered then it
+                        // Since the amount either starts at 1 atom, or is set to the full sell
+                        // token amount if this error is triggered then it
                         // will be triggered for the other amounts too
                         return Err(ValidationError::InsufficientBalance);
                     }
                     TransferSimulationError::TransferFailed => {
-                        res = Err(ValidationError::TransferSimulationFailed);
+                        Err(ValidationError::TransferSimulationFailed)
                     }
                     TransferSimulationError::Other(err) => {
                         tracing::warn!("TransferSimulation failed: {:?}", err);
-                        res = Err(ValidationError::TransferSimulationFailed);
+                        Err(ValidationError::TransferSimulationFailed)
                     }
-                },
+                };
             }
-        }
+            res
+        };
 
-        res
+        if order.full_balance_check {
+            // If requested at order creation, simulate transferring full sell_amount
+            // into the settlement contract.
+            // This will ensure the account has enough allowance and balance for
+            // the transfer at the order creation time.
+            simulate_transfers([order.data().sell_amount].as_slice()).await
+        } else {
+            // Simulate transferring a small token balance into the settlement contract.
+            // As a spam protection we require that an account must have at least 1 atom
+            // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
+            // into numerical issues with such small amounts. But there are also tokens
+            // where a single atom is already quite expensive (tokenized stocks).
+            // To cover both cases we simulate multiple small transfers. As soon as one
+            // passes we consider the token transferable. If all transfers fail we return
+            // the last error.
+            simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await
+        }
     }
 }
 
@@ -518,8 +533,11 @@ impl OrderValidating for OrderValidator {
         }
 
         self.validity_configuration.validate_period(&order)?;
-        self.same_tokens_policy
-            .validate_same_sell_and_buy_token(&order, self.native_token.address())?;
+        validate_same_sell_and_buy_token(
+            &self.same_tokens_policy,
+            &order,
+            self.native_token.address(),
+        )?;
 
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);

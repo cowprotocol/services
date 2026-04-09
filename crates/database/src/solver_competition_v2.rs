@@ -151,7 +151,7 @@ pub async fn load_by_id(
         .await?;
 
     const FETCH_TRADES: &str = r#"
-        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy, 
+        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy,
             COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
             COALESCE(o.buy_token, pjo.buy_token) AS buy_token
         FROM proposed_trade_executions AS pte
@@ -262,7 +262,7 @@ async fn save_solutions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_solutions 
+        r#"INSERT INTO proposed_solutions
         (auction_id, uid, id, solver, is_winner, filtered_out, score, price_tokens, price_values)"#,
     );
 
@@ -290,7 +290,7 @@ async fn save_trade_executions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_trade_executions 
+        r#"INSERT INTO proposed_trade_executions
         (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
     );
 
@@ -326,7 +326,7 @@ async fn save_jit_orders(
             // Order data is saved to `proposed_jit_orders` table only if the order is not
             // already in the `orders` table.
             const QUERY_JIT: &str = r#"
-                INSERT INTO proposed_jit_orders 
+                INSERT INTO proposed_jit_orders
                 (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
                 SELECT $1, $2, $3, $4, $5, $6, $7, $8
                     WHERE NOT EXISTS (SELECT 1 FROM orders WHERE uid = $3)
@@ -481,6 +481,36 @@ pub async fn fetch_in_flight_orders(
         .bind(current_block)
         .fetch_all(ex)
         .await
+}
+
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct OrderProposedSolution {
+    pub auction_id: AuctionId,
+    pub solution_uid: i64,
+    pub solver: Address,
+    pub is_winner: bool,
+    pub filtered_out: bool,
+    pub score: BigDecimal,
+    pub executed_sell: BigDecimal,
+    pub executed_buy: BigDecimal,
+}
+
+#[instrument(skip_all)]
+pub async fn find_solutions_for_order(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+) -> Result<Vec<OrderProposedSolution>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT ps.auction_id, ps.uid AS solution_uid,
+       ps.solver, ps.is_winner, ps.filtered_out, ps.score,
+       pte.executed_sell, pte.executed_buy
+FROM proposed_trade_executions pte
+JOIN proposed_solutions ps
+    ON ps.auction_id = pte.auction_id AND ps.uid = pte.solution_uid
+WHERE pte.order_uid = $1
+ORDER BY ps.auction_id DESC, ps.uid
+    "#;
+    sqlx::query_as(QUERY).bind(order_uid).fetch_all(ex).await
 }
 
 #[cfg(test)]

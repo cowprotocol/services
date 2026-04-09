@@ -7,7 +7,6 @@ use {
     crate::{
         domain::{
             competition::order,
-            eth,
             time::{self},
         },
         infra::{self, Ethereum, blockchain::contracts::Addresses, config::file::FeeHandler},
@@ -15,7 +14,8 @@ use {
     },
     alloy::{primitives::Address, signers::local::PrivateKeySigner},
     const_hex::ToHexExt,
-    contracts::alloy::ERC20,
+    contracts::ERC20,
+    eth_domain_types as eth,
     gas_price_estimation::Eip1559EstimationExt,
     itertools::Itertools,
     number::testing::ApproxEq,
@@ -388,6 +388,10 @@ impl Solver {
                 "interactions": interactions_json,
                 "preInteractions": pre_interactions_json,
             });
+            if let Some((max_fee, max_priority_fee)) = &solution.gas_fee_override {
+                solution_json["maxFeePerGas"] = json!(max_fee.to_string());
+                solution_json["maxPriorityFeePerGas"] = json!(max_priority_fee.to_string());
+            }
             if !solution.flashloans.is_empty() {
                 solution_json["flashloans"] = serde_json::Value::Object(
                     solution
@@ -471,7 +475,6 @@ impl Solver {
                 flashloan_router: Some((*config.blockchain.flashloan_router.address()).into()),
             },
             gas,
-            eth::U256::from(45_000_000),
             &shared::current_block::Arguments {
                 block_stream_poll_interval: None,
                 node_ws_url: Some(config.blockchain.web3_ws_url.parse().unwrap()),

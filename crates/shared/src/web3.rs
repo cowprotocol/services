@@ -58,6 +58,16 @@ impl Arguments {
     }
 }
 
+impl From<&configs::shared::EthRpcConfig> for Arguments {
+    fn from(config: &configs::shared::EthRpcConfig) -> Self {
+        Self {
+            ethrpc_max_batch_size: config.max_batch_size,
+            ethrpc_max_concurrent_requests: config.max_concurrent_requests,
+            ethrpc_batch_delay: config.batch_delay,
+        }
+    }
+}
+
 /// Create a Web3 instance with a label for observability.
 pub fn web3(args: &Arguments, url: &Url, name: impl ToString) -> Web3 {
     let label = name.to_string();

@@ -1,6 +1,7 @@
 use {
-    crate::domain::{self, eth, fee},
+    crate::domain::{self, fee},
     alloy::primitives::{Address, B256, U256},
+    eth_domain_types as eth,
     std::fmt::{self, Debug, Display, Formatter},
 };
 

@@ -1,18 +1,16 @@
 use {
-    super::{competition::solution::settlement, eth},
+    super::competition::solution::{GasFeeOverride, settlement},
     crate::{
-        domain::{
-            BlockNo,
-            competition::solution::Settlement,
-            eth::{TxId, TxStatus},
-        },
+        domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
     anyhow::Context,
-    contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
+    contracts::CowSettlementForwarder::CowSettlementForwarder,
+    eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    num::Saturating,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -132,8 +130,8 @@ impl Mempools {
                         "settlement tx simulation reverted before submitting to the mempool"
                     );
                     return Err(Error::SimulationRevert {
-                        submitted_at_block: current_block,
-                        reverted_at_block: current_block,
+                        submitted_at_block: current_block.into(),
+                        reverted_at_block: current_block.into(),
                     });
                 } else {
                     tracing::warn!(
@@ -157,7 +155,7 @@ impl Mempools {
             .gas_price()
             .await
             .context("failed to compute current gas price")?;
-        let submission_block = self.ethereum.current_block().borrow().number;
+        let submission_block = self.ethereum.current_block().borrow().number.into();
         let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
 
         // if there is still a tx pending we also have to make sure we outbid that one
@@ -174,9 +172,15 @@ impl Mempools {
             _ => current_gas_price,
         };
 
+        let final_gas_price = apply_gas_fee_override(
+            final_gas_price,
+            settlement.gas_fee_override(),
+            replacement_gas_price.as_ref(),
+        );
+
         tracing::debug!(
-            submission_block,
-            blocks_until_deadline,
+            ?submission_block,
+            ?blocks_until_deadline,
             ?replacement_gas_price,
             ?current_gas_price,
             ?final_gas_price,
@@ -207,22 +211,22 @@ impl Mempools {
                     });
                 match receipt {
                     TxStatus::Executed { block_number } => return Ok(SubmissionSuccess {
-                        tx_hash: hash.clone(),
-                        submitted_at_block: submission_block.into(),
+                        tx_hash: hash,
+                        submitted_at_block: submission_block,
                         included_in_block: block_number,
                     }),
                     TxStatus::Reverted { block_number } => {
                         return Err(Error::Revert {
-                            tx_id: hash.clone(),
+                            tx_id: hash,
                             submitted_at_block: submission_block,
-                            reverted_at_block: block_number.into(),
+                            reverted_at_block: block_number,
                         })
                     }
                     TxStatus::Pending => {
                         // Check if the current block reached the submission deadline block number
-                        if block.number >= submission_deadline {
+                        if BlockNo(block.number) >= submission_deadline {
                             tracing::debug!(
-                                submission_deadline,
+                                submission_deadline = submission_deadline.0,
                                 current_block = block.number,
                                 settle_tx_hash = ?hash,
                                 "exceeded submission deadline, cancelling"
@@ -231,7 +235,7 @@ impl Mempools {
                                 .cancel(mempool, final_gas_price, signer, nonce)
                                 .await;
                             return Err(Error::Expired {
-                                tx_id: hash.clone(),
+                                tx_id: hash,
                                 submitted_at_block: submission_block,
                                 submission_deadline,
                             });
@@ -249,7 +253,7 @@ impl Mempools {
                                     .await;
                                 return Err(Error::SimulationRevert {
                                     submitted_at_block: submission_block,
-                                    reverted_at_block: block.number,
+                                    reverted_at_block: block.number.into(),
                                 });
                             } else {
                                 tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
@@ -278,7 +282,7 @@ impl Mempools {
                 return Ok(SubmissionSuccess {
                     tx_hash: hash,
                     included_in_block: block_number,
-                    submitted_at_block: submission_block.into(),
+                    submitted_at_block: submission_block,
                 });
             }
         }
@@ -370,6 +374,36 @@ impl Mempools {
 
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
+    }
+}
+
+/// Applies the solver's gas fee override if present. When a replacement
+/// transaction is pending, the solver's values are raised to at least the
+/// replacement minimum (a node requirement).
+fn apply_gas_fee_override(
+    driver_estimate: Eip1559Estimation,
+    solver_override: Option<GasFeeOverride>,
+    replacement_price: Option<&Eip1559Estimation>,
+) -> Eip1559Estimation {
+    let Some(gas_override) = solver_override else {
+        return driver_estimate;
+    };
+    let solver_price = Eip1559Estimation {
+        max_fee_per_gas: gas_override.max_fee_per_gas,
+        max_priority_fee_per_gas: gas_override.max_priority_fee_per_gas,
+    };
+    match replacement_price {
+        Some(replacement) => Eip1559Estimation {
+            max_fee_per_gas: std::cmp::max(
+                solver_price.max_fee_per_gas,
+                replacement.max_fee_per_gas,
+            ),
+            max_priority_fee_per_gas: std::cmp::max(
+                solver_price.max_priority_fee_per_gas,
+                replacement.max_priority_fee_per_gas,
+            ),
+        },
+        None => solver_price,
     }
 }
 

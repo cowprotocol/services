@@ -4,166 +4,21 @@ use {
     self::detector::{DetectionError, Detector},
     alloy_primitives::{Address, B256, U256, keccak256, map::AddressMap},
     alloy_rpc_types::state::AccountOverride,
-    anyhow::Context as _,
     cached::{Cached, SizedCache},
-    std::{
-        collections::HashMap,
-        fmt::{self, Display, Formatter},
-        iter,
-        str::FromStr,
-        sync::{Arc, Mutex},
-    },
+    configs::balance_overrides::Strategy,
+    std::{collections::HashMap, iter, sync::Mutex},
 };
-
-/// Balance override configuration arguments.
-#[derive(clap::Parser)]
-#[group(skip)]
-pub struct Arguments {
-    /// Token configuration for simulated balances on verified quotes. This
-    /// allows the quote verification system to produce verified quotes for
-    /// traders without sufficient balance for the configured token pairs.
-    ///
-    /// The expected format is a comma separated list of `${ADDR}@${SLOT}`,
-    /// where `ADDR` is the token address and `SLOT` is the Solidity storage
-    /// slot for the balances mapping. For example for WETH:
-    /// `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2@3`.
-    #[clap(long, env, default_value_t)]
-    pub quote_token_balance_overrides: TokenConfiguration,
-
-    /// Enable automatic detection of token balance overrides. Note that
-    /// pre-configured values with the `--quote-token-balance-overrides` flag
-    /// will take precedence.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value_t)]
-    pub quote_autodetect_token_balance_overrides: bool,
-
-    /// Controls how many storage slots get probed per storage entry point
-    /// for automatically detecting how to override the balances of a token.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "60")]
-    pub quote_autodetect_token_balance_overrides_probing_depth: u8,
-
-    /// Controls for how many tokens we store the result of the automatic
-    /// balance override detection before evicting less used entries.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "1000")]
-    pub quote_autodetect_token_balance_overrides_cache_size: usize,
-}
-
-impl Arguments {
-    /// Creates a balance overrides instance from the current configuration.
-    pub fn init(&self, web3: ethrpc::Web3) -> Arc<dyn BalanceOverriding> {
-        Arc::new(BalanceOverrides {
-            hardcoded: self.quote_token_balance_overrides.0.clone(),
-            detector: self.quote_autodetect_token_balance_overrides.then(|| {
-                (
-                    Detector::new(
-                        web3,
-                        self.quote_autodetect_token_balance_overrides_probing_depth,
-                    ),
-                    Mutex::new(SizedCache::with_size(
-                        self.quote_autodetect_token_balance_overrides_cache_size,
-                    )),
-                )
-            }),
-        })
-    }
-}
-
-impl Display for Arguments {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let Self {
-            quote_token_balance_overrides,
-            quote_autodetect_token_balance_overrides,
-            quote_autodetect_token_balance_overrides_probing_depth,
-            quote_autodetect_token_balance_overrides_cache_size,
-        } = self;
-
-        writeln!(
-            f,
-            "quote_token_balance_overrides: {quote_token_balance_overrides:?}"
-        )?;
-        writeln!(
-            f,
-            "quote_autodetect_token_balance_overrides: \
-             {quote_autodetect_token_balance_overrides:?}"
-        )?;
-        writeln!(
-            f,
-            "quote_autodetect_token_balance_overrides_probing_depth: \
-             {quote_autodetect_token_balance_overrides_probing_depth:?}"
-        )?;
-        writeln!(
-            f,
-            "quote_autodetect_token_balance_overrides_cache_size: \
-             {quote_autodetect_token_balance_overrides_cache_size:?}"
-        )?;
-
-        Ok(())
-    }
-}
-
 /// Token configurations for the `BalanceOverriding` component.
 #[derive(Clone, Debug, Default)]
 pub struct TokenConfiguration(HashMap<Address, Strategy>);
 
-impl Display for TokenConfiguration {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let format_entry =
-            |f: &mut Formatter, (addr, strategy): (&Address, &Strategy)| match strategy {
-                Strategy::SolidityMapping {
-                    target_contract,
-                    map_slot,
-                } => write!(
-                    f,
-                    "SolidityMapping({addr:?}: {target_contract:?}@{map_slot})"
-                ),
-                Strategy::SoladyMapping { target_contract } => {
-                    write!(f, "SoladyMapping({addr:?}: {target_contract})")
-                }
-                Strategy::DirectSlot {
-                    target_contract,
-                    slot,
-                } => write!(f, "DirectSlot({addr:?}: {target_contract:?}@{slot})"),
-            };
-
-        let mut entries = self.0.iter();
-
-        let Some(first) = entries.next() else {
-            return Ok(());
-        };
-        format_entry(f, first)?;
-
-        for entry in entries {
-            f.write_str(",")?;
-            format_entry(f, entry)?;
-        }
-
-        Ok(())
+impl TokenConfiguration {
+    pub fn new(configuration: HashMap<Address, Strategy>) -> Self {
+        Self(configuration)
     }
-}
 
-impl FromStr for TokenConfiguration {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.is_empty() {
-            return Ok(Self::default());
-        }
-
-        let entries = s
-            .split(',')
-            .map(|part| -> Result<_, Self::Err> {
-                let (addr, slot) = part
-                    .split_once('@')
-                    .context("expected {addr}@{slot} format")?;
-                Ok((
-                    addr.parse()?,
-                    Strategy::SolidityMapping {
-                        target_contract: addr.parse()?,
-                        map_slot: slot.parse()?,
-                    },
-                ))
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Self(entries))
+    pub fn into_inner(self) -> HashMap<Address, Strategy> {
+        self.0
     }
 }
 
@@ -190,38 +45,15 @@ pub struct BalanceOverrideRequest {
     pub amount: U256,
 }
 
-/// Balance override strategy for a token.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Strategy {
-    /// Balance override strategy for tokens whose balances are stored in a
-    /// direct Solidity mapping from token holder to balance amount in the
-    /// form `mapping(address holder => uint256 amount)`.
-    ///
-    /// The strategy is configured with the storage slot [^1] of the mapping.
-    ///
-    /// [^1]: <https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html#mappings-and-dynamic-arrays>
-    SolidityMapping {
-        target_contract: Address,
-        map_slot: U256,
-    },
-    /// Strategy computing storage slot for balances based on the Solady library
-    /// [^1].
-    ///
-    /// [^1]: <https://github.com/Vectorized/solady/blob/6122858a3aed96ee9493b99f70a245237681a95f/src/tokens/ERC20.sol#L75-L81>
-    SoladyMapping { target_contract: Address },
-    /// Strategy that directly uses the storage slot discovered via
-    /// debug_traceCall. This is similar to Foundry's `deal` approach where
-    /// we trace a balanceOf call to find which storage slot is accessed for
-    /// a given account.
-    DirectSlot {
-        target_contract: Address,
-        slot: B256,
-    },
-}
-
-impl Strategy {
+trait StrategyExt {
     /// Computes the storage slot and value to override for a particular token
     /// holder and amount.
+    fn state_override(&self, holder: &Address, amount: &U256) -> AddressMap<AccountOverride>;
+
+    fn is_valid_for_all_holders(&self) -> bool;
+}
+
+impl StrategyExt for Strategy {
     fn state_override(&self, holder: &Address, amount: &U256) -> AddressMap<AccountOverride> {
         let (target_contract, key) = match self {
             Self::SolidityMapping {
@@ -280,7 +112,7 @@ impl BalanceOverrides {
         Self {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(web3, 60),
+                Detector::new(web3, 60, detector::DEFAULT_VERIFICATION_TIMEOUT),
                 Mutex::new(SizedCache::with_size(1000)),
             )),
         }
@@ -540,7 +372,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(mock_web3, 60),
+                Detector::new(mock_web3, 60, detector::DEFAULT_VERIFICATION_TIMEOUT),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };
@@ -588,7 +420,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(mock_web3, 60),
+                Detector::new(mock_web3, 60, detector::DEFAULT_VERIFICATION_TIMEOUT),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };

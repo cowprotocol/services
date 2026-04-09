@@ -116,6 +116,7 @@ pub async fn insert_orders_and_ignore_conflicts(
                     label: OrderEventLabel::Created,
                     timestamp: order.creation_timestamp,
                     order_uid: order.uid,
+                    reason: None,
                 },
             )
             .await?;
@@ -153,10 +154,10 @@ VALUES (
     -- Ethflow orders are inserted with valid_to set to u32::MAX. Their true validity is stored in
     -- the ethflow_orders table.
     -- If there already exists an Ethflow order with the same uid, take smaller of the two valid_to values
-    CASE 
+    CASE
         WHEN $21 = 4294967295 THEN  -- u32::MAX
             COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $21)
-        ELSE 
+        ELSE
             $21
     END
 )

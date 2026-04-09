@@ -1,24 +1,26 @@
 use {
     crate::{
         domain::{
-            competition::{self, solution::WrapperCall},
-            eth,
+            self,
+            competition::{self},
             liquidity,
         },
         infra::Solver,
     },
     alloy::primitives::Bytes,
     app_data::AppDataHash,
+    eth_domain_types as eth,
     itertools::Itertools,
     model::{
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
+    simulator::encoding::WrapperCall,
     std::{collections::HashMap, str::FromStr},
 };
 
 #[derive(derive_more::From)]
-pub struct Solutions(solvers_dto::solution::Solutions);
+pub struct Solutions(Vec<solvers_dto::solution::Solution>);
 
 impl Solutions {
     const MAX_BASE_POINT: u32 = 10000;
@@ -27,13 +29,13 @@ impl Solutions {
         self,
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
-        weth: eth::WethAddress,
+        weth: eth::WrappedNativeToken,
         solver: Solver,
-        flashloan_hints: &HashMap<competition::order::Uid, eth::Flashloan>,
+        flashloan_hints: &HashMap<competition::order::Uid, domain::flashloan::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
         let haircut_bps = solver.haircut_bps();
 
-        self.0.solutions
+        self.0
             .into_iter()
             .map(|solution| {
                 competition::Solution::new(
@@ -147,7 +149,7 @@ impl Solutions {
                     solution
                         .pre_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: Bytes::from(interaction.calldata),
@@ -224,7 +226,7 @@ impl Solutions {
                     solution
                         .post_interactions
                         .into_iter()
-                        .map(|interaction| eth::Interaction {
+                        .map(|interaction| domain::Interaction {
                             target: interaction.target,
                             value: interaction.value.into(),
                             call_data: interaction.calldata.into(),
@@ -233,11 +235,29 @@ impl Solutions {
                     solver.clone(),
                     weth,
                     solution.gas.map(eth::Gas::from),
+                    solution
+                        .gas_fee_override
+                        .map(|o| {
+                            Ok(competition::solution::GasFeeOverride {
+                                max_fee_per_gas: o.max_fee_per_gas.try_into().map_err(|_| {
+                                    super::Error("max_fee_per_gas overflow".to_owned())
+                                })?,
+                                max_priority_fee_per_gas: o
+                                    .max_priority_fee_per_gas
+                                    .try_into()
+                                    .map_err(|_| {
+                                        super::Error(
+                                            "max_priority_fee_per_gas overflow".to_owned(),
+                                        )
+                                    })?,
+                            })
+                        })
+                        .transpose()?,
                     solver.config().fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
                         // convert the flashloan info provided by the solver
-                        .map(|f| f.iter().map(|(order, loan)| (order.into(), loan.into())).collect())
+                        .map(|f| f.iter().map(|(order, loan)| (order.into(), loan.clone())).collect())
                         // or copy over the relevant flashloan hints from the solve request
                         .unwrap_or_else(|| solution.trades.iter()
                             .filter_map(|t| {
@@ -248,12 +268,12 @@ impl Solutions {
                                 let uid = competition::order::Uid::from(&trade.order);
                                 Some((
                                     uid,
-                                    flashloan_hints.get(&uid).cloned()?,
+                                    flashloan_hints.get(&uid)?.into(),
                                 ))
                             }).collect()),
                     solution.wrappers.iter().cloned().map(|w| WrapperCall {
                         address: w.address,
-                        data: w.data,
+                        data: w.data.into(),
                     }).collect(),
                 )
                 .map_err(|err| match err {
