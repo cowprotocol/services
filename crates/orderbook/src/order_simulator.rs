@@ -15,11 +15,13 @@ use {
     simulator::{
         encoding::InteractionEncoding,
         swap_simulator::{EncodedSwap, Query, SwapSimulator, TradeEncoding},
+        tenderly,
     },
     thiserror::Error,
 };
 pub struct OrderSimulator {
     simulator: SwapSimulator,
+    tenderly: Option<Box<dyn tenderly::Api>>,
     chain_id: String,
 }
 
@@ -32,9 +34,14 @@ pub enum Error {
 }
 
 impl OrderSimulator {
-    pub fn new(simulator: SwapSimulator, chain_id: String) -> Self {
+    pub fn new(
+        simulator: SwapSimulator,
+        chain_id: String,
+        tenderly: Option<Box<dyn tenderly::Api>>,
+    ) -> Self {
         Self {
             simulator,
+            tenderly,
             chain_id,
         }
     }
@@ -174,8 +181,20 @@ impl OrderSimulator {
             .map_err(|err| Error::Other(anyhow!(err)))?
         };
 
+        let tenderly_url = match &self.tenderly {
+            Some(api) => match api.simulate_and_share(tenderly_request.clone()).await {
+                Ok(url) => Some(url),
+                Err(err) => {
+                    tracing::warn!(?err, "failed to create Tenderly simulation");
+                    None
+                }
+            },
+            None => None,
+        };
+
         Ok(OrderSimulationResult {
             tenderly_request,
+            tenderly_url,
             error: result.result.err().map(|err| err.to_string()),
         })
     }
