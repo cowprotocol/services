@@ -57,9 +57,13 @@ pub struct OrderSimulationRequest {
 /// and full Tenderly API request that can be used to resimulate
 /// and debug using Tenderly
 #[derive(Clone, Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct OrderSimulationResult {
     /// Full request object that can be used directly with the Tenderly API
     pub tenderly_request: tenderly::dto::Request,
+    /// Shared Tenderly simulation URL for debugging in the dashboard
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenderly_url: Option<String>,
     /// Any error that might have been reported during order simulation
     pub error: Option<String>,
 }

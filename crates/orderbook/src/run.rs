@@ -412,6 +412,14 @@ pub async fn run(config: Configuration) {
     ));
 
     let order_simulator = if let Some(config) = config.order_simulation {
+        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+            config.tenderly.as_ref().map(|tenderly_config| {
+                Box::new(simulator::tenderly::TenderlyApi::new(
+                    tenderly_config,
+                    &http_factory,
+                    chain.id().to_string(),
+                )) as _
+            });
         Some(Arc::new(OrderSimulator::new(
             SwapSimulator::new(
                 balance_overrider.clone(),
@@ -427,6 +435,7 @@ pub async fn run(config: Configuration) {
             .await
             .expect("failed to create SwapSimulator"),
             chain.id().to_string(),
+            tenderly,
         )))
     } else {
         None
