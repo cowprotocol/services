@@ -42,7 +42,7 @@ impl Query {
 pub enum TransferSimulationError {
     InsufficientAllowance,
     InsufficientBalance,
-    TransferFailed,
+    TransferFailed(Vec<u8>),
     Other(anyhow::Error),
 }
 
@@ -176,12 +176,13 @@ impl BalanceSimulator {
             .call()
             .await?;
 
-        let (token_balance, allowance, effective_balance, can_transfer) =
+        let (token_balance, allowance, effective_balance, can_transfer, transfer_revert_reason) =
             <(
                 sol_data::Uint<256>,
                 sol_data::Uint<256>,
                 sol_data::Uint<256>,
                 sol_data::Bool,
+                sol_data::Bytes,
             )>::abi_decode(&response.0)
             .map_err(|err| {
                 tracing::error!(?err, "failed to decode balance response");
@@ -193,6 +194,7 @@ impl BalanceSimulator {
             allowance: U256::from_le_slice(&allowance.as_le_bytes()),
             effective_balance: U256::from_le_slice(&effective_balance.as_le_bytes()),
             can_transfer,
+            transfer_revert_reason: transfer_revert_reason.to_vec(),
         };
 
         tracing::trace!(
@@ -214,6 +216,7 @@ pub struct Simulation {
     pub allowance: U256,
     pub effective_balance: U256,
     pub can_transfer: bool,
+    pub transfer_revert_reason: Vec<u8>,
 }
 
 #[derive(Debug)]
