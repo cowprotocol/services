@@ -15,6 +15,7 @@ use {
             blockchain::Ethereum,
             notify,
             observe::{self, metrics},
+            pod::recovery::{self, is_account_locked_error},
             solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
@@ -616,9 +617,10 @@ impl Competition {
         tokio::spawn(
             async move {
                 let pod_auction_client =
-                    AuctionClient::new(pod_provider, pod_auction_contract_address);
+                    AuctionClient::new(pod_provider.clone(), pod_auction_contract_address);
 
                 if let Err(e) = Self::pod_solution_submission(
+                    &pod_provider,
                     &pod_auction_client,
                     auction_id,
                     deadline,
@@ -671,6 +673,7 @@ impl Competition {
 
     #[instrument(name = "pod_submit_bid", skip_all, fields(auction_id = %auction_id.0))]
     async fn pod_solution_submission(
+        pod_provider: &PodProvider,
         pod_auction_client: &AuctionClient,
         auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
@@ -705,16 +708,18 @@ impl Competition {
         );
         tracing::debug!(payload_hex = %hex::encode(solution_data.clone().into_bytes()), "bid payload");
 
-        // Pod runs in shadow mode - bid submission failures should not affect main flow
-        match pod_auction_client
-            .submit_bid(
-                pod_auction_id,
-                deadline.into(),
-                pod_auction_value,
-                solution_data.into_bytes(),
-            )
-            .await
-        {
+        // Attempt bid submission with automatic recovery for locked accounts
+        let submission_result = Self::submit_bid_with_recovery(
+            pod_provider,
+            pod_auction_client,
+            pod_auction_id,
+            deadline,
+            pod_auction_value,
+            solution_data.clone(),
+        )
+        .await;
+
+        match submission_result {
             Ok(_) => tracing::info!(deadline = %deadline, "bid submitted successfully"),
             Err(e) => {
                 tracing::warn!(
@@ -729,6 +734,47 @@ impl Competition {
         }
 
         Ok(())
+    }
+
+    async fn submit_bid_with_recovery(
+        provider: &PodProvider,
+        client: &AuctionClient,
+        auction_id: pod_sdk::U256,
+        deadline: chrono::DateTime<chrono::Utc>,
+        value: pod_sdk::U256,
+        data: String,
+    ) -> Result<(), anyhow::Error> {
+        use alloy::providers::Provider;
+
+        let submit = |data: String| async {
+            client
+                .submit_bid(auction_id, deadline.into(), value, data.into_bytes())
+                .await
+                .map(|_| ())
+        };
+
+        let err = match submit(data.clone()).await {
+            Ok(()) => return Ok(()),
+            Err(e) if is_account_locked_error(&e.to_string()) => e,
+            Err(e) => return Err(e),
+        };
+
+        tracing::warn!(error = %err, "locked account detected, attempting recovery");
+
+        let signer = provider
+            .get_accounts()
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("no signer available"))?;
+
+        match recovery::recover_locked_account(provider, signer).await {
+            Ok(true) => tracing::info!("recovery successful, retrying"),
+            Ok(false) => return Err(err),
+            Err(e) => return Err(anyhow::anyhow!("recovery failed: {e}")),
+        }
+
+        submit(data).await.context("retry after recovery failed")
     }
 
     #[instrument(name = "pod_fetch_bids", skip_all, fields(auction_id = %auction_id.0))]
