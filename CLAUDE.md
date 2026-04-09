@@ -182,26 +182,55 @@ Databases: `mainnet`, `arbitrum-one`, `base`, `linea`, `polygon`, `xdai`, `sepol
 
 Use `$ETH_MAINNET_RPC` from `.env.claude` for mainnet. Use `cast` or whatever tools you want freely.
 
-## Grafana Logs Access
+## Victoria Logs Access
 
-Use the `scripts/vlogs` wrapper to query Victoria Logs.
+Use the `CoW-Prod` MCP tools to query Victoria Logs directly. The main tool is `mcp__CoW-Prod__victorialogs_query`.
 
-**IMPORTANT**: When running `scripts/vlogs`, do NOT use bash comments before the command (e.g., `# comment\nscripts/vlogs ...`) as this causes unnecessary permission prompts. Just run the command directly.
+**Timestamps**: MCP requires RFC3339 format (e.g., `2026-04-09T00:00:00Z`). Compute absolute timestamps from the current date rather than using relative time.
 
-**IMPORTANT**: Order UIDs and other structured fields (like `quote_id`, `auction_id`) live inside the `all` field in Victoria Logs. You MUST prefix them with `all:` to match. Plain text terms (like `order created`, `filtered`) match the log message directly and don't need the prefix.
+**IMPORTANT**: Order UIDs and other structured fields (like `quote_id`, `auction_id`) live inside the `all` field in Victoria Logs. You MUST prefix them with `all:` to match. Plain text terms (like `order created`, `filtered`) match the log message directly and don't need the prefix. You can also use parsed fields directly (e.g., `parsed.fields.order_uid:0x...`) for more precise matching.
 
-```bash
-scripts/vlogs "<expr>" [--from <time>] [--to <time>] [--max <lines>] [--env <prod|staging>] [--raw]
+**IMPORTANT — Protect context window**: Raw log entries contain ~4KB of kubernetes/ec2 metadata each. **Always** append `| fields _time, _msg, all` (or specific `parsed.fields.*`) to strip noise. Use small `limit` values (10-20) and only increase if needed. Examples:
+- General order search: `... | fields _time, _msg, all`
+- When you only need specific parsed fields: `... | fields _time, _msg, parsed.fields.err, parsed.fields.driver, parsed.spans.auction.auction_id`
 
-scripts/vlogs "NOT container:controller order created all:0xabc..." --from now-24h
-scripts/vlogs "NOT container:controller network:mainnet settlement failed" --from now-6h --max 50
-scripts/vlogs "error" --env staging --from now-1h
-scripts/vlogs "NOT container:controller all:0xabc..." --raw
+**Available MCP tools:**
+- `victorialogs_query` — Main log search (LogsQL expression + time range + limit)
+- `victorialogs_hits` — Count matching logs grouped by time buckets
+- `victorialogs_field_names` / `victorialogs_field_values` — Explore available fields
+- `victorialogs_facets` — Most frequent values per field
+- `victorialogs_stats_query` / `victorialogs_stats_query_range` — Aggregation queries
+- `victorialogs_stream_field_names` / `victorialogs_stream_field_values` — Stream metadata
+
+**Key fields:**
+- Stream fields (efficient filters): `container`, `namespace`, `pod`
+- `network` — chain name (mainnet, arbitrum-one, base, etc.)
+- `all` — full structured JSON log (search with `all:` prefix for UIDs)
+- `parsed.fields.*` — individual parsed fields (e.g., `parsed.fields.order_uid`, `parsed.fields.quote_id`)
+- `_msg` — the log message text
+
+**Example queries:**
 ```
+# Search for order logs (exclude nginx controller, strip metadata)
+query: "container:!controller AND all:0xabc... | fields _time, _msg, all"
+start: "2026-04-08T00:00:00Z"
+limit: 20
 
-Defaults: `--from now-12h`, `--to now`, `--max 100`, `--env prod`
+# Search for order creation on mainnet
+query: "container:!controller AND network:mainnet AND \"order created\" AND all:0xabc... | fields _time, _msg, all"
+start: "2026-04-09T00:00:00Z"
+limit: 10
 
-Datasource UIDs (hardcoded in script): `vm-auth-prod` (production), `vm-auth-staging` (staging)
+# Settlement failures with just error details
+query: "container:!controller AND \"settlement failed\" | fields _time, _msg, parsed.fields.err, parsed.fields.driver, parsed.spans.auction.auction_id"
+start: "2026-04-09T00:00:00Z"
+limit: 10
+
+# Sort results by time
+query: "container:!controller AND all:0xabc... | fields _time, _msg, all | sort by (_time) asc"
+start: "2026-04-08T00:00:00Z"
+limit: 20
+```
 
 ## Etherscan API (V2)
 
