@@ -1,4 +1,5 @@
 use {
+    pod_sdk::alloy_primitives::U256,
     bigdecimal::Zero,
     e2e::setup::{pod::PodTestClient, wait_for_condition, *},
     ethrpc::alloy::CallBuilderExt,
@@ -547,10 +548,9 @@ async fn pod_multi_solver_test(web3: Web3) {
     tracing::info!("Starting services with pod-enabled multi-solver driver.");
     let services = Services::new(&onchain).await;
 
-    // Solver A: no haircut -> full score
-    // Solver B: 50% haircut (5000 bps) -> lower score
+    // Solver A: no haircut, Solver B: 1% haircut (100 bps) for score differentiation
     services
-        .start_protocol_with_pod_multi_solver(vec![(solver_a.clone(), 0), (solver_b.clone(), 5000)])
+        .start_protocol_with_pod_multi_solver(vec![(solver_a.clone(), 0), (solver_b.clone(), 100)])
         .await;
     tracing::info!("Services started - solver_a vs solver_b");
 
@@ -574,14 +574,15 @@ async fn pod_multi_solver_test(web3: Web3) {
         "Got quote"
     );
 
-    // Place order
+    // Place order with 5% slippage tolerance to accommodate haircut differences
+    let min_buy = quote_response.quote.buy_amount * U256::from(95) / U256::from(100);
     tracing::info!("Placing order");
     let order = OrderCreation {
         quote_id: quote_response.id,
         sell_token: *onchain.contracts().weth.address(),
         sell_amount,
         buy_token: *token.address(),
-        buy_amount: quote_response.quote.buy_amount,
+        buy_amount: min_buy,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
