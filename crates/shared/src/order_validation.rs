@@ -13,7 +13,7 @@ use {
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::{HooksTrampoline, WETH9},
+    contracts::{HooksTrampoline, WETH9},
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -361,7 +361,7 @@ impl OrderValidator {
     ///
     /// This is done by returning the [`HooksTrampoline`] `execute` calldata
     /// with the (pre/post) hooks calldata as the parameter.
-    fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
+    pub fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
         let to_interactions = |hooks: &[Hook]| -> Vec<InteractionData> {
             if hooks.is_empty() {
                 vec![]

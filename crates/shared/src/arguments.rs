@@ -84,11 +84,17 @@ pub struct DatabasePoolConfig {
     /// Maximum number of connections in the database connection pool.
     #[clap(long, env, default_value_t = DB_MAX_CONNECTIONS_DEFAULT)]
     pub db_max_connections: NonZeroU32,
+
+    /// Timeout for database read queries, only applied to read-only connections
+    /// — for example, the Orderbook.
+    #[clap(long, env, default_value = "30s", value_parser = humantime::parse_duration)]
+    pub statement_timeout: Duration,
 }
 
 impl Display for DatabasePoolConfig {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "db_max_connections: {}", self.db_max_connections)
+        writeln!(f, "db_max_connections: {}", self.db_max_connections)?;
+        writeln!(f, "statement_timeout: {:?}", self.statement_timeout)
     }
 }
 

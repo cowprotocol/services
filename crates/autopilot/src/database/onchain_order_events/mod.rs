@@ -12,7 +12,7 @@ use {
     anyhow::{Context, Result, anyhow, bail},
     app_data::AppDataHash,
     chrono::{TimeZone, Utc},
-    contracts::alloy::{
+    contracts::{
         CoWSwapOnchainOrders::CoWSwapOnchainOrders::{
             CoWSwapOnchainOrdersEvents as ContractEvent,
             OrderInvalidation,
@@ -780,7 +780,7 @@ mod test {
     use {
         super::*,
         alloy::primitives::U256,
-        contracts::alloy::CoWSwapOnchainOrders,
+        contracts::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethrpc::Web3,
         model::{
@@ -948,7 +948,7 @@ mod test {
 
         let order_placement = ContractOrderPlacement {
             sender,
-            order: contracts::alloy::CoWSwapOnchainOrders::GPv2Order::Data {
+            order: contracts::CoWSwapOnchainOrders::GPv2Order::Data {
                 sellToken: sell_token,
                 buyToken: buy_token,
                 receiver,
@@ -962,11 +962,10 @@ mod test {
                 sellTokenBalance: SellTokenSource::ERC20.into(),
                 buyTokenBalance: BuyTokenDestination::ERC20.into(),
             },
-            signature:
-                contracts::alloy::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
-                    scheme: 0,
-                    data: owner.0.into(),
-                },
+            signature: contracts::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                scheme: 0,
+                data: owner.0.into(),
+            },
             data: Default::default(),
         };
         let settlement_contract = Address::repeat_byte(8);
@@ -1059,7 +1058,7 @@ mod test {
         };
         let order_placement = ContractOrderPlacement {
             sender,
-            order: contracts::alloy::CoWSwapOnchainOrders::GPv2Order::Data {
+            order: contracts::CoWSwapOnchainOrders::GPv2Order::Data {
                 sellToken: sell_token,
                 buyToken: buy_token,
                 receiver,
@@ -1073,11 +1072,10 @@ mod test {
                 sellTokenBalance: SellTokenSource::ERC20.into(),
                 buyTokenBalance: BuyTokenDestination::ERC20.into(),
             },
-            signature:
-                contracts::alloy::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
-                    scheme: 0,
-                    data: owner.0.into(),
-                },
+            signature: contracts::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                scheme: 0,
+                data: owner.0.into(),
+            },
             data: Default::default(),
         };
         let settlement_contract = Address::repeat_byte(8);
@@ -1160,7 +1158,7 @@ mod test {
         let owner = Address::from([6; 20]);
         let order_placement = ContractOrderPlacement {
             sender,
-            order: contracts::alloy::CoWSwapOnchainOrders::GPv2Order::Data {
+            order: contracts::CoWSwapOnchainOrders::GPv2Order::Data {
                 sellToken: sell_token,
                 buyToken: buy_token,
                 receiver,
@@ -1174,11 +1172,10 @@ mod test {
                 sellTokenBalance: SellTokenSource::ERC20.into(),
                 buyTokenBalance: BuyTokenDestination::ERC20.into(),
             },
-            signature:
-                contracts::alloy::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
-                    scheme: 0,
-                    data: owner.0.into(),
-                },
+            signature: contracts::CoWSwapOnchainOrders::ICoWSwapOnchainOrders::OnchainSignature {
+                scheme: 0,
+                data: owner.0.into(),
+            },
             data: vec![0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8].into(),
         };
 

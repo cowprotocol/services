@@ -3,7 +3,7 @@ use {
         primitives::{Address, B256, Bytes, U256},
         sol_types::SolCall,
     },
-    contracts::alloy::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
+    contracts::BalancerV2Vault::{BalancerV2Vault::swapCall, IVault},
     shared::{
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
@@ -126,7 +126,8 @@ mod tests {
                     00000000000000000000000000000000000000000000000000000000000000c0\
                     0000000000000000000000000000000000000000000000000000000000000000"
                 )
-                .unwrap().into()
+                .unwrap()
+                .into()
             )
         );
     }

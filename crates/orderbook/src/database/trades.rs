@@ -3,7 +3,6 @@ use {
     alloy::primitives::{Address, B256},
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
-    futures::stream::TryStreamExt,
     model::{fee_policy::ExecutedProtocolFee, order::OrderUid, trade::Trade},
     number::conversions::big_decimal_to_big_uint,
     std::convert::TryInto,
@@ -53,9 +52,8 @@ impl TradeRetrieving for Postgres {
             i64::MAX,
         )
         .into_inner()
-        .map_err(anyhow::Error::from)
-        .try_collect::<Vec<TradesQueryRow>>()
-        .await?;
+        .await
+        .map_err(anyhow::Error::from)?;
         timer.stop_and_record();
 
         let auction_order_uids = trades
@@ -114,9 +112,8 @@ impl TradeRetrievingPaginated for Postgres {
                 .context("limit too large for database")?,
         )
         .into_inner()
-        .map_err(anyhow::Error::from)
-        .try_collect::<Vec<TradesQueryRow>>()
-        .await?;
+        .await
+        .map_err(anyhow::Error::from)?;
         timer.stop_and_record();
 
         let auction_order_uids = trades

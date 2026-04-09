@@ -10,7 +10,7 @@ use {
         order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
-    contracts::alloy::{ERC20, LiquoriceSettlement},
+    contracts::{ERC20, LiquoriceSettlement},
     driver::infra,
     e2e::{
         api,

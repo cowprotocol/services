@@ -2,7 +2,7 @@ use {
     crate::domain::eth,
     alloy::primitives::Address,
     chain::Chain,
-    contracts::alloy::{GPv2AllowListAuthentication, GPv2Settlement, WETH9},
+    contracts::{GPv2AllowListAuthentication, GPv2Settlement, WETH9},
 };
 
 #[derive(Clone, Debug)]

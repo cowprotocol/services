@@ -3,7 +3,7 @@ use {
     alloy_rpc_types::state::StateOverride,
     alloy_sol_types::{SolCall, SolType, sol_data},
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
-    contracts::alloy::{GPv2Settlement, support::Balances},
+    contracts::{GPv2Settlement, support::Balances},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
         interaction::InteractionData,

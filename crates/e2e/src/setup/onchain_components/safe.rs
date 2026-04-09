@@ -5,7 +5,7 @@ use {
         providers::Provider,
         rpc::types::TransactionRequest,
     },
-    contracts::alloy::{
+    contracts::{
         GnosisSafe::{self, GnosisSafe::execTransactionCall},
         GnosisSafeCompatibilityFallbackHandler,
         GnosisSafeProxy,

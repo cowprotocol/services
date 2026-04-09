@@ -13,7 +13,6 @@ use {
         solver_competition_v2::{self, OrderProposedSolution as DbProposedSolution},
         trades::{self, TradesQueryRow as DbTradesQueryRow},
     },
-    futures::TryStreamExt,
     model::{
         debug_report::{
             Auction,
@@ -62,7 +61,6 @@ impl Postgres {
         let executions = order_execution::read_by_order_uid(&mut conn, &db_uid).await?;
         let trades: Vec<DbTradesQueryRow> = trades::trades(&mut conn, None, Some(&db_uid), 0, 100)
             .into_inner()
-            .try_collect()
             .await
             .context("failed to fetch trades")?;
 

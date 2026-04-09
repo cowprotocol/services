@@ -30,7 +30,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
+    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
     http_client::HttpClientFactory,

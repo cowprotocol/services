@@ -605,7 +605,7 @@ async fn trace_based_balance_detection(web3: Web3) {
     // offset within a struct mapping, making it undetectable by standard slot
     // calculation methods
     let struct_offset_token =
-        contracts::alloy::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
+        contracts::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
             .await
             .unwrap();
 
@@ -614,20 +614,14 @@ async fn trace_based_balance_detection(web3: Web3) {
     // delegate the balance it returns between itself (allowing for testing of
     // calling another contract to get a balance--or calling another contract to
     // *not* get a balance)
-    let local_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.provider.clone(),
-        weth,
-        true,
-    )
-    .await
-    .unwrap();
-    let delegated_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.provider.clone(),
-        weth,
-        false,
-    )
-    .await
-    .unwrap();
+    let local_storage_token =
+        contracts::test::RemoteERC20Balances::Instance::deploy(web3.provider.clone(), weth, true)
+            .await
+            .unwrap();
+    let delegated_storage_token =
+        contracts::test::RemoteERC20Balances::Instance::deploy(web3.provider.clone(), weth, false)
+            .await
+            .unwrap();
 
     // Mint some tokens to the trader (so the contract has non-zero state)
     struct_offset_token
@@ -644,7 +638,11 @@ async fn trace_based_balance_detection(web3: Web3) {
         .await
         .unwrap();
 
-    let detector = Detector::new(web3.clone(), 60);
+    let detector = Detector::new(
+        web3.clone(),
+        60,
+        balance_overrides::detector::DEFAULT_VERIFICATION_TIMEOUT,
+    );
 
     let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
@@ -704,7 +702,7 @@ async fn trace_based_balance_detection(web3: Web3) {
 
     // Verify that the detected strategies actually work by testing balance
     // overrides
-    use contracts::alloy::ERC20;
+    use contracts::ERC20;
 
     async fn test_balance_override(
         web3: &Web3,

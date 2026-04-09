@@ -7,7 +7,7 @@ use {
     crate::BalanceSimulator,
     alloy_primitives::{Address, U256},
     anyhow::Result,
-    contracts::alloy::{BalancerV2Vault::BalancerV2Vault, ERC20},
+    contracts::{BalancerV2Vault::BalancerV2Vault, ERC20},
     ethrpc::{Web3, alloy::ProviderLabelingExt},
     futures::future,
     model::order::SellTokenSource,
@@ -169,7 +169,7 @@ mod tests {
         super::*,
         alloy_primitives::address,
         balance_overrides::DummyOverrider,
-        contracts::alloy::GPv2Settlement,
+        contracts::GPv2Settlement,
         ethrpc::Web3,
         model::order::SellTokenSource,
         std::sync::Arc,
@@ -183,7 +183,7 @@ mod tests {
             address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
             web3.provider.clone(),
         );
-        let balances = contracts::alloy::support::Balances::Instance::new(
+        let balances = contracts::support::Balances::Instance::new(
             address!("3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"),
             web3.provider.clone(),
         );

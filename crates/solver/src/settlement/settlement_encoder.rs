@@ -584,7 +584,7 @@ pub mod tests {
     use {
         super::*,
         alloy::primitives::Address,
-        contracts::alloy::WETH9,
+        contracts::WETH9,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
         shared::interaction::{EncodedInteraction, Interaction},

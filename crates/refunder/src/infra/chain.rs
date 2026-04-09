@@ -4,7 +4,7 @@ use {
     crate::traits::{ChainRead, RefundStatus},
     alloy::{primitives::Address, providers::Provider, rpc::types::TransactionRequest},
     anyhow::{Result, anyhow},
-    contracts::alloy::CoWSwapEthFlow,
+    contracts::CoWSwapEthFlow,
     ethrpc::{AlloyProvider, block_stream::timestamp_of_current_block_in_seconds},
     std::collections::HashMap,
 };
