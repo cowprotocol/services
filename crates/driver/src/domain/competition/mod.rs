@@ -307,7 +307,6 @@ impl Competition {
         let unsupported_orders_future =
             async move { self.unsupported_order_uids(&orders_for_unsupported).await };
 
-        let settlement = settlement_contract;
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening,
             // and we don't want to block the runtime for too long.
@@ -326,7 +325,7 @@ impl Competition {
         // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
         // bound computations are happening, and we want to avoid blocking the runtime.
         let mut auction = Self::run_blocking_with_timer("update_orders", move || {
-            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
+            Self::update_orders(auction, balances, app_data, cow_amm_orders)
         })
         .await;
 
