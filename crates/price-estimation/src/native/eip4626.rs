@@ -3,7 +3,7 @@ use {
     crate::PriceEstimationError,
     alloy::primitives::{Address, U256},
     anyhow::Context,
-    contracts::alloy::{ERC20, IERC4626},
+    contracts::{ERC20, IERC4626},
     ethrpc::AlloyProvider,
     futures::{FutureExt, future::BoxFuture},
     num::ToPrimitive,

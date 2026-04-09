@@ -22,17 +22,20 @@ impl<'de> Deserialize<'de> for NativePriceEstimators {
                 &"expected native price estimator stages to be configured",
             ));
         }
-        match estimators
-            .iter()
-            .enumerate()
-            .find_map(|(n, stage)| stage.is_empty().then_some(n))
-        {
-            Some(n) => Err(serde::de::Error::invalid_length(
-                0,
-                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
-            )),
-            None => Ok(Self(estimators)),
+        for (n, stage) in estimators.iter().enumerate() {
+            if stage.is_empty() {
+                return Err(serde::de::Error::invalid_length(
+                    0,
+                    &format!("stage {} is empty, all stages must not be empty", n).as_str(),
+                ));
+            }
+            if matches!(stage.last(), Some(NativePriceEstimator::Eip4626)) {
+                return Err(serde::de::Error::custom(format!(
+                    "stage {n}: Eip4626 must be followed by another estimator"
+                )));
+            }
         }
+        Ok(Self(estimators))
     }
 }
 
