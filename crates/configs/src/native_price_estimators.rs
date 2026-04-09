@@ -96,6 +96,10 @@ pub enum NativePriceEstimator {
     OneInchSpotPriceApi,
     /// Use the CoinGecko API.
     CoinGecko,
+    /// Prices EIP-4626 vault tokens by looking up the underlying `asset()` and
+    /// applying `convertToAssets()` as a conversion rate. Must be followed by
+    /// another estimator in the same stage to price the underlying asset.
+    Eip4626,
 }
 
 impl NativePriceEstimator {
@@ -115,6 +119,7 @@ impl Display for NativePriceEstimator {
             NativePriceEstimator::Forwarder { url } => write!(f, "Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => write!(f, "OneInchSpotPriceApi"),
             NativePriceEstimator::CoinGecko => write!(f, "CoinGecko"),
+            NativePriceEstimator::Eip4626 => write!(f, "Eip4626"),
         }
     }
 }
