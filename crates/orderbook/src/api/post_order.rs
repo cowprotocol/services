@@ -223,14 +223,13 @@ impl IntoResponse for ValidationErrorWrapper {
             )
                 .into_response(),
             ValidationError::TransferSimulationFailed(revert_data) => {
-                let description = if revert_data.len() >= 4 {
-                    let selector = &revert_data[..4];
+                let description = if revert_data.is_empty() {
+                    "sell token cannot be transferred".to_string()
+                } else {
                     format!(
                         "sell token cannot be transferred, token reverted with: 0x{}",
-                        const_hex::encode(selector),
+                        const_hex::encode(&revert_data),
                     )
-                } else {
-                    "sell token cannot be transferred".to_string()
                 };
                 (
                     StatusCode::BAD_REQUEST,
