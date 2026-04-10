@@ -7,6 +7,7 @@ pub mod mempool;
 pub mod notify;
 pub mod observe;
 pub mod persistence;
+pub mod pod;
 pub mod solver;
 pub mod time;
 pub mod tokens;

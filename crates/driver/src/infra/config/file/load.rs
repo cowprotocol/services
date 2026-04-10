@@ -51,99 +51,123 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         "The configured chain ID does not match the connected Ethereum node"
     );
     infra::Config {
-        solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
-            let account = load_account(solver_config.account, config.chain_id).await;
-            solver::Config {
-                endpoint: solver_config.endpoint,
-                name: solver_config.name.into(),
-                slippage: solver::Slippage {
-                    relative: big_decimal_to_big_rational(&solver_config.slippage.relative),
-                    absolute: solver_config.slippage.absolute.map(eth::Ether),
-                },
-                liquidity: if solver_config.skip_liquidity {
-                    solver::Liquidity::Skip
-                } else {
-                    solver::Liquidity::Fetch
-                },
-                account,
-                timeouts: solver::Timeouts {
-                    http_delay: chrono::Duration::from_std(solver_config.timeouts.http_time_buffer)
-                        .unwrap(),
-                    solving_share_of_deadline: solver_config
-                        .timeouts
-                        .solving_share_of_deadline
-                        .try_into()
-                        .unwrap(),
-                },
-                request_headers: solver_config.request_headers,
-                fee_handler: solver_config.fee_handler,
-                quote_using_limit_orders: solver_config.quote_using_limit_orders,
-                merge_solutions: match solver_config.merge_solutions {
-                    true => SolutionMerging::Allowed {
-                        max_orders_per_merged_solution: solver_config
-                            .max_orders_per_merged_solution,
-                    },
-                    false => SolutionMerging::Forbidden,
-                },
-                s3: solver_config.s3.map(Into::into),
-                solver_native_token: solver_config.manage_native_token.to_domain(),
-                quote_tx_origin: solver_config.quote_tx_origin,
-                response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
-                bad_order_detection: BadOrderDetection {
-                    tokens_supported: solver_config
-                        .bad_order_detection
-                        .token_supported
-                        .iter()
-                        .map(|(token, supported)| {
-                            (
-                                eth::TokenAddress::from(*token),
-                                match supported {
-                                    true => risk_detector::Quality::Supported,
-                                    false => risk_detector::Quality::Unsupported,
-                                },
+        solvers: join_all(config.solvers.into_iter().map(|solver_config| {
+            let pod_config = config.pod.clone();
+            async move {
+                let account: Account = match solver_config.account {
+                    file::Account::PrivateKey(private_key) => {
+                        PrivateKeySigner::from_bytes(&private_key)
+                            .expect(
+                                "private key should
+                                            be valid",
                             )
-                        })
-                        .collect(),
-                    enable_simulation_strategy: solver_config
-                        .bad_order_detection
-                        .enable_simulation_strategy,
-                    enable_metrics_strategy: solver_config
-                        .bad_order_detection
-                        .enable_metrics_strategy,
-                    metrics_strategy_failure_ratio: solver_config
-                        .bad_order_detection
-                        .metrics_strategy_failure_ratio,
-                    metrics_strategy_required_measurements: solver_config
-                        .bad_order_detection
-                        .metrics_strategy_required_measurements,
-                    metrics_strategy_log_only: solver_config
-                        .bad_order_detection
-                        .metrics_strategy_log_only,
-                    metrics_strategy_order_freeze_time: solver_config
-                        .bad_order_detection
-                        .metrics_strategy_freeze_time,
-                    metrics_strategy_cache_gc_interval: solver_config
-                        .bad_order_detection
-                        .metrics_strategy_gc_interval,
-                    metrics_strategy_cache_max_age: solver_config
-                        .bad_order_detection
-                        .metrics_strategy_gc_max_age,
-                },
-                settle_queue_size: solver_config.settle_queue_size,
-                flashloans_enabled: config.flashloans_enabled,
-                fetch_liquidity_at_block: match config.liquidity.fetch_at_block {
-                    file::AtBlock::Latest => liquidity::AtBlock::Latest,
-                    file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
-                },
-                haircut_bps: solver_config.haircut_bps,
-                submission_accounts: join_all(
-                    solver_config
-                        .submission_accounts
-                        .into_iter()
-                        .map(|acc| load_account(acc, config.chain_id)),
-                )
-                .await,
-                forwarder_contract: solver_config.forwarder_contract,
+                            .into()
+                    }
+                    file::Account::Kms(arn) => {
+                        let sdk_config = alloy::signers::aws::aws_config::load_from_env().await;
+                        let client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
+                        AwsSigner::new(client, arn.0, config.chain_id)
+                            .await
+                            .expect("unable to load kms account {arn:?}")
+                            .into()
+                    }
+                    file::Account::Address(address) => Account::Address(address),
+                };
+                solver::Config {
+                    endpoint: solver_config.endpoint,
+                    name: solver_config.name.into(),
+                    slippage: solver::Slippage {
+                        relative: big_decimal_to_big_rational(&solver_config.slippage.relative),
+                        absolute: solver_config.slippage.absolute.map(eth::Ether),
+                    },
+                    liquidity: if solver_config.skip_liquidity {
+                        solver::Liquidity::Skip
+                    } else {
+                        solver::Liquidity::Fetch
+                    },
+                    account,
+                    timeouts: solver::Timeouts {
+                        http_delay: chrono::Duration::from_std(
+                            solver_config.timeouts.http_time_buffer,
+                        )
+                        .unwrap(),
+                        solving_share_of_deadline: solver_config
+                            .timeouts
+                            .solving_share_of_deadline
+                            .try_into()
+                            .unwrap(),
+                    },
+                    request_headers: solver_config.request_headers,
+                    fee_handler: solver_config.fee_handler,
+                    quote_using_limit_orders: solver_config.quote_using_limit_orders,
+                    merge_solutions: match solver_config.merge_solutions {
+                        true => SolutionMerging::Allowed {
+                            max_orders_per_merged_solution: solver_config
+                                .max_orders_per_merged_solution,
+                        },
+                        false => SolutionMerging::Forbidden,
+                    },
+                    s3: solver_config.s3.map(Into::into),
+                    solver_native_token: solver_config.manage_native_token.to_domain(),
+                    quote_tx_origin: solver_config.quote_tx_origin,
+                    response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
+                    bad_order_detection: BadOrderDetection {
+                        tokens_supported: solver_config
+                            .bad_order_detection
+                            .token_supported
+                            .iter()
+                            .map(|(token, supported)| {
+                                (
+                                    eth::TokenAddress::from(*token),
+                                    match supported {
+                                        true => risk_detector::Quality::Supported,
+                                        false => risk_detector::Quality::Unsupported,
+                                    },
+                                )
+                            })
+                            .collect(),
+                        enable_simulation_strategy: solver_config
+                            .bad_order_detection
+                            .enable_simulation_strategy,
+                        enable_metrics_strategy: solver_config
+                            .bad_order_detection
+                            .enable_metrics_strategy,
+                        metrics_strategy_failure_ratio: solver_config
+                            .bad_order_detection
+                            .metrics_strategy_failure_ratio,
+                        metrics_strategy_required_measurements: solver_config
+                            .bad_order_detection
+                            .metrics_strategy_required_measurements,
+                        metrics_strategy_log_only: solver_config
+                            .bad_order_detection
+                            .metrics_strategy_log_only,
+                        metrics_strategy_order_freeze_time: solver_config
+                            .bad_order_detection
+                            .metrics_strategy_freeze_time,
+                        metrics_strategy_cache_gc_interval: solver_config
+                            .bad_order_detection
+                            .metrics_strategy_gc_interval,
+                        metrics_strategy_cache_max_age: solver_config
+                            .bad_order_detection
+                            .metrics_strategy_gc_max_age,
+                    },
+                    settle_queue_size: solver_config.settle_queue_size,
+                    flashloans_enabled: config.flashloans_enabled,
+                    fetch_liquidity_at_block: match config.liquidity.fetch_at_block {
+                        file::AtBlock::Latest => liquidity::AtBlock::Latest,
+                        file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
+                    },
+                    haircut_bps: solver_config.haircut_bps,
+                    submission_accounts: join_all(
+                        solver_config
+                            .submission_accounts
+                            .into_iter()
+                            .map(|acc| load_account(acc, config.chain_id)),
+                    )
+                    .await,
+                    forwarder_contract: solver_config.forwarder_contract,
+                    pod: pod_config,
+                }
             }
         }))
         .await,
@@ -365,6 +389,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,
+        pod: config.pod,
     }
 }
 
