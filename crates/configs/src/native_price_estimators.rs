@@ -141,3 +141,122 @@ impl Display for NativePriceEstimator {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Deserialize)]
+    struct Helper {
+        estimators: NativePriceEstimators,
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_empty() {
+        #[derive(Deserialize)]
+        struct H {
+            _estimators: NativePriceEstimators,
+        }
+
+        assert!(toml::from_str::<H>("estimators = []").is_err());
+        assert!(toml::from_str::<H>("estimators = [[]]").is_err());
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_single_stage() {
+        let toml = r#"
+        estimators = [[{type = "CoinGecko"}, {type = "OneInchSpotPriceApi"}]]
+        "#;
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(
+            parsed.estimators.as_slice(),
+            vec![vec![
+                NativePriceEstimator::CoinGecko,
+                NativePriceEstimator::OneInchSpotPriceApi,
+            ]]
+        );
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_multiple_stages() {
+        let toml = r#"
+        estimators = [
+            [{type = "CoinGecko"}, {type = "Driver", name = "solver1", url = "http://localhost:8080"}],
+            [{type = "Forwarder", url = "http://localhost:12088"}],
+        ]
+        "#;
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(
+            parsed.estimators.as_slice(),
+            vec![
+                vec![
+                    NativePriceEstimator::CoinGecko,
+                    NativePriceEstimator::Driver(ExternalSolver {
+                        name: "solver1".to_string(),
+                        url: "http://localhost:8080".parse().unwrap(),
+                    }),
+                ],
+                vec![NativePriceEstimator::Forwarder {
+                    url: "http://localhost:12088".parse().unwrap(),
+                }],
+            ]
+        );
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_default() {
+        let estimators = NativePriceEstimators::default();
+        assert!(estimators.as_slice().is_empty());
+    }
+
+    #[test]
+    fn toml_deserialize_eip4626_default_depth() {
+        let toml = r#"
+        estimators = [[{type = "Eip4626"}, {type = "CoinGecko"}]]
+        "#;
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(
+            parsed.estimators.as_slice(),
+            vec![vec![
+                NativePriceEstimator::Eip4626 {
+                    depth: NonZeroU8::MIN
+                },
+                NativePriceEstimator::CoinGecko,
+            ]]
+        );
+    }
+
+    #[test]
+    fn toml_deserialize_eip4626_custom_depth() {
+        let toml = r#"
+        estimators = [[{type = "Eip4626", depth = 3}, {type = "CoinGecko"}]]
+        "#;
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(
+            parsed.estimators.as_slice(),
+            vec![vec![
+                NativePriceEstimator::Eip4626 {
+                    depth: NonZeroU8::new(3).unwrap()
+                },
+                NativePriceEstimator::CoinGecko,
+            ]]
+        );
+    }
+
+    #[test]
+    fn toml_deserialize_eip4626_at_end_of_stage_rejected() {
+        let toml = r#"
+        estimators = [[{type = "CoinGecko"}, {type = "Eip4626"}]]
+        "#;
+
+        let err = toml::from_str::<Helper>(toml).unwrap_err();
+        assert!(
+            err.to_string().contains("Eip4626 must be followed"),
+            "{err}"
+        );
+    }
+}
