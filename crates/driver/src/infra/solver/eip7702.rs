@@ -28,12 +28,31 @@ pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     for solver in solvers {
         let config = solver.config();
         if config.submission_accounts.is_empty() {
+            anyhow::ensure!(
+                config.max_solutions_to_propose.get() == 1,
+                "solver '{}': max-solutions-to-propose > 1 requires at least one \
+                 submission-account (EIP-7702 parallel submission must be enabled)",
+                config.name,
+            );
             continue;
         }
-        if matches!(config.account, super::Account::Address(_)) {
-            tracing::debug!(solver = %config.name, "read-only mode, skipping EIP-7702 setup");
+        if config
+            .submission_accounts
+            .iter()
+            .all(|a| matches!(a, super::Account::Address(_)))
+        {
+            tracing::debug!(
+                solver = %config.name,
+                "all submission accounts are read-only, skipping EIP-7702 setup"
+            );
             continue;
         }
+        anyhow::ensure!(
+            !matches!(config.account, super::Account::Address(_)),
+            "solver '{}': main account must be a signer to set up EIP-7702 delegation when \
+             submission accounts are configured",
+            config.name,
+        );
         let forwarder = config.forwarder_contract.ok_or_else(|| {
             anyhow::anyhow!(
                 "solver {}: submission_accounts configured but forwarder_contract missing",

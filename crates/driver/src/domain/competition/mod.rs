@@ -283,7 +283,7 @@ impl Competition {
     }
 
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, request: Request<Body>) -> Result<Option<Solved>, Error> {
+    pub async fn solve(&self, request: Request<Body>) -> Result<Vec<Solved>, Error> {
         let start = Instant::now();
         let timer = ::observe::metrics::metrics()
             .on_auction_overhead_start("driver", "pre_processing_total");
@@ -344,7 +344,7 @@ impl Competition {
 
         if auction.orders.is_empty() {
             tracing::info!("no orders left after pre-processing; skipping solving");
-            return Ok(None);
+            return Ok(vec![]);
         }
 
         let auction = &auction;
@@ -498,59 +498,78 @@ impl Competition {
             observe::score(settlement, score);
         }
 
-        // Pick the best-scoring settlement.
-        let (mut score, settlement) = scores
+        // Build scored settlements sorted best-first.
+        let scored: Vec<(Solved, Settlement)> = scores
             .into_iter()
-            .max_by_key(|(score, _)| score.to_owned())
+            .sorted_by(|(a, _), (b, _)| b.cmp(a))
             .map(|(score, settlement)| {
-                (
-                    Solved {
-                        id: settlement.solution().clone(),
-                        score,
-                        trades: settlement.orders(),
-                        prices: settlement.prices(),
-                        gas: Some(settlement.gas.estimate),
-                    },
-                    settlement,
-                )
+                let solved = Solved {
+                    id: settlement.solution().clone(),
+                    score,
+                    trades: settlement.orders(),
+                    prices: settlement.prices(),
+                    gas: Some(settlement.gas.estimate),
+                };
+                (solved, settlement)
             })
-            .unzip();
+            .collect();
 
-        let Some(settlement) = settlement else {
-            // Don't wait for the deadline because we can't produce a solution anyway.
-            return Ok(score);
-        };
-        let solution_id = settlement.solution().get();
-
-        {
-            let mut lock = self.settlements.lock().unwrap();
-            lock.push_front(settlement.clone());
-
-            /// Number of solutions that may be cached at most.
-            const MAX_SOLUTION_STORAGE: usize = 5;
-            lock.truncate(MAX_SOLUTION_STORAGE);
+        if scored.is_empty() {
+            return Ok(vec![]);
         }
 
-        // Re-simulate the solution on every new block until the deadline ends to make
-        // sure we actually submit a working solution close to when the winner
-        // gets picked by the procotol.
+        let max_to_propose = self.solver.max_solutions_to_propose();
+        let scored: Vec<(Solved, Settlement)> = scored.into_iter().take(max_to_propose).collect();
+
+        // Cache all settlements so they can be revealed/settled later.
+        // Use a multiple of max_to_propose so solutions from previous
+        // overlapping auctions survive until their /settle completes.
+        {
+            let mut lock = self.settlements.lock().unwrap();
+            for (_, settlement) in &scored {
+                lock.push_front(settlement.clone());
+            }
+            lock.truncate(max_to_propose * 5);
+        }
+
+        // Re-simulate all solutions on every new block until the deadline ends to
+        // make sure we only propose solutions that are still working when the
+        // winner gets picked by the protocol.
+        let mut voided: HashSet<u64> = HashSet::new();
         if let Ok(remaining) = deadline.remaining() {
-            let score_ref = &mut score;
-            let has_haircut = settlement.has_haircut();
+            let voided_ref = &mut voided;
+            let scored_ref = &scored;
             let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::block_stream::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
-                    if let Err(simulator::Error::Revert(err)) =
-                        self.simulate_settlement(&settlement).await
-                    {
+                    let active: Vec<_> = scored_ref
+                        .iter()
+                        .filter(|(solved, _)| !voided_ref.contains(&solved.id.get()))
+                        .collect();
+
+                    let results: Vec<_> =
+                        futures::future::join_all(active.iter().map(|(solved, settlement)| {
+                            let solution_id = solved.id.get();
+                            async move {
+                                let result = self.simulate_settlement(settlement).await;
+                                (solution_id, settlement, result)
+                            }
+                        }))
+                        .await;
+
+                    for (solution_id, settlement, result) in results {
+                        let err = match result {
+                            Err(simulator::Error::Revert(err)) => err,
+                            _ => continue,
+                        };
+                        let has_haircut = settlement.has_haircut();
                         observe::winner_voided(self.solver.name(), block, &err, has_haircut);
-                        *score_ref = None;
+                        voided_ref.insert(solution_id);
                         self.settlements
                             .lock()
                             .unwrap()
                             .retain(|s| s.solution().get() != solution_id);
-                        // Only notify solver if solution doesn't have haircut
                         if !has_haircut {
                             notify::simulation_failed(
                                 &self.solver,
@@ -560,14 +579,20 @@ impl Competition {
                                 true,
                             );
                         }
-                        return;
+                    }
+                    if voided_ref.len() == scored_ref.len() {
+                        return; // all solutions voided, no point waiting for more blocks
                     }
                 }
             };
             let _ = tokio::time::timeout(remaining, simulate_on_new_blocks).await;
         }
 
-        Ok(score)
+        Ok(scored
+            .into_iter()
+            .filter(|(solved, _)| !voided.contains(&solved.id.get()))
+            .map(|(solved, _)| solved)
+            .collect())
     }
 
     // Oders already need to be sorted from most relevant to least relevant so that
