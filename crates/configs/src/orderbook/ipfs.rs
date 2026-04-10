@@ -58,6 +58,12 @@ mod tests {
     fn auth_token_is_redacted() {
         let config = IpfsConfig {
             gateway: Url::parse("https://google.com").unwrap(),
+            auth_token: None,
+        };
+        assert!(format!("{:?}", config).contains(r#"auth_token: "<REDACTED>""#));
+
+        let config = IpfsConfig {
+            gateway: Url::parse("https://google.com").unwrap(),
             auth_token: Some("SOME_TOKEN".to_string()),
         };
         assert!(format!("{:?}", config).contains(r#"auth_token: "<REDACTED>""#));
