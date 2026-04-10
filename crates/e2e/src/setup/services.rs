@@ -39,7 +39,7 @@ use {
     },
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
-    std::{ops::DerefMut, str::FromStr, time::Duration},
+    std::{str::FromStr, time::Duration},
     tokio::task::JoinHandle,
 };
 
@@ -92,7 +92,6 @@ impl ServicesBuilder {
             contracts: onchain_components.contracts(),
             http: Client::builder().timeout(self.timeout).build().unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
-            web3: onchain_components.web3(),
         }
     }
 }
@@ -109,7 +108,6 @@ pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
     db: Db,
-    web3: &'a Web3,
 }
 
 impl<'a> Services<'a> {
@@ -121,7 +119,6 @@ impl<'a> Services<'a> {
                 .build()
                 .unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
-            web3: onchain_components.web3(),
         }
     }
 
@@ -185,10 +182,7 @@ impl<'a> Services<'a> {
             ..config
         };
 
-        let join_handle = tokio::task::spawn(autopilot::run(config, control));
-        self.wait_until_autopilot_ready().await;
-
-        join_handle
+        tokio::task::spawn(autopilot::run(config, control))
     }
 
     /// Start the autopilot service in a background task.
@@ -420,22 +414,6 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
-    }
-
-    async fn wait_until_autopilot_ready(&self) {
-        let is_up = || async {
-            let mut db = self.db.acquire().await.unwrap();
-            const QUERY: &str = "SELECT COUNT(*) FROM auctions";
-            let count: i64 = sqlx::query_scalar(QUERY)
-                .fetch_one(db.deref_mut())
-                .await
-                .unwrap();
-            self.mint_block().await;
-            count > 0
-        };
-        wait_for_condition(TIMEOUT, is_up)
-            .await
-            .expect("waiting for autopilot timed out");
     }
 
     /// Fetches the current auction. Don't use this as a synchronization
@@ -923,11 +901,6 @@ impl<'a> Services<'a> {
     /// execute raw SQL queries.
     pub fn db(&self) -> &Db {
         &self.db
-    }
-
-    async fn mint_block(&self) {
-        tracing::info!("mining block");
-        self.web3.provider.evm_mine(None).await.unwrap();
     }
 }
 

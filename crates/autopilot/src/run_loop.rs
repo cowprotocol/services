@@ -281,17 +281,6 @@ impl RunLoop {
             tracing::debug!("no current auction");
             return None;
         };
-        let id = self
-            .persistence
-            .get_next_auction_id()
-            .await
-            .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
-            .ok()?;
-        Metrics::auction(id);
-
-        // always update the auction because the tests use this as a readiness probe
-        self.persistence.replace_current_auction_in_db(id, &auction);
-        self.persistence.upload_auction_to_s3(id, &auction);
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
@@ -299,6 +288,18 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
+
+        let id = self
+            .persistence
+            .get_next_auction_id()
+            .await
+            .inspect_err(|err| tracing::error!(?err, "failed to get next auction id"))
+            .ok()?;
+
+        Metrics::auction(id);
+        self.persistence.replace_current_auction_in_db(id, &auction);
+        self.persistence.upload_auction_to_s3(id, &auction);
+
         Some(domain::Auction {
             id,
             block: auction.block,
