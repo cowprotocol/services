@@ -112,7 +112,7 @@ impl BalanceOverrides {
         Self {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(web3, 60),
+                Detector::new(web3, 60, detector::DEFAULT_VERIFICATION_TIMEOUT),
                 Mutex::new(SizedCache::with_size(1000)),
             )),
         }
@@ -372,7 +372,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(mock_web3, 60),
+                Detector::new(mock_web3, 60, detector::DEFAULT_VERIFICATION_TIMEOUT),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };
@@ -420,7 +420,7 @@ mod tests {
         let balance_overrides = BalanceOverrides {
             hardcoded: Default::default(),
             detector: Some((
-                Detector::new(mock_web3, 60),
+                Detector::new(mock_web3, 60, detector::DEFAULT_VERIFICATION_TIMEOUT),
                 Mutex::new(SizedCache::with_size(100)),
             )),
         };
