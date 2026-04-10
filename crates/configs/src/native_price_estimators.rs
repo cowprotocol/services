@@ -4,6 +4,8 @@ use {
     url::Url,
 };
 
+/// Ordered stages of native-price estimators. Each stage is tried in order;
+/// within a stage estimators run concurrently.
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
@@ -72,6 +74,7 @@ impl Display for NativePriceEstimators {
     }
 }
 
+/// Reference to an external solver by name and URL.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(deny_unknown_fields)]
@@ -80,13 +83,18 @@ pub struct ExternalSolver {
     pub url: Url,
 }
 
+/// A single native-price estimation backend.
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(tag = "type")]
 pub enum NativePriceEstimator {
+    /// Query an external solver driver for native prices.
     Driver(ExternalSolver),
+    /// Forward requests to another service (e.g. autopilot).
     Forwarder { url: Url },
+    /// Use the 1inch spot-price API.
     OneInchSpotPriceApi,
+    /// Use the CoinGecko API.
     CoinGecko,
 }
 

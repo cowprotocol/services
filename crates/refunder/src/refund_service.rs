@@ -288,7 +288,7 @@ mod tests {
         },
         alloy::primitives::Address,
         anyhow::anyhow,
-        contracts::alloy::CoWSwapEthFlow::EthFlowOrder,
+        contracts::CoWSwapEthFlow::EthFlowOrder,
         database::{byte_array::ByteArray, ethflow_orders::EthOrderPlacement},
         rand::random,
         rstest::rstest,

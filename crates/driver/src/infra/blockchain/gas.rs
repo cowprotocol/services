@@ -11,7 +11,7 @@ use {
     ethrpc::Web3,
     gas_price_estimation::{
         GasPriceEstimating,
-        configurable_alloy::{ConfigurableGasPriceEstimator, EstimatorConfig},
+        configurable_alloy::ConfigurableGasPriceEstimator,
         eth_node::NodeGasPriceEstimator,
     },
     std::sync::Arc,
@@ -22,7 +22,7 @@ type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
 pub struct GasPriceEstimator {
-    gas: Arc<dyn GasPriceEstimating>,
+    pub(super) gas: Arc<dyn GasPriceEstimating>,
     additional_tip: AdditionalTip,
     max_fee_per_gas: eth::U256,
     min_priority_fee: eth::U256,
@@ -41,7 +41,7 @@ impl GasPriceEstimator {
                 reward_percentile,
             } => Arc::new(ConfigurableGasPriceEstimator::new(
                 web3.provider.clone(),
-                EstimatorConfig {
+                configs::gas_price_estimation::EstimatorConfig {
                     past_blocks: *past_blocks,
                     reward_percentile: *reward_percentile,
                 },
@@ -133,5 +133,16 @@ impl GasPriceEstimator {
             max_priority_fee_per_gas: u128::try_from(max_priority_fee_per_gas)
                 .map_err(|err| Error::GasPrice(err.into()))?,
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl GasPriceEstimating for GasPriceEstimator {
+    async fn estimate(&self) -> ::anyhow::Result<Eip1559Estimation> {
+        GasPriceEstimator::estimate(self).await.map_err(Into::into)
+    }
+
+    async fn base_fee(&self) -> ::anyhow::Result<Option<u64>> {
+        self.gas.base_fee().await
     }
 }

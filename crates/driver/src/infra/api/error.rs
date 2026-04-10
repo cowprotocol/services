@@ -4,9 +4,11 @@ use {
         infra::{api, blockchain},
     },
     serde::Serialize,
+    solvers_dto,
+    std::borrow::Cow,
 };
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 enum Kind {
     QuotingFailed,
@@ -23,13 +25,17 @@ enum Kind {
     FailedToSubmit,
     NoValidOrders,
     MalformedRequest,
+    TradingOutsideAllowedWindow,
+    TokenTemporarilySuspended,
+    InsufficientLiquidity,
+    CustomSolverError,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Error {
     kind: Kind,
-    description: &'static str,
+    description: Cow<'static, str>,
 }
 
 impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
@@ -57,19 +63,67 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::TooManyPendingSettlements => "Settlement queue is full",
             Kind::NoValidOrders => "No valid orders found in the auction",
             Kind::MalformedRequest => "Could not parse the request",
+            Kind::TradingOutsideAllowedWindow => {
+                "Token can only be traded during specific time windows"
+            }
+            Kind::TokenTemporarilySuspended => "Token is temporarily suspended from trading",
+            Kind::InsufficientLiquidity => "Insufficient liquidity for the requested trade size",
+            Kind::CustomSolverError => "Solver returned a custom error",
         };
         (
             axum::http::StatusCode::BAD_REQUEST,
             axum::Json(Error {
                 kind: value,
-                description,
+                description: description.into(),
             }),
         )
     }
 }
 
+fn map_custom_solver_error(custom_err: &solvers_dto::solution::SolverError) -> (Kind, String) {
+    let (kind, default_message) = match custom_err.code {
+        solvers_dto::solution::SolverErrorCode::TradingOutsideAllowedWindow => (
+            Kind::TradingOutsideAllowedWindow,
+            "Token can only be traded during specific time windows",
+        ),
+        solvers_dto::solution::SolverErrorCode::TokenTemporarilySuspended => (
+            Kind::TokenTemporarilySuspended,
+            "Token is temporarily suspended from trading",
+        ),
+        solvers_dto::solution::SolverErrorCode::InsufficientLiquidity => (
+            Kind::InsufficientLiquidity,
+            "Insufficient liquidity for the requested trade size",
+        ),
+        solvers_dto::solution::SolverErrorCode::Other => {
+            (Kind::CustomSolverError, "Solver returned a custom error")
+        }
+    };
+
+    let message = custom_err
+        .message
+        .clone()
+        .unwrap_or_else(|| default_message.to_string());
+
+    (kind, message)
+}
+
 impl From<quote::Error> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: quote::Error) -> Self {
+        // Check if this is a custom solver error
+        if let quote::Error::Solver(ref solver_err) = value
+            && let Some(custom_err) = solver_err.custom_error()
+        {
+            tracing::warn!(err=?custom_err, "received custom solver error, mapping to internal errors");
+            let (kind, description) = map_custom_solver_error(custom_err);
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                axum::Json(Error {
+                    kind,
+                    description: description.into(),
+                }),
+            );
+        }
+
         let error = match value {
             quote::Error::QuotingFailed(_) => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
@@ -122,5 +176,59 @@ impl From<api::routes::OrderError> for (axum::http::StatusCode, axum::Json<Error
             api::routes::OrderError::SameTokens => Kind::QuoteSameTokens,
         };
         error.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_custom_solver_error_codes_to_kinds_and_default_messages() {
+        let cases = [
+            (
+                solvers_dto::solution::SolverErrorCode::TradingOutsideAllowedWindow,
+                Kind::TradingOutsideAllowedWindow,
+                "Token can only be traded during specific time windows",
+            ),
+            (
+                solvers_dto::solution::SolverErrorCode::TokenTemporarilySuspended,
+                Kind::TokenTemporarilySuspended,
+                "Token is temporarily suspended from trading",
+            ),
+            (
+                solvers_dto::solution::SolverErrorCode::InsufficientLiquidity,
+                Kind::InsufficientLiquidity,
+                "Insufficient liquidity for the requested trade size",
+            ),
+            (
+                solvers_dto::solution::SolverErrorCode::Other,
+                Kind::CustomSolverError,
+                "Solver returned a custom error",
+            ),
+        ];
+
+        for (code, expected_kind, expected_message) in cases {
+            let custom_err = solvers_dto::solution::SolverError {
+                code,
+                message: None,
+            };
+
+            let (kind, message) = map_custom_solver_error(&custom_err);
+            assert_eq!(kind, expected_kind);
+            assert_eq!(message, expected_message);
+        }
+    }
+
+    #[test]
+    fn preserves_custom_solver_error_message_when_provided() {
+        let custom_err = solvers_dto::solution::SolverError {
+            code: solvers_dto::solution::SolverErrorCode::Other,
+            message: Some("downstream solver reason".to_string()),
+        };
+
+        let (kind, message) = map_custom_solver_error(&custom_err);
+        assert!(matches!(kind, Kind::CustomSolverError));
+        assert_eq!(message, "downstream solver reason");
     }
 }

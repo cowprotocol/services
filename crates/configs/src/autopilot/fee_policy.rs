@@ -8,6 +8,7 @@ pub const fn default_max_partner_fee() -> FeeFactor {
     FeeFactor::new(0.01)
 }
 
+/// Protocol fee configuration: which fee model to apply per order class.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct FeePoliciesConfig {
@@ -39,7 +40,9 @@ impl Default for FeePoliciesConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct FeePolicy {
+    /// The fee calculation method (surplus, price-improvement, or volume).
     pub kind: FeePolicyKind,
+    /// Which order class this policy applies to.
     pub order_class: FeePolicyOrderClass,
 }
 
@@ -47,6 +50,7 @@ pub struct FeePolicy {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct UpcomingFeePolicies {
+    /// Policies that will replace the current ones at the effective timestamp.
     #[serde(default)]
     pub policies: Vec<FeePolicy>,
 
@@ -54,6 +58,7 @@ pub struct UpcomingFeePolicies {
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
+/// Method used to calculate the protocol fee for an order.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FeePolicyKind {
@@ -75,6 +80,7 @@ pub enum FeePolicyKind {
     Volume { factor: FeeFactor },
 }
 
+/// Which order class a fee policy targets.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FeePolicyOrderClass {

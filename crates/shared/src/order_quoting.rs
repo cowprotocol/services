@@ -496,8 +496,9 @@ impl OrderQuoter {
                 buy_amount_after_fee: buy_amount,
             } => (trade_estimate.out_amount, buy_amount.get()),
         };
+
         let fee_parameters = FeeParameters {
-            gas_amount: trade_estimate.gas as _,
+            gas_amount: trade_estimate.gas as f64,
             gas_price: effective_gas_price as f64,
             sell_token_price,
         };

@@ -1,5 +1,5 @@
 use {
-    contracts::alloy::IZeroex,
+    contracts::IZeroex,
     liquidity_sources::zeroex::Order,
     shared::interaction::{EncodedInteraction, Interaction},
     std::sync::Arc,

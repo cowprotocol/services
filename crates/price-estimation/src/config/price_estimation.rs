@@ -1,9 +1,6 @@
 use {
-    crate::trade_verifier::tenderly_api::{Instrumented, TenderlyApi, TenderlyHttpApi},
-    anyhow::Result,
     balance_overrides::BalanceOverriding,
-    configs::price_estimation::{BalanceOverridesConfig, TenderlyConfig},
-    http_client::HttpClientFactory,
+    configs::price_estimation::BalanceOverridesConfig,
     std::sync::Arc,
 };
 
@@ -17,29 +14,14 @@ impl BalanceOverridesConfigExt for BalanceOverridesConfig {
             hardcoded: self.token_overrides.inner().clone(),
             detector: self.autodetect.then(|| {
                 (
-                    balance_overrides::detector::Detector::new(web3, self.probing_depth),
+                    balance_overrides::detector::Detector::new(
+                        web3,
+                        self.probing_depth,
+                        self.detection_timeout,
+                    ),
                     std::sync::Mutex::new(cached::SizedCache::with_size(self.cache_size)),
                 )
             }),
         })
-    }
-}
-
-pub trait TenderlyConfigExt {
-    fn get_api_instance(
-        &self,
-        http_factory: &HttpClientFactory,
-        name: String,
-    ) -> Result<Arc<dyn TenderlyApi>>;
-}
-
-impl TenderlyConfigExt for TenderlyConfig {
-    fn get_api_instance(
-        &self,
-        http_factory: &HttpClientFactory,
-        name: String,
-    ) -> Result<Arc<dyn TenderlyApi>> {
-        TenderlyHttpApi::new(http_factory, &self.user, &self.project, &self.api_key)
-            .map(|inner| Arc::new(Instrumented { inner, name }) as _)
     }
 }

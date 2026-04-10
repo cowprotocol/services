@@ -5,6 +5,7 @@ use {
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
+        order_simulator::OrderSimulator,
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
@@ -16,7 +17,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::orderbook::Configuration,
-    contracts::alloy::{
+    contracts::{
         BalancerV2Vault,
         ChainalysisOracle,
         GPv2Settlement,
@@ -39,10 +40,10 @@ use {
         trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
-        arguments::tracing_config,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
     },
+    simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
@@ -50,11 +51,27 @@ use {
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
+    let config = Configuration::from_path(&args.config)
+        .await
+        .expect("failed to load configuration file");
+    let tracing_config = config
+        .shared
+        .tracing
+        .collector_endpoint
+        .as_ref()
+        .map(|endpoint| {
+            observe::TracingConfig::new(
+                endpoint.clone(),
+                "orderbook".into(),
+                config.shared.tracing.exporter_timeout,
+                config.shared.tracing.level,
+            )
+        });
     let obs_config = observe::Config::new(
-        args.shared.logging.log_filter.as_str(),
-        args.shared.logging.log_stderr_threshold,
-        args.shared.logging.use_json_logs,
-        tracing_config(&args.shared.tracing, "orderbook".into()),
+        config.shared.logging.filter.as_str(),
+        config.shared.logging.stderr_threshold,
+        config.shared.logging.use_json,
+        tracing_config,
     );
     observe::tracing::init::initialize(&obs_config);
     tracing::info!("running order book with validated arguments:\n{}", args);
@@ -62,42 +79,40 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
-    let config = Configuration::from_path(&args.config)
-        .await
-        .expect("failed to load configuration file");
     tracing::info!("file configuration:\n{:#?}", config);
-    run(args, config).await;
+    run(config).await;
 }
 
-pub async fn run(args: Arguments, config: Configuration) {
+pub async fn run(config: Configuration) {
     let http_factory = HttpClientFactory::from(config.http_client);
 
-    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
-    let simulation_web3 = args
+    let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
+    let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
+    let simulation_web3 = config
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&ethrpc_args, node_url, "simulation"));
 
     let chain_id = web3
         .provider
         .get_chain_id()
         .await
         .expect("Could not get chainId");
-    if let Some(expected_chain_id) = args.shared.chain_id {
+    if let Some(expected_chain_id) = config.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
             "connected to node with incorrect chain ID",
         );
     }
 
-    let settlement_contract = match args.shared.settlement_contract_address {
+    let settlement_contract = match config.shared.contracts.settlement {
         Some(address) => GPv2Settlement::Instance::new(address, web3.provider.clone()),
         None => GPv2Settlement::Instance::deployed(&web3.provider)
             .await
             .expect("load settlement contract"),
     };
-    let balances_contract = match args.shared.balances_contract_address {
+    let balances_contract = match config.shared.contracts.balances {
         Some(address) => Balances::Instance::new(address, web3.provider.clone()),
         None => Balances::Instance::deployed(&web3.provider.clone())
             .await
@@ -108,15 +123,15 @@ pub async fn run(args: Arguments, config: Configuration) {
         .call()
         .await
         .expect("Couldn't get vault relayer address");
-    let signatures_contract = match args.shared.signatures_contract_address {
+    let signatures_contract = match config.shared.contracts.signatures {
         Some(address) => {
-            contracts::alloy::support::Signatures::Instance::new(address, web3.provider.clone())
+            contracts::support::Signatures::Instance::new(address, web3.provider.clone())
         }
-        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.provider)
+        None => contracts::support::Signatures::Instance::deployed(&web3.provider)
             .await
             .expect("load signatures contract"),
     };
-    let native_token = match args.shared.native_token_address {
+    let native_token = match config.shared.contracts.native_token {
         Some(address) => WETH9::Instance::new(address, web3.provider.clone()),
         None => WETH9::Instance::deployed(&web3.provider)
             .await
@@ -136,7 +151,7 @@ pub async fn run(args: Arguments, config: Configuration) {
         balance_overrider.clone(),
     );
 
-    let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
+    let vault_address = config.shared.contracts.balancer_v2_vault.or_else(|| {
         let chain_id = chain.id();
         match BalancerV2Vault::deployment_address(&chain_id) {
             addr @ Some(_) => addr,
@@ -150,7 +165,7 @@ pub async fn run(args: Arguments, config: Configuration) {
         }
     });
 
-    let hooks_contract = match args.shared.hooks_contract_address {
+    let hooks_contract = match config.shared.contracts.hooks {
         Some(address) => HooksTrampoline::Instance::new(address, web3.provider.clone()),
         None => HooksTrampoline::Instance::deployed(&web3.provider)
             .await
@@ -163,6 +178,7 @@ pub async fn run(args: Arguments, config: Configuration) {
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let db_config = crate::database::Config {
         max_pool_size: config.database.max_connections.get(),
+        statement_timeout: config.database.statement_timeout,
     };
     let postgres_write = Postgres::try_new(config.database.write_url.as_str(), db_config.clone())
         .expect("failed to create database");
@@ -170,7 +186,7 @@ pub async fn run(args: Arguments, config: Configuration) {
     let postgres_read = if let Some(db_read_url) = config.database.read_url
         && config.database.write_url != db_read_url
     {
-        Postgres::try_new(db_read_url.as_str(), db_config)
+        Postgres::try_new_with_timeout(db_read_url.as_str(), db_config)
             .expect("failed to create read replica database")
     } else {
         postgres_write.clone()
@@ -183,15 +199,21 @@ pub async fn run(args: Arguments, config: Configuration) {
             balances_contract.clone(),
             vault_relayer,
             vault_address,
-            balance_overrider,
+            balance_overrider.clone(),
         ),
     );
 
+    let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config
+        .shared
+        .gas_estimators
+        .iter()
+        .map(shared::arguments::gas_estimator_type_from_config)
+        .collect();
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         gas_price_estimation::create_priority_estimator(
             http_factory.create(),
             &web3,
-            args.shared.gas_estimators.as_slice(),
+            &gas_estimators,
         )
         .await
         .expect("failed to create gas price estimator"),
@@ -199,10 +221,9 @@ pub async fn run(args: Arguments, config: Configuration) {
 
     let deny_listed_tokens = DenyListedTokens::new(config.unsupported_tokens);
 
-    let current_block_stream = args
-        .shared
-        .current_block
-        .stream(args.shared.node_url.clone(), web3.provider.clone())
+    let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
+    let current_block_stream = current_block_args
+        .stream(config.shared.node_url.clone(), web3.provider.clone())
         .await
         .unwrap();
 
@@ -355,7 +376,7 @@ pub async fn run(args: Arguments, config: Configuration) {
         .await
         .ok();
     let order_validator = Arc::new(OrderValidator::new(
-        native_token,
+        native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             config.banned_users.addresses,
@@ -389,6 +410,37 @@ pub async fn run(args: Arguments, config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
+
+    let order_simulator = if let Some(config) = config.order_simulation {
+        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+            config.tenderly.as_ref().map(|tenderly_config| {
+                Box::new(simulator::tenderly::TenderlyApi::new(
+                    tenderly_config,
+                    &http_factory,
+                    chain.id().to_string(),
+                )) as _
+            });
+        Some(Arc::new(OrderSimulator::new(
+            SwapSimulator::new(
+                balance_overrider.clone(),
+                *settlement_contract.address(),
+                *native_token.address(),
+                current_block_stream.clone(),
+                web3,
+                config
+                    .gas_limit
+                    .try_into()
+                    .expect("gas_limit must fit in u64"),
+            )
+            .await
+            .expect("failed to create SwapSimulator"),
+            chain.id().to_string(),
+            tenderly,
+        )))
+    } else {
+        None
+    };
+
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         *settlement_contract.address(),
@@ -397,16 +449,23 @@ pub async fn run(args: Arguments, config: Configuration) {
         order_validator.clone(),
         app_data.clone(),
         config.active_order_competition_threshold,
+        order_simulator,
     ));
 
     check_database_connection(orderbook.as_ref()).await;
+    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
+        .shared
+        .volume_fee_bucket_overrides
+        .iter()
+        .map(Into::into)
+        .collect();
     let quotes = QuoteHandler::new(
         order_validator,
         optimal_quoter,
         app_data.clone(),
         config.volume_fee,
-        args.shared.volume_fee_bucket_overrides.clone(),
-        args.shared.enable_sell_equals_buy_volume_fee,
+        volume_fee_bucket_overrides,
+        config.shared.enable_sell_equals_buy_volume_fee,
     )
     .with_fast_quoter(fast_quoter);
 
@@ -417,7 +476,7 @@ pub async fn run(args: Arguments, config: Configuration) {
         orderbook.clone(),
         quotes,
         app_data,
-        args.bind_address,
+        config.bind_address,
         async {
             let _ = shutdown_receiver.await;
         },
@@ -425,7 +484,7 @@ pub async fn run(args: Arguments, config: Configuration) {
         config.price_estimation.quote_timeout,
     );
 
-    let mut metrics_address = args.bind_address;
+    let mut metrics_address = config.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
     tracing::info!(%metrics_address, "serving metrics");
     let metrics_task = serve_metrics(

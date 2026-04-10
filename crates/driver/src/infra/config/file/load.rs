@@ -8,7 +8,6 @@ use {
             liquidity,
             mempool,
             notify,
-            simulator,
             solver::{self, Account, BadOrderDetection, SolutionMerging},
         },
     },
@@ -345,24 +344,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 additional_tip_percentage: mempool.additional_tip_percentage,
             })
             .collect(),
-        simulator: match (config.tenderly, config.enso) {
-            (Some(config), None) => {
-                Some(simulator::Config::Tenderly(simulator::tenderly::Config {
-                    url: config.url,
-                    api_key: config.api_key,
-                    user: config.user,
-                    project: config.project,
-                    save: config.save,
-                    save_if_fails: config.save_if_fails,
-                }))
-            }
-            (None, Some(config)) => Some(simulator::Config::Enso(simulator::enso::Config {
-                url: config.url,
-                network_block_interval: config.network_block_interval,
-            })),
-            (None, None) => None,
-            (Some(_), Some(_)) => panic!("Cannot configure both Tenderly and Enso"),
-        },
+        simulator: config.simulator,
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
@@ -383,6 +365,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
+        http: config.http,
     }
 }
 

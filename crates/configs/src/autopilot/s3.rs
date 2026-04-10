@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+/// Settings for uploading auction instances to S3.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct S3Config {

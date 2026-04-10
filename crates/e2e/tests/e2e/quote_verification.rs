@@ -26,6 +26,7 @@ use {
         trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
     serde_json::json,
+    simulator::swap_simulator::SwapSimulator,
     std::sync::Arc,
 };
 
@@ -147,18 +148,30 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         .await
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
+    let balance_overrides = Arc::new(BalanceOverrides::default());
+    let gas_limit = 12_000_000;
+    let simulator = SwapSimulator::new(
+        balance_overrides.clone(),
+        *onchain.contracts().gp_settlement.address(),
+        *onchain.contracts().weth.address(),
+        block_stream.clone(),
+        web3.clone(),
+        gas_limit,
+    )
+    .await
+    .unwrap();
 
     let verifier = TradeVerifier::new(
         web3.clone(),
         None,
+        simulator,
         Arc::new(web3.clone()),
-        Arc::new(BalanceOverrides::default()),
-        block_stream,
+        balance_overrides,
         *onchain.contracts().gp_settlement.address(),
-        *onchain.contracts().weth.address(),
         BigDecimal::zero(),
         Default::default(),
-        12_000_000,
+        0,
+        u32::MAX,
     )
     .await
     .unwrap();
@@ -401,7 +414,6 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
     };
     services
         .start_protocol_with_args(
-            ExtraServiceArgs::default(),
             Configuration::test("test_solver", solver.address()),
             orderbook_config,
             solver,
@@ -543,7 +555,6 @@ async fn usdt_quote_verification(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            ExtraServiceArgs::default(),
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
                 price_estimation: configs::price_estimation::PriceEstimation {
@@ -594,7 +605,7 @@ async fn trace_based_balance_detection(web3: Web3) {
     // offset within a struct mapping, making it undetectable by standard slot
     // calculation methods
     let struct_offset_token =
-        contracts::alloy::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
+        contracts::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
             .await
             .unwrap();
 
@@ -603,20 +614,14 @@ async fn trace_based_balance_detection(web3: Web3) {
     // delegate the balance it returns between itself (allowing for testing of
     // calling another contract to get a balance--or calling another contract to
     // *not* get a balance)
-    let local_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.provider.clone(),
-        weth,
-        true,
-    )
-    .await
-    .unwrap();
-    let delegated_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.provider.clone(),
-        weth,
-        false,
-    )
-    .await
-    .unwrap();
+    let local_storage_token =
+        contracts::test::RemoteERC20Balances::Instance::deploy(web3.provider.clone(), weth, true)
+            .await
+            .unwrap();
+    let delegated_storage_token =
+        contracts::test::RemoteERC20Balances::Instance::deploy(web3.provider.clone(), weth, false)
+            .await
+            .unwrap();
 
     // Mint some tokens to the trader (so the contract has non-zero state)
     struct_offset_token
@@ -633,7 +638,11 @@ async fn trace_based_balance_detection(web3: Web3) {
         .await
         .unwrap();
 
-    let detector = Detector::new(web3.clone(), 60);
+    let detector = Detector::new(
+        web3.clone(),
+        60,
+        balance_overrides::detector::DEFAULT_VERIFICATION_TIMEOUT,
+    );
 
     let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
@@ -693,7 +702,7 @@ async fn trace_based_balance_detection(web3: Web3) {
 
     // Verify that the detected strategies actually work by testing balance
     // overrides
-    use contracts::alloy::ERC20;
+    use contracts::ERC20;
 
     async fn test_balance_override(
         web3: &Web3,

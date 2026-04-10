@@ -21,10 +21,19 @@ use {
     futures::FutureExt,
     observe::tracing::distributed::headers::tracing_headers,
     request_sharing::{BoxRequestSharing, RequestSharing},
-    reqwest::{Client, header},
+    reqwest::{Client, StatusCode, header},
     tracing::instrument,
     url::Url,
 };
+
+/// Wraps a trade result with the request ID of the HTTP request that produced
+/// it, so that consumers reusing a shared in-flight request can identify the
+/// original request.
+#[derive(Clone)]
+struct SharedTradeResponse {
+    result: Result<TradeKind, PriceEstimationError>,
+    request_id: Option<String>,
+}
 
 pub struct ExternalTradeFinder {
     /// URL to call to in the driver to get a quote with call data for a trade.
@@ -33,7 +42,7 @@ pub struct ExternalTradeFinder {
     /// Utility to make sure no 2 identical requests are in-flight at the same
     /// time. Instead of issuing a duplicated request this awaits the
     /// response of the in-flight request.
-    sharing: BoxRequestSharing<Query, Result<TradeKind, PriceEstimationError>>,
+    sharing: BoxRequestSharing<Query, SharedTradeResponse>,
 
     /// Client to issue http requests with.
     client: Client,
@@ -83,39 +92,55 @@ impl ExternalTradeFinder {
                     request = request.header("X-Current-Block-Hash", block_hash.to_string())
                 }
 
-                if let Some(id) = id {
-                    request = request.header("X-REQUEST-ID", id);
+                if let Some(ref id) = id {
+                    request = request.header("X-REQUEST-ID", id.clone());
                 }
 
-                let response = request
-                    .timeout(timeout)
-                    .send()
-                    .await
-                    .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                if response.status() == 429 {
-                    return Err(PriceEstimationError::RateLimited);
+                let result = async {
+                    let response = request
+                        .timeout(timeout)
+                        .send()
+                        .await
+                        .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
+                    if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                        return Err(PriceEstimationError::RateLimited);
+                    }
+                    let text = response
+                        .text()
+                        .await
+                        .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
+                    serde_json::from_str::<dto::QuoteKind>(&text)
+                        .map(TradeKind::from)
+                        .map_err(|err| {
+                            serde_json::from_str::<dto::Error>(&text)
+                                .map(PriceEstimationError::from)
+                                .unwrap_or_else(|_| {
+                                    PriceEstimationError::EstimatorInternal(anyhow!(err))
+                                })
+                        })
                 }
-                let text = response
-                    .text()
-                    .await
-                    .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-                serde_json::from_str::<dto::QuoteKind>(&text)
-                    .map(TradeKind::from)
-                    .map_err(|err| {
-                        if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
-                            PriceEstimationError::from(err)
-                        } else {
-                            PriceEstimationError::EstimatorInternal(anyhow!(err))
-                        }
-                    })
+                .await;
+
+                SharedTradeResponse {
+                    result,
+                    request_id: id,
+                }
             }
             .boxed()
         };
 
-        self.sharing
-            .shared_or_else(query.clone(), fut)
-            .await
-            .map_err(TradeError::from)
+        let shared = self.sharing.shared_or_else(query.clone(), fut);
+        let is_shared = shared.is_shared;
+        let response = shared.await;
+
+        if is_shared {
+            tracing::debug!(
+                original_request_id = ?response.request_id,
+                "reusing in-flight quote request"
+            );
+        }
+
+        response.result.map_err(TradeError::from)
     }
 }
 
@@ -182,6 +207,18 @@ impl From<dto::Error> for PriceEstimationError {
     fn from(value: dto::Error) -> Self {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
+            "TradingOutsideAllowedWindow" => Self::TradingOutsideAllowedWindow {
+                message: value.description,
+            },
+            "TokenTemporarilySuspended" => Self::TokenTemporarilySuspended {
+                message: value.description,
+            },
+            "InsufficientLiquidity" => Self::InsufficientLiquidity {
+                message: value.description,
+            },
+            "CustomSolverError" => Self::CustomSolverError {
+                message: value.description,
+            },
             _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
         }
     }
@@ -194,6 +231,96 @@ impl From<dto::Interaction> for Interaction {
             value: interaction.value,
             data: interaction.call_data,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_known_custom_error_kinds() {
+        let cases = [
+            (
+                "TradingOutsideAllowedWindow",
+                "window closed",
+                "TradingOutsideAllowedWindow",
+            ),
+            (
+                "TokenTemporarilySuspended",
+                "token suspended",
+                "TokenTemporarilySuspended",
+            ),
+            (
+                "InsufficientLiquidity",
+                "not enough liquidity",
+                "InsufficientLiquidity",
+            ),
+            (
+                "CustomSolverError",
+                "custom solver reason",
+                "CustomSolverError",
+            ),
+            ("QuotingFailed", "ignored", "QuotingFailed"),
+        ];
+
+        for (kind, description, expected) in cases {
+            let error = dto::Error {
+                kind: kind.to_string(),
+                description: description.to_string(),
+            };
+
+            let mapped = PriceEstimationError::from(error);
+            match expected {
+                "TradingOutsideAllowedWindow" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::TradingOutsideAllowedWindow { message }
+                        if message == description
+                    ));
+                }
+                "TokenTemporarilySuspended" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::TokenTemporarilySuspended { message }
+                        if message == description
+                    ));
+                }
+                "InsufficientLiquidity" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::InsufficientLiquidity { message }
+                        if message == description
+                    ));
+                }
+                "CustomSolverError" => {
+                    assert!(matches!(
+                        mapped,
+                        PriceEstimationError::CustomSolverError { message }
+                        if message == description
+                    ));
+                }
+                "QuotingFailed" => {
+                    assert!(matches!(mapped, PriceEstimationError::NoLiquidity));
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn maps_unknown_error_kind_to_estimator_internal() {
+        let error = dto::Error {
+            kind: "SomeFutureKind".to_string(),
+            description: "driver sent unknown error kind".to_string(),
+        };
+
+        let mapped = PriceEstimationError::from(error);
+        assert!(matches!(
+            mapped,
+            PriceEstimationError::EstimatorInternal(err)
+            if err.to_string() == "driver sent unknown error kind"
+        ));
     }
 }
 

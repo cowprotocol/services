@@ -11,17 +11,25 @@ use {
             order_validation::OrderValidationConfig,
         },
         price_estimation::PriceEstimation,
+        shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy::primitives::{Address, U256},
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
-    std::path::Path,
+    std::{
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+        path::Path,
+    },
 };
 
 pub mod ipfs;
 pub mod native_price;
 pub mod order_validation;
+
+const fn default_bind_address() -> SocketAddr {
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 8080))
+}
 
 const fn default_app_data_size_limit() -> usize {
     8192
@@ -31,18 +39,42 @@ const fn default_active_order_competition_threshold() -> u32 {
     5
 }
 
+/// Volume-based protocol fee applied to orders.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct VolumeFeeConfig {
+    /// Fee as a fraction of the order volume (e.g. 0.0002 = 0.02%).
     pub factor: Option<FeeFactor>,
+    /// Timestamp from which this fee configuration becomes effective.
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OrderSimulationConfig {
+    pub gas_limit: U256,
+
+    /// Optional Tenderly configuration. When set, simulations are automatically
+    /// submitted and shared on Tenderly, and the response includes a dashboard
+    /// URL.
+    #[serde(default)]
+    pub tenderly: Option<crate::simulator::TenderlyConfig>,
+}
+
+/// Top-level orderbook service configuration.
 // NOTE: cannot add deny_unknown_fields during the config migration
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case" /* deny_unknown_fields */)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Configuration {
+    /// Shared settings (node URL, gas estimators, logging, etc.).
+    #[serde(default)]
+    pub shared: SharedConfig,
+
+    /// Bind address for the Orderbook.
+    #[serde(default = "default_bind_address")]
+    pub bind_address: SocketAddr,
+
     /// Configuration for the order validation system.
     #[serde(default)]
     pub order_validation: OrderValidationConfig,
@@ -58,6 +90,7 @@ pub struct Configuration {
     /// Configuration for the volume fee.
     pub volume_fee: Option<VolumeFeeConfig>,
 
+    /// Maximum allowed size (in bytes) for order app-data.
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
 
@@ -76,6 +109,7 @@ pub struct Configuration {
     /// Configuration for the native price estimation mechanism.
     pub native_price_estimation: NativePriceConfig,
 
+    /// Database connection pool settings.
     #[serde(default)]
     pub database: DatabasePoolConfig,
 
@@ -83,13 +117,17 @@ pub struct Configuration {
     #[serde(default)]
     pub http_client: HttpClient,
 
-    // Configurations for the order creation process.
+    /// Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
 
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Order simulation configuration. If `None`, the endpoint is disabled.
+    #[serde(default)]
+    pub order_simulation: Option<OrderSimulationConfig>,
 }
 
 impl Configuration {
@@ -115,12 +153,16 @@ pub mod test_util {
         crate::{
             orderbook::{
                 Configuration,
+                OrderSimulationConfig,
                 default_active_order_competition_threshold,
                 default_app_data_size_limit,
+                default_bind_address,
                 native_price::NativePriceConfig,
             },
+            price_estimation::PriceEstimation,
             test_util::TestDefault,
         },
+        alloy::primitives::U256,
         std::path::Path,
     };
 
@@ -154,6 +196,8 @@ pub mod test_util {
             use crate::test_util::TestDefault;
 
             Self {
+                shared: Default::default(),
+                bind_address: default_bind_address(),
                 order_validation: Default::default(),
                 banned_users: Default::default(),
                 ipfs: Default::default(),
@@ -168,7 +212,18 @@ pub mod test_util {
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
-                price_estimation: TestDefault::test_default(),
+                price_estimation: PriceEstimation {
+                    balance_overrides: crate::price_estimation::BalanceOverridesConfig {
+                        autodetect: true,
+                        ..Default::default()
+                    },
+                    ..TestDefault::test_default()
+                },
+                // Enable order simulation for testing
+                order_simulation: Some(OrderSimulationConfig {
+                    gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
+                    tenderly: None,
+                }),
             }
         }
     }
@@ -218,6 +273,9 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [order-simulation]
+        gas-limit = "123456789"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -227,6 +285,10 @@ mod tests {
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
+        assert_eq!(
+            config.order_simulation.map(|config| config.gas_limit),
+            Some(U256::from(123456789u64))
+        );
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
@@ -293,6 +355,8 @@ mod tests {
     #[test]
     fn roundtrip_serialization() {
         let config = Configuration {
+            shared: Default::default(),
+            bind_address: default_bind_address(),
             order_validation: OrderValidationConfig {
                 min_order_validity_period: Duration::from_secs(120),
                 max_order_validity_period: Duration::from_secs(7200),
@@ -327,6 +391,7 @@ mod tests {
             database: TestDefault::test_default(),
             http_client: Default::default(),
             price_estimation: Default::default(),
+            order_simulation: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

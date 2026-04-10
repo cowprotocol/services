@@ -10,7 +10,7 @@ use {
         sol_types::SolCall,
     },
     anyhow::Context,
-    contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
+    contracts::CowSettlementForwarder::CowSettlementForwarder,
     futures::future::try_join_all,
     std::time::Duration,
     tracing::instrument,

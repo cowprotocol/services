@@ -1,6 +1,21 @@
 help:
     @just --list
 
+# Bootstrap the crate, will vendor contracts, generate the bindings crates and format everything
+setup:
+    cd contracts && \
+    cargo r -r -- vendor && \
+    cargo r -r -- generate && \
+    cargo +nightly fmt --all && \
+    cd generated && cargo +nightly fmt --all && \
+    cd ../.. && \
+    tombi format
+
+# Generate contract bindings
+generate-contracts:
+    cd contracts && \
+    cargo r -r -- generate
+
 # Run unit tests
 test-unit:
     cargo nextest run
@@ -35,6 +50,7 @@ clippy:
 # Format the repository
 fmt *extra:
     cargo +nightly fmt --all -- {{extra}}
+    cd contracts && cargo +nightly fmt --all -- {{extra}}
 
 # Format .toml files in the repository
 fmt-toml *extra:

@@ -10,11 +10,12 @@ use {
                 solution::{self, Interaction, Trade, error},
             },
         },
-        infra::{Simulator, blockchain::Ethereum, observe, solver::ManageNativeToken},
+        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken},
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
     futures::future::try_join_all,
+    simulator::Simulator,
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
 };
@@ -268,6 +269,11 @@ impl Settlement {
     /// The solution encoded in this settlement.
     pub fn solution(&self) -> &super::Id {
         self.solution.id()
+    }
+
+    /// Optional gas fee overrides provided by the solver.
+    pub fn gas_fee_override(&self) -> Option<super::GasFeeOverride> {
+        self.solution.gas_fee_override()
     }
 
     /// Solution's pre interactions

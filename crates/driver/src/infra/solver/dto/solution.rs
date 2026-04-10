@@ -2,7 +2,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{self, solution::WrapperCall},
+            competition::{self},
             liquidity,
         },
         infra::Solver,
@@ -15,11 +15,12 @@ use {
         DomainSeparator,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
     },
+    simulator::encoding::WrapperCall,
     std::{collections::HashMap, str::FromStr},
 };
 
 #[derive(derive_more::From)]
-pub struct Solutions(solvers_dto::solution::Solutions);
+pub struct Solutions(Vec<solvers_dto::solution::Solution>);
 
 impl Solutions {
     const MAX_BASE_POINT: u32 = 10000;
@@ -34,7 +35,7 @@ impl Solutions {
     ) -> Result<Vec<competition::Solution>, super::Error> {
         let haircut_bps = solver.haircut_bps();
 
-        self.0.solutions
+        self.0
             .into_iter()
             .map(|solution| {
                 competition::Solution::new(
@@ -234,6 +235,24 @@ impl Solutions {
                     solver.clone(),
                     weth,
                     solution.gas.map(eth::Gas::from),
+                    solution
+                        .gas_fee_override
+                        .map(|o| {
+                            Ok(competition::solution::GasFeeOverride {
+                                max_fee_per_gas: o.max_fee_per_gas.try_into().map_err(|_| {
+                                    super::Error("max_fee_per_gas overflow".to_owned())
+                                })?,
+                                max_priority_fee_per_gas: o
+                                    .max_priority_fee_per_gas
+                                    .try_into()
+                                    .map_err(|_| {
+                                        super::Error(
+                                            "max_priority_fee_per_gas overflow".to_owned(),
+                                        )
+                                    })?,
+                            })
+                        })
+                        .transpose()?,
                     solver.config().fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
@@ -254,7 +273,7 @@ impl Solutions {
                             }).collect()),
                     solution.wrappers.iter().cloned().map(|w| WrapperCall {
                         address: w.address,
-                        data: w.data,
+                        data: w.data.into(),
                     }).collect(),
                 )
                 .map_err(|err| match err {

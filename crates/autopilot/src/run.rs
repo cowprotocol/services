@@ -30,7 +30,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
+    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
     http_client::HttpClientFactory,
@@ -44,7 +44,6 @@ use {
         trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
-        arguments::tracing_config,
         order_quoting::{self, OrderQuoter},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -134,11 +133,24 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .validate()
         .expect("failed to validate configuration file");
 
+    let tracing_config = config
+        .shared
+        .tracing
+        .collector_endpoint
+        .as_ref()
+        .map(|endpoint| {
+            observe::TracingConfig::new(
+                endpoint.clone(),
+                "autopilot".into(),
+                config.shared.tracing.exporter_timeout,
+                config.shared.tracing.level,
+            )
+        });
     let obs_config = observe::Config::new(
-        args.shared.logging.log_filter.as_str(),
-        args.shared.logging.log_stderr_threshold,
-        args.shared.logging.use_json_logs,
-        tracing_config(&args.shared.tracing, "autopilot".into()),
+        config.shared.logging.filter.as_str(),
+        config.shared.logging.stderr_threshold,
+        config.shared.logging.use_json,
+        tracing_config,
     );
     observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
@@ -153,18 +165,14 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
     if config.shadow.is_some() {
-        shadow_mode(args, config).await;
+        shadow_mode(config).await;
     } else {
-        run(args, config, ShutdownController::default()).await;
+        run(config, ShutdownController::default()).await;
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn run(
-    args: CliArguments,
-    config: Configuration,
-    shutdown_controller: ShutdownController,
-) {
+pub async fn run(config: Configuration, shutdown_controller: ShutdownController) {
     assert!(config.shadow.is_none(), "cannot run in shadow mode");
     let db_write = Postgres::new(
         config.database.write_url.as_str(),
@@ -181,12 +189,13 @@ pub async fn run(
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::from(config.http_client);
-    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
-    let simulation_web3 = args
+    let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
+    let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
+    let simulation_web3 = config
         .shared
         .simulation_node_url
         .as_ref()
-        .map(|node_url| shared::web3::web3(&args.shared.ethrpc, node_url, "simulation"));
+        .map(|node_url| shared::web3::web3(&ethrpc_args, node_url, "simulation"));
 
     let chain_id = web3
         .provider
@@ -194,32 +203,33 @@ pub async fn run(
         .instrument(info_span!("chain_id"))
         .await
         .expect("Could not get chainId");
-    if let Some(expected_chain_id) = args.shared.chain_id {
+    if let Some(expected_chain_id) = config.shared.chain_id {
         assert_eq!(
             chain_id, expected_chain_id,
             "connected to node with incorrect chain ID",
         );
     }
 
-    let unbuffered_ethrpc = unbuffered_ethrpc(&args.shared.node_url).await;
-    let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
+    let unbuffered_ethrpc = unbuffered_ethrpc(&config.shared.node_url).await;
+    let ethrpc = ethrpc(&config.shared.node_url, &ethrpc_args).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
     let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
-        settlement: args.shared.settlement_contract_address,
-        signatures: args.shared.signatures_contract_address,
-        weth: args.shared.native_token_address,
-        balances: args.shared.balances_contract_address,
-        trampoline: args.shared.hooks_contract_address,
+        settlement: config.shared.contracts.settlement,
+        signatures: config.shared.contracts.signatures,
+        weth: config.shared.contracts.native_token,
+        balances: config.shared.contracts.balances,
+        trampoline: config.shared.contracts.hooks,
     };
+    let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
     let eth = ethereum(
         web3.clone(),
         unbuffered_ethrpc.web3().clone(),
         &chain,
         url,
         contracts.clone(),
-        &args.shared.current_block,
+        &current_block_args,
     )
     .await;
 
@@ -231,7 +241,7 @@ pub async fn run(
         .await
         .expect("Couldn't get vault relayer address");
 
-    let vault_address = args.shared.balancer_v2_vault_address.or_else(|| {
+    let vault_address = config.shared.contracts.balancer_v2_vault.or_else(|| {
         let chain_id = chain.id();
         let addr = BalancerV2Vault::deployment_address(&chain_id);
         if addr.is_none() {
@@ -259,11 +269,17 @@ pub async fn run(
         eth.current_block().clone(),
     );
 
+    let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config
+        .shared
+        .gas_estimators
+        .iter()
+        .map(shared::arguments::gas_estimator_type_from_config)
+        .collect();
     let gas_price_estimator = Arc::new(
         gas_price_estimation::create_priority_estimator(
             http_factory.create(),
             &web3,
-            args.shared.gas_estimators.as_slice(),
+            &gas_estimators,
         )
         .await
         .expect("failed to create gas price estimator"),
@@ -415,9 +431,7 @@ pub async fn run(
         .cow_amm
         .archive_node_url
         .as_ref()
-        .map_or(web3.clone(), |url| {
-            boundary::web3_client(url, &args.shared.ethrpc)
-        });
+        .map_or(web3.clone(), |url| boundary::web3_client(url, &ethrpc_args));
 
     let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
         provider: archive_node_web3.provider,
@@ -472,8 +486,13 @@ pub async fn run(
         *eth.contracts().weth().address(),
         domain::ProtocolFees::new(
             &config.fee_policies,
-            args.shared.volume_fee_bucket_overrides.clone(),
-            args.shared.enable_sell_equals_buy_volume_fee,
+            config
+                .shared
+                .volume_fee_bucket_overrides
+                .iter()
+                .map(Into::into)
+                .collect(),
+            config.shared.enable_sell_equals_buy_volume_fee,
         ),
         cow_amm_registry.clone(),
         config.native_price_timeout,
@@ -632,7 +651,7 @@ pub async fn run(
     api_task.await.ok();
 }
 
-async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
+async fn shadow_mode(config: Configuration) -> ! {
     let http_factory = HttpClientFactory::from(config.http_client);
 
     let orderbook = infra::shadow::Orderbook::new(
@@ -668,7 +687,8 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         .into_iter()
         .collect();
 
-    let web3 = shared::web3::web3(&args.shared.ethrpc, &args.shared.node_url, "base");
+    let ethrpc_args = shared::web3::Arguments::from(&config.shared.ethrpc);
+    let web3 = shared::web3::web3(&ethrpc_args, &config.shared.node_url, "base");
     let weth = WETH9::Instance::deployed(&web3.provider)
         .await
         .expect("couldn't find deployed WETH contract");
@@ -679,7 +699,7 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
             .get_chain_id()
             .await
             .expect("Could not get chainId");
-        if let Some(expected_chain_id) = args.shared.chain_id {
+        if let Some(expected_chain_id) = config.shared.chain_id {
             assert_eq!(
                 chain_id, expected_chain_id,
                 "connected to node with incorrect chain ID",
@@ -704,10 +724,9 @@ async fn shadow_mode(args: CliArguments, config: Configuration) -> ! {
         Default::default(),
     );
 
-    let current_block = args
-        .shared
-        .current_block
-        .stream(args.shared.node_url, web3.provider.clone())
+    let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
+    let current_block = current_block_args
+        .stream(config.shared.node_url, web3.provider.clone())
         .await
         .expect("couldn't initialize current block stream");
 

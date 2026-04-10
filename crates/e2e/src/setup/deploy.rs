@@ -4,7 +4,7 @@ use {
         providers::Provider,
         sol_types::SolCall,
     },
-    contracts::alloy::{
+    contracts::{
         BalancerV2Authorizer,
         BalancerV2Vault,
         CoWSwapEthFlow,
@@ -276,10 +276,7 @@ async fn grant_required_roles(
     vault: Address,
     vault_relayer: Address,
 ) {
-    use contracts::alloy::BalancerV2Vault::BalancerV2Vault::{
-        batchSwapCall,
-        manageUserBalanceCall,
-    };
+    use contracts::BalancerV2Vault::BalancerV2Vault::{batchSwapCall, manageUserBalanceCall};
 
     authorizer
         .grantRoles(
