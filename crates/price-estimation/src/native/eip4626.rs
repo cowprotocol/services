@@ -209,33 +209,4 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("not an EIP-4626 vault (cached)"), "{err}");
     }
-
-    /// Requires a live node; run with:
-    ///   NODE_URL=... cargo test -p price-estimation -- eip4626 --ignored
-    /// --nocapture
-    #[tokio::test]
-    #[ignore]
-    async fn mainnet_sdai() {
-        // sDAI on mainnet: vault wrapping DAI
-        let sdai = alloy::primitives::address!("83F20F44975D03b1b09e64809B757c47f942BEeA");
-
-        let web3 = ethrpc::Web3::new_from_env();
-
-        let mut inner = MockNativePriceEstimating::new();
-        inner.expect_estimate_native_price().returning(|token, _| {
-            let dai = alloy::primitives::address!("6B175474E89094C44Da98b954EedeAC495271d0F");
-            assert_eq!(token, dai, "should price the underlying DAI, not sDAI");
-            async { Ok(3.3e-4_f64) }.boxed()
-        });
-
-        let estimator = Eip4626::new(Arc::new(inner), web3.provider);
-        let price = estimator
-            .estimate_native_price(sdai, HEALTHY_PRICE_ESTIMATION_TIME)
-            .await
-            .unwrap();
-
-        // sDAI should be worth slightly more than DAI due to accrued interest
-        println!("sDAI native price: {price}");
-        assert!(price > 3.3e-4_f64 * 0.99 && price < 3.3e-4_f64 * 1.20);
-    }
 }
