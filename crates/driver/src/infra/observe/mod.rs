@@ -268,7 +268,7 @@ pub fn solved(solver: &str, result: &Result<Vec<Solved>, competition::Error>) {
             metrics::get()
                 .solutions
                 .with_label_values(&[solver, "Success"])
-                .inc();
+                .inc_by(solutions.len() as u64);
         }
         Err(err) => {
             tracing::warn!(?err, "failed to solve auction");

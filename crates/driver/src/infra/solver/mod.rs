@@ -219,9 +219,9 @@ pub struct Config {
     /// Address of the deployed CowSettlementForwarder contract for EIP-7702
     /// delegation. Required when `submission_accounts` is non-empty.
     pub forwarder_contract: Option<eth::Address>,
-    /// If true the driver proposes all valid solutions instead of only the
-    /// best-scoring one.
-    pub propose_all_solutions: bool,
+    /// Maximum number of solutions the driver proposes to the autopilot per
+    /// auction. When 1 (the default), only the best-scoring solution is sent.
+    pub max_solutions_to_propose: std::num::NonZeroUsize,
 }
 
 impl Solver {
@@ -328,8 +328,8 @@ impl Solver {
         self.config.forwarder_contract
     }
 
-    pub fn propose_all_solutions(&self) -> bool {
-        self.config.propose_all_solutions
+    pub fn max_solutions_to_propose(&self) -> usize {
+        self.config.max_solutions_to_propose.get()
     }
 
     /// Make a POST request instructing the solver to solve an auction.

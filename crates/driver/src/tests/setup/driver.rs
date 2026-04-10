@@ -320,7 +320,7 @@ async fn create_config_file(
                fee-handler = {}
                merge-solutions = {}
                haircut-bps = {}
-               propose-all-solutions = {}
+               max-solutions-to-propose = {}
                "#,
             solver.name,
             addr,
@@ -336,7 +336,7 @@ async fn create_config_file(
             serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
             solver.haircut_bps,
-            solver.propose_all_solutions,
+            solver.max_solutions_to_propose,
         )
         .unwrap();
         if !solver.submission_accounts.is_empty() {

@@ -506,8 +506,8 @@ impl Competition {
             observe::score(settlement, score);
         }
 
-        // Sort all scored settlements descending by score (best first).
-        let mut scored: Vec<(Option<Solved>, Settlement)> = scores
+        // Build scored settlements sorted best-first.
+        let scored: Vec<(Solved, Settlement)> = scores
             .into_iter()
             .sorted_by(|(a, _), (b, _)| b.cmp(a))
             .map(|(score, settlement)| {
@@ -518,7 +518,7 @@ impl Competition {
                     prices: settlement.prices(),
                     gas: Some(settlement.gas.estimate),
                 };
-                (Some(solved), settlement)
+                (solved, settlement)
             })
             .collect();
 
@@ -526,59 +526,70 @@ impl Competition {
             return Ok(vec![]);
         }
 
-        // When multi-solution proposals are disabled keep only the best one.
-        if !self.solver.propose_all_solutions() {
-            scored.truncate(1);
-        }
+        let max_to_propose = self.solver.max_solutions_to_propose();
+        let scored: Vec<(Solved, Settlement)> = scored.into_iter().take(max_to_propose).collect();
 
         // Cache all settlements so they can be revealed/settled later.
+        // Use a multiple of max_to_propose so solutions from previous
+        // overlapping auctions survive until their /settle completes.
         {
             let mut lock = self.settlements.lock().unwrap();
             for (_, settlement) in &scored {
                 lock.push_front(settlement.clone());
             }
-            const MAX_SOLUTION_STORAGE: usize = 5;
-            lock.truncate(MAX_SOLUTION_STORAGE);
+            lock.truncate(max_to_propose * 5);
         }
 
         // Re-simulate all solutions on every new block until the deadline ends to
         // make sure we only propose solutions that are still working when the
         // winner gets picked by the protocol.
+        let mut voided: HashSet<u64> = HashSet::new();
         if let Ok(remaining) = deadline.remaining() {
-            let scored_ref = &mut scored;
+            let voided_ref = &mut voided;
+            let scored_ref = &scored;
             let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::block_stream::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
-                    for (solved_opt, settlement) in scored_ref.iter_mut() {
-                        if solved_opt.is_none() {
-                            continue; // already voided
-                        }
-                        if let Err(infra::simulator::Error::Revert(err)) =
-                            self.simulate_settlement(settlement).await
-                        {
-                            let solution_id = settlement.solution().get();
-                            let has_haircut = settlement.has_haircut();
-                            observe::winner_voided(self.solver.name(), block, &err, has_haircut);
-                            *solved_opt = None;
-                            self.settlements
-                                .lock()
-                                .unwrap()
-                                .retain(|s| s.solution().get() != solution_id);
-                            // Only notify solver if solution doesn't have haircut
-                            if !has_haircut {
-                                notify::simulation_failed(
-                                    &self.solver,
-                                    auction.id(),
-                                    settlement.solution(),
-                                    &infra::simulator::Error::Revert(err),
-                                    true,
-                                );
+                    let active: Vec<_> = scored_ref
+                        .iter()
+                        .filter(|(solved, _)| !voided_ref.contains(&solved.id.get()))
+                        .collect();
+
+                    let results: Vec<_> =
+                        futures::future::join_all(active.iter().map(|(solved, settlement)| {
+                            let solution_id = solved.id.get();
+                            async move {
+                                let result = self.simulate_settlement(settlement).await;
+                                (solution_id, settlement, result)
                             }
+                        }))
+                        .await;
+
+                    for (solution_id, settlement, result) in results {
+                        let err = match result {
+                            Err(infra::simulator::Error::Revert(err)) => err,
+                            _ => continue,
+                        };
+                        let has_haircut = settlement.has_haircut();
+                        observe::winner_voided(self.solver.name(), block, &err, has_haircut);
+                        voided_ref.insert(solution_id);
+                        self.settlements
+                            .lock()
+                            .unwrap()
+                            .retain(|s| s.solution().get() != solution_id);
+                        if !has_haircut {
+                            notify::simulation_failed(
+                                &self.solver,
+                                auction.id(),
+                                settlement.solution(),
+                                &infra::simulator::Error::Revert(err),
+                                true,
+                            );
                         }
                     }
-                    if scored_ref.iter().all(|(s, _)| s.is_none()) {
-                        return; // all solutions voided
+                    if voided_ref.len() == scored_ref.len() {
+                        return; // all solutions voided, no point waiting for more blocks
                     }
                 }
             };
@@ -587,7 +598,8 @@ impl Competition {
 
         Ok(scored
             .into_iter()
-            .filter_map(|(solved, _)| solved)
+            .filter(|(solved, _)| !voided.contains(&solved.id.get()))
+            .map(|(solved, _)| solved)
             .collect())
     }
 

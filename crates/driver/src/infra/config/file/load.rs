@@ -145,7 +145,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 )
                 .await,
                 forwarder_contract: solver_config.forwarder_contract,
-                propose_all_solutions: solver_config.propose_all_solutions,
+                max_solutions_to_propose: solver_config.max_solutions_to_propose,
             }
         }))
         .await,

@@ -9,7 +9,7 @@ use {
     serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
-    std::{collections::HashMap, time::Duration},
+    std::{collections::HashMap, num::NonZeroUsize, time::Duration},
 };
 
 mod load;
@@ -233,6 +233,10 @@ pub fn default_solving_share_of_deadline() -> f64 {
     0.8
 }
 
+fn default_max_solutions_to_propose() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -322,13 +326,12 @@ struct SolverConfig {
     /// delegation. Required when `submission_accounts` is non-empty.
     forwarder_contract: Option<eth::Address>,
 
-    /// If enabled the driver proposes all valid solutions to the autopilot
-    /// instead of only the single best-scoring one. This allows the autopilot's
-    /// combinatorial auction to pick the optimal set of winners across parallel
-    /// submissions. Requires `submission-accounts` to be configured; the driver
-    /// will refuse to start otherwise. Disabled by default.
-    #[serde(default)]
-    propose_all_solutions: bool,
+    /// Maximum number of solutions the driver proposes to the autopilot per
+    /// auction. Defaults to 1 (only the best-scoring solution). Values > 1
+    /// require `submission-accounts` to be configured; the driver will refuse
+    /// to start otherwise.
+    #[serde(default = "default_max_solutions_to_propose")]
+    max_solutions_to_propose: NonZeroUsize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
