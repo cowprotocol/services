@@ -100,8 +100,8 @@ pub enum NativePriceEstimator {
     /// Use the CoinGecko API.
     CoinGecko,
     /// Prices EIP-4626 vault tokens by looking up the underlying `asset()` and
-    /// applying `convertToAssets()` as a conversion rate. At construction time,
-    /// wraps the next estimator in the configuration list.
+    /// applying `convertToAssets()` as a conversion rate. Must be followed by
+    /// another estimator in the same stage to price the underlying asset.
     Eip4626,
 }
 

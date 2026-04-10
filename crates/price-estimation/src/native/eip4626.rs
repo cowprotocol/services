@@ -12,10 +12,9 @@ use {
 };
 
 /// Estimates the native price of EIP-4626 vault tokens by:
-/// 1. Calling `asset()` to find the underlying token
-/// 2. Calling `decimals()` to determine the vault's precision
-/// 3. Calling `convertToAssets(10^decimals)` to find the conversion rate
-/// 4. Delegating to an inner estimator for the underlying token's native price
+/// 1. Calling `asset()` and `decimals()` in parallel
+/// 2. Calling `convertToAssets(10^decimals)` to find the conversion rate
+/// 3. Delegating to an inner estimator for the underlying token's native price
 pub struct Eip4626 {
     inner: Arc<dyn NativePriceEstimating>,
     provider: AlloyProvider,
@@ -30,13 +29,19 @@ impl Eip4626 {
         let vault = IERC4626::Instance::new(token, self.provider.clone());
         let erc20 = ERC20::Instance::new(token, self.provider.clone());
 
-        let asset: Address = vault.asset().call().await.map_err(|e| {
+        // Fetch asset address and vault decimals in parallel.
+        let asset_builder = vault.asset();
+        let decimals_builder = erc20.decimals();
+        let (asset_result, decimals_result) =
+            tokio::join!(asset_builder.call(), decimals_builder.call());
+
+        let asset: Address = asset_result.map_err(|e| {
             PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                 "failed to call asset() on {token}: {e}"
             ))
         })?;
 
-        let decimals: u8 = erc20.decimals().call().await.map_err(|e| {
+        let decimals: u8 = decimals_result.map_err(|e| {
             PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                 "failed to call decimals() on {token}: {e}"
             ))

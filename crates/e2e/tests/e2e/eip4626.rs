@@ -5,6 +5,7 @@ use {
     },
     configs::{
         autopilot::{Configuration, native_price::NativePriceConfig},
+        native_price_estimators::{NativePriceEstimator, NativePriceEstimators},
         test_util::TestDefault,
     },
     contracts::ERC20,
@@ -12,7 +13,6 @@ use {
     ethrpc::alloy::CallBuilderExt,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     number::units::EthUnit,
-    price_estimation::{NativePriceEstimator, NativePriceEstimators},
     shared::web3::Web3,
 };
 
@@ -124,5 +124,87 @@ async fn eip4626_native_price_test(web3: Web3) {
         quote.is_ok(),
         "quote for sDAI should succeed with EIP-4626 native price estimator: {:?}",
         quote.err()
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_eip4626_recursive_native_price() {
+    run_forked_test_with_block_number(
+        eip4626_recursive_native_price_test,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
+    )
+    .await;
+}
+
+/// Tests pricing of a recursive EIP-4626 vault: a mock wrapper vault whose
+/// `asset()` returns sDAI, which itself is an EIP-4626 vault wrapping DAI.
+/// Requires two chained `Eip4626` estimators to fully unwrap.
+///
+/// Unlike the non-recursive test we cannot submit a full quote because the
+/// freshly-deployed wrapper token has no DEX liquidity. Instead we verify
+/// that the native price endpoint returns a price, which exercises the full
+/// Eip4626 → Eip4626 → Driver chain.
+async fn eip4626_recursive_native_price_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
+
+    // Deploy a mock EIP-4626 vault that wraps sDAI (which itself wraps DAI).
+    let wrapper =
+        contracts::test::MockERC4626Wrapper::Instance::deploy(web3.provider.clone(), SDAI, 18u8)
+            .await
+            .unwrap();
+    let wrapper_addr = *wrapper.address();
+
+    // Two chained Eip4626 estimators: the first unwraps the mock wrapper to
+    // sDAI, the second unwraps sDAI to DAI, and the Driver prices DAI.
+    let driver_url = "http://localhost:11088/test_solver".parse().unwrap();
+    let autopilot_config = Configuration {
+        native_price_estimation: NativePriceConfig {
+            estimators: NativePriceEstimators::new(vec![vec![
+                NativePriceEstimator::Eip4626,
+                NativePriceEstimator::Eip4626,
+                NativePriceEstimator::driver("test_quoter".to_string(), driver_url),
+                // Standalone estimator for non-vault tokens.
+                NativePriceEstimator::driver(
+                    "test_quoter".to_string(),
+                    "http://localhost:11088/test_solver".parse().unwrap(),
+                ),
+            ]]),
+            ..NativePriceConfig::test_default()
+        },
+        ..Configuration::test("test_solver", solver.address())
+    };
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            autopilot_config,
+            configs::orderbook::Configuration::test_default(),
+            solver,
+        )
+        .await;
+
+    onchain.mint_block().await;
+
+    // Query the native price of the wrapper token. The Eip4626 chain must
+    // resolve wrapper → sDAI → DAI → native price via the Driver.
+    wait_for_condition(TIMEOUT, || async {
+        services.get_native_price(&wrapper_addr).await.is_ok()
+    })
+    .await
+    .expect("native price for recursive EIP-4626 wrapper should be available");
+
+    let price = services
+        .get_native_price(&wrapper_addr)
+        .await
+        .expect("native price should be available after wait");
+    assert!(
+        price.price > 0.0,
+        "native price should be positive, got: {}",
+        price.price
     );
 }
