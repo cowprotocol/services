@@ -398,7 +398,6 @@ fn build_module() -> Module {
         ]))
         .add_contract(Contract::new("CoWSwapOnchainOrders"))
         .add_contract(Contract::new("ERC1271SignatureValidator"))
-        .add_contract(Contract::new("IERC4626"))
         .add_contract(Contract::new("BalancerQueries").with_networks(networks![
             MAINNET => ("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5", 15188261),
             ARBITRUM_ONE => ("0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5", 18238624),
