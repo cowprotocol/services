@@ -2537,6 +2537,7 @@ dependencies = [
  "cow-contract-honeyswaprouter",
  "cow-contract-hookstrampoline",
  "cow-contract-icowwrapper",
+ "cow-contract-ierc4626",
  "cow-contract-iswaprpair",
  "cow-contract-iuniswaplikepair",
  "cow-contract-iuniswaplikerouter",
@@ -3205,6 +3206,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-icowwrapper"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-ierc4626"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",

@@ -3,9 +3,11 @@ use {
         primitives::{Address, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    autopilot::config::{Configuration, native_price::NativePriceConfig},
-    configs::test_util::TestDefault,
-    contracts::alloy::ERC20,
+    configs::{
+        autopilot::{Configuration, native_price::NativePriceConfig},
+        test_util::TestDefault,
+    },
+    contracts::ERC20,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -94,9 +96,8 @@ async fn eip4626_native_price_test(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
-            Default::default(),
             autopilot_config,
-            orderbook::config::Configuration::test_default(),
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;

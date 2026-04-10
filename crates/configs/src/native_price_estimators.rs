@@ -22,17 +22,20 @@ impl<'de> Deserialize<'de> for NativePriceEstimators {
                 &"expected native price estimator stages to be configured",
             ));
         }
-        match estimators
-            .iter()
-            .enumerate()
-            .find_map(|(n, stage)| stage.is_empty().then_some(n))
-        {
-            Some(n) => Err(serde::de::Error::invalid_length(
-                0,
-                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
-            )),
-            None => Ok(Self(estimators)),
+        for (n, stage) in estimators.iter().enumerate() {
+            if stage.is_empty() {
+                return Err(serde::de::Error::invalid_length(
+                    0,
+                    &format!("stage {} is empty, all stages must not be empty", n).as_str(),
+                ));
+            }
+            if matches!(stage.last(), Some(NativePriceEstimator::Eip4626)) {
+                return Err(serde::de::Error::custom(format!(
+                    "stage {n}: Eip4626 must be followed by another estimator"
+                )));
+            }
         }
+        Ok(Self(estimators))
     }
 }
 
@@ -96,6 +99,10 @@ pub enum NativePriceEstimator {
     OneInchSpotPriceApi,
     /// Use the CoinGecko API.
     CoinGecko,
+    /// Prices EIP-4626 vault tokens by looking up the underlying `asset()` and
+    /// applying `convertToAssets()` as a conversion rate. At construction time,
+    /// wraps the next estimator in the configuration list.
+    Eip4626,
 }
 
 impl NativePriceEstimator {
@@ -115,6 +122,7 @@ impl Display for NativePriceEstimator {
             NativePriceEstimator::Forwarder { url } => write!(f, "Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => write!(f, "OneInchSpotPriceApi"),
             NativePriceEstimator::CoinGecko => write!(f, "CoinGecko"),
+            NativePriceEstimator::Eip4626 => write!(f, "Eip4626"),
         }
     }
 }
