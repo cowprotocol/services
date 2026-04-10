@@ -1,5 +1,6 @@
 use {
     serde::{Deserialize, Deserializer, Serialize},
+    std::fmt::Debug,
     url::Url,
 };
 
@@ -28,7 +29,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct IpfsConfig {
     /// IPFS gateway to fetch full app data for orders that only specify the
@@ -40,9 +41,33 @@ pub struct IpfsConfig {
     pub auth_token: Option<String>,
 }
 
+impl Debug for IpfsConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IpfsConfig")
+            .field("gateway", &self.gateway)
+            .field("auth_token", &"<REDACTED>")
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auth_token_is_redacted() {
+        let config = IpfsConfig {
+            gateway: Url::parse("https://google.com").unwrap(),
+            auth_token: None,
+        };
+        assert!(format!("{:?}", config).contains(r#"auth_token: "<REDACTED>""#));
+
+        let config = IpfsConfig {
+            gateway: Url::parse("https://google.com").unwrap(),
+            auth_token: Some("SOME_TOKEN".to_string()),
+        };
+        assert!(format!("{:?}", config).contains(r#"auth_token: "<REDACTED>""#));
+    }
 
     #[test]
     fn deserialize_full() {
