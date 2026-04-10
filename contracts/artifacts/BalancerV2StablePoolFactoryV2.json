@@ -80,7 +80,9 @@
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
-    },
+    }
+  ],
+  "_disabled": [
     {
       "inputs": [
         {

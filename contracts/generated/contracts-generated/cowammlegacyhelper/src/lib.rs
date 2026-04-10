@@ -1011,9 +1011,6 @@ interface CowAmmLegacyHelper {
     constructor();
 
     function factory() external view returns (address);
-    function getSnapshot(address amm) external view returns (bytes memory);
-    function isLegacy(address amm) external view returns (bool);
-    function isLegacyEnabled(address amm) external view returns (bool success);
     function order(address pool, uint256[] memory prices) external view returns (GPv2Order.Data memory _order, GPv2Interaction.Data[] memory preInteractions, GPv2Interaction.Data[] memory postInteractions, bytes memory sig);
     function tokens(address pool) external view returns (address[] memory _tokens);
 }
@@ -1036,63 +1033,6 @@ interface CowAmmLegacyHelper {
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getSnapshot",
-    "inputs": [
-      {
-        "name": "amm",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isLegacy",
-    "inputs": [
-      {
-        "name": "amm",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isLegacyEnabled",
-    "inputs": [
-      {
-        "name": "amm",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "success",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -2064,432 +2004,6 @@ pub mod CowAmmLegacyHelper {
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getSnapshot(address)` and selector `0x21570256`.
-    ```solidity
-    function getSnapshot(address amm) external view returns (bytes memory);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getSnapshotCall {
-        #[allow(missing_docs)]
-        pub amm: alloy_sol_types::private::Address,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getSnapshot(address)`](getSnapshotCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getSnapshotReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getSnapshotCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getSnapshotCall) -> Self {
-                    (value.amm,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getSnapshotCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { amm: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getSnapshotReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getSnapshotReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getSnapshotReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getSnapshotCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [33u8, 87u8, 2u8, 86u8];
-            const SIGNATURE: &'static str = "getSnapshot(address)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.amm,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: getSnapshotReturn = r.into();
-                        r._0
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getSnapshotReturn = r.into();
-                    r._0
-                })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isLegacy(address)` and selector `0x2aec79a0`.
-    ```solidity
-    function isLegacy(address amm) external view returns (bool);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isLegacyCall {
-        #[allow(missing_docs)]
-        pub amm: alloy_sol_types::private::Address,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isLegacy(address)`](isLegacyCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isLegacyReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isLegacyCall> for UnderlyingRustTuple<'_> {
-                fn from(value: isLegacyCall) -> Self {
-                    (value.amm,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isLegacyCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { amm: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isLegacyReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: isLegacyReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isLegacyReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isLegacyCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Return = bool;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [42u8, 236u8, 121u8, 160u8];
-            const SIGNATURE: &'static str = "isLegacy(address)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.amm,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: isLegacyReturn = r.into();
-                        r._0
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isLegacyReturn = r.into();
-                    r._0
-                })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isLegacyEnabled(address)` and selector `0x10029daa`.
-    ```solidity
-    function isLegacyEnabled(address amm) external view returns (bool success);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isLegacyEnabledCall {
-        #[allow(missing_docs)]
-        pub amm: alloy_sol_types::private::Address,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isLegacyEnabled(address)`](isLegacyEnabledCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isLegacyEnabledReturn {
-        #[allow(missing_docs)]
-        pub success: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isLegacyEnabledCall> for UnderlyingRustTuple<'_> {
-                fn from(value: isLegacyEnabledCall) -> Self {
-                    (value.amm,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isLegacyEnabledCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { amm: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isLegacyEnabledReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: isLegacyEnabledReturn) -> Self {
-                    (value.success,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isLegacyEnabledReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { success: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isLegacyEnabledCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Return = bool;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [16u8, 2u8, 157u8, 170u8];
-            const SIGNATURE: &'static str = "isLegacyEnabled(address)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.amm,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: isLegacyEnabledReturn = r.into();
-                        r.success
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isLegacyEnabledReturn = r.into();
-                    r.success
-                })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `order(address,uint256[])` and selector `0x27242c9b`.
     ```solidity
     function order(address pool, uint256[] memory prices) external view returns (GPv2Order.Data memory _order, GPv2Interaction.Data[] memory preInteractions, GPv2Interaction.Data[] memory postInteractions, bytes memory sig);
@@ -2852,12 +2366,6 @@ pub mod CowAmmLegacyHelper {
         #[allow(missing_docs)]
         factory(factoryCall),
         #[allow(missing_docs)]
-        getSnapshot(getSnapshotCall),
-        #[allow(missing_docs)]
-        isLegacy(isLegacyCall),
-        #[allow(missing_docs)]
-        isLegacyEnabled(isLegacyEnabledCall),
-        #[allow(missing_docs)]
         order(orderCall),
         #[allow(missing_docs)]
         tokens(tokensCall),
@@ -2871,28 +2379,19 @@ pub mod CowAmmLegacyHelper {
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [16u8, 2u8, 157u8, 170u8],
-            [33u8, 87u8, 2u8, 86u8],
             [39u8, 36u8, 44u8, 155u8],
-            [42u8, 236u8, 121u8, 160u8],
             [196u8, 90u8, 1u8, 85u8],
             [228u8, 134u8, 3u8, 57u8],
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
-            <isLegacyEnabledCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getSnapshotCall as alloy_sol_types::SolCall>::SIGNATURE,
             <orderCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isLegacyCall as alloy_sol_types::SolCall>::SIGNATURE,
             <factoryCall as alloy_sol_types::SolCall>::SIGNATURE,
             <tokensCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(isLegacyEnabled),
-            ::core::stringify!(getSnapshot),
             ::core::stringify!(order),
-            ::core::stringify!(isLegacy),
             ::core::stringify!(factory),
             ::core::stringify!(tokens),
         ];
@@ -2919,7 +2418,7 @@ pub mod CowAmmLegacyHelper {
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for CowAmmLegacyHelperCalls {
-        const COUNT: usize = 6usize;
+        const COUNT: usize = 3usize;
         const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "CowAmmLegacyHelperCalls";
 
@@ -2927,11 +2426,6 @@ pub mod CowAmmLegacyHelper {
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::factory(_) => <factoryCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::getSnapshot(_) => <getSnapshotCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::isLegacy(_) => <isLegacyCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::isLegacyEnabled(_) => {
-                    <isLegacyEnabledCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::order(_) => <orderCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::tokens(_) => <tokensCall as alloy_sol_types::SolCall>::SELECTOR,
             }
@@ -2955,36 +2449,11 @@ pub mod CowAmmLegacyHelper {
             )
                 -> alloy_sol_types::Result<CowAmmLegacyHelperCalls>] = &[
                 {
-                    fn isLegacyEnabled(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
-                        <isLegacyEnabledCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(CowAmmLegacyHelperCalls::isLegacyEnabled)
-                    }
-                    isLegacyEnabled
-                },
-                {
-                    fn getSnapshot(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
-                        <getSnapshotCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(CowAmmLegacyHelperCalls::getSnapshot)
-                    }
-                    getSnapshot
-                },
-                {
                     fn order(data: &[u8]) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
                         <orderCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(CowAmmLegacyHelperCalls::order)
                     }
                     order
-                },
-                {
-                    fn isLegacy(data: &[u8]) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
-                        <isLegacyCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(CowAmmLegacyHelperCalls::isLegacy)
-                    }
-                    isLegacy
                 },
                 {
                     fn factory(data: &[u8]) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
@@ -3022,38 +2491,11 @@ pub mod CowAmmLegacyHelper {
                 CowAmmLegacyHelperCalls,
             >] = &[
                 {
-                    fn isLegacyEnabled(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
-                        <isLegacyEnabledCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(CowAmmLegacyHelperCalls::isLegacyEnabled)
-                    }
-                    isLegacyEnabled
-                },
-                {
-                    fn getSnapshot(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
-                        <getSnapshotCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                            .map(CowAmmLegacyHelperCalls::getSnapshot)
-                    }
-                    getSnapshot
-                },
-                {
                     fn order(data: &[u8]) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
                         <orderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(CowAmmLegacyHelperCalls::order)
                     }
                     order
-                },
-                {
-                    fn isLegacy(data: &[u8]) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
-                        <isLegacyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                            .map(CowAmmLegacyHelperCalls::isLegacy)
-                    }
-                    isLegacy
                 },
                 {
                     fn factory(data: &[u8]) -> alloy_sol_types::Result<CowAmmLegacyHelperCalls> {
@@ -3085,15 +2527,6 @@ pub mod CowAmmLegacyHelper {
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::getSnapshot(inner) => {
-                    <getSnapshotCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::isLegacy(inner) => {
-                    <isLegacyCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::isLegacyEnabled(inner) => {
-                    <isLegacyEnabledCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
                 Self::order(inner) => {
                     <orderCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -3108,15 +2541,6 @@ pub mod CowAmmLegacyHelper {
             match self {
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::getSnapshot(inner) => {
-                    <getSnapshotCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::isLegacy(inner) => {
-                    <isLegacyCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::isLegacyEnabled(inner) => {
-                    <isLegacyEnabledCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::order(inner) => {
                     <orderCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -3682,30 +3106,6 @@ pub mod CowAmmLegacyHelper {
         ///Creates a new call builder for the [`factory`] function.
         pub fn factory(&self) -> alloy_contract::SolCallBuilder<&P, factoryCall, N> {
             self.call_builder(&factoryCall)
-        }
-
-        ///Creates a new call builder for the [`getSnapshot`] function.
-        pub fn getSnapshot(
-            &self,
-            amm: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, getSnapshotCall, N> {
-            self.call_builder(&getSnapshotCall { amm })
-        }
-
-        ///Creates a new call builder for the [`isLegacy`] function.
-        pub fn isLegacy(
-            &self,
-            amm: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isLegacyCall, N> {
-            self.call_builder(&isLegacyCall { amm })
-        }
-
-        ///Creates a new call builder for the [`isLegacyEnabled`] function.
-        pub fn isLegacyEnabled(
-            &self,
-            amm: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isLegacyEnabledCall, N> {
-            self.call_builder(&isLegacyEnabledCall { amm })
         }
 
         ///Creates a new call builder for the [`order`] function.
