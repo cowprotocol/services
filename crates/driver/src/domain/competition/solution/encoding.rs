@@ -2,21 +2,19 @@ use {
     super::{error::Math, interaction::Liquidity, settlement, slippage, trade::ClearingPrices},
     crate::{
         domain::{
+            self,
             competition::{
                 self,
                 order::{self, Partial},
             },
-            eth::{self, Ether, allowance},
             liquidity,
         },
         infra::{self, solver::ManageNativeToken},
     },
     allowance::Allowance,
-    alloy::{
-        primitives::{Address, Bytes, FixedBytes, U256},
-        sol_types::SolCall,
-    },
-    contracts::alloy::{FlashLoanRouter::LoanRequest, WETH9},
+    alloy::primitives::{Address, Bytes, FixedBytes, U256},
+    contracts::{FlashLoanRouter::LoanRequest, WETH9},
+    eth_domain_types::{self as eth, Ether, allowance},
     itertools::Itertools,
     num::Zero,
 };
@@ -192,7 +190,7 @@ pub fn tx(
         }
 
         interactions.push(match interaction {
-            competition::solution::Interaction::Custom(interaction) => eth::Interaction {
+            competition::solution::Interaction::Custom(interaction) => domain::Interaction {
                 value: interaction.value,
                 target: interaction.target.into(),
                 call_data: interaction.call_data.clone(),
@@ -207,9 +205,6 @@ pub fn tx(
     if !native_unwrap.0.is_zero() && solver_native_token.insert_unwraps {
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
-
-    let has_flashloans = !solution.flashloans.is_empty();
-    let has_wrappers = !solution.wrappers.is_empty();
 
     // Encode the base settlement calldata
     let mut settle_calldata = contracts
@@ -229,21 +224,24 @@ pub fn tx(
 
     // Append auction ID to settlement calldata
     settle_calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
+    let has_flashloans = !solution.flashloans.is_empty();
+    let has_wrappers = !solution.wrappers.is_empty();
 
     let (to, calldata) = if has_flashloans && has_wrappers {
         return Err(Error::FlashloanWrappersIncompatible);
     } else if has_flashloans {
         encode_flashloan_settlement(solution, contracts, settle_calldata)?
     } else if has_wrappers {
-        encode_wrapper_settlement(solution, settle_calldata)
+        simulator::encoding::encode_wrapper_settlement(&solution.wrappers, settle_calldata.into())
+            .expect("wrappers is not empty")
     } else {
-        (*contracts.settlement().address(), settle_calldata)
+        (*contracts.settlement().address(), settle_calldata.into())
     };
 
     Ok(eth::Tx {
         from: solution.solver().address(),
         to,
-        input: calldata.into(),
+        input: calldata,
         value: Ether::zero(),
         access_list: Default::default(),
     })
@@ -259,7 +257,7 @@ fn encode_flashloan_settlement(
     solution: &super::Solution,
     contracts: &infra::blockchain::Contracts,
     settle_calldata: Vec<u8>,
-) -> Result<(eth::Address, Vec<u8>), Error> {
+) -> Result<(eth::Address, Bytes), Error> {
     // Get flashloan router contract
     let router = contracts
         .flashloan_router()
@@ -270,10 +268,10 @@ fn encode_flashloan_settlement(
         .flashloans
         .values()
         .map(|flashloan| LoanRequest::Data {
-            amount: flashloan.amount.0,
-            borrower: flashloan.protocol_adapter.0,
-            lender: flashloan.liquidity_provider.0,
-            token: flashloan.token.0.0,
+            amount: flashloan.amount,
+            borrower: flashloan.protocol_adapter,
+            lender: flashloan.liquidity_provider,
+            token: flashloan.token,
         })
         .collect();
 
@@ -283,66 +281,14 @@ fn encode_flashloan_settlement(
         .calldata()
         .to_vec();
 
-    Ok((*router.address(), calldata))
-}
-
-/// Encodes a settlement transaction that uses wrapper contracts.
-///
-/// Takes the base settlement calldata and wraps it in a wrappedSettleCall
-/// with encoded wrapper metadata. Since wrappers are a chain, the wrapper
-/// address to call is also processed by this function.
-///
-/// Returns (first_wrapper_address, wrapped_calldata)
-fn encode_wrapper_settlement(
-    solution: &super::Solution,
-    settle_calldata: Vec<u8>,
-) -> (eth::Address, Vec<u8>) {
-    // Encode wrapper metadata
-    let wrapper_data = encode_wrapper_data(&solution.wrappers);
-
-    // Create wrappedSettleCall
-    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
-        settleData: settle_calldata.into(),
-        wrapperData: wrapper_data.into(),
-    }
-    .abi_encode();
-
-    (solution.wrappers[0].address, calldata)
-}
-
-/// Encodes wrapper metadata for wrapper settlement calls.
-///
-/// The format is:
-/// - For wrappers after the first: 20 bytes (address)
-/// - For each wrapper: 2 bytes (data length as u16 in native endian) + data
-///
-/// More information about wrapper encoding:
-/// https://www.notion.so/cownation/Generalized-Wrapper-2798da5f04ca8095a2d4c56b9d17134e?source=copy_link#2858da5f04ca807980bbf7f845354120
-///
-/// Note: The first wrapper address is omitted from the encoded data since it's
-/// already used as the transaction target.
-fn encode_wrapper_data(wrappers: &[super::WrapperCall]) -> Vec<u8> {
-    let mut wrapper_data = Vec::new();
-
-    for (index, w) in wrappers.iter().enumerate() {
-        // Skip first wrapper's address (it's the transaction target)
-        if index != 0 {
-            wrapper_data.extend(w.address.as_slice());
-        }
-
-        // Encode data length as u16 in native endian, then the data itself
-        wrapper_data.extend((w.data.len() as u16).to_be_bytes().to_vec());
-        wrapper_data.extend(w.data.clone());
-    }
-
-    wrapper_data
+    Ok((*router.address(), calldata.into()))
 }
 
 pub fn liquidity_interaction(
     liquidity: &Liquidity,
     slippage: &slippage::Parameters,
     settlement_contract: &Address,
-) -> Result<eth::Interaction, Error> {
+) -> Result<domain::Interaction, Error> {
     let (input, output) = slippage.apply_to(&slippage::Interaction {
         input: liquidity.input,
         output: liquidity.output,
@@ -365,10 +311,10 @@ pub fn liquidity_interaction(
     )))
 }
 
-pub fn approve(allowance: &Allowance) -> eth::Interaction {
+pub fn approve(allowance: &Allowance) -> domain::Interaction {
     let selector = hex_literal::hex!("095ea7b3");
     let amount: [_; 32] = allowance.amount.to_be_bytes();
-    eth::Interaction {
+    domain::Interaction {
         target: allowance.token.0.into(),
         value: Ether::zero(),
         // selector (4 bytes) + spender (20 byte address padded to 32 bytes) + amount (32 bytes)
@@ -383,8 +329,8 @@ pub fn approve(allowance: &Allowance) -> eth::Interaction {
     }
 }
 
-fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> eth::Interaction {
-    eth::Interaction {
+fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> domain::Interaction {
+    domain::Interaction {
         target: *weth.address(),
         value: Ether::zero(),
         call_data: weth.withdraw(amount.0).calldata().to_vec().into(),
@@ -422,9 +368,10 @@ struct Flags {
 
 pub mod codec {
     use {
-        crate::domain::{competition::order, eth},
+        crate::domain::{self, competition::order},
         alloy::primitives::{Bytes, U256},
-        contracts::alloy::GPv2Settlement,
+        contracts::GPv2Settlement,
+        eth_domain_types as eth,
     };
 
     pub(super) fn trade(trade: &super::Trade) -> GPv2Settlement::GPv2Trade::Data {
@@ -475,7 +422,7 @@ pub mod codec {
     }
 
     pub(super) fn interaction(
-        interaction: &eth::Interaction,
+        interaction: &domain::Interaction,
     ) -> GPv2Settlement::GPv2Interaction::Data {
         GPv2Settlement::GPv2Interaction::Data {
             target: interaction.target,

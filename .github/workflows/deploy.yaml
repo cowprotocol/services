@@ -72,6 +72,10 @@ jobs:
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
           images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=tag
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
       - name: Services image build
@@ -91,6 +95,10 @@ jobs:
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
           images: ghcr.io/${{ github.repository }}-migration
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=tag
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
       - name: Migration image build

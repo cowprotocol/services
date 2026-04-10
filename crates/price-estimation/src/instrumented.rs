@@ -50,6 +50,14 @@ impl<T> InstrumentedPriceEstimator<T> {
             Err(PriceEstimationError::UnsupportedToken { .. }) => "unsupported_token",
             Err(PriceEstimationError::UnsupportedOrderType(_)) => "unsupported_order_type",
             Err(PriceEstimationError::RateLimited) => "rate_limited",
+            Err(PriceEstimationError::TradingOutsideAllowedWindow { .. }) => {
+                "trading_outside_allowed_window"
+            }
+            Err(PriceEstimationError::TokenTemporarilySuspended { .. }) => {
+                "token_temporarily_suspended"
+            }
+            Err(PriceEstimationError::InsufficientLiquidity { .. }) => "insufficient_liquidity",
+            Err(PriceEstimationError::CustomSolverError { .. }) => "custom_solver_error",
             Err(PriceEstimationError::EstimatorInternal(_)) => "estimator_internal_error",
             Err(PriceEstimationError::ProtocolInternal(_)) => "protocol_internal_error",
         }
@@ -156,6 +164,18 @@ mod tests {
             }),
             Err(PriceEstimationError::UnsupportedOrderType("".to_string())),
             Err(PriceEstimationError::RateLimited),
+            Err(PriceEstimationError::TradingOutsideAllowedWindow {
+                message: "window".to_string(),
+            }),
+            Err(PriceEstimationError::TokenTemporarilySuspended {
+                message: "suspended".to_string(),
+            }),
+            Err(PriceEstimationError::InsufficientLiquidity {
+                message: "insufficient".to_string(),
+            }),
+            Err(PriceEstimationError::CustomSolverError {
+                message: "custom".to_string(),
+            }),
             Err(PriceEstimationError::EstimatorInternal(anyhow!(""))),
             Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
         ];
@@ -184,6 +204,10 @@ mod tests {
             "unsupported_token",
             "unsupported_order_type",
             "rate_limited",
+            "trading_outside_allowed_window",
+            "token_temporarily_suspended",
+            "insufficient_liquidity",
+            "custom_solver_error",
             "estimator_internal_error",
             "protocol_internal_error",
         ] {
@@ -205,6 +229,6 @@ mod tests {
             .price_estimation_times
             .with_label_values(&["foo"])
             .get_sample_count();
-        assert_eq!(observed_count, 7);
+        assert_eq!(observed_count, 11);
     }
 }

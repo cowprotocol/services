@@ -6,10 +6,8 @@ use {
     anyhow::Result,
     model::order::{Order, OrderKind},
     number::u256_ext::U256Ext,
-    shared::{
-        encoded_settlement::{EncodedSettlement, EncodedTrade, encode_trade},
-        http_solver::model::InternalizationStrategy,
-    },
+    shared::http_solver::model::InternalizationStrategy,
+    simulator::encoding::{EncodedSettlement, EncodedTrade, encode_trade},
     std::collections::HashMap,
 };
 

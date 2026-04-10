@@ -29,10 +29,10 @@ use {
         self,
         auction::order,
         competition::{Bid, RankType, Ranked, Score, Solution, TradedOrder, Unscored},
-        eth::{self, WrappedNativeToken},
         fee,
     },
     ::winner_selection::state::{HasState, RankedItem, ScoredItem, UnscoredItem},
+    eth_domain_types::{self as eth, Address, WrappedNativeToken},
     std::collections::HashMap,
     tracing::instrument,
     winner_selection::{self as winsel},
@@ -49,10 +49,10 @@ pub struct Arbitrator(winsel::Arbitrator);
 /// changing the ordering or the `bids`.
 impl Arbitrator {
     pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
-        let token: eth::TokenAddress = wrapped_native_token.into();
+        let token: eth::TokenAddress = *wrapped_native_token;
         Self(winsel::Arbitrator {
             max_winners,
-            weth: token.0,
+            weth: *token,
         })
     }
 
@@ -139,7 +139,7 @@ impl From<&domain::Auction> for winsel::AuctionContext {
             native_prices: auction
                 .prices
                 .iter()
-                .map(|(token, price)| (token.0, price.get().0))
+                .map(|(token, price)| (Address::from(*token), price.get().0))
                 .collect(),
         }
     }
@@ -158,7 +158,7 @@ impl From<&Solution> for winsel::Solution<winsel::Unscored> {
             solution
                 .prices()
                 .iter()
-                .map(|(token, price)| (token.0, price.get().0))
+                .map(|(token, price)| (Address::from(*token), price.get().0))
                 .collect(),
         )
     }
@@ -167,8 +167,8 @@ impl From<&Solution> for winsel::Solution<winsel::Unscored> {
 fn to_winsel_order(uid: domain::OrderUid, order: &TradedOrder) -> winsel::Order {
     winsel::Order {
         uid: winsel::OrderUid(uid.0),
-        sell_token: order.sell.token.0,
-        buy_token: order.buy.token.0,
+        sell_token: *order.sell.token,
+        buy_token: *order.buy.token,
         sell_amount: order.sell.amount.0,
         buy_amount: order.buy.amount.0,
         executed_sell: order.executed_sell.0,
@@ -283,7 +283,6 @@ impl Ranking {
 mod tests {
     use {
         crate::{
-            config::solver::Account,
             domain::{
                 Auction,
                 Order,
@@ -293,11 +292,12 @@ mod tests {
                     order::{self, AppDataHash},
                 },
                 competition::{Bid, Solution, TradedOrder, Unscored},
-                eth::{self, TokenAddress},
             },
             infra::Driver,
         },
         alloy::primitives::{Address, U160, U256, address},
+        configs::autopilot::solver::Account,
+        eth_domain_types::{self as eth, TokenAddress},
         hex_literal::hex,
         number::serialization::HexOrDecimalU256,
         serde::Deserialize,

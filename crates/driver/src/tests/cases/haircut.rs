@@ -3,13 +3,14 @@
 
 use {
     crate::{
-        domain::{competition::order, eth},
+        domain::competition::order,
         tests::{
             self,
             cases::EtherExt,
             setup::{ab_order, ab_pool, ab_solution},
         },
     },
+    eth_domain_types as eth,
     number::{testing::ApproxEq, units::EthUnit},
 };
 

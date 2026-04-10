@@ -1,8 +1,7 @@
 use {
-    crate::domain,
     alloy::primitives::Address,
     chain::Chain,
-    contracts::alloy::{
+    contracts::{
         ChainalysisOracle,
         GPv2AllowListAuthentication,
         GPv2Settlement,
@@ -10,13 +9,14 @@ use {
         WETH9,
         support::Balances,
     },
+    eth_domain_types as eth,
     ethrpc::Web3,
 };
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: GPv2Settlement::Instance,
-    signatures: contracts::alloy::support::Signatures::Instance,
+    signatures: contracts::support::Signatures::Instance,
     weth: WETH9::Instance,
     balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
@@ -26,7 +26,7 @@ pub struct Contracts {
     /// submit settlements.
     authenticator: GPv2AllowListAuthentication::Instance,
     /// The domain separator for settlement contract used for signing orders.
-    settlement_domain_separator: domain::eth::DomainSeparator,
+    settlement_domain_separator: eth::DomainSeparator,
 }
 
 #[derive(Debug, Clone)]
@@ -48,10 +48,10 @@ impl Contracts {
             web3.provider.clone(),
         );
 
-        let signatures = contracts::alloy::support::Signatures::Instance::new(
+        let signatures = contracts::support::Signatures::Instance::new(
             addresses
                 .signatures
-                .or_else(|| contracts::alloy::support::Signatures::deployment_address(&chain.id()))
+                .or_else(|| contracts::support::Signatures::deployment_address(&chain.id()))
                 .unwrap(),
             web3.provider.clone(),
         );
@@ -84,7 +84,7 @@ impl Contracts {
             .await
             .ok();
 
-        let settlement_domain_separator = domain::eth::DomainSeparator(
+        let settlement_domain_separator = eth::DomainSeparator(
             settlement
                 .domainSeparator()
                 .call()
@@ -122,7 +122,7 @@ impl Contracts {
         &self.balances
     }
 
-    pub fn signatures(&self) -> &contracts::alloy::support::Signatures::Instance {
+    pub fn signatures(&self) -> &contracts::support::Signatures::Instance {
         &self.signatures
     }
 
@@ -130,7 +130,7 @@ impl Contracts {
         &self.trampoline
     }
 
-    pub fn settlement_domain_separator(&self) -> &domain::eth::DomainSeparator {
+    pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
         &self.settlement_domain_separator
     }
 
@@ -144,7 +144,7 @@ impl Contracts {
 
     /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
     /// Gnosis Chain)
-    pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
+    pub fn wrapped_native_token(&self) -> eth::WrappedNativeToken {
         (*self.weth.address()).into()
     }
 

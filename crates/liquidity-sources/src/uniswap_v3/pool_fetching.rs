@@ -9,7 +9,7 @@ use {
         rpc::types::Log,
     },
     anyhow::{Context, Result},
-    contracts::alloy::UniswapV3Pool::UniswapV3Pool::{
+    contracts::UniswapV3Pool::UniswapV3Pool::{
         UniswapV3PoolEvents as AlloyUniswapV3PoolEvents,
         UniswapV3PoolEvents,
     },
@@ -519,7 +519,7 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{U160, address, aliases::I24},
-        contracts::alloy::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
+        contracts::UniswapV3Pool::UniswapV3Pool::{Burn, Mint, Swap},
         serde_json::json,
         std::str::FromStr,
         testlib::assert_json_matches,

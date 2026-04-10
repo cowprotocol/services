@@ -4,8 +4,8 @@ use {
 };
 
 /// Creates a new solution DTO from its domain object.
-pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
-    super::Solutions {
+pub fn from_domain(solutions: &[solution::Solution]) -> super::SolverResponse {
+    SolverResponse::Solutions {
         solutions: solutions
             .iter()
             .map(|solution| Solution {
@@ -118,6 +118,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                 gas: solution
                     .gas
                     .map(|gas| u64::try_from(gas.0).unwrap_or(u64::MAX)),
+                gas_fee_override: None,
                 // rely on driver to fill in the blanks
                 flashloans: None,
                 wrappers: solution

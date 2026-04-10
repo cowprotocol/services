@@ -111,6 +111,12 @@ fn error_to_response(err: PriceEstimationError) -> Response {
         PriceEstimationError::RateLimited => {
             (StatusCode::TOO_MANY_REQUESTS, "Rate limited").into_response()
         }
+        PriceEstimationError::TradingOutsideAllowedWindow { message }
+        | PriceEstimationError::TokenTemporarilySuspended { message }
+        | PriceEstimationError::InsufficientLiquidity { message }
+        | PriceEstimationError::CustomSolverError { message } => {
+            (StatusCode::BAD_REQUEST, message).into_response()
+        }
         PriceEstimationError::UnsupportedOrderType(reason) => (
             StatusCode::BAD_REQUEST,
             format!("Unsupported order type, reason: {reason}"),
@@ -119,5 +125,54 @@ fn error_to_response(err: PriceEstimationError) -> Response {
         PriceEstimationError::ProtocolInternal(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn assert_bad_request_message(err: PriceEstimationError, expected_message: &str) {
+        let response = error_to_response(err);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = response.into_body();
+        let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        assert_eq!(std::str::from_utf8(&body).unwrap(), expected_message);
+    }
+
+    #[tokio::test]
+    async fn maps_custom_solver_errors_to_bad_request_with_message() {
+        assert_bad_request_message(
+            PriceEstimationError::TradingOutsideAllowedWindow {
+                message: "outside window".to_string(),
+            },
+            "outside window",
+        )
+        .await;
+
+        assert_bad_request_message(
+            PriceEstimationError::TokenTemporarilySuspended {
+                message: "token suspended".to_string(),
+            },
+            "token suspended",
+        )
+        .await;
+
+        assert_bad_request_message(
+            PriceEstimationError::InsufficientLiquidity {
+                message: "insufficient".to_string(),
+            },
+            "insufficient",
+        )
+        .await;
+
+        assert_bad_request_message(
+            PriceEstimationError::CustomSolverError {
+                message: "custom".to_string(),
+            },
+            "custom",
+        )
+        .await;
     }
 }

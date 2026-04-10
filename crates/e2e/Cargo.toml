@@ -39,6 +39,7 @@ contracts = { workspace = true }
 cow-amm = { workspace = true }
 database = { workspace = true }
 driver = { workspace = true }
+eth-domain-types = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 futures = { workspace = true }
 hex-literal = { workspace = true }
@@ -50,9 +51,11 @@ observe = { workspace = true }
 orderbook = { workspace = true, features = ["e2e", "test-util"] }
 price-estimation = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "query"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
 signature-validator = { workspace = true }
+simulator = { workspace = true }
 solver = { workspace = true }
 solvers = { workspace = true }
 solvers-dto = { workspace = true }

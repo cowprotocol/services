@@ -9,11 +9,8 @@ use {
         order::{Order, OrderClass, OrderKind},
     },
     number::u256_ext::U256Ext,
-    shared::{
-        encoded_settlement::EncodedSettlement,
-        http_solver::model::InternalizationStrategy,
-        interaction::Interaction,
-    },
+    shared::{http_solver::model::InternalizationStrategy, interaction::Interaction},
+    simulator::encoding::{EncodedSettlement, Interactions},
     std::{
         collections::{HashMap, HashSet},
         iter,
@@ -526,12 +523,13 @@ impl SettlementEncoder {
             tokens,
             clearing_prices,
             trades,
-            interactions: [
-                self.pre_interactions
+            interactions: Interactions {
+                pre: self
+                    .pre_interactions
                     .into_iter()
                     .map(|interaction| interaction.encode())
                     .collect(),
-                iter::empty()
+                main: iter::empty()
                     .chain(
                         self.execution_plan
                             .iter()
@@ -551,11 +549,12 @@ impl SettlementEncoder {
                     )
                     .chain(self.unwraps.iter().map(|unwrap| unwrap.encode()))
                     .collect(),
-                self.post_interactions
+                post: self
+                    .post_interactions
                     .into_iter()
                     .map(|interaction| interaction.encode())
                     .collect(),
-            ],
+            },
         }
     }
 }
@@ -585,7 +584,7 @@ pub mod tests {
     use {
         super::*,
         alloy::primitives::Address,
-        contracts::alloy::WETH9,
+        contracts::WETH9,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
         shared::interaction::{EncodedInteraction, Interaction},
@@ -642,7 +641,8 @@ pub mod tests {
         assert_eq!(
             encoder
                 .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1],
+                .interactions
+                .main,
             [UnwrapWethInteraction {
                 weth,
                 amount: U256::from(3),
@@ -797,7 +797,8 @@ pub mod tests {
         assert_eq!(
             encoder
                 .finish(InternalizationStrategy::SkipInternalizableInteraction)
-                .interactions[1],
+                .interactions
+                .main,
             [interaction.encode(), unwrap.encode()],
         );
     }
@@ -940,7 +941,7 @@ pub mod tests {
         let i2 = (i2.target, i2.value, i2.call_data.into());
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
-            encoded.interactions,
+            encoded.interactions.into_array(),
             [vec![i1.clone(), i1], vec![], vec![i2.clone(), i2]]
         );
     }
@@ -1016,10 +1017,10 @@ pub mod tests {
         let encoded = encoder
             .clone()
             .finish(InternalizationStrategy::SkipInternalizableInteraction);
-        assert_eq!(encoded.interactions[1].len(), 1);
+        assert_eq!(encoded.interactions.main.len(), 1);
 
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
-        assert_eq!(encoded.interactions[1].len(), 2);
+        assert_eq!(encoded.interactions.main.len(), 2);
     }
 
     #[test]

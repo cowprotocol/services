@@ -19,14 +19,18 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 cached = { workspace = true, features = ["default"] }
 clap = { workspace = true }
+configs = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
 ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]

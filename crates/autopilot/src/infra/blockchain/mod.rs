@@ -1,6 +1,6 @@
 use {
     self::contracts::Contracts,
-    crate::{boundary, domain::eth},
+    crate::{boundary, domain},
     alloy::{
         providers::{Provider, ext::DebugApi},
         rpc::types::{
@@ -10,6 +10,7 @@ use {
     },
     anyhow::bail,
     chain::Chain,
+    eth_domain_types as eth,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     thiserror::Error,
     url::Url,
@@ -108,7 +109,10 @@ impl Ethereum {
         &self.contracts
     }
 
-    pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
+    pub async fn transaction(
+        &self,
+        hash: eth::TxId,
+    ) -> Result<domain::blockchain::Transaction, Error> {
         let (receipt, traces): (Option<TransactionReceipt>, GethTrace) = tokio::try_join!(
             self.web3.provider.get_transaction_receipt(hash.0),
             // Use unbuffered transport for the Debug API since not all providers support
@@ -142,13 +146,13 @@ fn into_domain(
     receipt: TransactionReceipt,
     trace: GethTrace,
     timestamp: u64,
-) -> anyhow::Result<eth::Transaction> {
+) -> anyhow::Result<domain::blockchain::Transaction> {
     let trace_calls = match trace {
         GethTrace::CallTracer(call_frame) => call_frame.into(),
         trace => bail!("unsupported trace call {trace:?}"),
     };
 
-    Ok(eth::Transaction {
+    Ok(domain::blockchain::Transaction {
         hash: receipt.transaction_hash.into(),
         from: receipt.from,
         block: receipt
@@ -160,17 +164,6 @@ fn into_domain(
         timestamp: u32::try_from(timestamp)?,
         trace_calls,
     })
-}
-
-impl From<alloy::rpc::types::trace::geth::CallFrame> for eth::CallFrame {
-    fn from(value: alloy::rpc::types::trace::geth::CallFrame) -> Self {
-        Self {
-            from: value.from,
-            to: value.to,
-            input: value.input,
-            calls: value.calls.into_iter().map(Into::into).collect(),
-        }
-    }
 }
 
 #[derive(Debug, Error)]

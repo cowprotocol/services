@@ -4,7 +4,7 @@ use {
         primitives::{Address, U256},
         providers::{Provider, ext::TxPoolApi},
     },
-    contracts::alloy::CowSettlementForwarder::CowSettlementForwarder,
+    contracts::CowSettlementForwarder::CowSettlementForwarder,
     e2e::setup::{colocation, *},
     ethrpc::{
         Web3,

@@ -1,5 +1,6 @@
 use {
     super::Strategy,
+    crate::StrategyExt,
     alloy_eips::BlockId,
     alloy_primitives::{Address, B256, TxKind, U256, keccak256},
     alloy_provider::ext::DebugApi,
@@ -10,14 +11,17 @@ use {
     },
     alloy_sol_types::SolCall,
     alloy_transport::{RpcError, TransportErrorKind},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     std::{
         collections::HashMap,
         fmt::{self, Debug, Formatter},
         sync::Arc,
+        time::Duration,
     },
     thiserror::Error,
 };
+
+pub const DEFAULT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(1);
 
 // These are the solady magic bytes for user balances, with padding
 // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
@@ -43,6 +47,7 @@ pub struct Detector(Arc<Inner>);
 pub struct Inner {
     probing_depth: u8,
     web3: ethrpc::Web3,
+    verification_timeout: Duration,
 }
 
 impl std::ops::Deref for Detector {
@@ -111,10 +116,11 @@ fn create_strategies_from_slots(
 
 impl Detector {
     /// Creates a new balance override detector.
-    pub fn new(web3: ethrpc::Web3, probing_depth: u8) -> Self {
+    pub fn new(web3: ethrpc::Web3, probing_depth: u8, verification_timeout: Duration) -> Self {
         Self(Arc::new(Inner {
             web3,
             probing_depth,
+            verification_timeout,
         }))
     }
 
@@ -191,16 +197,39 @@ impl Detector {
             .take(self.probing_depth.into())
             .enumerate()
         {
-            if self.verify_strategy(token, holder, strategy).await.is_ok() {
-                tracing::debug!(
-                    ?token,
-                    ?holder,
-                    ?strategy,
-                    iterations = i + 1,
-                    total = storage_slots.len(),
-                    "verified balance strategy via testing",
-                );
-                return Ok(strategy.clone());
+            // Some tokens (e.g. reflection tokens like LuckyBlock) have
+            // `balanceOf` implementations that iterate over storage arrays.
+            // During verification we override storage slots with a test value —
+            // if that value lands on an array-length slot the EVM loops until
+            // the node's execution timeout. A per-strategy timeout prevents one
+            // slow slot from blocking the entire detection.
+            let result = tokio::time::timeout(
+                self.verification_timeout,
+                self.verify_strategy(token, holder, strategy),
+            )
+            .await;
+
+            match result {
+                Ok(Ok(())) => {
+                    tracing::debug!(
+                        ?token,
+                        ?holder,
+                        ?strategy,
+                        iterations = i + 1,
+                        total = storage_slots.len(),
+                        "verified balance strategy via testing",
+                    );
+                    return Ok(strategy.clone());
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        ?token,
+                        ?holder,
+                        ?strategy,
+                        "balance override strategy verification timed out, skipping",
+                    );
+                }
+                Ok(Err(_)) => {}
             }
         }
 
@@ -357,7 +386,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_mainnet() {
-        let detector = Detector::new(Web3::new_from_env(), 60);
+        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT);
 
         let storage = detector
             .detect(
@@ -410,7 +439,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_arbitrum() {
-        let detector = Detector::new(Web3::new_from_env(), 60);
+        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT);
 
         // all bridged tokens on arbitrum require a ton of probing
         let storage = detector

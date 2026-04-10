@@ -11,7 +11,7 @@ use {
         signers::local::PrivateKeySigner,
     },
     app_data::Hook,
-    contracts::alloy::{
+    contracts::{
         ERC20Mintable,
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
@@ -491,7 +491,7 @@ impl OnchainComponents {
     ///
     /// This can be used to modify the pool reserves during a test.
     pub async fn mint_token_to_weth_uni_v2_pool(&self, token: &MintableToken, amount: U256) {
-        let pair = contracts::alloy::IUniswapLikePair::Instance::new(
+        let pair = contracts::IUniswapLikePair::Instance::new(
             self.contracts
                 .uniswap_v2_factory
                 .getPair(*self.contracts.weth.address(), *token.address())

@@ -5,11 +5,11 @@ use {
         self,
         OrderUid,
         auction::{self, order},
-        eth,
         fee,
         settlement::transaction::{ClearingPrices, Prices},
     },
     error::Math,
+    eth_domain_types as eth,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
     number::u256_ext::U256Ext,
     std::collections::HashMap,
@@ -530,7 +530,7 @@ impl From<&super::Trade> for Trade {
     }
 }
 pub mod error {
-    use crate::domain::eth;
+    use eth_domain_types as eth;
 
     #[derive(Debug, thiserror::Error)]
     pub enum Error {

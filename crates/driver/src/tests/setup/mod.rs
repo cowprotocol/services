@@ -5,7 +5,6 @@ use {
     crate::{
         domain::{
             competition::order::{self, app_data::AppData},
-            eth,
             time,
         },
         infra::{
@@ -43,6 +42,7 @@ use {
     },
     axum::http::StatusCode,
     bigdecimal::{BigDecimal, FromPrimitive},
+    eth_domain_types as eth,
     ethrpc::Web3,
     futures::future::join_all,
     model::order::{BuyTokenDestination, SellTokenSource},
@@ -562,6 +562,7 @@ pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
     pub flashloans: HashMap<order::Uid, Flashloan>,
+    pub gas_fee_override: Option<(u128, u128)>,
 }
 
 impl Solution {
@@ -607,6 +608,14 @@ impl Solution {
         self.flashloans.insert(order, flashloan);
         self
     }
+
+    /// Set custom gas fee overrides for the solution.
+    pub fn gas_fee_override(self, max_fee_per_gas: u128, max_priority_fee_per_gas: u128) -> Self {
+        Self {
+            gas_fee_override: Some((max_fee_per_gas, max_priority_fee_per_gas)),
+            ..self
+        }
+    }
 }
 
 impl Default for Solution {
@@ -617,6 +626,7 @@ impl Default for Solution {
             },
             orders: Default::default(),
             flashloans: Default::default(),
+            gas_fee_override: None,
         }
     }
 }
@@ -662,7 +672,7 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
-        flashloans: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -694,7 +704,7 @@ pub fn ad_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-D order"],
-        flashloans: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -726,7 +736,7 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
-        flashloans: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -757,7 +767,7 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
-        flashloans: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -952,6 +962,7 @@ impl Setup {
             solutions.push(blockchain::Solution {
                 trades: [fulfillment_trades, jit_trades].concat(),
                 flashloans: solution.flashloans.clone(),
+                gas_fee_override: solution.gas_fee_override,
             });
         }
         let orderbook = Orderbook::start(&orders).await;

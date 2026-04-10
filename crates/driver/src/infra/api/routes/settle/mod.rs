@@ -30,7 +30,7 @@ async fn route(
             .settle(
                 auction_id,
                 req.solution_id,
-                req.submission_deadline_latest_block,
+                req.submission_deadline_latest_block.into(),
             )
             .await;
         result.map(|_| ()).map_err(Into::into)

@@ -1,7 +1,7 @@
 //! The domain object representing a CoW Protocol order.
 
 use {
-    crate::{domain::eth, util},
+    crate::domain::eth,
     alloy::primitives::B256,
     eth::Address,
     std::fmt::{self, Debug, Display, Formatter},
@@ -25,6 +25,13 @@ impl Order {
     pub fn solver_determines_fee(&self) -> bool {
         self.class == Class::Limit
     }
+
+    /// Returns the owner address of the order extracted from the UID.
+    pub fn owner(&self) -> eth::Address {
+        let mut bytes = [0u8; 20];
+        bytes.copy_from_slice(&self.uid.0[32..52]);
+        eth::Address::from(bytes)
+    }
 }
 
 /// UID of an order.
@@ -34,19 +41,19 @@ pub struct Uid(pub [u8; 56]);
 impl Debug for Uid {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_tuple("Uid")
-            .field(&util::fmt::Hex(&self.0))
+            .field(&format_args!("{}", const_hex::encode_prefixed(self.0)))
             .finish()
     }
 }
 
 impl Display for Uid {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(&util::fmt::Hex(&self.0), f)
+        f.write_str(&const_hex::encode_prefixed(self.0))
     }
 }
 
 /// The trading side of an order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Side {
     /// An order with a fixed buy amount and maximum sell amount.
     Buy,
@@ -132,7 +139,7 @@ pub struct AppData(pub [u8; 32]);
 impl Debug for AppData {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("AppData")
-            .field(&util::fmt::Hex(&self.0))
+            .field(&format_args!("{}", const_hex::encode_prefixed(self.0)))
             .finish()
     }
 }

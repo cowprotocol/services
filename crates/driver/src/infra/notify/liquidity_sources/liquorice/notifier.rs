@@ -20,7 +20,7 @@ use {
     alloy::primitives::Address,
     anyhow::{Context, Result, anyhow},
     chrono::Utc,
-    contracts::alloy::LiquoriceSettlement,
+    contracts::LiquoriceSettlement,
 };
 
 const NOTIFICATION_SOURCE: &str = "cow_protocol";
@@ -85,11 +85,11 @@ impl LiquiditySourceNotifying for Notifier {
 mod utils {
     use {
         crate::domain::{
+            self,
             competition::solution::{self, Settlement},
-            eth,
         },
         alloy::{primitives::Address, sol_types::SolCall},
-        contracts::alloy::LiquoriceSettlement,
+        contracts::LiquoriceSettlement,
         std::collections::HashSet,
     };
 
@@ -112,7 +112,7 @@ mod utils {
                     .iter()
                     .filter_map(|interaction| match interaction {
                         solution::Interaction::Custom(custom) => extract_rfq_id_from_interaction(
-                            &eth::Interaction {
+                            &domain::Interaction {
                                 target: custom.target.into(),
                                 value: custom.value,
                                 call_data: custom.call_data.clone(),
@@ -141,7 +141,7 @@ mod utils {
     /// `settleSingle` function of the LiquoriceSettlement contract
     /// <https://etherscan.io/address/0x0448633eb8b0a42efed924c42069e0dcf08fb552#code#F8#L83>
     pub fn extract_rfq_id_from_interaction(
-        interaction: &eth::Interaction,
+        interaction: &domain::Interaction,
         liquorice_settlement_contract_address: Address,
     ) -> Option<String> {
         if interaction.target != liquorice_settlement_contract_address {
@@ -161,7 +161,7 @@ mod utils {
     mod tests {
         use {
             crate::{
-                domain::eth,
+                domain,
                 infra::notify::liquidity_sources::liquorice::notifier::utils::extract_rfq_id_from_interaction,
             },
             alloy::primitives::{Address, Bytes},
@@ -173,7 +173,7 @@ mod utils {
 
             let liquorice_settlement_address = Address::random();
             let rfq_id = extract_rfq_id_from_interaction(
-                &eth::Interaction {
+                &domain::Interaction {
                     target: liquorice_settlement_address,
                     call_data: calldata.into(),
                     value: 0.into(),
@@ -188,7 +188,7 @@ mod utils {
         fn test_returns_none_for_arbitrary_call() {
             let liquorice_settlement_address = Address::random();
             let rfq_id = extract_rfq_id_from_interaction(
-                &eth::Interaction {
+                &domain::Interaction {
                     target: liquorice_settlement_address,
                     call_data: Bytes::new(),
                     value: 0.into(),
@@ -202,7 +202,7 @@ mod utils {
         #[test]
         fn test_returns_none_for_different_target() {
             let rfq_id = extract_rfq_id_from_interaction(
-                &eth::Interaction {
+                &domain::Interaction {
                     target: Address::random(),
                     call_data: Bytes::new(),
                     value: 0.into(),

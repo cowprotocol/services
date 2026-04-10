@@ -29,6 +29,8 @@ use {
 
 mod cancel_order;
 mod cancel_orders;
+mod debug_order;
+mod debug_simulation;
 mod get_app_data;
 mod get_auction;
 mod get_native_price;
@@ -259,6 +261,21 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        (
+            "GET",
+            "/api/v1/debug/order/{uid}",
+            get(debug_order::debug_order_handler),
+        ),
+        (
+            "GET",
+            "/api/v1/debug/simulation/{uid}",
+            get(debug_simulation::debug_simulation_handler),
+        ),
+        (
+            "POST",
+            "/api/v1/debug/simulation",
+            post(debug_simulation::debug_simulation_post_handler),
+        ),
         // V2 routes
         // /solver_competition routes (specific before parameterized)
         (
@@ -443,6 +460,24 @@ impl IntoResponse for PriceEstimationErrorWrapper {
                 error("NoLiquidity", "no route found"),
             )
                 .into_response(),
+            PriceEstimationError::TradingOutsideAllowedWindow { message } => (
+                StatusCode::BAD_REQUEST,
+                error("TradingOutsideAllowedWindow", message),
+            )
+                .into_response(),
+            PriceEstimationError::TokenTemporarilySuspended { message } => (
+                StatusCode::BAD_REQUEST,
+                error("TokenTemporarilySuspended", message),
+            )
+                .into_response(),
+            PriceEstimationError::InsufficientLiquidity { message } => (
+                StatusCode::BAD_REQUEST,
+                error("InsufficientLiquidity", message),
+            )
+                .into_response(),
+            PriceEstimationError::CustomSolverError { message } => {
+                (StatusCode::BAD_REQUEST, error("CustomSolverError", message)).into_response()
+            }
             PriceEstimationError::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
@@ -477,7 +512,7 @@ pub async fn response_body(response: axum::http::Response<axum::body::Body>) -> 
 #[cfg(test)]
 mod tests {
     use {
-        crate::api::{Error, rich_error},
+        crate::api::{Error, PriceEstimationErrorWrapper, rich_error},
         alloy::primitives::{Address, B256},
         app_data::AppDataHash,
         axum::{
@@ -489,6 +524,7 @@ mod tests {
             routing::get,
         },
         model::order::OrderUid,
+        price_estimation::PriceEstimationError,
         serde::{Deserialize, Serialize, ser},
         serde_json::json,
         tower::ServiceExt as _,
@@ -548,6 +584,53 @@ mod tests {
                 "description": "bar",
             })
         );
+    }
+
+    #[tokio::test]
+    async fn maps_custom_price_estimation_errors_to_bad_request_responses() {
+        let cases = [
+            (
+                PriceEstimationError::TradingOutsideAllowedWindow {
+                    message: "window closed".to_string(),
+                },
+                "TradingOutsideAllowedWindow",
+                "window closed",
+            ),
+            (
+                PriceEstimationError::TokenTemporarilySuspended {
+                    message: "token suspended".to_string(),
+                },
+                "TokenTemporarilySuspended",
+                "token suspended",
+            ),
+            (
+                PriceEstimationError::InsufficientLiquidity {
+                    message: "insufficient liquidity".to_string(),
+                },
+                "InsufficientLiquidity",
+                "insufficient liquidity",
+            ),
+            (
+                PriceEstimationError::CustomSolverError {
+                    message: "custom solver reason".to_string(),
+                },
+                "CustomSolverError",
+                "custom solver reason",
+            ),
+        ];
+
+        for (err, expected_type, expected_description) in cases {
+            let response = PriceEstimationErrorWrapper(err).into_response();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let body: Error = serde_json::from_slice(&bytes).unwrap();
+
+            assert_eq!(body.error_type, expected_type);
+            assert_eq!(body.description.as_ref(), expected_description);
+        }
     }
 
     // Tests for Axum extractor type parsing.

@@ -1,17 +1,18 @@
 use {
     crate::{
-        domain::{eth, liquidity},
+        domain::liquidity,
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
+    eth_domain_types as eth,
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::future,
+    http_client::HttpClientFactory,
     liquidity_sources::{
         base_tokens::BaseTokens,
         recent_block_cache::{self, CacheConfig},
     },
     model::TokenPair,
-    shared::http_client::HttpClientFactory,
     solver::{
         liquidity::Liquidity,
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
@@ -136,7 +137,7 @@ impl Fetcher {
             .iter()
             .map(|pair| {
                 let (a, b) = pair.get();
-                TokenPair::new(a.0.0, b.0.0).expect("a != b")
+                TokenPair::new(*a, *b).expect("a != b")
             })
             .collect();
 

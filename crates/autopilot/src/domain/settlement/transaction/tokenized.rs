@@ -1,11 +1,12 @@
 use {
     crate::{
         boundary,
-        domain::{self, auction::order, eth},
+        domain::{self, auction::order},
     },
     alloy::primitives::U256,
     app_data::AppDataHash,
-    contracts::alloy::GPv2Settlement,
+    contracts::GPv2Settlement,
+    eth_domain_types as eth,
 };
 
 /// Recover order uid from order data and signature
