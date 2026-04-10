@@ -1,4 +1,10 @@
-#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
+#![allow(
+    unused_imports,
+    unused_attributes,
+    clippy::all,
+    rustdoc::all,
+    non_snake_case
+)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -19,8 +25,7 @@ interface CowAmmUniswapV2PriceOracle {}
     clippy::empty_structs_with_brackets
 )]
 pub mod CowAmmUniswapV2PriceOracle {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -41,10 +46,10 @@ pub mod CowAmmUniswapV2PriceOracle {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R4\x80\x15a\0\x0FW_\x80\xFD[P`\x046\x10a\0)W_5`\xE0\x1C\x80c5^\xFD\xD9\x14a\0-W[_\x80\xFD[a\0@a\0;6`\x04a\x03\x86V[a\0YV[`@\x80Q\x92\x83R` \x83\x01\x91\x90\x91R\x01`@Q\x80\x91\x03\x90\xF3[_\x80\x80a\0h\x84\x86\x01\x86a\x04\x11V[\x90P\x80_\x01Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\t\x02\xF1\xAC`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01```@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\0\xB6W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\0\xDA\x91\x90a\x04\xA2V[\x82m\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x92P\x81m\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91PP\x80\x93P\x81\x94PPP_\x81_\x01Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\r\xFE\x16\x81`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x01VW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x01z\x91\x90a\x04\xEEV[\x90P_\x82_\x01Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xD2\x12 \xA7`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x01\xC9W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x01\xED\x91\x90a\x04\xEEV[\x90P\x80s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x89s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x03a\x02'W\x92\x93\x92\x90[\x81s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x89s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x02\xC1W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x16`$\x82\x01R\x7Foracle: invalid token0\0\0\0\0\0\0\0\0\0\0`D\x82\x01R`d\x01[`@Q\x80\x91\x03\x90\xFD[\x80s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x88s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x03VW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x16`$\x82\x01R\x7Foracle: invalid token1\0\0\0\0\0\0\0\0\0\0`D\x82\x01R`d\x01a\x02\xB8V[PPP\x94P\x94\x92PPPV[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x03\x83W_\x80\xFD[PV[_\x80_\x80``\x85\x87\x03\x12\x15a\x03\x99W_\x80\xFD[\x845a\x03\xA4\x81a\x03bV[\x93P` \x85\x015a\x03\xB4\x81a\x03bV[\x92P`@\x85\x015g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x80\x82\x11\x15a\x03\xD0W_\x80\xFD[\x81\x87\x01\x91P\x87`\x1F\x83\x01\x12a\x03\xE3W_\x80\xFD[\x815\x81\x81\x11\x15a\x03\xF1W_\x80\xFD[\x88` \x82\x85\x01\x01\x11\x15a\x04\x02W_\x80\xFD[\x95\x98\x94\x97PP` \x01\x94PPPV[_` \x82\x84\x03\x12\x15a\x04!W_\x80\xFD[`@Q` \x81\x01\x81\x81\x10g\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x11\x17\x15a\x04iW\x7FNH{q\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0_R`A`\x04R`$_\xFD[`@R\x825a\x04w\x81a\x03bV[\x81R\x93\x92PPPV[\x80Qm\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x04\x9DW_\x80\xFD[\x91\x90PV[_\x80_``\x84\x86\x03\x12\x15a\x04\xB4W_\x80\xFD[a\x04\xBD\x84a\x04\x80V[\x92Pa\x04\xCB` \x85\x01a\x04\x80V[\x91P`@\x84\x01Qc\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x04\xE3W_\x80\xFD[\x80\x91PP\x92P\x92P\x92V[_` \x82\x84\x03\x12\x15a\x04\xFEW_\x80\xFD[\x81Qa\x05\t\x81a\x03bV[\x93\x92PPPV\xFE\xA2dipfsX\"\x12 \x1F\xE6\xADMk\x89\xD2\x04\xDBS\x94\xBD\xED\xEF#\xD1\x0E\xD8\xC7\xE4\xF8;\xE4\xC5\xFE\x14\xDC\xC0\x94p\"4dsolcC\0\x08\x19\x003",
     );
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`CowAmmUniswapV2PriceOracle`](self) contract instance.
 
-See the [wrapper's documentation](`CowAmmUniswapV2PriceOracleInstance`) for more details.*/
+    See the [wrapper's documentation](`CowAmmUniswapV2PriceOracleInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -57,14 +62,11 @@ See the [wrapper's documentation](`CowAmmUniswapV2PriceOracleInstance`) for more
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         __provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<CowAmmUniswapV2PriceOracleInstance<P, N>>,
@@ -72,33 +74,32 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         CowAmmUniswapV2PriceOracleInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        __provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         CowAmmUniswapV2PriceOracleInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`CowAmmUniswapV2PriceOracle`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`CowAmmUniswapV2PriceOracle`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`CowAmmUniswapV2PriceOracle`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct CowAmmUniswapV2PriceOracleInstance<
-        P,
-        N = alloy_contract::private::Ethereum,
-    > {
+    pub struct CowAmmUniswapV2PriceOracleInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
         provider: P,
         _network: ::core::marker::PhantomData<N>,
@@ -113,29 +114,26 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > CowAmmUniswapV2PriceOracleInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        CowAmmUniswapV2PriceOracleInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`CowAmmUniswapV2PriceOracle`](self) contract instance.
 
-See the [wrapper's documentation](`CowAmmUniswapV2PriceOracleInstance`) for more details.*/
+        See the [wrapper's documentation](`CowAmmUniswapV2PriceOracleInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -144,11 +142,12 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+        and constructor arguments, if any.
+
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -156,21 +155,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -178,7 +181,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     impl<P: ::core::clone::Clone, N> CowAmmUniswapV2PriceOracleInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> CowAmmUniswapV2PriceOracleInstance<P, N> {
             CowAmmUniswapV2PriceOracleInstance {
@@ -189,14 +193,15 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > CowAmmUniswapV2PriceOracleInstance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        CowAmmUniswapV2PriceOracleInstance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -205,14 +210,15 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > CowAmmUniswapV2PriceOracleInstance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        CowAmmUniswapV2PriceOracleInstance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -220,6 +226,5 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
 }
-pub type Instance = CowAmmUniswapV2PriceOracle::CowAmmUniswapV2PriceOracleInstance<
-    ::alloy_provider::DynProvider,
->;
+pub type Instance =
+    CowAmmUniswapV2PriceOracle::CowAmmUniswapV2PriceOracleInstance<::alloy_provider::DynProvider>;

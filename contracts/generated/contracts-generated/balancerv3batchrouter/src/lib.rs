@@ -1,4 +1,10 @@
-#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
+#![allow(
+    unused_imports,
+    unused_attributes,
+    clippy::all,
+    rustdoc::all,
+    non_snake_case
+)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -183,8 +189,7 @@ interface BalancerV3BatchRouter {
     clippy::empty_structs_with_brackets
 )]
 pub mod BalancerV3BatchRouter {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -207,9 +212,9 @@ pub mod BalancerV3BatchRouter {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressEmptyCode(address)` and selector `0x9996b315`.
-```solidity
-error AddressEmptyCode(address target);
-```*/
+    ```solidity
+    error AddressEmptyCode(address target);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AddressEmptyCode {
@@ -223,7 +228,7 @@ error AddressEmptyCode(address target);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -231,9 +236,7 @@ error AddressEmptyCode(address target);
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -257,17 +260,18 @@ error AddressEmptyCode(address target);
         #[automatically_derived]
         impl alloy_sol_types::SolError for AddressEmptyCode {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "AddressEmptyCode(address)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [153u8, 150u8, 179u8, 21u8];
+            const SIGNATURE: &'static str = "AddressEmptyCode(address)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -276,20 +280,21 @@ error AddressEmptyCode(address target);
                     ),
                 )
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AddressInsufficientBalance(address)` and selector `0xcd786059`.
-```solidity
-error AddressInsufficientBalance(address account);
-```*/
+    ```solidity
+    error AddressInsufficientBalance(address account);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AddressInsufficientBalance {
@@ -303,7 +308,7 @@ error AddressInsufficientBalance(address account);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -311,9 +316,7 @@ error AddressInsufficientBalance(address account);
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -322,16 +325,14 @@ error AddressInsufficientBalance(address account);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<AddressInsufficientBalance>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<AddressInsufficientBalance> for UnderlyingRustTuple<'_> {
             fn from(value: AddressInsufficientBalance) -> Self {
                 (value.account,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for AddressInsufficientBalance {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for AddressInsufficientBalance {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { account: tuple.0 }
             }
@@ -339,17 +340,18 @@ error AddressInsufficientBalance(address account);
         #[automatically_derived]
         impl alloy_sol_types::SolError for AddressInsufficientBalance {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "AddressInsufficientBalance(address)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [205u8, 120u8, 96u8, 89u8];
+            const SIGNATURE: &'static str = "AddressInsufficientBalance(address)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -358,20 +360,21 @@ error AddressInsufficientBalance(address account);
                     ),
                 )
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ErrorSelectorNotFound()` and selector `0xa7285689`.
-```solidity
-error ErrorSelectorNotFound();
-```*/
+    ```solidity
+    error ErrorSelectorNotFound();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ErrorSelectorNotFound;
@@ -382,7 +385,7 @@ error ErrorSelectorNotFound();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -390,9 +393,7 @@ error ErrorSelectorNotFound();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -416,35 +417,37 @@ error ErrorSelectorNotFound();
         #[automatically_derived]
         impl alloy_sol_types::SolError for ErrorSelectorNotFound {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ErrorSelectorNotFound()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [167u8, 40u8, 86u8, 137u8];
+            const SIGNATURE: &'static str = "ErrorSelectorNotFound()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EthTransfer()` and selector `0x0540ddf6`.
-```solidity
-error EthTransfer();
-```*/
+    ```solidity
+    error EthTransfer();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct EthTransfer;
@@ -455,7 +458,7 @@ error EthTransfer();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -463,9 +466,7 @@ error EthTransfer();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -489,35 +490,37 @@ error EthTransfer();
         #[automatically_derived]
         impl alloy_sol_types::SolError for EthTransfer {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "EthTransfer()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [5u8, 64u8, 221u8, 246u8];
+            const SIGNATURE: &'static str = "EthTransfer()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedInnerCall()` and selector `0x1425ea42`.
-```solidity
-error FailedInnerCall();
-```*/
+    ```solidity
+    error FailedInnerCall();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct FailedInnerCall;
@@ -528,7 +531,7 @@ error FailedInnerCall();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -536,9 +539,7 @@ error FailedInnerCall();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -562,35 +563,37 @@ error FailedInnerCall();
         #[automatically_derived]
         impl alloy_sol_types::SolError for FailedInnerCall {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "FailedInnerCall()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [20u8, 37u8, 234u8, 66u8];
+            const SIGNATURE: &'static str = "FailedInnerCall()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InputLengthMismatch()` and selector `0xaaad13f7`.
-```solidity
-error InputLengthMismatch();
-```*/
+    ```solidity
+    error InputLengthMismatch();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InputLengthMismatch;
@@ -601,7 +604,7 @@ error InputLengthMismatch();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -609,9 +612,7 @@ error InputLengthMismatch();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -635,35 +636,37 @@ error InputLengthMismatch();
         #[automatically_derived]
         impl alloy_sol_types::SolError for InputLengthMismatch {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InputLengthMismatch()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [170u8, 173u8, 19u8, 247u8];
+            const SIGNATURE: &'static str = "InputLengthMismatch()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InsufficientEth()` and selector `0xa01a9df6`.
-```solidity
-error InsufficientEth();
-```*/
+    ```solidity
+    error InsufficientEth();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct InsufficientEth;
@@ -674,7 +677,7 @@ error InsufficientEth();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -682,9 +685,7 @@ error InsufficientEth();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -708,35 +709,37 @@ error InsufficientEth();
         #[automatically_derived]
         impl alloy_sol_types::SolError for InsufficientEth {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InsufficientEth()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [160u8, 26u8, 157u8, 246u8];
+            const SIGNATURE: &'static str = "InsufficientEth()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ReentrancyGuardReentrantCall()` and selector `0x3ee5aeb5`.
-```solidity
-error ReentrancyGuardReentrantCall();
-```*/
+    ```solidity
+    error ReentrancyGuardReentrantCall();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ReentrancyGuardReentrantCall;
@@ -747,7 +750,7 @@ error ReentrancyGuardReentrantCall();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -755,9 +758,7 @@ error ReentrancyGuardReentrantCall();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -766,16 +767,14 @@ error ReentrancyGuardReentrantCall();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ReentrancyGuardReentrantCall>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ReentrancyGuardReentrantCall> for UnderlyingRustTuple<'_> {
             fn from(value: ReentrancyGuardReentrantCall) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ReentrancyGuardReentrantCall {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ReentrancyGuardReentrantCall {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -783,35 +782,37 @@ error ReentrancyGuardReentrantCall();
         #[automatically_derived]
         impl alloy_sol_types::SolError for ReentrancyGuardReentrantCall {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ReentrancyGuardReentrantCall()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [62u8, 229u8, 174u8, 181u8];
+            const SIGNATURE: &'static str = "ReentrancyGuardReentrantCall()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeCastOverflowedUintDowncast(uint8,uint256)` and selector `0x6dfcc650`.
-```solidity
-error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
-```*/
+    ```solidity
+    error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SafeCastOverflowedUintDowncast {
@@ -827,7 +828,7 @@ error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
@@ -835,15 +836,10 @@ error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
             alloy_sol_types::sol_data::Uint<256>,
         );
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            u8,
-            alloy_sol_types::private::primitives::aliases::U256,
-        );
+        type UnderlyingRustTuple<'a> = (u8, alloy_sol_types::private::primitives::aliases::U256);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -852,16 +848,14 @@ error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<SafeCastOverflowedUintDowncast>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<SafeCastOverflowedUintDowncast> for UnderlyingRustTuple<'_> {
             fn from(value: SafeCastOverflowedUintDowncast) -> Self {
                 (value.bits, value.value)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for SafeCastOverflowedUintDowncast {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SafeCastOverflowedUintDowncast {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     bits: tuple.0,
@@ -872,42 +866,44 @@ error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
         #[automatically_derived]
         impl alloy_sol_types::SolError for SafeCastOverflowedUintDowncast {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "SafeCastOverflowedUintDowncast(uint8,uint256)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [109u8, 252u8, 198u8, 80u8];
+            const SIGNATURE: &'static str = "SafeCastOverflowedUintDowncast(uint8,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(&self.bits),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.value),
+                    <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(
+                        &self.bits,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.value,
+                    ),
                 )
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SafeERC20FailedOperation(address)` and selector `0x5274afe7`.
-```solidity
-error SafeERC20FailedOperation(address token);
-```*/
+    ```solidity
+    error SafeERC20FailedOperation(address token);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SafeERC20FailedOperation {
@@ -921,7 +917,7 @@ error SafeERC20FailedOperation(address token);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -929,9 +925,7 @@ error SafeERC20FailedOperation(address token);
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -940,16 +934,14 @@ error SafeERC20FailedOperation(address token);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<SafeERC20FailedOperation>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<SafeERC20FailedOperation> for UnderlyingRustTuple<'_> {
             fn from(value: SafeERC20FailedOperation) -> Self {
                 (value.token,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for SafeERC20FailedOperation {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for SafeERC20FailedOperation {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { token: tuple.0 }
             }
@@ -957,17 +949,18 @@ error SafeERC20FailedOperation(address token);
         #[automatically_derived]
         impl alloy_sol_types::SolError for SafeERC20FailedOperation {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "SafeERC20FailedOperation(address)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [82u8, 116u8, 175u8, 231u8];
+            const SIGNATURE: &'static str = "SafeERC20FailedOperation(address)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -976,20 +969,21 @@ error SafeERC20FailedOperation(address token);
                     ),
                 )
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SenderIsNotVault(address)` and selector `0x089676d5`.
-```solidity
-error SenderIsNotVault(address sender);
-```*/
+    ```solidity
+    error SenderIsNotVault(address sender);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SenderIsNotVault {
@@ -1003,7 +997,7 @@ error SenderIsNotVault(address sender);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
@@ -1011,9 +1005,7 @@ error SenderIsNotVault(address sender);
         type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1037,17 +1029,18 @@ error SenderIsNotVault(address sender);
         #[automatically_derived]
         impl alloy_sol_types::SolError for SenderIsNotVault {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "SenderIsNotVault(address)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [8u8, 150u8, 118u8, 213u8];
+            const SIGNATURE: &'static str = "SenderIsNotVault(address)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1056,20 +1049,21 @@ error SenderIsNotVault(address sender);
                     ),
                 )
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `SwapDeadline()` and selector `0xe08b8af0`.
-```solidity
-error SwapDeadline();
-```*/
+    ```solidity
+    error SwapDeadline();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SwapDeadline;
@@ -1080,7 +1074,7 @@ error SwapDeadline();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -1088,9 +1082,7 @@ error SwapDeadline();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1114,35 +1106,37 @@ error SwapDeadline();
         #[automatically_derived]
         impl alloy_sol_types::SolError for SwapDeadline {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "SwapDeadline()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [224u8, 139u8, 138u8, 240u8];
+            const SIGNATURE: &'static str = "SwapDeadline()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `TransientIndexOutOfBounds()` and selector `0x0f4ae0e4`.
-```solidity
-error TransientIndexOutOfBounds();
-```*/
+    ```solidity
+    error TransientIndexOutOfBounds();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct TransientIndexOutOfBounds;
@@ -1153,7 +1147,7 @@ error TransientIndexOutOfBounds();
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
@@ -1161,9 +1155,7 @@ error TransientIndexOutOfBounds();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1172,16 +1164,14 @@ error TransientIndexOutOfBounds();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<TransientIndexOutOfBounds>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<TransientIndexOutOfBounds> for UnderlyingRustTuple<'_> {
             fn from(value: TransientIndexOutOfBounds) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for TransientIndexOutOfBounds {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for TransientIndexOutOfBounds {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -1189,34 +1179,36 @@ error TransientIndexOutOfBounds();
         #[automatically_derived]
         impl alloy_sol_types::SolError for TransientIndexOutOfBounds {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "TransientIndexOutOfBounds()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [15u8, 74u8, 224u8, 228u8];
+            const SIGNATURE: &'static str = "TransientIndexOutOfBounds()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     /**Constructor`.
-```solidity
-constructor(address vault, address weth, address permit2, string routerVersion);
-```*/
+    ```solidity
+    constructor(address vault, address weth, address permit2, string routerVersion);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -1230,7 +1222,7 @@ constructor(address vault, address weth, address permit2, string routerVersion);
         pub routerVersion: alloy_sol_types::private::String,
     }
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1249,9 +1241,7 @@ constructor(address vault, address weth, address permit2, string routerVersion);
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1286,15 +1276,15 @@ constructor(address vault, address weth, address permit2, string routerVersion);
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::String,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1316,14 +1306,15 @@ constructor(address vault, address weth, address permit2, string routerVersion);
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `version()` and selector `0x54fd4d50`.
-```solidity
-function version() external view returns (string memory);
-```*/
+    ```solidity
+    function version() external view returns (string memory);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct versionCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`version()`](versionCall) function.
+    ///Container type for the return parameters of the
+    /// [`version()`](versionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct versionReturn {
@@ -1337,7 +1328,7 @@ function version() external view returns (string memory);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1346,9 +1337,7 @@ function version() external view returns (string memory);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1378,9 +1367,7 @@ function version() external view returns (string memory);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1405,61 +1392,55 @@ function version() external view returns (string memory);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for versionCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::String;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "version()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [84u8, 253u8, 77u8, 80u8];
+            const SIGNATURE: &'static str = "version()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: versionReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: versionReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: versionReturn = r.into();
+                    r._0
+                })
             }
         }
     };
     ///Container for all the [`BalancerV3BatchRouter`](self) function calls.
     #[derive(Clone)]
-    #[derive()]
     pub enum BalancerV3BatchRouterCalls {
         #[allow(missing_docs)]
         version(versionCall),
@@ -1467,19 +1448,18 @@ function version() external view returns (string memory);
     impl BalancerV3BatchRouterCalls {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the variants.
-        /// No guarantees are made about the order of the selectors.
+        /// Note that the selectors might not be in the same order as the
+        /// variants. No guarantees are made about the order of the
+        /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[[84u8, 253u8, 77u8, 80u8]];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(version),
-        ];
         /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <versionCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
+        pub const SIGNATURES: &'static [&'static str] =
+            &[<versionCall as alloy_sol_types::SolCall>::SIGNATURE];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[::core::stringify!(version)];
+
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1492,63 +1472,59 @@ function version() external view returns (string memory);
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
+
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for BalancerV3BatchRouterCalls {
-        const NAME: &'static str = "BalancerV3BatchRouterCalls";
-        const MIN_DATA_LENGTH: usize = 0usize;
         const COUNT: usize = 1usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const NAME: &'static str = "BalancerV3BatchRouterCalls";
+
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::version(_) => <versionCall as alloy_sol_types::SolCall>::SELECTOR,
             }
         }
+
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
+
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
+
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls>] = &[
-                {
-                    fn version(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <versionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(BalancerV3BatchRouterCalls::version)
-                    }
-                    version
-                },
-            ];
+            )
+                -> alloy_sol_types::Result<BalancerV3BatchRouterCalls>] = &[{
+                fn version(data: &[u8]) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
+                    <versionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        .map(BalancerV3BatchRouterCalls::version)
+                }
+                version
+            }];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
+
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -1557,29 +1533,24 @@ function version() external view returns (string memory);
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls>] = &[
-                {
-                    fn version(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
-                        <versionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterCalls::version)
-                    }
-                    version
-                },
-            ];
+            ) -> alloy_sol_types::Result<
+                BalancerV3BatchRouterCalls,
+            >] = &[{
+                fn version(data: &[u8]) -> alloy_sol_types::Result<BalancerV3BatchRouterCalls> {
+                    <versionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                        .map(BalancerV3BatchRouterCalls::version)
+                }
+                version
+            }];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
+
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
@@ -1588,6 +1559,7 @@ function version() external view returns (string memory);
                 }
             }
         }
+
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
@@ -1598,8 +1570,7 @@ function version() external view returns (string memory);
         }
     }
     ///Container for all the [`BalancerV3BatchRouter`](self) custom errors.
-    #[derive(Clone)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     pub enum BalancerV3BatchRouterErrors {
         #[allow(missing_docs)]
         AddressEmptyCode(AddressEmptyCode),
@@ -1631,8 +1602,9 @@ function version() external view returns (string memory);
     impl BalancerV3BatchRouterErrors {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the variants.
-        /// No guarantees are made about the order of the selectors.
+        /// Note that the selectors might not be in the same order as the
+        /// variants. No guarantees are made about the order of the
+        /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
@@ -1650,22 +1622,6 @@ function version() external view returns (string memory);
             [205u8, 120u8, 96u8, 89u8],
             [224u8, 139u8, 138u8, 240u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(EthTransfer),
-            ::core::stringify!(SenderIsNotVault),
-            ::core::stringify!(TransientIndexOutOfBounds),
-            ::core::stringify!(FailedInnerCall),
-            ::core::stringify!(ReentrancyGuardReentrantCall),
-            ::core::stringify!(SafeERC20FailedOperation),
-            ::core::stringify!(SafeCastOverflowedUintDowncast),
-            ::core::stringify!(AddressEmptyCode),
-            ::core::stringify!(InsufficientEth),
-            ::core::stringify!(ErrorSelectorNotFound),
-            ::core::stringify!(InputLengthMismatch),
-            ::core::stringify!(AddressInsufficientBalance),
-            ::core::stringify!(SwapDeadline),
-        ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <EthTransfer as alloy_sol_types::SolError>::SIGNATURE,
@@ -1682,6 +1638,23 @@ function version() external view returns (string memory);
             <AddressInsufficientBalance as alloy_sol_types::SolError>::SIGNATURE,
             <SwapDeadline as alloy_sol_types::SolError>::SIGNATURE,
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(EthTransfer),
+            ::core::stringify!(SenderIsNotVault),
+            ::core::stringify!(TransientIndexOutOfBounds),
+            ::core::stringify!(FailedInnerCall),
+            ::core::stringify!(ReentrancyGuardReentrantCall),
+            ::core::stringify!(SafeERC20FailedOperation),
+            ::core::stringify!(SafeCastOverflowedUintDowncast),
+            ::core::stringify!(AddressEmptyCode),
+            ::core::stringify!(InsufficientEth),
+            ::core::stringify!(ErrorSelectorNotFound),
+            ::core::stringify!(InputLengthMismatch),
+            ::core::stringify!(AddressInsufficientBalance),
+            ::core::stringify!(SwapDeadline),
+        ];
+
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1694,20 +1667,20 @@ function version() external view returns (string memory);
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
+
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for BalancerV3BatchRouterErrors {
-        const NAME: &'static str = "BalancerV3BatchRouterErrors";
-        const MIN_DATA_LENGTH: usize = 0usize;
         const COUNT: usize = 13usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const NAME: &'static str = "BalancerV3BatchRouterErrors";
+
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -1720,9 +1693,7 @@ function version() external view returns (string memory);
                 Self::ErrorSelectorNotFound(_) => {
                     <ErrorSelectorNotFound as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::EthTransfer(_) => {
-                    <EthTransfer as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::EthTransfer(_) => <EthTransfer as alloy_sol_types::SolError>::SELECTOR,
                 Self::FailedInnerCall(_) => {
                     <FailedInnerCall as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -1744,31 +1715,30 @@ function version() external view returns (string memory);
                 Self::SenderIsNotVault(_) => {
                     <SenderIsNotVault as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::SwapDeadline(_) => {
-                    <SwapDeadline as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::SwapDeadline(_) => <SwapDeadline as alloy_sol_types::SolError>::SELECTOR,
                 Self::TransientIndexOutOfBounds(_) => {
                     <TransientIndexOutOfBounds as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
+
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
+
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
+
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors>] = &[
+            )
+                -> alloy_sol_types::Result<BalancerV3BatchRouterErrors>] = &[
                 {
                     fn EthTransfer(
                         data: &[u8],
@@ -1782,9 +1752,7 @@ function version() external view returns (string memory);
                     fn SenderIsNotVault(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <SenderIsNotVault as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <SenderIsNotVault as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(BalancerV3BatchRouterErrors::SenderIsNotVault)
                     }
                     SenderIsNotVault
@@ -1794,9 +1762,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <TransientIndexOutOfBounds as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::TransientIndexOutOfBounds)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::TransientIndexOutOfBounds)
                     }
                     TransientIndexOutOfBounds
                 },
@@ -1804,9 +1772,7 @@ function version() external view returns (string memory);
                     fn FailedInnerCall(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <FailedInnerCall as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <FailedInnerCall as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(BalancerV3BatchRouterErrors::FailedInnerCall)
                     }
                     FailedInnerCall
@@ -1816,11 +1782,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                BalancerV3BatchRouterErrors::ReentrancyGuardReentrantCall,
-                            )
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::ReentrancyGuardReentrantCall)
                     }
                     ReentrancyGuardReentrantCall
                 },
@@ -1829,9 +1793,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::SafeERC20FailedOperation)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::SafeERC20FailedOperation)
                     }
                     SafeERC20FailedOperation
                 },
@@ -1852,9 +1816,7 @@ function version() external view returns (string memory);
                     fn AddressEmptyCode(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(BalancerV3BatchRouterErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
@@ -1863,9 +1825,7 @@ function version() external view returns (string memory);
                     fn InsufficientEth(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <InsufficientEth as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <InsufficientEth as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(BalancerV3BatchRouterErrors::InsufficientEth)
                     }
                     InsufficientEth
@@ -1874,9 +1834,7 @@ function version() external view returns (string memory);
                     fn ErrorSelectorNotFound(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(BalancerV3BatchRouterErrors::ErrorSelectorNotFound)
                     }
                     ErrorSelectorNotFound
@@ -1885,9 +1843,7 @@ function version() external view returns (string memory);
                     fn InputLengthMismatch(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <InputLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <InputLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(BalancerV3BatchRouterErrors::InputLengthMismatch)
                     }
                     InputLengthMismatch
@@ -1897,9 +1853,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <AddressInsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::AddressInsufficientBalance)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::AddressInsufficientBalance)
                     }
                     AddressInsufficientBalance
                 },
@@ -1914,15 +1870,14 @@ function version() external view returns (string memory);
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
+
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -1931,14 +1886,14 @@ function version() external view returns (string memory);
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors>] = &[
+            ) -> alloy_sol_types::Result<
+                BalancerV3BatchRouterErrors,
+            >] = &[
                 {
                     fn EthTransfer(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <EthTransfer as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <EthTransfer as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(BalancerV3BatchRouterErrors::EthTransfer)
                     }
                     EthTransfer
@@ -1948,9 +1903,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <SenderIsNotVault as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::SenderIsNotVault)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::SenderIsNotVault)
                     }
                     SenderIsNotVault
                 },
@@ -1970,9 +1925,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <FailedInnerCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::FailedInnerCall)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::FailedInnerCall)
                     }
                     FailedInnerCall
                 },
@@ -2018,9 +1973,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::AddressEmptyCode)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::AddressEmptyCode)
                     }
                     AddressEmptyCode
                 },
@@ -2029,9 +1984,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <InsufficientEth as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::InsufficientEth)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::InsufficientEth)
                     }
                     InsufficientEth
                 },
@@ -2051,9 +2006,9 @@ function version() external view returns (string memory);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
                         <InputLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(BalancerV3BatchRouterErrors::InputLengthMismatch)
+                            data,
+                        )
+                        .map(BalancerV3BatchRouterErrors::InputLengthMismatch)
                     }
                     InputLengthMismatch
                 },
@@ -2072,31 +2027,26 @@ function version() external view returns (string memory);
                     fn SwapDeadline(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<BalancerV3BatchRouterErrors> {
-                        <SwapDeadline as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <SwapDeadline as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(BalancerV3BatchRouterErrors::SwapDeadline)
                     }
                     SwapDeadline
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
+
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::AddressEmptyCode(inner) => {
-                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::AddressInsufficientBalance(inner) => {
                     <AddressInsufficientBalance as alloy_sol_types::SolError>::abi_encoded_size(
@@ -2104,27 +2054,19 @@ function version() external view returns (string memory);
                     )
                 }
                 Self::ErrorSelectorNotFound(inner) => {
-                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::EthTransfer(inner) => {
                     <EthTransfer as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::FailedInnerCall(inner) => {
-                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InputLengthMismatch(inner) => {
-                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InsufficientEth(inner) => {
-                    <InsufficientEth as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <InsufficientEth as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ReentrancyGuardReentrantCall(inner) => {
                     <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::abi_encoded_size(
@@ -2137,14 +2079,10 @@ function version() external view returns (string memory);
                     )
                 }
                 Self::SafeERC20FailedOperation(inner) => {
-                    <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::SenderIsNotVault(inner) => {
-                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::SwapDeadline(inner) => {
                     <SwapDeadline as alloy_sol_types::SolError>::abi_encoded_size(inner)
@@ -2156,94 +2094,66 @@ function version() external view returns (string memory);
                 }
             }
         }
+
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::AddressEmptyCode(inner) => {
-                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <AddressEmptyCode as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::AddressInsufficientBalance(inner) => {
                     <AddressInsufficientBalance as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::ErrorSelectorNotFound(inner) => {
-                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ErrorSelectorNotFound as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::EthTransfer(inner) => {
-                    <EthTransfer as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <EthTransfer as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::FailedInnerCall(inner) => {
-                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <FailedInnerCall as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::InputLengthMismatch(inner) => {
-                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InputLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::InsufficientEth(inner) => {
-                    <InsufficientEth as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <InsufficientEth as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ReentrancyGuardReentrantCall(inner) => {
                     <ReentrancyGuardReentrantCall as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::SafeCastOverflowedUintDowncast(inner) => {
                     <SafeCastOverflowedUintDowncast as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::SafeERC20FailedOperation(inner) => {
                     <SafeERC20FailedOperation as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::SenderIsNotVault(inner) => {
-                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <SenderIsNotVault as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::SwapDeadline(inner) => {
-                    <SwapDeadline as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <SwapDeadline as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::TransientIndexOutOfBounds(inner) => {
                     <TransientIndexOutOfBounds as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
         }
     }
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`BalancerV3BatchRouter`](self) contract instance.
 
-See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
+    See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -2256,32 +2166,31 @@ See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more deta
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         __provider: P,
         vault: alloy_sol_types::private::Address,
         weth: alloy_sol_types::private::Address,
         permit2: alloy_sol_types::private::Address,
         routerVersion: alloy_sol_types::private::String,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<BalancerV3BatchRouterInstance<P, N>>,
-    > {
-        BalancerV3BatchRouterInstance::<
-            P,
-            N,
-        >::deploy(__provider, vault, weth, permit2, routerVersion)
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<BalancerV3BatchRouterInstance<P, N>>>
+    {
+        BalancerV3BatchRouterInstance::<P, N>::deploy(
+            __provider,
+            vault,
+            weth,
+            permit2,
+            routerVersion,
+        )
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
@@ -2293,22 +2202,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         permit2: alloy_sol_types::private::Address,
         routerVersion: alloy_sol_types::private::String,
     ) -> alloy_contract::RawCallBuilder<P, N> {
-        BalancerV3BatchRouterInstance::<
-            P,
-            N,
-        >::deploy_builder(__provider, vault, weth, permit2, routerVersion)
+        BalancerV3BatchRouterInstance::<P, N>::deploy_builder(
+            __provider,
+            vault,
+            weth,
+            permit2,
+            routerVersion,
+        )
     }
     /**A [`BalancerV3BatchRouter`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`BalancerV3BatchRouter`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`BalancerV3BatchRouter`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct BalancerV3BatchRouterInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -2319,33 +2231,32 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for BalancerV3BatchRouterInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("BalancerV3BatchRouterInstance").field(&self.address).finish()
+            f.debug_tuple("BalancerV3BatchRouterInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > BalancerV3BatchRouterInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        BalancerV3BatchRouterInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`BalancerV3BatchRouter`](self) contract instance.
 
-See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
+        See the [wrapper's documentation](`BalancerV3BatchRouterInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -2354,21 +2265,17 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
             permit2: alloy_sol_types::private::Address,
             routerVersion: alloy_sol_types::private::String,
         ) -> alloy_contract::Result<BalancerV3BatchRouterInstance<P, N>> {
-            let call_builder = Self::deploy_builder(
-                __provider,
-                vault,
-                weth,
-                permit2,
-                routerVersion,
-            );
+            let call_builder =
+                Self::deploy_builder(__provider, vault, weth, permit2, routerVersion);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+        and constructor arguments, if any.
+
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(
             __provider: P,
@@ -2381,34 +2288,36 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 __provider,
                 [
                     &BYTECODE[..],
-                    &alloy_sol_types::SolConstructor::abi_encode(
-                        &constructorCall {
-                            vault,
-                            weth,
-                            permit2,
-                            routerVersion,
-                        },
-                    )[..],
+                    &alloy_sol_types::SolConstructor::abi_encode(&constructorCall {
+                        vault,
+                        weth,
+                        permit2,
+                        routerVersion,
+                    })[..],
                 ]
-                    .concat()
-                    .into(),
+                .concat()
+                .into(),
             )
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -2416,7 +2325,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     impl<P: ::core::clone::Clone, N> BalancerV3BatchRouterInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> BalancerV3BatchRouterInstance<P, N> {
             BalancerV3BatchRouterInstance {
@@ -2427,34 +2337,37 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > BalancerV3BatchRouterInstance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        BalancerV3BatchRouterInstance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
+
         ///Creates a new call builder for the [`version`] function.
         pub fn version(&self) -> alloy_contract::SolCallBuilder<&P, versionCall, N> {
             self.call_builder(&versionCall)
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > BalancerV3BatchRouterInstance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        BalancerV3BatchRouterInstance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -2462,81 +2375,48 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
 }
-pub type Instance = BalancerV3BatchRouter::BalancerV3BatchRouterInstance<
-    ::alloy_provider::DynProvider,
->;
+pub type Instance =
+    BalancerV3BatchRouter::BalancerV3BatchRouterInstance<::alloy_provider::DynProvider>;
 use {
-    std::{sync::LazyLock, collections::HashMap},
-    anyhow::{Result, Context},
-    alloy_primitives::{address, Address},
-    alloy_provider::{Provider, DynProvider},
+    alloy_primitives::{Address, address},
+    alloy_provider::{DynProvider, Provider},
+    anyhow::{Context, Result},
+    std::{collections::HashMap, sync::LazyLock},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        1u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"
-                ),
-                Some(21339510u64),
-            ))
-        }
-        10u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"
-                ),
-                Some(133969588u64),
-            ))
-        }
-        100u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"
-                ),
-                Some(37377506u64),
-            ))
-        }
-        8453u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x85a80afee867aDf27B50BdB7b76DA70f1E853062"
-                ),
-                Some(25347205u64),
-            ))
-        }
-        9745u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x85a80afee867aDf27B50BdB7b76DA70f1E853062"
-                ),
-                Some(782312u64),
-            ))
-        }
-        42161u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"
-                ),
-                Some(297828544u64),
-            ))
-        }
-        43114u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xc9b36096f5201ea332Db35d6D195774ea0D5988f"
-                ),
-                Some(59965747u64),
-            ))
-        }
-        11155111u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xC85b652685567C1B074e8c0D4389f83a2E458b1C"
-                ),
-                Some(7219301u64),
-            ))
-        }
+        1u64 => Some((
+            ::alloy_primitives::address!("0x136f1EFcC3f8f88516B9E94110D56FDBfB1778d1"),
+            Some(21339510u64),
+        )),
+        10u64 => Some((
+            ::alloy_primitives::address!("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
+            Some(133969588u64),
+        )),
+        100u64 => Some((
+            ::alloy_primitives::address!("0xe2fa4e1d17725e72dcdAfe943Ecf45dF4B9E285b"),
+            Some(37377506u64),
+        )),
+        8453u64 => Some((
+            ::alloy_primitives::address!("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"),
+            Some(25347205u64),
+        )),
+        9745u64 => Some((
+            ::alloy_primitives::address!("0x85a80afee867aDf27B50BdB7b76DA70f1E853062"),
+            Some(782312u64),
+        )),
+        42161u64 => Some((
+            ::alloy_primitives::address!("0xaD89051bEd8d96f045E8912aE1672c6C0bF8a85E"),
+            Some(297828544u64),
+        )),
+        43114u64 => Some((
+            ::alloy_primitives::address!("0xc9b36096f5201ea332Db35d6D195774ea0D5988f"),
+            Some(59965747u64),
+        )),
+        11155111u64 => Some((
+            ::alloy_primitives::address!("0xC85b652685567C1B074e8c0D4389f83a2E458b1C"),
+            Some(7219301u64),
+        )),
         _ => None,
     }
 }
@@ -2553,9 +2433,7 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(
-        provider: &DynProvider,
-    ) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()

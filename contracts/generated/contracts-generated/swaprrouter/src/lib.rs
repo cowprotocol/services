@@ -1,4 +1,10 @@
-#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
+#![allow(
+    unused_imports,
+    unused_attributes,
+    clippy::all,
+    rustdoc::all,
+    non_snake_case
+)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -184,18 +190,18 @@ interface SwaprRouter {
     clippy::empty_structs_with_brackets
 )]
 pub mod SwaprRouter {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `WETH()` and selector `0xad5c4648`.
-```solidity
-function WETH() external pure returns (address);
-```*/
+    ```solidity
+    function WETH() external pure returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct WETHCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`WETH()`](WETHCall) function.
+    ///Container type for the return parameters of the [`WETH()`](WETHCall)
+    /// function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct WETHReturn {
@@ -209,7 +215,7 @@ function WETH() external pure returns (address);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -218,9 +224,7 @@ function WETH() external pure returns (address);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -250,9 +254,7 @@ function WETH() external pure returns (address);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -277,63 +279,58 @@ function WETH() external pure returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for WETHCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "WETH()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [173u8, 92u8, 70u8, 72u8];
+            const SIGNATURE: &'static str = "WETH()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: WETHReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: WETHReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: WETHReturn = r.into();
+                    r._0
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)` and selector `0xe8e33700`.
-```solidity
-function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) external returns (uint256 amountA, uint256 amountB, uint256 liquidity);
-```*/
+    ```solidity
+    function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) external returns (uint256 amountA, uint256 amountB, uint256 liquidity);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addLiquidityCall {
@@ -355,7 +352,9 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)`](addLiquidityCall) function.
+    ///Container type for the return parameters of the
+    /// [`addLiquidity(address,address,uint256,uint256,uint256,uint256,address,
+    /// uint256)`](addLiquidityCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addLiquidityReturn {
@@ -373,7 +372,7 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -400,9 +399,7 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -458,9 +455,7 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -487,19 +482,17 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
             }
         }
         impl addLiquidityReturn {
-            fn _tokenize(
-                &self,
-            ) -> <addLiquidityCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(&self) -> <addLiquidityCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountA),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountB),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.liquidity),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountA,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountB,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.liquidity,
+                    ),
                 )
             }
         }
@@ -515,26 +508,26 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = addLiquidityReturn;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [232u8, 227u8, 55u8, 0u8];
+            const SIGNATURE: &'static str =
+                "addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -544,58 +537,58 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.tokenB,
                     ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountADesired),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountBDesired),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountAMin),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountBMin),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountADesired,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountBDesired,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountAMin,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountBMin,
+                    ),
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.to,
                     ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.deadline,
+                    ),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 addLiquidityReturn::_tokenize(ret)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `factory()` and selector `0xc45a0155`.
-```solidity
-function factory() external pure returns (address);
-```*/
+    ```solidity
+    function factory() external pure returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`factory()`](factoryCall) function.
+    ///Container type for the return parameters of the
+    /// [`factory()`](factoryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryReturn {
@@ -609,7 +602,7 @@ function factory() external pure returns (address);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -618,9 +611,7 @@ function factory() external pure returns (address);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -650,9 +641,7 @@ function factory() external pure returns (address);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -677,63 +666,58 @@ function factory() external pure returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for factoryCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "factory()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [196u8, 90u8, 1u8, 85u8];
+            const SIGNATURE: &'static str = "factory()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: factoryReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: factoryReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: factoryReturn = r.into();
+                    r._0
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `quote(uint256,uint256,uint256)` and selector `0xad615dec`.
-```solidity
-function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pure returns (uint256 amountB);
-```*/
+    ```solidity
+    function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pure returns (uint256 amountB);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteCall {
@@ -745,7 +729,8 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
         pub reserveB: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`quote(uint256,uint256,uint256)`](quoteCall) function.
+    ///Container type for the return parameters of the
+    /// [`quote(uint256,uint256,uint256)`](quoteCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteReturn {
@@ -759,7 +744,7 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -776,9 +761,7 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -809,14 +792,10 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
+            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::primitives::aliases::U256,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -845,73 +824,72 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::primitives::aliases::U256;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "quote(uint256,uint256,uint256)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [173u8, 97u8, 93u8, 236u8];
+            const SIGNATURE: &'static str = "quote(uint256,uint256,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountA),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.reserveA),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.reserveB),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountA,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.reserveA,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.reserveB,
+                    ),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
                 )
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: quoteReturn = r.into();
                         r.amountB
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: quoteReturn = r.into();
-                        r.amountB
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: quoteReturn = r.into();
+                    r.amountB
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `swapTokensForExactTokens(uint256,uint256,address[],address,uint256)` and selector `0x8803dbee`.
-```solidity
-function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] memory path, address to, uint256 deadline) external returns (uint256[] memory amounts);
-```*/
+    ```solidity
+    function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] memory path, address to, uint256 deadline) external returns (uint256[] memory amounts);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapTokensForExactTokensCall {
@@ -927,14 +905,15 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`swapTokensForExactTokens(uint256,uint256,address[],address,uint256)`](swapTokensForExactTokensCall) function.
+    ///Container type for the return parameters of the
+    /// [`swapTokensForExactTokens(uint256,uint256,address[],address,
+    /// uint256)`](swapTokensForExactTokensCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapTokensForExactTokensReturn {
         #[allow(missing_docs)]
-        pub amounts: alloy_sol_types::private::Vec<
-            alloy_sol_types::private::primitives::aliases::U256,
-        >,
+        pub amounts:
+            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
     }
     #[allow(
         non_camel_case_types,
@@ -943,7 +922,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -964,9 +943,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -975,8 +952,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<swapTokensForExactTokensCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<swapTokensForExactTokensCall> for UnderlyingRustTuple<'_> {
                 fn from(value: swapTokensForExactTokensCall) -> Self {
                     (
                         value.amountOut,
@@ -989,8 +965,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for swapTokensForExactTokensCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapTokensForExactTokensCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         amountOut: tuple.0,
@@ -1005,20 +980,15 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         {
             #[doc(hidden)]
             #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
+            type UnderlyingSolTuple<'a> =
+                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<
-                    alloy_sol_types::private::primitives::aliases::U256,
-                >,
+                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1027,16 +997,14 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<swapTokensForExactTokensReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<swapTokensForExactTokensReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: swapTokensForExactTokensReturn) -> Self {
                     (value.amounts,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for swapTokensForExactTokensReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapTokensForExactTokensReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { amounts: tuple.0 }
                 }
@@ -1051,26 +1019,24 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Vec<
-                alloy_sol_types::private::primitives::aliases::U256,
-            >;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "swapTokensForExactTokens(uint256,uint256,address[],address,uint256)";
+            type Return =
+                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnTuple<'a> =
+                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,);
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [136u8, 3u8, 219u8, 238u8];
+            const SIGNATURE: &'static str =
+                "swapTokensForExactTokens(uint256,uint256,address[],address,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1091,41 +1057,38 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     > as alloy_sol_types::SolType>::tokenize(&self.deadline),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
+                (<alloy_sol_types::sol_data::Array<
+                    alloy_sol_types::sol_data::Uint<256>,
+                > as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: swapTokensForExactTokensReturn = r.into();
                         r.amounts
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: swapTokensForExactTokensReturn = r.into();
-                        r.amounts
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: swapTokensForExactTokensReturn = r.into();
+                    r.amounts
+                })
             }
         }
     };
     ///Container for all the [`SwaprRouter`](self) function calls.
     #[derive(Clone)]
-    #[derive()]
     pub enum SwaprRouterCalls {
         #[allow(missing_docs)]
         WETH(WETHCall),
@@ -1141,8 +1104,9 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
     impl SwaprRouterCalls {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the variants.
-        /// No guarantees are made about the order of the selectors.
+        /// Note that the selectors might not be in the same order as the
+        /// variants. No guarantees are made about the order of the
+        /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
@@ -1152,14 +1116,6 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             [196u8, 90u8, 1u8, 85u8],
             [232u8, 227u8, 55u8, 0u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(swapTokensForExactTokens),
-            ::core::stringify!(WETH),
-            ::core::stringify!(quote),
-            ::core::stringify!(factory),
-            ::core::stringify!(addLiquidity),
-        ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <swapTokensForExactTokensCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -1168,6 +1124,15 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             <factoryCall as alloy_sol_types::SolCall>::SIGNATURE,
             <addLiquidityCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(swapTokensForExactTokens),
+            ::core::stringify!(WETH),
+            ::core::stringify!(quote),
+            ::core::stringify!(factory),
+            ::core::stringify!(addLiquidity),
+        ];
+
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1180,27 +1145,25 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
+
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for SwaprRouterCalls {
-        const NAME: &'static str = "SwaprRouterCalls";
-        const MIN_DATA_LENGTH: usize = 0usize;
         const COUNT: usize = 5usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const NAME: &'static str = "SwaprRouterCalls";
+
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::WETH(_) => <WETHCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::addLiquidity(_) => {
-                    <addLiquidityCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::addLiquidity(_) => <addLiquidityCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::factory(_) => <factoryCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::quote(_) => <quoteCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::swapTokensForExactTokens(_) => {
@@ -1208,31 +1171,29 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 }
             }
         }
+
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
+
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
+
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<SwaprRouterCalls>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<SwaprRouterCalls>] = &[
                 {
                     fn swapTokensForExactTokens(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<SwaprRouterCalls> {
                         <swapTokensForExactTokensCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(SwaprRouterCalls::swapTokensForExactTokens)
+                            data,
+                        )
+                        .map(SwaprRouterCalls::swapTokensForExactTokens)
                     }
                     swapTokensForExactTokens
                 },
@@ -1251,36 +1212,29 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     quote
                 },
                 {
-                    fn factory(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<SwaprRouterCalls> {
+                    fn factory(data: &[u8]) -> alloy_sol_types::Result<SwaprRouterCalls> {
                         <factoryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(SwaprRouterCalls::factory)
                     }
                     factory
                 },
                 {
-                    fn addLiquidity(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<SwaprRouterCalls> {
-                        <addLiquidityCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
+                    fn addLiquidity(data: &[u8]) -> alloy_sol_types::Result<SwaprRouterCalls> {
+                        <addLiquidityCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(SwaprRouterCalls::addLiquidity)
                     }
                     addLiquidity
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
+
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -1289,7 +1243,8 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<SwaprRouterCalls>] = &[
+            )
+                -> alloy_sol_types::Result<SwaprRouterCalls>] = &[
                 {
                     fn swapTokensForExactTokens(
                         data: &[u8],
@@ -1303,55 +1258,44 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 },
                 {
                     fn WETH(data: &[u8]) -> alloy_sol_types::Result<SwaprRouterCalls> {
-                        <WETHCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <WETHCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(SwaprRouterCalls::WETH)
                     }
                     WETH
                 },
                 {
                     fn quote(data: &[u8]) -> alloy_sol_types::Result<SwaprRouterCalls> {
-                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(SwaprRouterCalls::quote)
                     }
                     quote
                 },
                 {
-                    fn factory(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<SwaprRouterCalls> {
-                        <factoryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn factory(data: &[u8]) -> alloy_sol_types::Result<SwaprRouterCalls> {
+                        <factoryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(SwaprRouterCalls::factory)
                     }
                     factory
                 },
                 {
-                    fn addLiquidity(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<SwaprRouterCalls> {
+                    fn addLiquidity(data: &[u8]) -> alloy_sol_types::Result<SwaprRouterCalls> {
                         <addLiquidityCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(SwaprRouterCalls::addLiquidity)
+                            data,
+                        )
+                        .map(SwaprRouterCalls::addLiquidity)
                     }
                     addLiquidity
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
+
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
@@ -1359,9 +1303,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     <WETHCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::addLiquidity(inner) => {
-                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -1376,6 +1318,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 }
             }
         }
+
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
@@ -1383,10 +1326,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     <WETHCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::addLiquidity(inner) => {
-                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -1396,17 +1336,16 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 }
                 Self::swapTokensForExactTokens(inner) => {
                     <swapTokensForExactTokensCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
         }
     }
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`SwaprRouter`](self) contract instance.
 
-See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
+    See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1419,15 +1358,15 @@ See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
     }
     /**A [`SwaprRouter`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`SwaprRouter`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`SwaprRouter`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct SwaprRouterInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1438,43 +1377,45 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for SwaprRouterInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("SwaprRouterInstance").field(&self.address).finish()
+            f.debug_tuple("SwaprRouterInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > SwaprRouterInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        SwaprRouterInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`SwaprRouter`](self) contract instance.
 
-See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
+        See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -1482,7 +1423,8 @@ See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
         }
     }
     impl<P: ::core::clone::Clone, N> SwaprRouterInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> SwaprRouterInstance<P, N> {
             SwaprRouterInstance {
@@ -1493,24 +1435,27 @@ See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > SwaprRouterInstance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        SwaprRouterInstance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
+
         ///Creates a new call builder for the [`WETH`] function.
         pub fn WETH(&self) -> alloy_contract::SolCallBuilder<&P, WETHCall, N> {
             self.call_builder(&WETHCall)
         }
+
         ///Creates a new call builder for the [`addLiquidity`] function.
         pub fn addLiquidity(
             &self,
@@ -1523,23 +1468,23 @@ See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
             to: alloy_sol_types::private::Address,
             deadline: alloy_sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, addLiquidityCall, N> {
-            self.call_builder(
-                &addLiquidityCall {
-                    tokenA,
-                    tokenB,
-                    amountADesired,
-                    amountBDesired,
-                    amountAMin,
-                    amountBMin,
-                    to,
-                    deadline,
-                },
-            )
+            self.call_builder(&addLiquidityCall {
+                tokenA,
+                tokenB,
+                amountADesired,
+                amountBDesired,
+                amountAMin,
+                amountBMin,
+                to,
+                deadline,
+            })
         }
+
         ///Creates a new call builder for the [`factory`] function.
         pub fn factory(&self) -> alloy_contract::SolCallBuilder<&P, factoryCall, N> {
             self.call_builder(&factoryCall)
         }
+
         ///Creates a new call builder for the [`quote`] function.
         pub fn quote(
             &self,
@@ -1547,15 +1492,15 @@ See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
             reserveA: alloy_sol_types::private::primitives::aliases::U256,
             reserveB: alloy_sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, quoteCall, N> {
-            self.call_builder(
-                &quoteCall {
-                    amountA,
-                    reserveA,
-                    reserveB,
-                },
-            )
+            self.call_builder(&quoteCall {
+                amountA,
+                reserveA,
+                reserveB,
+            })
         }
-        ///Creates a new call builder for the [`swapTokensForExactTokens`] function.
+
+        ///Creates a new call builder for the [`swapTokensForExactTokens`]
+        /// function.
         pub fn swapTokensForExactTokens(
             &self,
             amountOut: alloy_sol_types::private::primitives::aliases::U256,
@@ -1564,26 +1509,25 @@ See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
             to: alloy_sol_types::private::Address,
             deadline: alloy_sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, swapTokensForExactTokensCall, N> {
-            self.call_builder(
-                &swapTokensForExactTokensCall {
-                    amountOut,
-                    amountInMax,
-                    path,
-                    to,
-                    deadline,
-                },
-            )
+            self.call_builder(&swapTokensForExactTokensCall {
+                amountOut,
+                amountInMax,
+                path,
+                to,
+                deadline,
+            })
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > SwaprRouterInstance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        SwaprRouterInstance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -1593,37 +1537,25 @@ See the [wrapper's documentation](`SwaprRouterInstance`) for more details.*/
 }
 pub type Instance = SwaprRouter::SwaprRouterInstance<::alloy_provider::DynProvider>;
 use {
-    std::{sync::LazyLock, collections::HashMap},
-    anyhow::{Result, Context},
-    alloy_primitives::{address, Address},
-    alloy_provider::{Provider, DynProvider},
+    alloy_primitives::{Address, address},
+    alloy_provider::{DynProvider, Provider},
+    anyhow::{Context, Result},
+    std::{collections::HashMap, sync::LazyLock},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        1u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xb9960d9bca016e9748be75dd52f02188b9d0829f"
-                ),
-                None,
-            ))
-        }
-        100u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0"
-                ),
-                None,
-            ))
-        }
-        42161u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x530476d5583724A89c8841eB6Da76E7Af4C0F17E"
-                ),
-                None,
-            ))
-        }
+        1u64 => Some((
+            ::alloy_primitives::address!("0xb9960d9bca016e9748be75dd52f02188b9d0829f"),
+            None,
+        )),
+        100u64 => Some((
+            ::alloy_primitives::address!("0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0"),
+            None,
+        )),
+        42161u64 => Some((
+            ::alloy_primitives::address!("0x530476d5583724A89c8841eB6Da76E7Af4C0F17E"),
+            None,
+        )),
         _ => None,
     }
 }
@@ -1640,9 +1572,7 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(
-        provider: &DynProvider,
-    ) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()
