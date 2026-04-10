@@ -117,7 +117,7 @@ pub struct Order {
     pub tokens: Tokens,
     pub amount: order::TargetAmount,
     pub side: order::Side,
-    pub deadline: chrono::DateTime<chrono::Utc>,
+    pub deadline: chrono::DateTime<Utc>,
 }
 
 impl Order {
@@ -145,11 +145,16 @@ impl Order {
         let auction = self
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
-        let auction = risk_detector
-            .filter_unsupported_orders_in_auction(auction)
+        let orders_for_unsupported_filter: Vec<competition::Order> = auction.orders.clone();
+        let unsupported_uids = risk_detector
+            .unsupported_order_uids(&orders_for_unsupported_filter)
             .await;
-        if auction.orders.is_empty() {
-            return Err(QuotingFailed::UnsupportedToken.into());
+
+        let mut auction = auction;
+        if !unsupported_uids.is_empty() {
+            auction
+                .orders
+                .retain(|order| !unsupported_uids.contains(&order.uid));
         }
         let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::try_new(
@@ -187,18 +192,18 @@ impl Order {
                 sell: self.sell(),
                 side: self.side,
                 kind: if quote_using_limit_orders {
-                    competition::order::Kind::Limit
+                    order::Kind::Limit
                 } else {
-                    competition::order::Kind::Market
+                    order::Kind::Market
                 },
                 app_data: Default::default(),
-                partial: competition::order::Partial::No,
+                partial: order::Partial::No,
                 pre_interactions: Default::default(),
                 post_interactions: Default::default(),
-                sell_token_balance: competition::order::SellTokenBalance::Erc20,
-                buy_token_balance: competition::order::BuyTokenBalance::Erc20,
-                signature: competition::order::Signature {
-                    scheme: competition::order::signature::Scheme::Eip1271,
+                sell_token_balance: order::SellTokenBalance::Erc20,
+                buy_token_balance: order::BuyTokenBalance::Erc20,
+                signature: order::Signature {
+                    scheme: order::signature::Scheme::Eip1271,
                     data: Default::default(),
                     signer: Default::default(),
                 },
@@ -260,7 +265,7 @@ impl Order {
             // Note that we intentionally do not use [`eth::U256::max_value()`]
             // as an order with this would cause overflows with the smart
             // contract, so buy orders requiring excessively large sell amounts
-            // would not work anyway. Instead we use `2 ** 144`, the rationale
+            // would not work anyway. Instead, we use `2 ** 144`, the rationale
             // being that Uniswap V2 pool reserves are 112-bit integers. Noting
             // that `256 - 112 = 144`, this means that we can use it to trade a full
             // `type(uint112).max` without overflowing a `uint256` on the smart
@@ -269,7 +274,7 @@ impl Order {
             order::Side::Buy => eth::Asset {
                 // NOTE: the saturating strategy here is slightly irrelevant since we know that 1 <<
                 // 144 fits within U256
-                amount: (eth::U256::ONE.saturating_shl(144)).into(),
+                amount: eth::U256::ONE.saturating_shl(144).into(),
                 token: self.tokens.sell,
             },
         }

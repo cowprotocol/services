@@ -1,10 +1,6 @@
 use {
     self::solution::settlement,
-    super::{
-        Mempools,
-        mempools::SubmissionMode,
-        time::{self, Remaining},
-    },
+    super::{Mempools, mempools::SubmissionMode},
     crate::{
         domain::{
             competition::{solution::Settlement, sorting::SortingStrategy},
@@ -47,7 +43,7 @@ pub mod solution;
 pub mod sorting;
 
 use {
-    crate::infra::notify::liquidity_sources::LiquiditySourceNotifying,
+    crate::{domain::time::Remaining, infra::notify::liquidity_sources::LiquiditySourceNotifying},
     eth_domain_types::BlockNo,
 };
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
@@ -220,16 +216,16 @@ pub struct Competition {
     pub solver: Solver,
     pub eth: Ethereum,
     pub liquidity: infra::liquidity::Fetcher,
-    pub liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
+    pub liquidity_sources_notifier: notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
-    fetcher: Arc<pre_processing::DataAggregator>,
+    fetcher: Arc<DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
-    order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
+    order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
     submitter_pool: SubmitterPool,
 }
 
@@ -239,12 +235,12 @@ impl Competition {
         solver: Solver,
         eth: Ethereum,
         liquidity: infra::liquidity::Fetcher,
-        liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
+        liquidity_sources_notifier: notify::liquidity_sources::Notifier,
         simulator: Simulator,
         mempools: Mempools,
         risk_detector: Arc<risk_detector::Detector>,
         fetcher: Arc<DataAggregator>,
-        order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
+        order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
         if !submission_accounts.is_empty() {
@@ -296,43 +292,54 @@ impl Competition {
                 tracing::error!(?err, "pre-processing auction failed");
                 Error::MalformedRequest
             })?;
+
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
         let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
-        // Add the CoW AMM orders to the auction
+        // Add CoW AMM orders to the auction
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
+        // Start unsupported-order detection immediately
+        let orders_for_unsupported = auction.orders.clone();
+        let unsupported_orders_future =
+            async move { self.unsupported_order_uids(&orders_for_unsupported).await };
+
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
-            // Use spawn_blocking() because a lot of CPU bound computations are happening
+            // Use spawn_blocking() because a lot of CPU bound computations are happening,
             // and we don't want to block the runtime for too long.
             Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
-        // We can sort the orders and fetch auction data in parallel
-        let (auction, balances, app_data) =
-            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
+        // We can sort the orders, determine UIDS to filter and fetch auction data in
+        // parallel.
+        let (auction, balances, app_data, unsupported_uids) = tokio::join!(
+            sort_orders_future,
+            tasks.balances,
+            tasks.app_data,
+            unsupported_orders_future,
+        );
 
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime.
+        // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
+        // bound computations are happening, and we want to avoid blocking the runtime.
+        let mut auction = Self::run_blocking_with_timer("update_orders", move || {
             Self::update_orders(auction, balances, app_data, cow_amm_orders)
         })
         .await;
 
-        // We can run bad token filtering and liquidity fetching in parallel
-        let (liquidity, auction) = tokio::join!(
-            async {
-                match self.solver.liquidity() {
-                    solver::Liquidity::Fetch => tasks.liquidity.await,
-                    solver::Liquidity::Skip => Arc::new(Vec::new()),
-                }
-            },
-            self.without_unsupported_orders(auction)
-        );
+        // Apply unsupported filtering after update_orders.
+        if !unsupported_uids.is_empty() {
+            auction
+                .orders
+                .retain(|order| !unsupported_uids.contains(&order.uid));
+        }
+
+        let liquidity = match self.solver.liquidity() {
+            solver::Liquidity::Fetch => tasks.liquidity.await,
+            solver::Liquidity::Skip => Arc::new(Vec::new()),
+        };
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -340,6 +347,7 @@ impl Competition {
             .with_label_values(&["total"])
             .observe(elapsed.as_secs_f64());
         drop(timer);
+
         tracing::debug!(?elapsed, "auction task execution time");
 
         if auction.orders.is_empty() {
@@ -570,8 +578,8 @@ impl Competition {
         Ok(score)
     }
 
-    // Oders already need to be sorted from most relevant to least relevant so that
-    // we allocate balances for the most relevants first.
+    // Orders already need to be sorted from most relevant to the least relevant so
+    // that we allocate balances for the most relevant first.
     fn sort_orders(
         mut auction: Auction,
         solver: eth::Address,
@@ -603,7 +611,7 @@ impl Competition {
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
-        // not the case** (as the protocol should not chose which limit orders
+        // not the case** (as the protocol should not choose which limit orders
         // get filled for some given sell token balance). This loop goes through
         // the priority sorted orders and allocates the available user balance
         // to each order, and potentially scaling the order's `available` amount
@@ -613,7 +621,7 @@ impl Competition {
             if cow_amms.contains(&order.uid) {
                 // cow amm orders already get constructed fully initialized
                 // so we don't have to handle them here anymore.
-                // Without this short circuiting logic they would get filtered
+                // Without this short-circuit logic they would get filtered
                 // out later because we don't bother fetching their balances
                 // for performance reasons.
                 return true;
@@ -938,13 +946,20 @@ impl Competition {
     }
 
     #[instrument(skip_all)]
-    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
+    async fn unsupported_order_uids(&self, orders: &[Order]) -> HashSet<order::Uid> {
+        let mut removed = HashSet::new();
+
         if !self.solver.config().flashloans_enabled {
-            auction.orders.retain(|o| o.app_data.flashloan().is_none());
+            removed.extend(
+                orders
+                    .iter()
+                    .filter_map(|o| o.app_data.flashloan().is_some().then_some(o.uid)),
+            );
         }
-        self.risk_detector
-            .filter_unsupported_orders_in_auction(auction)
-            .await
+
+        removed.extend(self.risk_detector.unsupported_order_uids(orders).await);
+
+        removed
     }
 }
 
@@ -1059,7 +1074,7 @@ pub enum Error {
     )]
     SolutionNotAvailable,
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] time::DeadlineExceeded),
+    DeadlineExceeded(#[from] DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
