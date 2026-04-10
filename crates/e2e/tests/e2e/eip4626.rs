@@ -1,6 +1,6 @@
 use {
     ::alloy::{
-        primitives::{Address, address},
+        primitives::{Address, U256, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
     configs::{
@@ -139,25 +139,36 @@ async fn forked_node_mainnet_eip4626_recursive_native_price() {
     .await;
 }
 
-/// Tests pricing of a recursive EIP-4626 vault: a mock wrapper vault whose
-/// `asset()` returns sDAI, which itself is an EIP-4626 vault wrapping DAI.
-/// Requires two chained `Eip4626` estimators to fully unwrap.
+/// Tests pricing of recursive EIP-4626 vaults with non-trivial conversion
+/// rates. Deploys mock wrapper vaults on top of sDAI (which itself wraps DAI)
+/// with different rates and verifies the prices scale correctly.
 ///
 /// Unlike the non-recursive test we cannot submit a full quote because the
-/// freshly-deployed wrapper token has no DEX liquidity. Instead we verify
-/// that the native price endpoint returns a price, which exercises the full
-/// Eip4626 → Eip4626 → Driver chain.
+/// freshly-deployed wrapper tokens have no DEX liquidity. Instead we verify
+/// that the native price endpoint returns correctly scaled prices, which
+/// exercises the full Eip4626 → Eip4626 → Driver chain.
 async fn eip4626_recursive_native_price_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
     let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
 
-    // Deploy a mock EIP-4626 vault that wraps sDAI (which itself wraps DAI).
-    let wrapper =
-        contracts::test::MockERC4626Wrapper::Instance::deploy(web3.provider.clone(), SDAI, 18u8)
-            .await
-            .unwrap();
-    let wrapper_addr = *wrapper.address();
+    // Deploy mock EIP-4626 vaults wrapping sDAI with different conversion rates.
+    // Each wrapper applies `convertToAssets(shares) = shares * num / den`, so a
+    // (3, 2) wrapper means 1 share = 1.5 sDAI, making it 1.5x the sDAI price.
+    let rates: &[(u64, u64)] = &[(3, 2), (2, 1), (1, 3)];
+    let mut wrapper_addrs = Vec::with_capacity(rates.len());
+    for &(num, den) in rates {
+        let wrapper = contracts::test::MockERC4626Wrapper::Instance::deploy(
+            web3.provider.clone(),
+            SDAI,
+            18u8,
+            U256::from(num),
+            U256::from(den),
+        )
+        .await
+        .unwrap();
+        wrapper_addrs.push(*wrapper.address());
+    }
 
     // Two chained Eip4626 estimators: the first unwraps the mock wrapper to
     // sDAI, the second unwraps sDAI to DAI, and the Driver prices DAI.
@@ -190,21 +201,33 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
 
     onchain.mint_block().await;
 
-    // Query the native price of the wrapper token. The Eip4626 chain must
-    // resolve wrapper → sDAI → DAI → native price via the Driver.
+    // First, get the sDAI native price as a baseline via the native price
+    // endpoint. sDAI is priced through the second Eip4626 in the chain.
     wait_for_condition(TIMEOUT, || async {
-        services.get_native_price(&wrapper_addr).await.is_ok()
+        services.get_native_price(&SDAI).await.is_ok()
     })
     .await
-    .expect("native price for recursive EIP-4626 wrapper should be available");
+    .expect("sDAI native price should be available");
+    let sdai_price = services.get_native_price(&SDAI).await.unwrap().price;
 
-    let price = services
-        .get_native_price(&wrapper_addr)
+    // Verify each wrapper's price is the sDAI price scaled by the wrapper's
+    // conversion rate. This ensures the rate math is actually applied (a 1:1
+    // mock would pass even if the rate were ignored).
+    for (&addr, &(num, den)) in wrapper_addrs.iter().zip(rates) {
+        wait_for_condition(TIMEOUT, || async {
+            services.get_native_price(&addr).await.is_ok()
+        })
         .await
-        .expect("native price should be available after wait");
-    assert!(
-        price.price > 0.0,
-        "native price should be positive, got: {}",
-        price.price
-    );
+        .unwrap_or_else(|_| panic!("native price for wrapper ({num}/{den}) should be available"));
+
+        let wrapper_price = services.get_native_price(&addr).await.unwrap().price;
+        let expected_ratio = num as f64 / den as f64;
+        let actual_ratio = wrapper_price / sdai_price;
+
+        assert!(
+            (actual_ratio - expected_ratio).abs() / expected_ratio < 0.01,
+            "wrapper ({num}/{den}): expected ratio ~{expected_ratio:.4}, got {actual_ratio:.4} \
+             (wrapper={wrapper_price}, sdai={sdai_price})",
+        );
+    }
 }
