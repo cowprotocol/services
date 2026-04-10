@@ -280,20 +280,20 @@ impl<'a> PriceEstimatorFactory<'a> {
 
                 Ok((name, coin_gecko))
             }
-            NativePriceEstimatorSource::Eip4626 => {
+            NativePriceEstimatorSource::Eip4626 { depth } => {
                 let next = rest
                     .next()
                     .context("Eip4626 must be followed by another estimator in the same stage")?;
-                let (inner_name, inner) =
+                let (mut name, mut current) =
                     Box::pin(self.create_native_estimator(next, rest, weth)).await?;
-                let name = format!("Eip4626|{inner_name}");
-                Ok((
-                    name.clone(),
-                    Arc::new(InstrumentedPriceEstimator::new(
-                        native::Eip4626::new(inner, self.network.web3.provider.clone()),
-                        name,
-                    )),
-                ))
+                for _ in 0..depth.get() {
+                    name = format!("Eip4626|{name}");
+                    current = Arc::new(InstrumentedPriceEstimator::new(
+                        native::Eip4626::new(current, self.network.web3.provider.clone()),
+                        name.clone(),
+                    ));
+                }
+                Ok((name, current))
             }
         }
     }

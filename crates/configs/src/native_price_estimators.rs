@@ -1,8 +1,15 @@
 use {
     serde::Deserialize,
-    std::fmt::{self, Display, Formatter},
+    std::{
+        fmt::{self, Display, Formatter},
+        num::NonZeroU8,
+    },
     url::Url,
 };
+
+const fn default_eip4626_depth() -> NonZeroU8 {
+    NonZeroU8::MIN
+}
 
 /// Ordered stages of native-price estimators. Each stage is tried in order;
 /// within a stage estimators run concurrently.
@@ -29,7 +36,7 @@ impl<'de> Deserialize<'de> for NativePriceEstimators {
                     &format!("stage {} is empty, all stages must not be empty", n).as_str(),
                 ));
             }
-            if matches!(stage.last(), Some(NativePriceEstimator::Eip4626)) {
+            if matches!(stage.last(), Some(NativePriceEstimator::Eip4626 { .. })) {
                 return Err(serde::de::Error::custom(format!(
                     "stage {n}: Eip4626 must be followed by another estimator"
                 )));
@@ -102,7 +109,11 @@ pub enum NativePriceEstimator {
     /// Prices EIP-4626 vault tokens by looking up the underlying `asset()` and
     /// applying `convertToAssets()` as a conversion rate. Must be followed by
     /// another estimator in the same stage to price the underlying asset.
-    Eip4626,
+    /// `depth` controls how many nested vault layers to unwrap (default: 1).
+    Eip4626 {
+        #[serde(default = "default_eip4626_depth")]
+        depth: NonZeroU8,
+    },
 }
 
 impl NativePriceEstimator {
@@ -113,6 +124,10 @@ impl NativePriceEstimator {
     pub const fn forwarder(url: Url) -> Self {
         Self::Forwarder { url }
     }
+
+    pub const fn eip4626(depth: NonZeroU8) -> Self {
+        Self::Eip4626 { depth }
+    }
 }
 
 impl Display for NativePriceEstimator {
@@ -122,7 +137,7 @@ impl Display for NativePriceEstimator {
             NativePriceEstimator::Forwarder { url } => write!(f, "Forwarder|{}", url),
             NativePriceEstimator::OneInchSpotPriceApi => write!(f, "OneInchSpotPriceApi"),
             NativePriceEstimator::CoinGecko => write!(f, "CoinGecko"),
-            NativePriceEstimator::Eip4626 => write!(f, "Eip4626"),
+            NativePriceEstimator::Eip4626 { depth } => write!(f, "Eip4626({depth})"),
         }
     }
 }

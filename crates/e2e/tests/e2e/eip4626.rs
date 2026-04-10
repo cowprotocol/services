@@ -79,8 +79,9 @@ async fn eip4626_native_price_test(web3: Web3) {
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
             estimators: NativePriceEstimators::new(vec![vec![
-                // Eip4626 wraps the next estimator in the list (test_quoter).
-                NativePriceEstimator::Eip4626,
+                // Eip4626(1) wraps the next estimator in the list (test_quoter)
+                // to unwrap one vault layer (sDAI → DAI).
+                NativePriceEstimator::eip4626(1.try_into().unwrap()),
                 NativePriceEstimator::driver("test_quoter".to_string(), driver_url),
                 // Standalone estimator for non-vault tokens.
                 NativePriceEstimator::driver(
@@ -170,14 +171,13 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
         wrapper_addrs.push(*wrapper.address());
     }
 
-    // Two chained Eip4626 estimators: the first unwraps the mock wrapper to
-    // sDAI, the second unwraps sDAI to DAI, and the Driver prices DAI.
+    // Eip4626(2) unwraps two vault layers: mock wrapper → sDAI → DAI, then
+    // the Driver prices DAI.
     let driver_url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
             estimators: NativePriceEstimators::new(vec![vec![
-                NativePriceEstimator::Eip4626,
-                NativePriceEstimator::Eip4626,
+                NativePriceEstimator::eip4626(2.try_into().unwrap()),
                 NativePriceEstimator::driver("test_quoter".to_string(), driver_url),
                 // Standalone estimator for non-vault tokens.
                 NativePriceEstimator::driver(
