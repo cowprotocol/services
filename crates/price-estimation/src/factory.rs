@@ -183,9 +183,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    async fn create_native_estimator(
+    async fn create_native_estimator<'b>(
         &mut self,
         source: &NativePriceEstimatorSource,
+        rest: &mut impl Iterator<Item = &'b NativePriceEstimatorSource>,
         weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
@@ -278,6 +279,21 @@ impl<'a> PriceEstimatorFactory<'a> {
                     };
 
                 Ok((name, coin_gecko))
+            }
+            NativePriceEstimatorSource::Eip4626 { depth } => {
+                let next = rest
+                    .next()
+                    .context("Eip4626 must be followed by another estimator in the same stage")?;
+                let (mut name, mut current) =
+                    Box::pin(self.create_native_estimator(next, rest, weth)).await?;
+                for _ in 0..depth.get() {
+                    name = format!("Eip4626|{name}");
+                    current = Arc::new(InstrumentedPriceEstimator::new(
+                        native::Eip4626::new(current, self.network.web3.provider.clone()),
+                        name.clone(),
+                    ));
+                }
+                Ok((name, current))
             }
         }
     }
@@ -378,8 +394,12 @@ impl<'a> PriceEstimatorFactory<'a> {
         let mut estimators = Vec::with_capacity(native.len());
         for stage in native.iter() {
             let mut stages = Vec::with_capacity(stage.len());
-            for source in stage {
-                stages.push(self.create_native_estimator(source, weth).await?);
+            let mut iter = stage.iter();
+            while let Some(source) = iter.next() {
+                stages.push(
+                    self.create_native_estimator(source, &mut iter, weth)
+                        .await?,
+                );
             }
             estimators.push(stages);
         }

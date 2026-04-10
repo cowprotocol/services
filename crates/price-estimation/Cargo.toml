@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy = { workspace = true, features = ["providers", "rpc", "rpc-types", "sol-types"] }
+alloy = { workspace = true, features = ["contract", "providers", "rpc", "rpc-types", "sol-types"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 arc-swap = { workspace = true }
