@@ -1,5 +1,4 @@
 use {
-    pod_sdk::alloy_primitives::U256,
     bigdecimal::Zero,
     e2e::setup::{pod::PodTestClient, wait_for_condition, *},
     ethrpc::alloy::CallBuilderExt,
@@ -9,6 +8,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
+    pod_sdk::alloy_primitives::U256,
     shared::web3::Web3,
 };
 
@@ -548,7 +548,8 @@ async fn pod_multi_solver_test(web3: Web3) {
     tracing::info!("Starting services with pod-enabled multi-solver driver.");
     let services = Services::new(&onchain).await;
 
-    // Solver A: no haircut, Solver B: 1% haircut (100 bps) for score differentiation
+    // Solver A: no haircut, Solver B: 1% haircut (100 bps) for score
+    // differentiation
     services
         .start_protocol_with_pod_multi_solver(vec![(solver_a.clone(), 0), (solver_b.clone(), 100)])
         .await;
