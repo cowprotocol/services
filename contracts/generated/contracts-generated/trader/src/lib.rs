@@ -17,6 +17,7 @@ interface Trader {
 
     function ensureTradePreconditions(address settlementContract, address sellToken, uint256 sellAmount, address nativeToken, address spardose) external;
     function isValidSignature(bytes32, bytes memory) external pure returns (bytes4);
+    function safeApprove(address token, address vaultRelayer, uint256 amount) external;
 }
 ```
 
@@ -87,6 +88,29 @@ interface Trader {
       }
     ],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "safeApprove",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "vaultRelayer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   }
 ]
 ```*/
@@ -473,6 +497,168 @@ pub mod Trader {
             }
         }
     };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `safeApprove(address,address,uint256)` and selector `0xeb5625d9`.
+    ```solidity
+    function safeApprove(address token, address vaultRelayer, uint256 amount) external;
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct safeApproveCall {
+        #[allow(missing_docs)]
+        pub token: alloy_sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub vaultRelayer: alloy_sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub amount: alloy_sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the
+    /// [`safeApprove(address,address,uint256)`](safeApproveCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct safeApproveReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy_sol_types::sol_data::Address,
+                alloy_sol_types::sol_data::Address,
+                alloy_sol_types::sol_data::Uint<256>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy_sol_types::private::Address,
+                alloy_sol_types::private::Address,
+                alloy_sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<safeApproveCall> for UnderlyingRustTuple<'_> {
+                fn from(value: safeApproveCall) -> Self {
+                    (value.token, value.vaultRelayer, value.amount)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for safeApproveCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        token: tuple.0,
+                        vaultRelayer: tuple.1,
+                        amount: tuple.2,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<safeApproveReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: safeApproveReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for safeApproveReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl safeApproveReturn {
+            fn _tokenize(&self) -> <safeApproveCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for safeApproveCall {
+            type Parameters<'a> = (
+                alloy_sol_types::sol_data::Address,
+                alloy_sol_types::sol_data::Address,
+                alloy_sol_types::sol_data::Uint<256>,
+            );
+            type Return = safeApproveReturn;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnTuple<'a> = ();
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
+            const SELECTOR: [u8; 4] = [235u8, 86u8, 37u8, 217u8];
+            const SIGNATURE: &'static str = "safeApprove(address,address,uint256)";
+
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.token,
+                    ),
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.vaultRelayer,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amount,
+                    ),
+                )
+            }
+
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                safeApproveReturn::_tokenize(ret)
+            }
+
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+
+            #[inline]
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
+            }
+        }
+    };
     ///Container for all the [`Trader`](self) function calls.
     #[derive(Clone)]
     pub enum TraderCalls {
@@ -480,6 +666,8 @@ pub mod Trader {
         ensureTradePreconditions(ensureTradePreconditionsCall),
         #[allow(missing_docs)]
         isValidSignature(isValidSignatureCall),
+        #[allow(missing_docs)]
+        safeApprove(safeApproveCall),
     }
     impl TraderCalls {
         /// All the selectors of this enum.
@@ -489,17 +677,22 @@ pub mod Trader {
         /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 4usize]] =
-            &[[22u8, 38u8, 186u8, 126u8], [84u8, 46u8, 183u8, 125u8]];
+        pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [22u8, 38u8, 186u8, 126u8],
+            [84u8, 46u8, 183u8, 125u8],
+            [235u8, 86u8, 37u8, 217u8],
+        ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <isValidSignatureCall as alloy_sol_types::SolCall>::SIGNATURE,
             <ensureTradePreconditionsCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <safeApproveCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(isValidSignature),
             ::core::stringify!(ensureTradePreconditions),
+            ::core::stringify!(safeApprove),
         ];
 
         /// Returns the signature for the given selector, if known.
@@ -524,7 +717,7 @@ pub mod Trader {
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for TraderCalls {
-        const COUNT: usize = 2usize;
+        const COUNT: usize = 3usize;
         const MIN_DATA_LENGTH: usize = 96usize;
         const NAME: &'static str = "TraderCalls";
 
@@ -537,6 +730,7 @@ pub mod Trader {
                 Self::isValidSignature(_) => {
                     <isValidSignatureCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::safeApprove(_) => <safeApproveCall as alloy_sol_types::SolCall>::SELECTOR,
             }
         }
 
@@ -571,6 +765,13 @@ pub mod Trader {
                         .map(TraderCalls::ensureTradePreconditions)
                     }
                     ensureTradePreconditions
+                },
+                {
+                    fn safeApprove(data: &[u8]) -> alloy_sol_types::Result<TraderCalls> {
+                        <safeApproveCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(TraderCalls::safeApprove)
+                    }
+                    safeApprove
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -609,6 +810,13 @@ pub mod Trader {
                     }
                     ensureTradePreconditions
                 },
+                {
+                    fn safeApprove(data: &[u8]) -> alloy_sol_types::Result<TraderCalls> {
+                        <safeApproveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                            .map(TraderCalls::safeApprove)
+                    }
+                    safeApprove
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(alloy_sol_types::Error::unknown_selector(
@@ -630,6 +838,9 @@ pub mod Trader {
                 Self::isValidSignature(inner) => {
                     <isValidSignatureCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
+                Self::safeApprove(inner) => {
+                    <safeApproveCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
             }
         }
 
@@ -643,6 +854,9 @@ pub mod Trader {
                 }
                 Self::isValidSignature(inner) => {
                     <isValidSignatureCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                }
+                Self::safeApprove(inner) => {
+                    <safeApproveCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
             }
         }
@@ -832,6 +1046,20 @@ pub mod Trader {
             _1: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, isValidSignatureCall, N> {
             self.call_builder(&isValidSignatureCall { _0, _1 })
+        }
+
+        ///Creates a new call builder for the [`safeApprove`] function.
+        pub fn safeApprove(
+            &self,
+            token: alloy_sol_types::private::Address,
+            vaultRelayer: alloy_sol_types::private::Address,
+            amount: alloy_sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, safeApproveCall, N> {
+            self.call_builder(&safeApproveCall {
+                token,
+                vaultRelayer,
+                amount,
+            })
         }
     }
     /// Event filters.
