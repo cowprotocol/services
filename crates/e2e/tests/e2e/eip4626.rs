@@ -72,23 +72,28 @@ async fn eip4626_native_price_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Configure native price estimation with an EIP-4626 wrapper so that the
-    // protocol can price sDAI by looking up its underlying DAI and applying the
-    // vault conversion rate.
-    let driver_url = "http://localhost:11088/test_solver".parse().unwrap();
+    // Stage 1: EIP-4626 chain — vault tokens priced via conversion rate.
+    // Stage 2: driver fallback for non-vault tokens. The autopilot prices
+    //          WETH at startup and panics if it can't, so a plain driver
+    //          stage is required even though we're only testing vaults.
+    // results_required=1 so stage 2 only runs when stage 1 fails.
+    let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
-            estimators: NativePriceEstimators::new(vec![vec![
-                // Eip4626(1) wraps the next estimator in the list (test_quoter)
-                // to unwrap one vault layer (sDAI → DAI).
-                NativePriceEstimator::eip4626(1.try_into().unwrap()),
-                NativePriceEstimator::driver("test_quoter".to_string(), driver_url),
-                // Standalone estimator for non-vault tokens.
-                NativePriceEstimator::driver(
+            estimators: NativePriceEstimators::new(vec![
+                vec![
+                    NativePriceEstimator::eip4626(1.try_into().unwrap()),
+                    NativePriceEstimator::driver("test_quoter".to_string(), driver_url.clone()),
+                ],
+                vec![NativePriceEstimator::driver(
                     "test_quoter".to_string(),
-                    "http://localhost:11088/test_solver".parse().unwrap(),
-                ),
-            ]]),
+                    driver_url,
+                )],
+            ]),
+            shared: configs::native_price::NativePriceConfig {
+                results_required: 1.try_into().unwrap(),
+                ..Default::default()
+            },
             ..NativePriceConfig::test_default()
         },
         ..Configuration::test("test_solver", solver.address())
@@ -140,24 +145,21 @@ async fn forked_node_mainnet_eip4626_recursive_native_price() {
     .await;
 }
 
-/// Tests pricing of recursive EIP-4626 vaults with non-trivial conversion
-/// rates. Deploys mock wrapper vaults on top of sDAI (which itself wraps DAI)
-/// with different rates and verifies the prices scale correctly.
-///
-/// Unlike the non-recursive test we cannot submit a full quote because the
-/// freshly-deployed wrapper tokens have no DEX liquidity. Instead we verify
-/// that the native price endpoint returns correctly scaled prices, which
-/// exercises the full Eip4626 → Eip4626 → Driver chain.
+/// Tests pricing and quoting of recursive EIP-4626 vaults with non-trivial
+/// conversion rates. Deploys mock wrapper vaults on top of sDAI (which itself
+/// wraps DAI) with different rates, seeds Uniswap V2 pools so the solver can
+/// find routes, and verifies both native prices and full quotes.
 async fn eip4626_recursive_native_price_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
     let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(100u64.eth()).await;
 
     // Deploy mock EIP-4626 vaults wrapping sDAI with different conversion rates.
     // Each wrapper applies `convertToAssets(shares) = shares * num / den`, so a
     // (3, 2) wrapper means 1 share = 1.5 sDAI, making it 1.5x the sDAI price.
     let rates: &[(u64, u64)] = &[(3, 2), (2, 1), (1, 3)];
-    let mut wrapper_addrs = Vec::with_capacity(rates.len());
+    let mut wrappers = Vec::with_capacity(rates.len());
     for &(num, den) in rates {
         let wrapper = contracts::test::MockERC4626Wrapper::Instance::deploy(
             web3.provider.clone(),
@@ -168,23 +170,55 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
         )
         .await
         .unwrap();
-        wrapper_addrs.push(*wrapper.address());
+        let mintable =
+            MintableToken::at(*wrapper.address(), trader.address(), web3.provider.clone());
+        wrappers.push(mintable);
     }
 
-    // Eip4626(2) unwraps two vault layers: mock wrapper → sDAI → DAI, then
-    // the Driver prices DAI.
-    let driver_url = "http://localhost:11088/test_solver".parse().unwrap();
+    // Seed Uniswap V2 pools so the solver can find routes for the wrapper
+    // tokens. We pair each wrapper with WETH.
+    let weth_token = MintableToken::at(
+        *onchain.contracts().weth.address(),
+        trader.address(),
+        web3.provider.clone(),
+    );
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .value(U256::from(rates.len() as u64) * 10u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    for wrapper in &wrappers {
+        onchain
+            .seed_uni_v2_pool((wrapper, 10_000u64.eth()), (&weth_token, 10u64.eth()))
+            .await;
+    }
+
+    // Stage 1: EIP-4626 chain — vault tokens priced via conversion rate.
+    // Stage 2: driver fallback for non-vault tokens. The autopilot prices
+    //          WETH at startup and panics if it can't, so a plain driver
+    //          stage is required even though we're only testing vaults.
+    // results_required=1 so stage 2 only runs when stage 1 fails.
+    let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
-            estimators: NativePriceEstimators::new(vec![vec![
-                NativePriceEstimator::eip4626(2.try_into().unwrap()),
-                NativePriceEstimator::driver("test_quoter".to_string(), driver_url),
-                // Standalone estimator for non-vault tokens.
-                NativePriceEstimator::driver(
+            estimators: NativePriceEstimators::new(vec![
+                vec![
+                    NativePriceEstimator::eip4626(2.try_into().unwrap()),
+                    NativePriceEstimator::driver("test_quoter".to_string(), driver_url.clone()),
+                ],
+                vec![NativePriceEstimator::driver(
                     "test_quoter".to_string(),
-                    "http://localhost:11088/test_solver".parse().unwrap(),
-                ),
-            ]]),
+                    driver_url,
+                )],
+            ]),
+            shared: configs::native_price::NativePriceConfig {
+                results_required: 1.try_into().unwrap(),
+                ..Default::default()
+            },
             ..NativePriceConfig::test_default()
         },
         ..Configuration::test("test_solver", solver.address())
@@ -201,33 +235,62 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
 
     onchain.mint_block().await;
 
-    // First, get the sDAI native price as a baseline via the native price
-    // endpoint. sDAI is priced through the second Eip4626 in the chain.
-    wait_for_condition(TIMEOUT, || async {
-        services.get_native_price(&SDAI).await.is_ok()
-    })
-    .await
-    .expect("sDAI native price should be available");
-    let sdai_price = services.get_native_price(&SDAI).await.unwrap().price;
-
-    // Verify each wrapper's price is the sDAI price scaled by the wrapper's
-    // conversion rate. This ensures the rate math is actually applied (a 1:1
-    // mock would pass even if the rate were ignored).
-    for (&addr, &(num, den)) in wrapper_addrs.iter().zip(rates) {
+    // Verify native prices: the ratio between any two wrapper prices should
+    // match the ratio of their vault conversion rates.
+    let mut prices = Vec::with_capacity(rates.len());
+    for (wrapper, &(num, den)) in wrappers.iter().zip(rates) {
+        let addr = *wrapper.address();
         wait_for_condition(TIMEOUT, || async {
             services.get_native_price(&addr).await.is_ok()
         })
         .await
         .unwrap_or_else(|_| panic!("native price for wrapper ({num}/{den}) should be available"));
 
-        let wrapper_price = services.get_native_price(&addr).await.unwrap().price;
-        let expected_ratio = num as f64 / den as f64;
-        let actual_ratio = wrapper_price / sdai_price;
+        prices.push(services.get_native_price(&addr).await.unwrap().price);
+    }
+
+    for (i, &(num_i, den_i)) in rates.iter().enumerate() {
+        for (j, &(num_j, den_j)) in rates.iter().enumerate().skip(i + 1) {
+            let price_ratio = prices[i] / prices[j];
+            let expected_ratio = (num_i * den_j) as f64 / (num_j * den_i) as f64;
+            let relative_err = (price_ratio - expected_ratio).abs() / expected_ratio;
+            assert!(
+                relative_err < 0.01,
+                "price ratio between ({num_i}/{den_i}) and ({num_j}/{den_j}) should match rate \
+                 ratio: got {price_ratio:.6}, expected {expected_ratio:.6}",
+            );
+        }
+    }
+
+    // Submit a quote for each wrapper token to verify the full pipeline works
+    // end-to-end (pricing + routing through the seeded Uni V2 pools).
+    for (wrapper, &(num, den)) in wrappers.iter().zip(rates) {
+        wrapper.mint(trader.address(), 100u64.eth()).await;
+        ERC20::Instance::new(*wrapper.address(), web3.provider.clone())
+            .approve(onchain.contracts().allowance, 100u64.eth())
+            .from(trader.address())
+            .send_and_watch()
+            .await
+            .unwrap();
+
+        let quote = services
+            .submit_quote(&OrderQuoteRequest {
+                from: trader.address(),
+                sell_token: *wrapper.address(),
+                buy_token: WETH,
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::BeforeFee {
+                        value: (10u64.eth()).try_into().unwrap(),
+                    },
+                },
+                ..Default::default()
+            })
+            .await;
 
         assert!(
-            (actual_ratio - expected_ratio).abs() / expected_ratio < 0.01,
-            "wrapper ({num}/{den}): expected ratio ~{expected_ratio:.4}, got {actual_ratio:.4} \
-             (wrapper={wrapper_price}, sdai={sdai_price})",
+            quote.is_ok(),
+            "quote for wrapper ({num}/{den}) should succeed: {:?}",
+            quote.err()
         );
     }
 }
