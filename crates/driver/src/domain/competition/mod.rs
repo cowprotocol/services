@@ -875,6 +875,8 @@ impl Competition {
             });
         }
 
+        notify::settlement_started(&self.solver, settlement.auction_id, settlement.solution());
+
         // Acquire a submission slot. The pool prefers the direct solver EOA
         // (no forwarding overhead); falls back to a delegated EIP-7702
         // submission account when the solver EOA is busy.
