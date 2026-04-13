@@ -179,3 +179,144 @@ impl fmt::Debug for Detector {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{
+            domain::competition::order::{
+                self,
+                BuyTokenBalance,
+                Kind,
+                Partial,
+                SellTokenBalance,
+                Side,
+                Signature,
+                signature::Scheme,
+            },
+            util,
+        },
+        alloy::primitives::Bytes,
+        eth_domain_types::{Address, Asset, TokenAddress, TokenAmount, U256},
+    };
+
+    fn token(byte: u8) -> TokenAddress {
+        TokenAddress::from(Address::repeat_byte(byte))
+    }
+
+    fn order(uid_byte: u8, sell: TokenAddress, buy: TokenAddress) -> Order {
+        Order {
+            uid: [uid_byte; order::UID_LEN].into(),
+            receiver: None,
+            created: util::Timestamp(0),
+            valid_to: util::Timestamp(u32::MAX),
+            buy: Asset {
+                token: buy,
+                amount: TokenAmount(U256::from(1u64)),
+            },
+            sell: Asset {
+                token: sell,
+                amount: TokenAmount(U256::from(1u64)),
+            },
+            side: Side::Sell,
+            kind: Kind::Market,
+            app_data: Default::default(),
+            partial: Partial::No,
+            pre_interactions: vec![],
+            post_interactions: vec![],
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: Scheme::Eip1271,
+                data: Bytes::default(),
+                signer: Default::default(),
+            },
+            protocol_fees: vec![],
+            quote: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_orders_returns_empty_set() {
+        let detector = Detector::default();
+        assert!(detector.unsupported_order_uids(&[]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn both_tokens_supported_keeps_order() {
+        let a = token(1);
+        let b = token(2);
+        let detector = Detector::new(
+            [(a, Quality::Supported), (b, Quality::Supported)]
+                .into_iter()
+                .collect(),
+        );
+        assert!(
+            detector
+                .unsupported_order_uids(&[order(1, a, b)])
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn unsupported_sell_token_flags_order() {
+        let bad = token(1);
+        let good = token(2);
+        let detector = Detector::new(
+            [(bad, Quality::Unsupported), (good, Quality::Supported)]
+                .into_iter()
+                .collect(),
+        );
+        let o = order(1, bad, good);
+        let set = detector.unsupported_order_uids(&[o.clone()]).await;
+        assert_eq!(set.len(), 1);
+        assert!(set.contains(&o.uid));
+    }
+
+    #[tokio::test]
+    async fn unsupported_buy_token_flags_order() {
+        let good = token(1);
+        let bad = token(2);
+        let detector = Detector::new(
+            [(good, Quality::Supported), (bad, Quality::Unsupported)]
+                .into_iter()
+                .collect(),
+        );
+        let o = order(1, good, bad);
+        let set = detector.unsupported_order_uids(&[o.clone()]).await;
+        assert_eq!(set.len(), 1);
+        assert!(set.contains(&o.uid));
+    }
+
+    #[tokio::test]
+    async fn unknown_tokens_without_simulation_are_kept() {
+        // No hardcoded entries and no simulation detector → unknown quality,
+        // order is assumed supported.
+        let detector = Detector::default();
+        let o = order(1, token(1), token(2));
+        assert!(detector.unsupported_order_uids(&[o]).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mixed_batch_only_flags_offending_orders() {
+        let good = token(1);
+        let bad = token(9);
+        let detector = Detector::new(
+            [(good, Quality::Supported), (bad, Quality::Unsupported)]
+                .into_iter()
+                .collect(),
+        );
+        let clean = order(1, good, good);
+        let bad_sell = order(2, bad, good);
+        let bad_buy = order(3, good, bad);
+        let set = detector
+            .unsupported_order_uids(&[clean.clone(), bad_sell.clone(), bad_buy.clone()])
+            .await;
+        assert_eq!(set.len(), 2);
+        assert!(!set.contains(&clean.uid));
+        assert!(set.contains(&bad_sell.uid));
+        assert!(set.contains(&bad_buy.uid));
+    }
+}

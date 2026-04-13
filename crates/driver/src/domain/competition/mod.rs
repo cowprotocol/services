@@ -32,7 +32,7 @@ use {
         sync::{mpsc, oneshot},
         task,
     },
-    tracing::{Instrument, instrument},
+    tracing::Instrument,
 };
 
 pub mod auction;
@@ -301,11 +301,15 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        let orders_for_unsupported = auction.orders.clone();
+        let orders_for_unsupported = {
+            let _timer = metrics::get().processing_stage_timer("clone_orders_for_unsupported");
+            auction.orders.clone()
+        };
 
         let unsupported_orders_future = Self::timed_future(
             "filter_unsupported",
-            self.unsupported_order_uids(&orders_for_unsupported),
+            self.risk_detector
+                .unsupported_order_uids(&orders_for_unsupported),
         );
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
@@ -329,6 +333,13 @@ impl Competition {
             Self::update_orders(auction, balances, app_data, cow_amm_orders)
         })
         .await;
+
+        // The flashloan filter must run after `update_orders` because it is the
+        // step that promotes `AppData::Hash` to `AppData::Full`, which is what
+        // makes `flashloan()` observable.
+        if !self.solver.config().flashloans_enabled {
+            auction.orders.retain(|o| o.app_data.flashloan().is_none());
+        }
 
         // Apply unsupported filtering after update_orders.
         if !unsupported_uids.is_empty() {
@@ -950,20 +961,6 @@ impl Competition {
             }));
         }
         Ok(())
-    }
-
-    #[instrument(skip_all)]
-    async fn unsupported_order_uids(&self, orders: &[Order]) -> HashSet<order::Uid> {
-        let mut removed = HashSet::new();
-        if !self.solver.config().flashloans_enabled {
-            removed.extend(
-                orders
-                    .iter()
-                    .filter_map(|o| o.app_data.flashloan().is_some().then_some(o.uid)),
-            );
-        }
-        removed.extend(self.risk_detector.unsupported_order_uids(orders).await);
-        removed
     }
 }
 

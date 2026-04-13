@@ -146,7 +146,6 @@ impl Order {
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
         let unsupported_uids = risk_detector.unsupported_order_uids(&auction.orders).await;
-
         let auction = {
             let mut auction = auction;
             if !unsupported_uids.is_empty() {
@@ -156,6 +155,10 @@ impl Order {
             }
             auction
         };
+
+        if auction.orders.is_empty() {
+            return Err(QuotingFailed::UnsupportedToken.into());
+        }
 
         let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::try_new(
