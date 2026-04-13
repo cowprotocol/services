@@ -292,20 +292,21 @@ impl Competition {
                 tracing::error!(?err, "pre-processing auction failed");
                 Error::MalformedRequest
             })?;
-
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
         let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
-        // Add CoW AMM orders to the auction
+        // Add the CoW AMM orders to the auction
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        // Start unsupported-order detection immediately
         let orders_for_unsupported = auction.orders.clone();
-        let unsupported_orders_future =
-            async move { self.unsupported_order_uids(&orders_for_unsupported).await };
+
+        let unsupported_orders_future = Self::timed_future(
+            "filter_unsupported",
+            self.unsupported_order_uids(&orders_for_unsupported),
+        );
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening,
@@ -313,7 +314,7 @@ impl Competition {
             Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
-        // We can sort the orders, determine UIDS to filter and fetch auction data in
+        // We can sort the orders, determine UIDs to filter and fetch auction data in
         // parallel.
         let (auction, balances, app_data, unsupported_uids) = tokio::join!(
             sort_orders_future,
@@ -705,6 +706,12 @@ impl Competition {
         auction
     }
 
+    async fn timed_future<T>(stage: &str, fut: impl Future<Output = T>) -> T {
+        let _timer = metrics::get().processing_stage_timer(stage);
+        let _timer2 = ::observe::metrics::metrics().on_auction_overhead_start("driver", stage);
+        fut.await
+    }
+
     /// Runs a blocking function on a background thread, timing it using the
     /// given stage name.
     pub async fn run_blocking_with_timer<T, F>(stage: &'static str, f: F) -> T
@@ -948,7 +955,6 @@ impl Competition {
     #[instrument(skip_all)]
     async fn unsupported_order_uids(&self, orders: &[Order]) -> HashSet<order::Uid> {
         let mut removed = HashSet::new();
-
         if !self.solver.config().flashloans_enabled {
             removed.extend(
                 orders
@@ -956,9 +962,7 @@ impl Competition {
                     .filter_map(|o| o.app_data.flashloan().is_some().then_some(o.uid)),
             );
         }
-
         removed.extend(self.risk_detector.unsupported_order_uids(orders).await);
-
         removed
     }
 }

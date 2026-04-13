@@ -145,17 +145,18 @@ impl Order {
         let auction = self
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
-        let orders_for_unsupported_filter: Vec<competition::Order> = auction.orders.clone();
-        let unsupported_uids = risk_detector
-            .unsupported_order_uids(&orders_for_unsupported_filter)
-            .await;
+        let unsupported_uids = risk_detector.unsupported_order_uids(&auction.orders).await;
 
-        let mut auction = auction;
-        if !unsupported_uids.is_empty() {
+        let auction = {
+            let mut auction = auction;
+            if !unsupported_uids.is_empty() {
+                auction
+                    .orders
+                    .retain(|order| !unsupported_uids.contains(&order.uid));
+            }
             auction
-                .orders
-                .retain(|order| !unsupported_uids.contains(&order.uid));
-        }
+        };
+
         let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::try_new(
             eth,

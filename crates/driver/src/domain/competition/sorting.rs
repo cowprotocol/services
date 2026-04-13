@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use {
     crate::{
         domain::competition::{auction::Tokens, order},
@@ -6,7 +5,7 @@ use {
     },
     chrono::Duration,
     eth_domain_types as eth,
-    std::fmt::Debug,
+    std::{fmt::Debug, sync::Arc},
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -61,7 +60,6 @@ impl SortingStrategy for ExternalPrice {
 /// which is significantly faster than the
 /// [num::BigRational] we used before.
 pub struct OrdFloat(f64);
-
 impl PartialOrd for OrdFloat {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
