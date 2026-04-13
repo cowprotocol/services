@@ -336,9 +336,11 @@ impl Fulfillment {
                     .ok_or(Math::Overflow)?
                     .checked_div(limit_buy)
                     .ok_or(Math::DivisionByZero)?;
+                // Negative surplus means the execution is worse than the reference
+                // price, which results in 0 fee from surplus.
                 limit_sell_amount
                     .checked_sub(executed_sell_amount_with_fee)
-                    .ok_or(Math::Negative)?
+                    .unwrap_or(eth::U256::ZERO)
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
@@ -358,9 +360,11 @@ impl Fulfillment {
                     .ok_or(Math::Overflow)?
                     .checked_ceil_div(&prices.buy)
                     .ok_or(Math::DivisionByZero)?;
+                // Negative surplus means the execution is worse than the reference
+                // price, which results in 0 fee from surplus.
                 executed_buy_amount
                     .checked_sub(limit_buy_amount)
-                    .ok_or(Math::Negative)?
+                    .unwrap_or(eth::U256::ZERO)
             }
         };
         Ok(surplus.into())
