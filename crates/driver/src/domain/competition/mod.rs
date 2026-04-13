@@ -4,7 +4,7 @@ use {
     crate::{
         domain::{
             competition::{solution::Settlement, sorting::SortingStrategy},
-            time::DeadlineExceeded,
+            time::{self, DeadlineExceeded},
         },
         infra::{
             self,
@@ -43,7 +43,8 @@ pub mod solution;
 pub mod sorting;
 
 use {
-    crate::infra::notify::liquidity_sources::LiquiditySourceNotifying, eth_domain_types::BlockNo,
+    crate::infra::notify::liquidity_sources::LiquiditySourceNotifying,
+    eth_domain_types::BlockNo,
 };
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
@@ -358,7 +359,6 @@ impl Competition {
             .with_label_values(&["total"])
             .observe(elapsed.as_secs_f64());
         drop(timer);
-
         tracing::debug!(?elapsed, "auction task execution time");
 
         if auction.orders.is_empty() {

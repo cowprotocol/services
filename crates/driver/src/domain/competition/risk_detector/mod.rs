@@ -117,7 +117,7 @@ impl Detector {
                         continue;
                     };
                     let check_tokens_fut = async move {
-                        let quality = detector.determine_sell_token_quality(&order, now).await;
+                        let quality = detector.determine_sell_token_quality(order, now).await;
                         (order.uid, quality)
                     };
                     token_quality_checks.push(check_tokens_fut);
@@ -270,7 +270,9 @@ mod tests {
                 .collect(),
         );
         let o = order(1, bad, good);
-        let set = detector.unsupported_order_uids(&[o.clone()]).await;
+        let set = detector
+            .unsupported_order_uids(std::slice::from_ref(&o))
+            .await;
         assert_eq!(set.len(), 1);
         assert!(set.contains(&o.uid));
     }
@@ -285,7 +287,9 @@ mod tests {
                 .collect(),
         );
         let o = order(1, good, bad);
-        let set = detector.unsupported_order_uids(&[o.clone()]).await;
+        let set = detector
+            .unsupported_order_uids(std::slice::from_ref(&o))
+            .await;
         assert_eq!(set.len(), 1);
         assert!(set.contains(&o.uid));
     }

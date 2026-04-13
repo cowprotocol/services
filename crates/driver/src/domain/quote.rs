@@ -5,7 +5,8 @@ use {
         domain::{
             self,
             competition::{self, order},
-            liquidity, time,
+            liquidity,
+            time,
         },
         infra::{
             self,
@@ -158,7 +159,6 @@ impl Order {
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());
         }
-
         let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::try_new(
             eth,
