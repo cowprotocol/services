@@ -12,6 +12,21 @@
       "type": "constructor"
     },
     {
+      "inputs": [],
+      "name": "vault",
+      "outputs": [
+        {
+          "internalType": "contract IVault",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "_disabled": [
+    {
       "inputs": [
         {
           "internalType": "enum IVault.SwapKind",
@@ -292,19 +307,6 @@
         }
       ],
       "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "vault",
-      "outputs": [
-        {
-          "internalType": "contract IVault",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
       "type": "function"
     }
   ]
