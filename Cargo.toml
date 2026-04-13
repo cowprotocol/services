@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+exclude = ["contracts/"]
 
 [workspace.dependencies]
 account-balances = { path = "crates/account-balances" }
@@ -20,8 +21,6 @@ alloy-rpc-types-eth = { version = "1.7.3", default-features = false }
 alloy-rpc-types-trace = { version = "1.7.3", default-features = false }
 alloy-signer = { version = "1.7.3", default-features = false }
 alloy-signer-local = { version = "1.7.3", default-features = false }
-alloy-sol-macro-expander = "1.4.1"
-alloy-sol-macro-input = "1.4.1"
 alloy-sol-types = { version = "1.5.2" }
 alloy-transport = { version = "1.7.3", default-features = false }
 alloy-transport-ws = { version = "1.7.3", default-features = false }
@@ -49,7 +48,7 @@ configs = { path = "crates/configs/" }
 console-subscriber = "0.3.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
-contracts = { path = "crates/contracts" }
+contracts = { path = "contracts/generated/contracts-facade" }
 cow-amm = { path = "crates/cow-amm" }
 dashmap = "6.1.0"
 database = { path = "crates/database" }

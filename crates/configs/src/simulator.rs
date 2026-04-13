@@ -28,7 +28,7 @@ pub struct Config {
     /// Kind of simulator that should be used. Can be either of
     /// - ethereum
     /// - tenderly (using TenderlyConfig)
-    /// - enso (using EnsoConfig)
+    #[serde(default)]
     pub kind: SimulatorKind,
 }
 
@@ -43,11 +43,11 @@ fn default_ethrpc_max_concurrent_requests() -> usize {
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub enum SimulatorKind {
     #[default]
     Ethereum,
-    Tenderly(TenderlyConfig),
-    Enso(EnsoConfig),
+    Tenderly(Box<TenderlyConfig>),
 }
 
 /// Tenderly API arguments.
@@ -108,17 +108,6 @@ impl crate::test_util::TestDefault for TenderlyConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct EnsoConfig {
-    /// The URL of the Transaction Simulator API.
-    pub url: Url,
-
-    /// The time between new blocks in the network.
-    #[serde(default)]
-    pub network_block_interval: Option<Duration>,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "estimator")]
 pub enum GasEstimatorType {
@@ -152,4 +141,65 @@ impl Default for GasEstimatorType {
 pub struct Addresses {
     pub settlement: Option<Address>,
     pub weth: Option<Address>,
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_empty_config() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(matches!(config.kind, SimulatorKind::Ethereum));
+    }
+
+    #[test]
+    fn deserialize_simulator_kind() {
+        let toml = r#"
+        [kind]
+        type = "Tenderly"
+        user = "test-user"
+        project = "test-project"
+        api-key = "test-api-key"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        match config.kind {
+            SimulatorKind::Tenderly(tenderly) => {
+                assert_eq!(tenderly.user, "test-user");
+                assert_eq!(tenderly.project, "test-project");
+                assert_eq!(tenderly.api_key, "test-api-key");
+            }
+            _ => panic!("Config should be of type Tenderly"),
+        };
+        let toml = r#"
+        [kind]
+        type = "Ethereum"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(matches!(config.kind, SimulatorKind::Ethereum))
+    }
+
+    #[derive(Deserialize)]
+    struct TestConfigContainingSimulator {
+        simulator: Config,
+    }
+
+    #[test]
+    fn deserialize_full_config() {
+        let toml = r#"
+        [simulator.kind]
+        type = "Tenderly"
+        user = "test-user"
+        api-key = "test-api-key"
+        "#;
+        let config: TestConfigContainingSimulator = toml::from_str(toml).unwrap();
+
+        match config.simulator.kind {
+            SimulatorKind::Tenderly(tenderly) => {
+                assert_eq!(tenderly.user, "test-user");
+                assert_eq!(tenderly.api_key, "test-api-key");
+            }
+            _ => panic!("Config should be of type Tenderly"),
+        };
+    }
 }

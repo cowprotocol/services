@@ -13,7 +13,7 @@ use {
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::{HooksTrampoline, WETH9},
+    contracts::{HooksTrampoline, WETH9},
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -141,7 +141,7 @@ pub enum ValidationError {
     InvalidSignature,
     /// If fee and sell amount overflow u256
     SellAmountOverflow,
-    TransferSimulationFailed,
+    TransferSimulationFailed(Vec<u8>),
     /// The specified on-chain signature requires the from address of the
     /// order signer.
     MissingFrom,
@@ -361,7 +361,7 @@ impl OrderValidator {
     ///
     /// This is done by returning the [`HooksTrampoline`] `execute` calldata
     /// with the (pre/post) hooks calldata as the parameter.
-    fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
+    pub fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
         let to_interactions = |hooks: &[Hook]| -> Vec<InteractionData> {
             if hooks.is_empty() {
                 vec![]
@@ -445,7 +445,7 @@ impl OrderValidator {
                 res = match err {
                     TransferSimulationError::InsufficientAllowance
                     | TransferSimulationError::InsufficientBalance
-                    | TransferSimulationError::TransferFailed
+                    | TransferSimulationError::TransferFailed(_)
                         if order.signature == Signature::PreSign || has_wrappers =>
                     {
                         // Pre-sign orders do not require sufficient balance or allowance.
@@ -469,12 +469,12 @@ impl OrderValidator {
                         // will be triggered for the other amounts too
                         return Err(ValidationError::InsufficientBalance);
                     }
-                    TransferSimulationError::TransferFailed => {
-                        Err(ValidationError::TransferSimulationFailed)
+                    TransferSimulationError::TransferFailed(reason) => {
+                        Err(ValidationError::TransferSimulationFailed(reason))
                     }
                     TransferSimulationError::Other(err) => {
                         tracing::warn!("TransferSimulation failed: {:?}", err);
-                        Err(ValidationError::TransferSimulationFailed)
+                        Err(ValidationError::TransferSimulationFailed(Vec::new()))
                     }
                 };
             }

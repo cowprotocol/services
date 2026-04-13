@@ -5,6 +5,7 @@ use {
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
+        order_simulator::OrderSimulator,
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
@@ -16,7 +17,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::orderbook::Configuration,
-    contracts::alloy::{
+    contracts::{
         BalancerV2Vault,
         ChainalysisOracle,
         GPv2Settlement,
@@ -42,6 +43,7 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
     },
+    simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
@@ -123,9 +125,9 @@ pub async fn run(config: Configuration) {
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match config.shared.contracts.signatures {
         Some(address) => {
-            contracts::alloy::support::Signatures::Instance::new(address, web3.provider.clone())
+            contracts::support::Signatures::Instance::new(address, web3.provider.clone())
         }
-        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.provider)
+        None => contracts::support::Signatures::Instance::deployed(&web3.provider)
             .await
             .expect("load signatures contract"),
     };
@@ -176,6 +178,7 @@ pub async fn run(config: Configuration) {
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let db_config = crate::database::Config {
         max_pool_size: config.database.max_connections.get(),
+        statement_timeout: config.database.statement_timeout,
     };
     let postgres_write = Postgres::try_new(config.database.write_url.as_str(), db_config.clone())
         .expect("failed to create database");
@@ -183,7 +186,7 @@ pub async fn run(config: Configuration) {
     let postgres_read = if let Some(db_read_url) = config.database.read_url
         && config.database.write_url != db_read_url
     {
-        Postgres::try_new(db_read_url.as_str(), db_config)
+        Postgres::try_new_with_timeout(db_read_url.as_str(), db_config)
             .expect("failed to create read replica database")
     } else {
         postgres_write.clone()
@@ -196,7 +199,7 @@ pub async fn run(config: Configuration) {
             balances_contract.clone(),
             vault_relayer,
             vault_address,
-            balance_overrider,
+            balance_overrider.clone(),
         ),
     );
 
@@ -359,8 +362,6 @@ pub async fn run(config: Configuration) {
             balance_fetcher.clone(),
             verification,
             config.price_estimation.quote_timeout,
-            config.price_estimation.min_gas_amount_for_unverified_quotes,
-            config.price_estimation.max_gas_amount_for_unverified_quotes,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);
@@ -375,7 +376,7 @@ pub async fn run(config: Configuration) {
         .await
         .ok();
     let order_validator = Arc::new(OrderValidator::new(
-        native_token,
+        native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             config.banned_users.addresses,
@@ -409,6 +410,37 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
+
+    let order_simulator = if let Some(config) = config.order_simulation {
+        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+            config.tenderly.as_ref().map(|tenderly_config| {
+                Box::new(simulator::tenderly::TenderlyApi::new(
+                    tenderly_config,
+                    &http_factory,
+                    chain.id().to_string(),
+                )) as _
+            });
+        Some(Arc::new(OrderSimulator::new(
+            SwapSimulator::new(
+                balance_overrider.clone(),
+                *settlement_contract.address(),
+                *native_token.address(),
+                current_block_stream.clone(),
+                web3,
+                config
+                    .gas_limit
+                    .try_into()
+                    .expect("gas_limit must fit in u64"),
+            )
+            .await
+            .expect("failed to create SwapSimulator"),
+            chain.id().to_string(),
+            tenderly,
+        )))
+    } else {
+        None
+    };
+
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         *settlement_contract.address(),
@@ -417,6 +449,7 @@ pub async fn run(config: Configuration) {
         order_validator.clone(),
         app_data.clone(),
         config.active_order_competition_threshold,
+        order_simulator,
     ));
 
     check_database_connection(orderbook.as_ref()).await;

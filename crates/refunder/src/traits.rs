@@ -5,7 +5,7 @@
 use {
     alloy::primitives::{Address, B256},
     anyhow::Result,
-    contracts::alloy::CoWSwapEthFlow::{self, EthFlowOrder},
+    contracts::CoWSwapEthFlow::{self, EthFlowOrder},
     database::{OrderUid, ethflow_orders::EthOrderPlacement},
 };
 

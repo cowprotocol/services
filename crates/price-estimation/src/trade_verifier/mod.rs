@@ -18,7 +18,7 @@ use {
     anyhow::{Context, Result},
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     bigdecimal::BigDecimal,
-    contracts::alloy::{
+    contracts::{
         GPv2Settlement,
         support::{AnyoneAuthenticator, Solver, Spardose, Trader},
     },
@@ -39,8 +39,8 @@ use {
         nonzero::NonZeroU256,
     },
     simulator::{
-        encoding::{EncodedTrade, encode_trade},
-        swap_simulator::{EncodedSwap, SwapSimulator},
+        encoding::{EncodedTrade, InteractionEncoding, encode_trade},
+        swap_simulator::{EncodedSwap, SwapSimulator, TradeEncoding},
         tenderly::{self},
     },
     std::{
@@ -75,6 +75,8 @@ pub struct TradeVerifier {
     settlement: GPv2Settlement::Instance,
     quote_inaccuracy_limit: BigRational,
     tokens_without_verification: HashSet<Address>,
+    min_gas_amount_for_unverified_quotes: u32,
+    max_gas_amount_for_unverified_quotes: u32,
 }
 
 impl TradeVerifier {
@@ -91,7 +93,14 @@ impl TradeVerifier {
         settlement: Address,
         quote_inaccuracy_limit: BigDecimal,
         tokens_without_verification: HashSet<Address>,
+        min_gas_amount_for_unverified_quotes: u32,
+        max_gas_amount_for_unverified_quotes: u32,
     ) -> Result<Self> {
+        assert!(
+            min_gas_amount_for_unverified_quotes <= max_gas_amount_for_unverified_quotes,
+            "gas floor ({min_gas_amount_for_unverified_quotes}) exceeds gas ceiling \
+             ({max_gas_amount_for_unverified_quotes}) for unverified quotes"
+        );
         let settlement_contract =
             GPv2Settlement::GPv2Settlement::new(settlement, web3.provider.clone());
         Ok(Self {
@@ -102,6 +111,8 @@ impl TradeVerifier {
             settlement: settlement_contract,
             quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
             tokens_without_verification,
+            min_gas_amount_for_unverified_quotes,
+            max_gas_amount_for_unverified_quotes,
         })
     }
 
@@ -137,12 +148,19 @@ impl TradeVerifier {
             TradeKind::Regular(trade) => trade.clearing_prices.iter().unzip(),
         };
 
+        let (sell_amount, buy_amount) = match query.kind {
+            OrderKind::Sell => (query.in_amount, *out_amount),
+            OrderKind::Buy => (
+                NonZeroU256::try_from(*out_amount).context("computed sell amount is zero")?,
+                query.in_amount.get(),
+            ),
+        };
         let simulator_query = simulator::swap_simulator::Query {
-            in_token: query.sell_token,
-            out_token: query.buy_token,
+            sell_token: query.sell_token,
+            buy_token: query.buy_token,
             kind: query.kind,
-            in_amount: query.in_amount,
-            out_amount: *out_amount,
+            sell_amount,
+            buy_amount,
             receiver: verification.receiver,
             sell_token_source: verification.sell_token_source,
             buy_token_destination: verification.buy_token_destination,
@@ -151,11 +169,12 @@ impl TradeVerifier {
             solver: solver_address,
             tokens: tokens.clone(),
             clearing_prices,
+            wrappers: Default::default(),
         };
 
         let mut swap = self
             .simulator
-            .fake_swap(simulator_query)
+            .fake_swap(&simulator_query, TradeEncoding::Disadvantageous)
             .await
             .map_err(Error::SimulationFailed)?;
 
@@ -166,26 +185,31 @@ impl TradeVerifier {
                 .iter()
                 // pre_interactions introduced by the solver
                 .chain(trade.pre_interactions())
-                .cloned()
-                .map(Interaction::encode)
+                .map(InteractionEncoding::encode)
                 .collect::<Vec<_>>();
 
-        // Join custom pre_interactions
+        // Join custom pre_interactions in the following order:
+        // pre_interactions, trade setup interaction, encoded swap pre interactions
+        pre_interactions.extend([self
+            .trade_setup_interaction(out_amount, &verification, query, trade)
+            .encode()]);
         pre_interactions.extend(swap.settlement.interactions.pre);
         swap.settlement.interactions.pre = pre_interactions;
 
-        // Interactions introduced by the solver
-        let interactions = trade.interactions().cloned().map(Interaction::encode);
+        // Join interactions introduced by the solver, set up in the following order:
+        // trade interactions, encoded swap interactions
+        let interactions = trade.interactions().map(InteractionEncoding::encode);
         swap.settlement.interactions.main = interactions
             .into_iter()
             .chain(swap.settlement.interactions.main)
             .collect();
 
+        // Join post interactions in the following order:
+        // encoded swap post interactions, verification post interactions,
         let post_interactions = verification
             .post_interactions
             .iter()
-            .cloned()
-            .map(Interaction::encode);
+            .map(InteractionEncoding::encode);
         swap.settlement.interactions.post = swap
             .settlement
             .interactions
@@ -203,7 +227,7 @@ impl TradeVerifier {
                 &self.simulator.domain_separator,
             )?);
         }
-        let output = self.simulator.simulate_swap(swap).await?;
+        let output = self.simulator.simulate_swap_with_solver(swap).await?;
 
         if let Some(tenderly) = &self.tenderly
             && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)
@@ -464,6 +488,38 @@ impl TradeVerifier {
 
         Ok(overrides)
     }
+
+    /// Create interaction that sets up the trade right before transfering
+    /// funds. This interaction does nothing if the user-provided
+    /// pre-interactions already set everything up (e.g. approvals,
+    /// balances). That way we can correctly verify quotes with or without
+    /// these user pre-interactions with helpful error messages.
+    fn trade_setup_interaction(
+        &self,
+        out_amount: &U256,
+        verification: &Verification,
+        query: &PriceQuery,
+        trade: &TradeKind,
+    ) -> Interaction {
+        let sell_amount = match query.kind {
+            OrderKind::Sell => query.in_amount.get(),
+            OrderKind::Buy => *out_amount,
+        };
+        let setup_call = Solver::Solver::ensureTradePreconditionsCall {
+            trader: verification.from,
+            settlementContract: *self.settlement.address(),
+            sellToken: query.sell_token,
+            sellAmount: sell_amount,
+            nativeToken: self.simulator.native_token,
+            spardose: Self::SPARDOSE,
+        }
+        .abi_encode();
+        Interaction {
+            target: trade.solver(),
+            value: U256::ZERO,
+            data: setup_call,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -486,16 +542,23 @@ impl TradeVerifying for TradeVerifier {
 
         let unverified_result = trade
             .gas_estimate()
-            .map(|gas| Estimate {
-                out_amount,
-                gas,
-                solver: trade.solver(),
-                verified: false,
-                execution: QuoteExecution {
-                    interactions: map_interactions_data(trade.interactions()),
-                    pre_interactions: map_interactions_data(trade.pre_interactions()),
-                    jit_orders: trade.jit_orders().cloned().collect(),
-                },
+            .map(|gas| {
+                let gas = gas.clamp(
+                    self.min_gas_amount_for_unverified_quotes as u64,
+                    self.max_gas_amount_for_unverified_quotes as u64,
+                );
+
+                Estimate {
+                    out_amount,
+                    gas,
+                    solver: trade.solver(),
+                    verified: false,
+                    execution: QuoteExecution {
+                        interactions: map_interactions_data(trade.interactions()),
+                        pre_interactions: map_interactions_data(trade.pre_interactions()),
+                        jit_orders: trade.jit_orders().cloned().collect(),
+                    },
+                }
             })
             .context("solver provided no gas estimate");
 

@@ -21,7 +21,7 @@ use {
     anyhow::{Context as _, Result},
     bad_tokens::list_based::DenyListedTokens,
     configs::price_estimation::PriceEstimation,
-    contracts::alloy::WETH9,
+    contracts::WETH9,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,
     http_client::HttpClientFactory,
@@ -125,6 +125,8 @@ impl<'a> PriceEstimatorFactory<'a> {
             network.settlement,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
+            args.min_gas_amount_for_unverified_quotes,
+            args.max_gas_amount_for_unverified_quotes,
         )
         .await?;
         Ok(Some(Arc::new(verifier)))

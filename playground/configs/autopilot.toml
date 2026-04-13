@@ -28,6 +28,3 @@ estimators = [[{ type = "Driver", name = "baseline", url = "http://driver/baseli
 
 [native-price-estimation.cache]
 max-age = "20m"
-
-[order-quoting]
-price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]

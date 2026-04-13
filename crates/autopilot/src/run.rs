@@ -30,7 +30,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
+    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
     http_client::HttpClientFactory,
@@ -470,8 +470,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         balance_fetcher.clone(),
         config.price_estimation.quote_verification,
         config.price_estimation.quote_timeout,
-        config.price_estimation.min_gas_amount_for_unverified_quotes,
-        config.price_estimation.max_gas_amount_for_unverified_quotes,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(

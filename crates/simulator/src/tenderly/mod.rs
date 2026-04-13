@@ -31,7 +31,9 @@ pub struct Tenderly {
 
 #[derive(Debug, Clone)]
 pub struct TenderlyApi {
-    simulation_endpoint: Url,
+    /// Base URL for the Tenderly API project, e.g.
+    /// `https://api.tenderly.co/api/v1/account/{user}/project/{project}`
+    api_base: Url,
     client: reqwest::Client,
     dashboard: Url,
     chain_id: String,
@@ -47,6 +49,9 @@ pub trait Api: Send + Sync + 'static {
     ) -> Result<()>;
 
     async fn simulate(&self, request: dto::Request) -> Result<dto::Response>;
+
+    /// Submits a simulation, shares it, and returns the shared Tenderly URL.
+    async fn simulate_and_share(&self, request: dto::Request) -> Result<String>;
 }
 
 impl Tenderly {
@@ -111,8 +116,8 @@ impl TenderlyApi {
             "application/json".parse().unwrap(),
         );
         Self {
-            simulation_endpoint: Url::parse(&format!(
-                "{url}/v1/account/{user}/project/{project}/simulate",
+            api_base: Url::parse(&format!(
+                "{url}/v1/account/{user}/project/{project}/",
                 url = config
                     .url
                     .as_ref()
@@ -149,25 +154,6 @@ impl TenderlyApi {
             name,
         }
     }
-
-    fn log(&self, simulation: dto::Request) -> Result<()> {
-        let simulation_url =
-            crate::utils::join_url(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
-        let body = serde_json::to_string(&simulation)?;
-
-        #[rustfmt::skip]
-        tracing::debug!(
-            "resimulate by setting TENDERLY_API_KEY environment variable and running: \
-            curl -X POST -H \"X-ACCESS-KEY: $TENDERLY_API_KEY\" -H \"Content-Type: application/json\" --data '{body}' {simulation_endpoint} \
-            | jq -r \".simulation.id\" \
-            | read SIMULATION_ID; \
-            echo {simulation_url} \
-            | xargs xdg-open",
-            simulation_endpoint = self.simulation_endpoint
-        );
-
-        Ok(())
-    }
 }
 
 #[async_trait::async_trait]
@@ -183,18 +169,15 @@ impl Api for TenderlyApi {
             save_if_fails: Some(true),
             ..prepare_request(self.chain_id.clone(), &tx, overrides, block)?
         };
-        self.log(request)
+        let simulate_url = crate::utils::join_url(&self.api_base, "simulate");
+        log_simulation_request(&simulate_url, &self.dashboard, request)
     }
 
     async fn simulate(&self, request: dto::Request) -> Result<dto::Response> {
         let body = serde_json::to_string(&request).map_err(|err| Error::Other(anyhow!(err)))?;
 
-        let response = self
-            .client
-            .post(self.simulation_endpoint.clone())
-            .body(body)
-            .send()
-            .await?;
+        let simulate_url = crate::utils::join_url(&self.api_base, "simulate");
+        let response = self.client.post(simulate_url).body(body).send().await?;
 
         let ok = response.error_for_status_ref().map(|_| ());
         let status = response.status();
@@ -207,9 +190,28 @@ impl Api for TenderlyApi {
 
         Ok(serde_json::from_str::<dto::Response>(&body)?)
     }
+
+    async fn simulate_and_share(&self, request: dto::Request) -> Result<String> {
+        let response = self.simulate(request).await?;
+        let id = &response.simulation.id;
+        self.share_simulation(id).await?;
+        Ok(shared_simulation_url(id))
+    }
 }
 
-fn prepare_request(
+impl TenderlyApi {
+    async fn share_simulation(&self, id: &str) -> Result<()> {
+        let url = crate::utils::join_url(&self.api_base, &format!("simulations/{id}/share"));
+        self.client.post(url).send().await?.error_for_status()?;
+        Ok(())
+    }
+}
+
+fn shared_simulation_url(id: &str) -> String {
+    format!("{DASHBOARD_URL}/shared/simulation/{id}")
+}
+
+pub fn prepare_request(
     chain_id: String,
     tx: &TransactionRequest,
     overrides: StateOverride,
@@ -231,7 +233,7 @@ fn prepare_request(
             .map(TryInto::try_into)
             .map(|gas_price| gas_price.unwrap()),
         value: tx.value,
-        simulation_kind: Some(dto::SimulationKind::Quick),
+        simulation_type: Some(dto::SimulationType::Full),
         state_objects: Some(
             overrides
                 .into_iter()
@@ -241,6 +243,28 @@ fn prepare_request(
         access_list: tx.access_list.as_ref().map(Into::into),
         ..Default::default()
     })
+}
+
+pub fn log_simulation_request(
+    simulation_endpoint: &Url,
+    dashboard: &Url,
+    simulation: dto::Request,
+) -> Result<()> {
+    let simulation_url = crate::utils::join_url(dashboard, "simulator/$SIMULATION_ID").to_string();
+    let body = serde_json::to_string(&simulation)?;
+
+    #[rustfmt::skip]
+    tracing::debug!(
+        "resimulate by setting TENDERLY_API_KEY environment variable and running: \
+        curl -X POST -H \"X-ACCESS-KEY: $TENDERLY_API_KEY\" -H \"Content-Type: application/json\" --data '{body}' {simulation_endpoint} \
+        | jq -r \".simulation.id\" \
+        | read SIMULATION_ID; \
+        echo {simulation_url} \
+        | xargs xdg-open",
+        simulation_url = simulation_url
+    );
+
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -298,6 +322,10 @@ impl Api for Instrumented {
         block: Option<BlockNo>,
     ) -> Result<()> {
         self.inner.log_simulation_command(tx, overrides, block)
+    }
+
+    async fn simulate_and_share(&self, request: dto::Request) -> Result<String> {
+        self.inner.simulate_and_share(request).await
     }
 }
 

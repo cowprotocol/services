@@ -57,6 +57,8 @@ pub struct Solution {
     pub post_interactions: Vec<Call>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
+    #[serde(flatten)]
+    pub gas_fee_override: Option<GasFeeOverride>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -234,6 +236,17 @@ pub enum SigningScheme {
     EthSign,
     PreSign,
     Eip1271,
+}
+
+/// Solver-provided gas fee overrides for the settlement transaction.
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GasFeeOverride {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub max_fee_per_gas: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub max_priority_fee_per_gas: U256,
 }
 
 #[serde_as]
