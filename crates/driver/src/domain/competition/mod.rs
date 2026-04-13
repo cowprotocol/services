@@ -1,6 +1,6 @@
 use {
     self::solution::settlement,
-    super::{Mempools, mempools::SubmissionMode},
+    super::{Mempools, mempools::SubmissionMode, time::Remaining},
     crate::{
         domain::{
             competition::{solution::Settlement, sorting::SortingStrategy},
@@ -43,8 +43,7 @@ pub mod solution;
 pub mod sorting;
 
 use {
-    crate::{domain::time::Remaining, infra::notify::liquidity_sources::LiquiditySourceNotifying},
-    eth_domain_types::BlockNo,
+    crate::infra::notify::liquidity_sources::LiquiditySourceNotifying, eth_domain_types::BlockNo,
 };
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
@@ -216,16 +215,16 @@ pub struct Competition {
     pub solver: Solver,
     pub eth: Ethereum,
     pub liquidity: infra::liquidity::Fetcher,
-    pub liquidity_sources_notifier: notify::liquidity_sources::Notifier,
+    pub liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
-    fetcher: Arc<DataAggregator>,
+    fetcher: Arc<pre_processing::DataAggregator>,
     settle_queue: mpsc::Sender<SettleRequest>,
-    order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
+    order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
 }
 
@@ -235,12 +234,12 @@ impl Competition {
         solver: Solver,
         eth: Ethereum,
         liquidity: infra::liquidity::Fetcher,
-        liquidity_sources_notifier: notify::liquidity_sources::Notifier,
+        liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
         simulator: Simulator,
         mempools: Mempools,
         risk_detector: Arc<risk_detector::Detector>,
         fetcher: Arc<DataAggregator>,
-        order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
+        order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
         if !submission_accounts.is_empty() {
@@ -1075,7 +1074,7 @@ pub enum Error {
     )]
     SolutionNotAvailable,
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] DeadlineExceeded),
+    DeadlineExceeded(#[from] time::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]

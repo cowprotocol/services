@@ -5,8 +5,7 @@ use {
         domain::{
             self,
             competition::{self, order},
-            liquidity,
-            time,
+            liquidity, time,
         },
         infra::{
             self,
@@ -117,7 +116,7 @@ pub struct Order {
     pub tokens: Tokens,
     pub amount: order::TargetAmount,
     pub side: order::Side,
-    pub deadline: chrono::DateTime<Utc>,
+    pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
 impl Order {
@@ -196,18 +195,18 @@ impl Order {
                 sell: self.sell(),
                 side: self.side,
                 kind: if quote_using_limit_orders {
-                    order::Kind::Limit
+                    competition::order::Kind::Limit
                 } else {
-                    order::Kind::Market
+                    competition::order::Kind::Market
                 },
                 app_data: Default::default(),
-                partial: order::Partial::No,
+                partial: competition::order::Partial::No,
                 pre_interactions: Default::default(),
                 post_interactions: Default::default(),
-                sell_token_balance: order::SellTokenBalance::Erc20,
-                buy_token_balance: order::BuyTokenBalance::Erc20,
-                signature: order::Signature {
-                    scheme: order::signature::Scheme::Eip1271,
+                sell_token_balance: competition::order::SellTokenBalance::Erc20,
+                buy_token_balance: competition::order::BuyTokenBalance::Erc20,
+                signature: competition::order::Signature {
+                    scheme: competition::order::signature::Scheme::Eip1271,
                     data: Default::default(),
                     signer: Default::default(),
                 },
@@ -278,7 +277,7 @@ impl Order {
             order::Side::Buy => eth::Asset {
                 // NOTE: the saturating strategy here is slightly irrelevant since we know that 1 <<
                 // 144 fits within U256
-                amount: eth::U256::ONE.saturating_shl(144).into(),
+                amount: (eth::U256::ONE.saturating_shl(144)).into(),
                 token: self.tokens.sell,
             },
         }
