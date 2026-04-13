@@ -184,7 +184,7 @@ Use `$ETH_MAINNET_RPC` from `.env.claude` for mainnet. Use `cast` or whatever to
 
 ## Victoria Logs Access
 
-Use the `CoW-Prod` MCP tools to query Victoria Logs directly. The main tool is `mcp__CoW-Prod__victorialogs_query`.
+Use the `CoW-Prod` MCP tools to query Victoria Logs directly.
 
 **Timestamps**: MCP requires RFC3339 format (e.g., `2026-04-09T00:00:00Z`). Compute absolute timestamps from the current date rather than using relative time.
 
@@ -212,23 +212,23 @@ Use the `CoW-Prod` MCP tools to query Victoria Logs directly. The main tool is `
 **Example queries:**
 ```
 # Search for order logs (exclude nginx controller, strip metadata)
-query: "container:!controller AND all:0xabc... | fields _time, _msg, all"
-start: "2026-04-08T00:00:00Z"
+query: "container:!controller AND network:mainnet AND all:0xabc... | fields _time, _msg, all"
+start: "<COMPUTED_RFC3339>"
 limit: 20
 
 # Search for order creation on mainnet
 query: "container:!controller AND network:mainnet AND \"order created\" AND all:0xabc... | fields _time, _msg, all"
-start: "2026-04-09T00:00:00Z"
+start: "<COMPUTED_RFC3339>"
 limit: 10
 
 # Settlement failures with just error details
-query: "container:!controller AND \"settlement failed\" | fields _time, _msg, parsed.fields.err, parsed.fields.driver, parsed.spans.auction.auction_id"
-start: "2026-04-09T00:00:00Z"
+query: "container:!controller AND network:mainnet AND \"settlement failed\" | fields _time, _msg, parsed.fields.err, parsed.fields.driver, parsed.spans.auction.auction_id"
+start: "<COMPUTED_RFC3339>"
 limit: 10
 
 # Sort results by time
-query: "container:!controller AND all:0xabc... | fields _time, _msg, all | sort by (_time) asc"
-start: "2026-04-08T00:00:00Z"
+query: "container:!controller AND network:mainnet AND all:0xabc... | fields _time, _msg, all | sort by (_time) asc"
+start: "<COMPUTED_RFC3339>"
 limit: 20
 ```
 
