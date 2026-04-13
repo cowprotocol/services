@@ -435,24 +435,28 @@ pub struct PoolRow {
     pub tick: i32,
 }
 
-fn map_pool_row(r: PgRow) -> Result<PoolRow> {
-    Ok(PoolRow {
-        address: bytes_to_addr(r.get("address"))?,
-        token0: bytes_to_addr(r.get("token0"))?,
-        token1: bytes_to_addr(r.get("token1"))?,
-        fee: r.get::<i32, _>("fee").cast_unsigned(),
-        token0_decimals: r
-            .get::<Option<i16>, _>("token0_decimals")
-            .map(|d| u8::try_from(d).unwrap_or(0)),
-        token1_decimals: r
-            .get::<Option<i16>, _>("token1_decimals")
-            .map(|d| u8::try_from(d).unwrap_or(0)),
-        token0_symbol: r.get("token0_symbol"),
-        token1_symbol: r.get("token1_symbol"),
-        sqrt_price_x96: r.get("sqrt_price_x96"),
-        liquidity: r.get("liquidity"),
-        tick: r.get("tick"),
-    })
+impl TryFrom<PgRow> for PoolRow {
+    type Error = anyhow::Error;
+
+    fn try_from(r: PgRow) -> Result<Self> {
+        Ok(Self {
+            address: bytes_to_addr(r.get("address"))?,
+            token0: bytes_to_addr(r.get("token0"))?,
+            token1: bytes_to_addr(r.get("token1"))?,
+            fee: r.get::<i32, _>("fee").cast_unsigned(),
+            token0_decimals: r
+                .get::<Option<i16>, _>("token0_decimals")
+                .map(|d| u8::try_from(d).unwrap_or(0)),
+            token1_decimals: r
+                .get::<Option<i16>, _>("token1_decimals")
+                .map(|d| u8::try_from(d).unwrap_or(0)),
+            token0_symbol: r.get("token0_symbol"),
+            token1_symbol: r.get("token1_symbol"),
+            sqrt_price_x96: r.get("sqrt_price_x96"),
+            liquidity: r.get("liquidity"),
+            tick: r.get("tick"),
+        })
+    }
 }
 
 /// Fetches a page of pools ordered by address with their current state.
@@ -475,7 +479,7 @@ pub async fn get_pools(pool: &PgPool, chain_id: u64, limit: i64) -> Result<Vec<P
     .await
     .context("get_pools")?
     .into_iter()
-    .map(map_pool_row)
+    .map(PoolRow::try_from)
     .collect()
 }
 
@@ -506,7 +510,7 @@ pub async fn get_pools_after(
     .await
     .context("get_pools_after")?
     .into_iter()
-    .map(map_pool_row)
+    .map(PoolRow::try_from)
     .collect()
 }
 
@@ -536,15 +540,15 @@ pub async fn get_ticks(
     .bind(MAX_TICKS_PER_POOL)
     .fetch_all(pool)
     .await
-    .context("get_ticks")?
-    .into_iter()
-    .map(|r| {
-        Ok(TickRow {
-            tick_idx: r.get("tick_idx"),
-            liquidity_net: r.get("liquidity_net"),
-        })
+    .context("get_ticks")
+    .map(|rows| {
+        rows.into_iter()
+            .map(|r| TickRow {
+                tick_idx: r.get("tick_idx"),
+                liquidity_net: r.get("liquidity_net"),
+            })
+            .collect()
     })
-    .collect()
 }
 
 /// Searches pools by a single token symbol (partial, case-insensitive), ordered
@@ -573,7 +577,7 @@ pub async fn search_pools_by_token(
     .await
     .context("search_pools_by_token")?
     .into_iter()
-    .map(map_pool_row)
+    .map(PoolRow::try_from)
     .collect()
 }
 
@@ -609,7 +613,7 @@ pub async fn search_pools_by_pair(
     .await
     .context("search_pools_by_pair")?
     .into_iter()
-    .map(map_pool_row)
+    .map(PoolRow::try_from)
     .collect()
 }
 

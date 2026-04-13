@@ -505,6 +505,8 @@ fn build_module() -> Module {
             Submodule::new("test")
                 .add_contract(Contract::new("GasHog"))
                 .add_contract(Contract::new("Counter"))
+                .add_contract(Contract::new("MockUniswapV3Factory"))
+                .add_contract(Contract::new("MockUniswapV3Pool"))
                 .add_contract(Contract::new("CowProtocolToken").with_networks(networks![
                     MAINNET => "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
                     GNOSIS => "0x177127622c4A00F3d409B75571e12cB3c8973d3c",

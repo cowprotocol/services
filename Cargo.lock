@@ -2543,6 +2543,8 @@ dependencies = [
  "cow-contract-iuniswapv3factory",
  "cow-contract-izeroex",
  "cow-contract-liquoricesettlement",
+ "cow-contract-mockuniswapv3factory",
+ "cow-contract-mockuniswapv3pool",
  "cow-contract-nonstandarderc20balances",
  "cow-contract-pancakerouter",
  "cow-contract-permit2",
@@ -3271,6 +3273,28 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-liquoricesettlement"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-mockuniswapv3factory"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-mockuniswapv3pool"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",

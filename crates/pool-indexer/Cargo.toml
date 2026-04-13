@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 alloy = { workspace = true, features = ["providers", "rpc-types", "sol-types"] }
-alloy-primitives = { workspace = true, features = ["std"] }
+alloy-primitives = { workspace = true, features = ["serde", "std"] }
 anyhow = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }

@@ -1,11 +1,13 @@
 use {
-    super::{internal_error, parse_hex_address},
+    super::{internal_error, parse_hex_address, serialize_display},
     crate::{api::AppState, db::uniswap_v3 as db},
+    alloy_primitives::Address,
     axum::{
         extract::{Path, Query, State},
         http::StatusCode,
         response::{IntoResponse, Json, Response},
     },
+    bigdecimal::BigDecimal,
     serde::{Deserialize, Serialize},
     std::sync::Arc,
 };
@@ -38,7 +40,7 @@ pub struct PoolsQuery {
 #[derive(Serialize)]
 pub struct TokenInfo {
     /// Checksummed contract address.
-    pub id: String,
+    pub id: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,13 +51,16 @@ pub struct TokenInfo {
 #[derive(Serialize)]
 pub struct PoolResponse {
     /// Checksummed pool contract address.
-    pub id: String,
+    pub id: Address,
     pub token0: TokenInfo,
     pub token1: TokenInfo,
     /// Fee tier in hundredths of a basis point (e.g. 3000 = 0.3%).
-    pub fee_tier: String,
-    pub liquidity: String,
-    pub sqrt_price: String,
+    #[serde(serialize_with = "serialize_display")]
+    pub fee_tier: u32,
+    #[serde(serialize_with = "serialize_display")]
+    pub liquidity: BigDecimal,
+    #[serde(serialize_with = "serialize_display")]
+    pub sqrt_price: BigDecimal,
     pub tick: i32,
     /// Populated only when tick data is explicitly requested.
     pub ticks: Option<Vec<super::ticks::TickEntry>>,
@@ -72,24 +77,26 @@ pub struct PoolsResponse {
     pub next_cursor: Option<String>,
 }
 
-fn pool_row_to_response(r: &db::PoolRow) -> PoolResponse {
-    PoolResponse {
-        id: format!("{:?}", r.address),
-        token0: TokenInfo {
-            id: format!("{:?}", r.token0),
-            decimals: r.token0_decimals,
-            symbol: r.token0_symbol.clone(),
-        },
-        token1: TokenInfo {
-            id: format!("{:?}", r.token1),
-            decimals: r.token1_decimals,
-            symbol: r.token1_symbol.clone(),
-        },
-        fee_tier: r.fee.to_string(),
-        liquidity: r.liquidity.to_string(),
-        sqrt_price: r.sqrt_price_x96.to_string(),
-        tick: r.tick,
-        ticks: None,
+impl From<&db::PoolRow> for PoolResponse {
+    fn from(r: &db::PoolRow) -> Self {
+        Self {
+            id: r.address,
+            token0: TokenInfo {
+                id: r.token0,
+                decimals: r.token0_decimals,
+                symbol: r.token0_symbol.clone(),
+            },
+            token1: TokenInfo {
+                id: r.token1,
+                decimals: r.token1_decimals,
+                symbol: r.token1_symbol.clone(),
+            },
+            fee_tier: r.fee,
+            liquidity: r.liquidity.clone(),
+            sqrt_price: r.sqrt_price_x96.clone(),
+            tick: r.tick,
+            ticks: None,
+        }
     }
 }
 
@@ -99,19 +106,20 @@ fn pool_row_to_response(r: &db::PoolRow) -> PoolResponse {
 /// Results are ordered by liquidity descending; no pagination is applied.
 async fn search_pools(
     state: &AppState,
+    chain_id: u64,
     block_number: u64,
     token0: &str,
     token1: Option<&str>,
 ) -> Response {
     let rows = if let Some(token1) = token1 {
-        db::search_pools_by_pair(&state.db, state.chain_id, token0, token1).await
+        db::search_pools_by_pair(&state.db, chain_id, token0, token1).await
     } else {
-        db::search_pools_by_token(&state.db, state.chain_id, token0).await
+        db::search_pools_by_token(&state.db, chain_id, token0).await
     };
     match rows {
         Ok(rows) => Json(PoolsResponse {
             block_number,
-            pools: rows.iter().map(pool_row_to_response).collect(),
+            pools: rows.iter().map(PoolResponse::from).collect(),
             next_cursor: None,
         })
         .into_response(),
@@ -123,7 +131,12 @@ async fn search_pools(
 /// Fetches `limit + 1` rows to detect whether a next page exists; the extra
 /// row is stripped from the response and its address is returned as
 /// `next_cursor`.
-async fn list_pools(state: &AppState, block_number: u64, query: &PoolsQuery) -> Response {
+async fn list_pools(
+    state: &AppState,
+    chain_id: u64,
+    block_number: u64,
+    query: &PoolsQuery,
+) -> Response {
     let limit = query.limit.unwrap_or(1000).clamp(1, 5000);
 
     let cursor_bytes = match query.after.as_deref().map(parse_hex_address) {
@@ -140,8 +153,8 @@ async fn list_pools(state: &AppState, block_number: u64, query: &PoolsQuery) -> 
 
     // Fetch one extra row to determine if there is a next page.
     let rows = match cursor_bytes {
-        Some(cursor) => db::get_pools_after(&state.db, state.chain_id, cursor, limit + 1).await,
-        None => db::get_pools(&state.db, state.chain_id, limit + 1).await,
+        Some(cursor) => db::get_pools_after(&state.db, chain_id, cursor, limit + 1).await,
+        None => db::get_pools(&state.db, chain_id, limit + 1).await,
     };
     let rows = match rows {
         Ok(rows) => rows,
@@ -163,7 +176,7 @@ async fn list_pools(state: &AppState, block_number: u64, query: &PoolsQuery) -> 
 
     Json(PoolsResponse {
         block_number,
-        pools: rows.iter().map(pool_row_to_response).collect(),
+        pools: rows.iter().map(PoolResponse::from).collect(),
         next_cursor,
     })
     .into_response()
@@ -178,17 +191,25 @@ pub async fn get_pools(
     Path(network): Path<String>,
     Query(query): Query<PoolsQuery>,
 ) -> Response {
-    if network != state.network_name {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let block_number = match db::get_latest_indexed_block(&state.db, state.chain_id).await {
+    let chain_id = match state.resolve_network(&network) {
+        Some(id) => id,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let block_number = match db::get_latest_indexed_block(&state.db, chain_id).await {
         Ok(Some(block)) => block,
         Ok(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
         Err(err) => return internal_error(err),
     };
 
     if let Some(token0) = query.token0.as_deref() {
-        return search_pools(&state, block_number, token0, query.token1.as_deref()).await;
+        return search_pools(
+            &state,
+            chain_id,
+            block_number,
+            token0,
+            query.token1.as_deref(),
+        )
+        .await;
     }
-    list_pools(&state, block_number, &query).await
+    list_pools(&state, chain_id, block_number, &query).await
 }

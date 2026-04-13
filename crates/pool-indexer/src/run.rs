@@ -1,14 +1,14 @@
 use {
     crate::{
         api::AppState,
-        arguments::{Arguments, Command},
-        config::Configuration,
+        arguments::Arguments,
+        config::{Configuration, NetworkConfig},
         indexer::uniswap_v3::UniswapV3Indexer,
     },
     clap::Parser,
     ethrpc::{Config as EthRpcConfig, web3},
     sqlx::postgres::PgPoolOptions,
-    std::sync::Arc,
+    std::{collections::HashSet, sync::Arc},
     tokio::task::JoinSet,
 };
 
@@ -18,36 +18,25 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::init::initialize(&observe::Config::new(&log_filter, None, false, None));
     observe::panic_hook::install();
 
-    match args.command {
-        Command::Run {
-            config,
-            subgraph_url,
-            seed_block,
-        } => {
-            let config = Configuration::from_path(&config).expect("failed to load configuration");
-            tracing::info!("pool-indexer starting");
-            run(config, subgraph_url, seed_block).await;
-        }
-    }
+    let config = Configuration::from_path(&args.config).expect("failed to load configuration");
+    tracing::info!("pool-indexer starting");
+    run(config).await;
 }
 
-pub async fn run(config: Configuration, subgraph_url: Option<String>, seed_block: Option<u64>) {
+pub async fn run(config: Configuration) {
+    validate_networks(&config.networks);
+
     let db = connect_db(&config).await;
 
-    let w3 = web3(
-        EthRpcConfig::default(),
-        &config.indexer.rpc_url,
-        Some("pool-indexer"),
-    );
-
-    let poll_interval = config.indexer.poll_interval();
-    let chain_id = config.indexer.chain_id;
-    let indexer = UniswapV3Indexer::new(w3.provider.clone(), db.clone(), &config.indexer);
+    let networks = config
+        .networks
+        .iter()
+        .map(|n| (n.name.clone(), n.chain_id))
+        .collect();
 
     let api_state = Arc::new(AppState {
-        network_name: chain_id_to_network_name(chain_id),
         db: db.clone(),
-        chain_id,
+        networks,
     });
     let router = crate::api::router(api_state);
     let bind_address = config.api.bind_address;
@@ -55,19 +44,36 @@ pub async fn run(config: Configuration, subgraph_url: Option<String>, seed_block
     let mut set = JoinSet::new();
     set.spawn(async move { serve(router, bind_address).await });
 
-    if let Some(url) = subgraph_url {
+    for net in config.networks {
+        let db = db.clone();
+        let w3 = web3(
+            EthRpcConfig::default(),
+            &net.rpc_url,
+            Some(&format!("pool-indexer-{}", net.name)),
+        );
+
+        let indexer_config = net.indexer_config();
+        let poll_interval = net.poll_interval();
+        let chain_id = net.chain_id;
+        let name = net.name.clone();
+        let subgraph_url = net.subgraph_url.clone();
+        let seed_block = net.seed_block;
+
+        let indexer = UniswapV3Indexer::new(w3.provider.clone(), db.clone(), &indexer_config);
+
         set.spawn(async move {
-            let seeded_block = crate::seeder::seed(&db, chain_id, &url, seed_block)
-                .await
-                .expect("seeding failed");
-            indexer
-                .catch_up(seeded_block)
-                .await
-                .expect("catch-up indexing failed");
+            tracing::info!(network = %name, chain_id, "starting indexer");
+            if let Some(url) = subgraph_url {
+                let seeded_block = crate::seeder::seed(&db, chain_id, &url, seed_block)
+                    .await
+                    .expect("seeding failed");
+                indexer
+                    .catch_up(seeded_block)
+                    .await
+                    .expect("catch-up indexing failed");
+            }
             indexer.run(poll_interval).await
         });
-    } else {
-        set.spawn(async move { indexer.run(poll_interval).await });
     }
 
     if let Some(result) = set.join_next().await {
@@ -75,15 +81,25 @@ pub async fn run(config: Configuration, subgraph_url: Option<String>, seed_block
     }
 }
 
-fn chain_id_to_network_name(chain_id: u64) -> String {
-    match chain_id {
-        1 => "mainnet",
-        100 => "gnosis",
-        42161 => "arbitrum-one",
-        8453 => "base",
-        _ => "unknown",
+fn validate_networks(networks: &[NetworkConfig]) {
+    assert!(
+        !networks.is_empty(),
+        "at least one [[network]] must be configured"
+    );
+    let mut names = HashSet::new();
+    let mut chain_ids = HashSet::new();
+    for n in networks {
+        assert!(
+            names.insert(n.name.as_str()),
+            "duplicate network name: {}",
+            n.name,
+        );
+        assert!(
+            chain_ids.insert(n.chain_id),
+            "duplicate chain_id: {}",
+            n.chain_id,
+        );
     }
-    .to_string()
 }
 
 async fn connect_db(config: &Configuration) -> sqlx::PgPool {

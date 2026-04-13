@@ -1,9 +1,10 @@
 pub mod uniswap_v3;
 
 use {
+    crate::config::NetworkName,
     axum::{Router, http::StatusCode, response::IntoResponse, routing::get},
     sqlx::PgPool,
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
     tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     tracing::Level,
 };
@@ -11,8 +12,14 @@ use {
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    pub chain_id: u64,
-    pub network_name: String,
+    /// Maps network name → chain_id for all configured networks.
+    pub networks: HashMap<NetworkName, u64>,
+}
+
+impl AppState {
+    pub fn resolve_network(&self, name: &str) -> Option<u64> {
+        self.networks.get(&NetworkName::new(name)).copied()
+    }
 }
 
 pub fn router(state: Arc<AppState>) -> Router {

@@ -278,7 +278,7 @@ impl UniswapV3Indexer {
     /// Parallel-fetch liquidity for every unique (pool, block) pair from
     /// Mint/Burn events.
     async fn prefetch_liquidities(&self, logs: &[Log]) -> LiquidityCache {
-        let pairs: Vec<(Address, u64)> = logs
+        let pairs: std::collections::HashSet<_> = logs
             .iter()
             .filter_map(|log| {
                 let t = log.topic0()?;
@@ -288,8 +288,6 @@ impl UniswapV3Indexer {
                     None
                 }
             })
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
             .collect();
 
         futures::stream::iter(pairs)
@@ -431,11 +429,7 @@ async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String
     // Strip null bytes — some tokens embed \x00 in their symbol which Postgres
     // rejects.
     let cleaned = sym.replace('\x00', "");
-    if cleaned.is_empty() {
-        None
-    } else {
-        Some(cleaned)
-    }
+    (!cleaned.is_empty()).then_some(cleaned)
 }
 
 /// Returns true when the RPC rejects a request because the result set would
@@ -452,7 +446,10 @@ fn is_range_too_large(err: &anyhow::Error) -> bool {
 
 /// Collects the unique set of token addresses from all `PoolCreated` events
 /// emitted by `factory` in `logs`.
-fn pool_created_token_addresses(factory: Address, logs: &[Log]) -> Vec<Address> {
+fn pool_created_token_addresses(
+    factory: Address,
+    logs: &[Log],
+) -> std::collections::HashSet<Address> {
     logs.iter()
         .filter_map(|log| {
             let t = log.topic0()?;
@@ -463,13 +460,12 @@ fn pool_created_token_addresses(factory: Address, logs: &[Log]) -> Vec<Address> 
             Some([decoded.data.token0, decoded.data.token1])
         })
         .flatten()
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
         .collect()
 }
 
 /// Accumulates per-event-type state changes while iterating over a chunk's
 /// logs.
+#[derive(Default)]
 struct LogAccumulator {
     new_pools: HashMap<Address, NewPoolData>,
     /// Latest full state per pool, established by `Initialize` or `Swap`.
@@ -482,15 +478,6 @@ struct LogAccumulator {
 }
 
 impl LogAccumulator {
-    fn new() -> Self {
-        Self {
-            new_pools: HashMap::new(),
-            full_states: HashMap::new(),
-            liq_only: HashMap::new(),
-            tick_deltas: HashMap::new(),
-        }
-    }
-
     /// Records a newly discovered pool, filling token metadata from the
     /// prefetch caches.
     fn handle_pool_created(
@@ -667,19 +654,18 @@ fn collect_log_changes(
     dec_cache: &DecimalsCache,
     sym_cache: &SymbolsCache,
 ) -> ChunkChanges {
-    let mut acc = LogAccumulator::new();
+    let mut acc = LogAccumulator::default();
     for log in logs {
         let Some(t) = log.topic0() else { continue };
-        if *t == PoolCreated::SIGNATURE_HASH && log.address() == factory {
-            acc.handle_pool_created(log, dec_cache, sym_cache);
-        } else if *t == Initialize::SIGNATURE_HASH {
-            acc.handle_initialize(log);
-        } else if *t == Swap::SIGNATURE_HASH {
-            acc.handle_swap(log);
-        } else if *t == Mint::SIGNATURE_HASH {
-            acc.handle_mint(log, liq_cache);
-        } else if *t == Burn::SIGNATURE_HASH {
-            acc.handle_burn(log, liq_cache);
+        match *t {
+            t if t == PoolCreated::SIGNATURE_HASH && log.address() == factory => {
+                acc.handle_pool_created(log, dec_cache, sym_cache);
+            }
+            t if t == Initialize::SIGNATURE_HASH => acc.handle_initialize(log),
+            t if t == Swap::SIGNATURE_HASH => acc.handle_swap(log),
+            t if t == Mint::SIGNATURE_HASH => acc.handle_mint(log, liq_cache),
+            t if t == Burn::SIGNATURE_HASH => acc.handle_burn(log, liq_cache),
+            _ => {}
         }
     }
     acc.into_chunk_changes()
