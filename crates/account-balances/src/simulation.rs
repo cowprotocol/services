@@ -156,7 +156,9 @@ impl BalanceFetching for Balances {
             return Err(TransferSimulationError::InsufficientAllowance);
         }
         if !simulation.can_transfer {
-            return Err(TransferSimulationError::TransferFailed);
+            return Err(TransferSimulationError::TransferFailed(
+                simulation.transfer_revert_reason,
+            ));
         }
 
         Ok(())
