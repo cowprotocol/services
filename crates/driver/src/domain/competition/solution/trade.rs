@@ -336,12 +336,9 @@ impl Fulfillment {
                     .ok_or(Math::Overflow)?
                     .checked_div(limit_buy)
                     .ok_or(Math::DivisionByZero)?;
-                // Remaining surplus after fees
-                // Do not return error if `checked_sub` fails because violated limit prices will
-                // be caught by simulation
                 limit_sell_amount
                     .checked_sub(executed_sell_amount_with_fee)
-                    .unwrap_or(eth::U256::ZERO)
+                    .ok_or(Math::Negative)?
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
@@ -361,12 +358,9 @@ impl Fulfillment {
                     .ok_or(Math::Overflow)?
                     .checked_ceil_div(&prices.buy)
                     .ok_or(Math::DivisionByZero)?;
-                // Remaining surplus after fees
-                // Do not return error if `checked_sub` fails because violated limit prices will
-                // be caught by simulation
                 executed_buy_amount
                     .checked_sub(limit_buy_amount)
-                    .unwrap_or(eth::U256::ZERO)
+                    .ok_or(Math::Negative)?
             }
         };
         Ok(surplus.into())

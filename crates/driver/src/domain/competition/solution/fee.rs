@@ -44,7 +44,30 @@ impl Fulfillment {
         for protocol_fee in &self.order().protocol_fees {
             current_fulfillment = current_fulfillment.with_protocol_fee(prices, protocol_fee)?;
         }
+        current_fulfillment.ensure_limit_price_respected(prices)?;
         Ok(current_fulfillment)
+    }
+
+    /// Verifies that the effective execution price still respects the order's
+    /// limit price after all protocol fees have been applied.
+    fn ensure_limit_price_respected(&self, prices: ClearingPrices) -> Result<(), Error> {
+        let buy = self.buy_amount(&prices)?;
+        let sell = self.sell_amount(&prices)?;
+        let order = self.order();
+        // buy_received / sell_paid >= buy_limit / sell_limit
+        // Rewritten to avoid division: buy_received * sell_limit >= sell_paid * buy_limit
+        let left = buy
+            .0
+            .checked_mul(order.sell.amount.0)
+            .ok_or(Math::Overflow)?;
+        let right = sell
+            .0
+            .checked_mul(order.buy.amount.0)
+            .ok_or(Math::Overflow)?;
+        if left < right {
+            return Err(Error::LimitPriceViolatedByProtocolFees);
+        }
+        Ok(())
     }
 
     /// Applies the protocol fee to the existing fulfillment creating a new one.
@@ -301,16 +324,25 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
 pub enum Error {
     #[error("orders with non solver determined gas cost fees are not supported")]
     ProtocolFeeOnStaticOrder,
+    #[error("protocol fees result in limit price violation")]
+    LimitPriceViolatedByProtocolFees,
     #[error(transparent)]
     Math(#[from] Math),
     #[error(transparent)]
     Fulfillment(#[from] Trade),
 }
 
-// todo: should be removed once integration tests are implemented
 #[cfg(test)]
 mod tests {
-    use {super::*, number::units::EthUnit};
+    use {
+        super::*,
+        crate::domain::competition::{
+            self,
+            order::{self, FeePolicy, Kind, Partial},
+        },
+        alloy::primitives::Bytes,
+        number::units::EthUnit,
+    };
 
     #[test]
     fn test_adjust_quote_to_out_market_sell_order_limits() {
@@ -413,5 +445,103 @@ mod tests {
             limit.buy.0, order.buy_amount,
             "Buy amount should be taken from the order for buy orders in market price."
         );
+    }
+
+    fn sell_order_with_volume_fee(
+        sell: eth::U256,
+        buy: eth::U256,
+        fee_factor: f64,
+    ) -> competition::Order {
+        let sell_token = eth::TokenAddress::from(eth::Address::random());
+        let buy_token = eth::TokenAddress::from(eth::Address::random());
+        competition::Order {
+            uid: order::Uid::default(),
+            receiver: None,
+            created: 0u32.into(),
+            valid_to: u32::MAX.into(),
+            sell: eth::Asset {
+                amount: sell.into(),
+                token: sell_token,
+            },
+            buy: eth::Asset {
+                amount: buy.into(),
+                token: buy_token,
+            },
+            side: Side::Sell,
+            kind: Kind::Limit,
+            app_data: Default::default(),
+            partial: Partial::No,
+            pre_interactions: vec![],
+            post_interactions: vec![],
+            sell_token_balance: order::SellTokenBalance::Erc20,
+            buy_token_balance: order::BuyTokenBalance::Erc20,
+            signature: order::Signature {
+                scheme: order::signature::Scheme::PreSign,
+                data: Bytes::new(),
+                signer: eth::Address::default(),
+            },
+            protocol_fees: vec![FeePolicy::Volume { factor: fee_factor }],
+            quote: None,
+        }
+    }
+
+    /// Volume fee exceeds surplus on a tight stable-to-stable pair → should
+    /// be caught before simulation.
+    #[test]
+    fn volume_fee_violates_limit_price() {
+        // Sell 1000 USDC for at least 999.9 USDT (0.01% diff)
+        let order = sell_order_with_volume_fee(
+            eth::U256::from(1_000_000_000u64),
+            eth::U256::from(999_900_000u64), // 999.9e6 buy limit
+            0.0002, // 2 bps volume fee
+        );
+
+        // Solver finds 1:1 route, no solver fee
+        let fulfillment = Fulfillment::new(
+            order,
+            order::TargetAmount(eth::U256::from(1_000_000_000u64)),
+            Fee::Dynamic(order::SellAmount(eth::U256::ZERO)),
+            eth::U256::ZERO,
+        )
+        .unwrap();
+
+        let prices = ClearingPrices {
+            sell: eth::U256::from(1u64),
+            buy: eth::U256::from(1u64),
+        };
+
+        let err = fulfillment.with_protocol_fees(prices).unwrap_err();
+        assert!(
+            matches!(err, Error::LimitPriceViolatedByProtocolFees),
+            "expected LimitPriceViolatedByProtocolFees, got {err:?}"
+        );
+    }
+
+    /// Volume fee within surplus margin → should succeed.
+    #[test]
+    fn volume_fee_within_surplus() {
+        // Sell 1000 USDC for at least 999 USDT (0.1% tolerance)
+        let order = sell_order_with_volume_fee(
+            eth::U256::from(1_000_000_000u64), // 1000e6 sell
+            eth::U256::from(999_000_000u64),   // 999e6 buy limit
+            0.0002,                            // 2 bps volume fee (< 0.1% surplus)
+        );
+
+        let fulfillment = Fulfillment::new(
+            order,
+            order::TargetAmount(eth::U256::from(1_000_000_000u64)),
+            Fee::Dynamic(order::SellAmount(eth::U256::ZERO)),
+            eth::U256::ZERO,
+        )
+        .unwrap();
+
+        let prices = ClearingPrices {
+            sell: eth::U256::from(1u64),
+            buy: eth::U256::from(1u64),
+        };
+
+        fulfillment
+            .with_protocol_fees(prices)
+            .expect("fee within surplus should not violate limit price");
     }
 }
