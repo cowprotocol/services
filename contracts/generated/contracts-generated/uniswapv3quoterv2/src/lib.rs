@@ -742,7 +742,6 @@ interface UniswapV3QuoterV2 {
     function quoteExactInputSingle(IQuoterV2.QuoteExactInputSingleParams memory params) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate);
     function quoteExactOutput(bytes memory path, uint256 amountOut) external returns (uint256 amountIn, uint160[] memory sqrtPriceX96AfterList, uint32[] memory initializedTicksCrossedList, uint256 gasEstimate);
     function quoteExactOutputSingle(IQuoterV2.QuoteExactOutputSingleParams memory params) external returns (uint256 amountIn, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate);
-    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes memory path) external view;
 }
 ```
 
@@ -990,29 +989,6 @@ interface UniswapV3QuoterV2 {
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "uniswapV3SwapCallback",
-    "inputs": [
-      {
-        "name": "amount0Delta",
-        "type": "int256",
-        "internalType": "int256"
-      },
-      {
-        "name": "amount1Delta",
-        "type": "int256",
-        "internalType": "int256"
-      },
-      {
-        "name": "path",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
   }
 ]
 ```*/
@@ -2172,172 +2148,6 @@ pub mod UniswapV3QuoterV2 {
             }
         }
     };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `uniswapV3SwapCallback(int256,int256,bytes)` and selector `0xfa461e33`.
-    ```solidity
-    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes memory path) external view;
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct uniswapV3SwapCallbackCall {
-        #[allow(missing_docs)]
-        pub amount0Delta: alloy_sol_types::private::primitives::aliases::I256,
-        #[allow(missing_docs)]
-        pub amount1Delta: alloy_sol_types::private::primitives::aliases::I256,
-        #[allow(missing_docs)]
-        pub path: alloy_sol_types::private::Bytes,
-    }
-    ///Container type for the return parameters of the
-    /// [`uniswapV3SwapCallback(int256,int256,
-    /// bytes)`](uniswapV3SwapCallbackCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct uniswapV3SwapCallbackReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Int<256>,
-                alloy_sol_types::sol_data::Int<256>,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::I256,
-                alloy_sol_types::private::primitives::aliases::I256,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<uniswapV3SwapCallbackCall> for UnderlyingRustTuple<'_> {
-                fn from(value: uniswapV3SwapCallbackCall) -> Self {
-                    (value.amount0Delta, value.amount1Delta, value.path)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for uniswapV3SwapCallbackCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        amount0Delta: tuple.0,
-                        amount1Delta: tuple.1,
-                        path: tuple.2,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<uniswapV3SwapCallbackReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: uniswapV3SwapCallbackReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for uniswapV3SwapCallbackReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl uniswapV3SwapCallbackReturn {
-            fn _tokenize(
-                &self,
-            ) -> <uniswapV3SwapCallbackCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for uniswapV3SwapCallbackCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Int<256>,
-                alloy_sol_types::sol_data::Int<256>,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Return = uniswapV3SwapCallbackReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [250u8, 70u8, 30u8, 51u8];
-            const SIGNATURE: &'static str = "uniswapV3SwapCallback(int256,int256,bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Int<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount0Delta,
-                    ),
-                    <alloy_sol_types::sol_data::Int<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount1Delta,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.path,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                uniswapV3SwapCallbackReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
     ///Container for all the [`UniswapV3QuoterV2`](self) function calls.
     #[derive(Clone)]
     pub enum UniswapV3QuoterV2Calls {
@@ -2353,8 +2163,6 @@ pub mod UniswapV3QuoterV2 {
         quoteExactOutput(quoteExactOutputCall),
         #[allow(missing_docs)]
         quoteExactOutputSingle(quoteExactOutputSingleCall),
-        #[allow(missing_docs)]
-        uniswapV3SwapCallback(uniswapV3SwapCallbackCall),
     }
     impl UniswapV3QuoterV2Calls {
         /// All the selectors of this enum.
@@ -2371,7 +2179,6 @@ pub mod UniswapV3QuoterV2 {
             [196u8, 90u8, 1u8, 85u8],
             [198u8, 165u8, 2u8, 106u8],
             [205u8, 202u8, 23u8, 83u8],
-            [250u8, 70u8, 30u8, 51u8],
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
@@ -2381,7 +2188,6 @@ pub mod UniswapV3QuoterV2 {
             <factoryCall as alloy_sol_types::SolCall>::SIGNATURE,
             <quoteExactInputSingleCall as alloy_sol_types::SolCall>::SIGNATURE,
             <quoteExactInputCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <uniswapV3SwapCallbackCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
@@ -2391,7 +2197,6 @@ pub mod UniswapV3QuoterV2 {
             ::core::stringify!(factory),
             ::core::stringify!(quoteExactInputSingle),
             ::core::stringify!(quoteExactInput),
-            ::core::stringify!(uniswapV3SwapCallback),
         ];
 
         /// Returns the signature for the given selector, if known.
@@ -2416,7 +2221,7 @@ pub mod UniswapV3QuoterV2 {
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for UniswapV3QuoterV2Calls {
-        const COUNT: usize = 7usize;
+        const COUNT: usize = 6usize;
         const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "UniswapV3QuoterV2Calls";
 
@@ -2436,9 +2241,6 @@ pub mod UniswapV3QuoterV2 {
                 }
                 Self::quoteExactOutputSingle(_) => {
                     <quoteExactOutputSingleCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::uniswapV3SwapCallback(_) => {
-                    <uniswapV3SwapCallbackCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -2515,18 +2317,6 @@ pub mod UniswapV3QuoterV2 {
                                 .map(UniswapV3QuoterV2Calls::quoteExactInput)
                         }
                         quoteExactInput
-                    },
-                    {
-                        fn uniswapV3SwapCallback(
-                            data: &[u8],
-                        ) -> alloy_sol_types::Result<UniswapV3QuoterV2Calls>
-                        {
-                            <uniswapV3SwapCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV3QuoterV2Calls::uniswapV3SwapCallback)
-                        }
-                        uniswapV3SwapCallback
                     },
                 ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -2607,17 +2397,6 @@ pub mod UniswapV3QuoterV2 {
                     }
                     quoteExactInput
                 },
-                {
-                    fn uniswapV3SwapCallback(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV3QuoterV2Calls> {
-                        <uniswapV3SwapCallbackCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV3QuoterV2Calls::uniswapV3SwapCallback)
-                    }
-                    uniswapV3SwapCallback
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(alloy_sol_types::Error::unknown_selector(
@@ -2651,9 +2430,6 @@ pub mod UniswapV3QuoterV2 {
                         inner,
                     )
                 }
-                Self::uniswapV3SwapCallback(inner) => {
-                    <uniswapV3SwapCallbackCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
             }
         }
 
@@ -2679,11 +2455,6 @@ pub mod UniswapV3QuoterV2 {
                 }
                 Self::quoteExactOutputSingle(inner) => {
                     <quoteExactOutputSingleCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
-                    )
-                }
-                Self::uniswapV3SwapCallback(inner) => {
-                    <uniswapV3SwapCallbackCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner, out,
                     )
                 }
@@ -2844,21 +2615,6 @@ pub mod UniswapV3QuoterV2 {
         ) -> alloy_contract::SolCallBuilder<&P, quoteExactOutputSingleCall, N> {
             self.call_builder(&quoteExactOutputSingleCall { params })
         }
-
-        ///Creates a new call builder for the [`uniswapV3SwapCallback`]
-        /// function.
-        pub fn uniswapV3SwapCallback(
-            &self,
-            amount0Delta: alloy_sol_types::private::primitives::aliases::I256,
-            amount1Delta: alloy_sol_types::private::primitives::aliases::I256,
-            path: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, uniswapV3SwapCallbackCall, N> {
-            self.call_builder(&uniswapV3SwapCallbackCall {
-                amount0Delta,
-                amount1Delta,
-                path,
-            })
-        }
     }
     /// Event filters.
     impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
@@ -2900,10 +2656,6 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
         )),
         137u64 => Some((
             ::alloy_primitives::address!("0x61fFE014bA17989E743c5F6cB21bF9697530B21e"),
-            None,
-        )),
-        232u64 => Some((
-            ::alloy_primitives::address!("0x1eEA2B790Dc527c5a4cd3d4f3ae8A2DDB65B2af1"),
             None,
         )),
         8453u64 => Some((

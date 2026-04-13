@@ -53,6 +53,12 @@ pub struct VolumeFeeConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct OrderSimulationConfig {
     pub gas_limit: U256,
+
+    /// Optional Tenderly configuration. When set, simulations are automatically
+    /// submitted and shared on Tenderly, and the response includes a dashboard
+    /// URL.
+    #[serde(default)]
+    pub tenderly: Option<crate::simulator::TenderlyConfig>,
 }
 
 /// Top-level orderbook service configuration.
@@ -216,6 +222,7 @@ pub mod test_util {
                 // Enable order simulation for testing
                 order_simulation: Some(OrderSimulationConfig {
                     gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
+                    tenderly: None,
                 }),
             }
         }

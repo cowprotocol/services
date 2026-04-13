@@ -35,7 +35,7 @@ use {
 };
 
 /// The block number from which we will fetch state for the forked tests.
-pub const FORK_BLOCK: u64 = 23326100;
+pub const FORK_BLOCK: u64 = 24843565;
 pub const USDT_WHALE: Address = address!("6AC38D1b2f0c0c3b9E816342b1CA14d91D5Ff60B");
 pub const USDC_WHALE: Address = address!("01b8697695eab322a339c4bf75740db75dc9375e");
 

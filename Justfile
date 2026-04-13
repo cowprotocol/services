@@ -5,16 +5,20 @@ help:
 setup:
     cd contracts && \
     cargo r -r -- vendor && \
-    cargo r -r -- generate && \
-    cargo +nightly fmt --all && \
-    cd generated && cargo +nightly fmt --all && \
-    cd ../.. && \
-    tombi format
+    cargo r -r -- generate
+    just _format_generated_contracts
 
 # Generate contract bindings
 generate-contracts:
     cd contracts && \
     cargo r -r -- generate
+    just _format_generated_contracts
+
+_format_generated_contracts:
+    cd contracts && cargo +nightly fmt --all && \
+    cd generated && cargo +nightly fmt --all && \
+    cd ../.. && \
+    tombi format
 
 # Run unit tests
 test-unit:
