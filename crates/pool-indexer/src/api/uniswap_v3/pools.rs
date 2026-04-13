@@ -1,4 +1,5 @@
 use {
+    super::{internal_error, parse_hex_address},
     crate::{api::AppState, db::uniswap_v3 as db},
     axum::{
         extract::{Path, Query, State},
@@ -9,8 +10,6 @@ use {
     std::sync::Arc,
 };
 
-use super::{internal_error, parse_hex_address};
-
 /// Query parameters for the `/pools` endpoint.
 ///
 /// If `token0` is provided the response contains only matching pools (no
@@ -19,9 +18,11 @@ use super::{internal_error, parse_hex_address};
 /// a cursor-paginated list of all pools.
 #[derive(Deserialize)]
 pub struct PoolsQuery {
-    /// Opaque cursor returned by the previous page; omit to start from the beginning.
+    /// Opaque cursor returned by the previous page; omit to start from the
+    /// beginning.
     pub after: Option<String>,
-    /// Maximum number of pools to return. Clamped to [1, 5000]; defaults to 1000.
+    /// Maximum number of pools to return. Clamped to [1, 5000]; defaults to
+    /// 1000.
     pub limit: Option<i64>,
     /// Filter by token symbol (partial, case-insensitive). Acts as the "base"
     /// token when `token1` is also supplied. Matched via SQL `LIKE` against
@@ -66,7 +67,8 @@ pub struct PoolsResponse {
     /// Latest block that has been fully indexed.
     pub block_number: u64,
     pub pools: Vec<PoolResponse>,
-    /// Cursor to pass as `after` to fetch the next page; `null` on the last page.
+    /// Cursor to pass as `after` to fetch the next page; `null` on the last
+    /// page.
     pub next_cursor: Option<String>,
 }
 
@@ -119,7 +121,8 @@ async fn search_pools(
 
 /// Returns a cursor-paginated list of all indexed pools, ordered by address.
 /// Fetches `limit + 1` rows to detect whether a next page exists; the extra
-/// row is stripped from the response and its address is returned as `next_cursor`.
+/// row is stripped from the response and its address is returned as
+/// `next_cursor`.
 async fn list_pools(state: &AppState, block_number: u64, query: &PoolsQuery) -> Response {
     let limit = query.limit.unwrap_or(1000).clamp(1, 5000);
 
@@ -147,7 +150,11 @@ async fn list_pools(state: &AppState, block_number: u64, query: &PoolsQuery) -> 
 
     let limit_usize = usize::try_from(limit).unwrap_or(usize::MAX);
     let has_next = rows.len() > limit_usize;
-    let rows = if has_next { &rows[..limit_usize] } else { &rows[..] };
+    let rows = if has_next {
+        &rows[..limit_usize]
+    } else {
+        &rows[..]
+    };
     let next_cursor = if has_next {
         rows.last().map(|r| format!("{:?}", r.address))
     } else {

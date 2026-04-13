@@ -7,10 +7,10 @@ use {
         sol_types::SolEvent,
     },
     anyhow::{Context, Result},
-    contracts::alloy::{
-        ERC20::ERC20,
+    contracts::{
+        ERC20,
         IUniswapV3Factory::IUniswapV3Factory::PoolCreated,
-        UniswapV3Pool::UniswapV3Pool::{self, Burn, Initialize, Mint, Swap},
+        UniswapV3Pool::UniswapV3Pool::{Burn, Initialize, Mint, Swap},
     },
     ethrpc::AlloyProvider,
     futures::{StreamExt, TryStreamExt},
@@ -358,7 +358,7 @@ fn signed24_to_i32(v: alloy::primitives::aliases::I24) -> i32 {
 }
 
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
-    UniswapV3Pool::new(pool, provider.clone())
+    contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
         .liquidity()
         .block(block.into())
         .call()
@@ -367,7 +367,7 @@ async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u6
 }
 
 async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> {
-    ERC20::new(token, provider.clone())
+    ERC20::Instance::new(token, provider.clone())
         .decimals()
         .call()
         .await
@@ -423,7 +423,7 @@ async fn backfill_symbols(provider: AlloyProvider, db: sqlx::PgPool, chain_id: u
 }
 
 async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String> {
-    let sym = ERC20::new(token, provider.clone())
+    let sym = ERC20::Instance::new(token, provider.clone())
         .symbol()
         .call()
         .await
@@ -581,7 +581,7 @@ impl LogAccumulator {
         let e = &decoded.data;
         let pool = log.address();
         let block = log.block_number.unwrap_or(0);
-        let amount = e.amount.cast_signed() as i128;
+        let amount = e.amount.cast_signed();
         *self
             .tick_deltas
             .entry((pool, signed24_to_i32(e.tickLower)))
@@ -602,7 +602,7 @@ impl LogAccumulator {
         let e = &decoded.data;
         let pool = log.address();
         let block = log.block_number.unwrap_or(0);
-        let amount = e.amount.cast_signed() as i128;
+        let amount = e.amount.cast_signed();
         *self
             .tick_deltas
             .entry((pool, signed24_to_i32(e.tickLower)))
@@ -696,7 +696,7 @@ mod tests {
             },
             sol_types::SolEvent,
         },
-        contracts::alloy::{
+        contracts::{
             IUniswapV3Factory::IUniswapV3Factory::PoolCreated,
             UniswapV3Pool::UniswapV3Pool::{Burn, Initialize, Mint, Swap},
         },
@@ -857,8 +857,8 @@ mod tests {
         assert_eq!(c.tick_deltas.len(), 2);
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
         let upper = c.tick_deltas.iter().find(|d| d.tick_idx == 100).unwrap();
-        assert_eq!(lower.delta, amount as i128);
-        assert_eq!(upper.delta, -(amount as i128));
+        assert_eq!(lower.delta, amount.cast_signed());
+        assert_eq!(upper.delta, -amount.cast_signed());
 
         // No prior full state → goes into liq_only
         assert_eq!(c.liquidity_updates.len(), 1);
@@ -967,7 +967,7 @@ mod tests {
             &Default::default(),
         );
 
-        let expected = (mint_amount - burn_amount) as i128;
+        let expected = (mint_amount - burn_amount).cast_signed();
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
         let upper = c.tick_deltas.iter().find(|d| d.tick_idx == 100).unwrap();
         assert_eq!(lower.delta, expected);

@@ -26,6 +26,7 @@ ethrpc = { workspace = true }
 futures = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 num = { workspace = true }
+number = { workspace = true }
 observe = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }

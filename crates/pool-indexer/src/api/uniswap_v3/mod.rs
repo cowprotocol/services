@@ -1,9 +1,6 @@
 pub mod pools;
 pub mod ticks;
 
-pub use pools::get_pools;
-pub use ticks::get_ticks;
-
 use {
     alloy_primitives::Address,
     axum::{
@@ -11,6 +8,7 @@ use {
         response::{IntoResponse, Response},
     },
 };
+pub use {pools::get_pools, ticks::get_ticks};
 
 pub(super) fn internal_error(err: anyhow::Error) -> Response {
     tracing::error!(?err, "internal error");

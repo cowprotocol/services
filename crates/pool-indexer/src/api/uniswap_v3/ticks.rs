@@ -1,4 +1,5 @@
 use {
+    super::{internal_error, parse_hex_address},
     crate::{api::AppState, db::uniswap_v3 as db},
     axum::{
         extract::{Path, State},
@@ -8,8 +9,6 @@ use {
     serde::Serialize,
     std::sync::Arc,
 };
-
-use super::{internal_error, parse_hex_address};
 
 /// A single tick entry with its net liquidity.
 #[derive(Serialize)]

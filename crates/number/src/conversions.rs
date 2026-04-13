@@ -5,6 +5,8 @@ use {
     num::{BigInt, BigRational, BigUint, Zero, bigint::Sign, rational::Ratio},
 };
 
+type U160 = alloy_primitives::aliases::U160;
+
 pub fn big_decimal_to_big_uint(big_decimal: &BigDecimal) -> Option<BigUint> {
     // TODO(vkgnosis): It would be nice to avoid copying the underlying BigInt when
     // converting BigDecimal to anything else but the simple
@@ -75,6 +77,24 @@ pub fn u256_to_big_rational(input: &U256) -> BigRational {
 pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
     let big_uint = u256_to_big_uint(u256);
     BigDecimal::from(BigInt::from(big_uint))
+}
+
+pub fn u160_to_big_decimal(u160: &U160) -> BigDecimal {
+    let big_uint = BigUint::from_bytes_be(&u160.to_be_bytes::<20>());
+    BigDecimal::from(BigInt::from(big_uint))
+}
+
+pub fn big_decimal_to_u160(big_decimal: &BigDecimal) -> Option<U160> {
+    let big_uint = big_decimal_to_big_uint(big_decimal)?;
+    big_uint_to_u160(&big_uint).ok()
+}
+
+pub fn big_uint_to_u160(input: &BigUint) -> Result<U160> {
+    let bytes = input.to_bytes_be();
+    ensure!(bytes.len() <= 20, "too large for U160");
+    let mut buf = [0u8; 20];
+    buf[20 - bytes.len()..].copy_from_slice(&bytes);
+    Ok(U160::from_be_bytes(buf))
 }
 
 pub fn i512_to_big_int(i512: &I512) -> BigInt {

@@ -24,6 +24,7 @@ use {
     serde::Deserialize,
     serde_json::{Value, json},
     sqlx::PgPool,
+    std::time::Duration,
     tracing::info,
 };
 
@@ -31,6 +32,11 @@ use {
 const PAGE_SIZE: usize = 1000;
 /// Maximum number of pools whose ticks are fetched concurrently.
 const TICK_CONCURRENCY: usize = 50;
+/// Timeout for individual subgraph HTTP requests.
+const SUBGRAPH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Cursor value below the minimum Uniswap V3 tick index (-887272), ensuring the
+/// first GraphQL page includes the lowest possible tick.
+const TICK_IDX_CURSOR_START: i64 = -887_273;
 
 #[derive(Deserialize)]
 struct GqlResponse {
@@ -172,8 +178,7 @@ async fn fetch_ticks_for_pool(
 
     let pool_addr: Address = pool_id.parse().context("parse pool address")?;
     let mut ticks = Vec::new();
-    // Start below minimum Uniswap V3 tick (-887272)
-    let mut cursor: i64 = -887_273;
+    let mut cursor: i64 = TICK_IDX_CURSOR_START;
 
     loop {
         let page: TicksPage = gql(
@@ -211,7 +216,10 @@ pub async fn seed(
     subgraph_url: &str,
     block: Option<u64>,
 ) -> Result<u64> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(SUBGRAPH_REQUEST_TIMEOUT)
+        .build()
+        .context("build HTTP client")?;
 
     let block = match block {
         Some(b) => b,
@@ -248,16 +256,16 @@ pub async fn seed(
                     .context("parse createdAtBlockNumber")?,
             });
 
-            if let Some(tick_str) = &p.tick {
-                if p.sqrt_price != "0" {
-                    pool_states.push(PoolStateData {
-                        pool_address: address,
-                        block_number: block,
-                        sqrt_price_x96: p.sqrt_price.parse::<U160>().context("parse sqrtPrice")?,
-                        liquidity: p.liquidity.parse().context("parse liquidity")?,
-                        tick: tick_str.parse().context("parse tick")?,
-                    });
-                }
+            if let Some(tick_str) = &p.tick
+                && p.sqrt_price != "0"
+            {
+                pool_states.push(PoolStateData {
+                    pool_address: address,
+                    block_number: block,
+                    sqrt_price_x96: p.sqrt_price.parse::<U160>().context("parse sqrtPrice")?,
+                    liquidity: p.liquidity.parse().context("parse liquidity")?,
+                    tick: tick_str.parse().context("parse tick")?,
+                });
             }
 
             pool_ids.push(p.id.clone());
