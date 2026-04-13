@@ -55,7 +55,8 @@ impl Fulfillment {
         let sell = self.sell_amount(&prices)?;
         let order = self.order();
         // buy_received / sell_paid >= buy_limit / sell_limit
-        // Rewritten to avoid division: buy_received * sell_limit >= sell_paid * buy_limit
+        // Rewritten to avoid division: buy_received * sell_limit >= sell_paid *
+        // buy_limit
         let left = buy
             .0
             .checked_mul(order.sell.amount.0)
@@ -493,7 +494,7 @@ mod tests {
         let order = sell_order_with_volume_fee(
             eth::U256::from(1_000_000_000u64),
             eth::U256::from(999_900_000u64), // 999.9e6 buy limit
-            0.0002, // 2 bps volume fee
+            0.0002,                          // 2 bps volume fee
         );
 
         // Solver finds 1:1 route, no solver fee
