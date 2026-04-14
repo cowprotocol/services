@@ -6,7 +6,7 @@ use {
     alloy::primitives::B256,
     axum::{
         extract::{Path, State},
-        response::{IntoResponse, Json, Response},
+        response::Json,
     },
     model::{AuctionId, solver_competition::SolverCompetitionAPI},
     std::sync::Arc,
@@ -15,48 +15,31 @@ use {
 pub async fn get_solver_competition_by_id_handler(
     State(state): State<Arc<AppState>>,
     Path(auction_id): Path<u64>,
-) -> Response {
-    // We use u64 to ensure that negative numbers are returned as BAD_REQUEST
-    // however, there's a gap between u64::MAX and i64::MAX, numbers beyond i64::MAX
-    // will be marked as NOT_FOUND as they're positive (and as such, valid) but
-    // they are not covered by our system
+) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
     if auction_id >= AuctionId::MAX.cast_unsigned() {
-        return crate::solver_competition::LoadSolverCompetitionError::NotFound.into_response();
+        return Err(LoadSolverCompetitionError::NotFound);
     }
-
-    match db(&state)
+    let c = db(&state)
         .load_competition(Identifier::Id(auction_id.cast_signed()))
-        .await
-    {
-        Ok(c) => filter_by_deadline(&state, c)
-            .await
-            .map(Json)
-            .into_response(),
-        Err(e) => e.into_response(),
-    }
+        .await?;
+    filter_by_deadline(&state, c).await.map(Json)
 }
 
 pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
-) -> Response {
-    match db(&state)
+) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
+    let c = db(&state)
         .load_competition(Identifier::Transaction(tx_hash))
-        .await
-    {
-        Ok(c) => filter_by_deadline(&state, c)
-            .await
-            .map(Json)
-            .into_response(),
-        Err(e) => e.into_response(),
-    }
+        .await?;
+    filter_by_deadline(&state, c).await.map(Json)
 }
 
 pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<SolverCompetitionAPI>, crate::solver_competition::LoadSolverCompetitionError> {
-    let competition = db(&state).load_latest_competition().await?;
-    filter_by_deadline(&state, competition).await.map(Json)
+) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
+    let c = db(&state).load_latest_competition().await?;
+    filter_by_deadline(&state, c).await.map(Json)
 }
 
 async fn filter_by_deadline(
