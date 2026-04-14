@@ -20,6 +20,7 @@ pub struct Config {
     pub mempools: Vec<Mempool>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub orderbook: Orderbook,
+    pub flashloans_enabled: bool,
 }
 
 pub struct Driver {
@@ -219,7 +220,7 @@ async fn create_config_file(
         config.orderbook.addr
     )
     .unwrap();
-    writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "flashloans-enabled = {}", config.flashloans_enabled).unwrap();
     writeln!(file, "tx-gas-limit = \"45000000\"").unwrap();
     write!(
         file,
