@@ -306,6 +306,11 @@ struct SolverConfig {
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
 
+    /// Whether flashloan orders should be sent to this solver. If not
+    /// specified, falls back to the top-level `flashloans-enabled` setting.
+    #[serde(default)]
+    flashloans_enabled: Option<bool>,
+
     /// Haircut in basis points (0-10000). Applied to solver-reported
     /// economics to make bids more conservative by adjusting clearing prices
     /// to report lower surplus. Useful for solvers prone to negative slippage.

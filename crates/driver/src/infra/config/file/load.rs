@@ -130,7 +130,9 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         .metrics_strategy_gc_max_age,
                 },
                 settle_queue_size: solver_config.settle_queue_size,
-                flashloans_enabled: config.flashloans_enabled,
+                flashloans_enabled: solver_config
+                    .flashloans_enabled
+                    .unwrap_or(config.flashloans_enabled),
                 fetch_liquidity_at_block: match config.liquidity.fetch_at_block {
                     file::AtBlock::Latest => liquidity::AtBlock::Latest,
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
