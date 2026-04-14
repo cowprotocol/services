@@ -23,27 +23,27 @@ pub async fn get_solver_competition_by_id_handler(
     if auction_id >= AuctionId::MAX.cast_unsigned() {
         return Err(LoadSolverCompetitionError::NotFound);
     }
-    let c = db(&state)
+    let competition = db(&state)
         .load_competition(Identifier::Id(auction_id.cast_signed()))
         .await?;
-    filter_by_deadline(&state, c).await.map(Json)
+    filter_by_deadline(&state, competition).await.map(Json)
 }
 
 pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
 ) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
-    let c = db(&state)
+    let competition = db(&state)
         .load_competition(Identifier::Transaction(tx_hash))
         .await?;
-    filter_by_deadline(&state, c).await.map(Json)
+    filter_by_deadline(&state, competition).await.map(Json)
 }
 
 pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
-    let c = db(&state).load_latest_competition().await?;
-    filter_by_deadline(&state, c).await.map(Json)
+    let competition = db(&state).load_latest_competition().await?;
+    filter_by_deadline(&state, competition).await.map(Json)
 }
 
 async fn filter_by_deadline(
