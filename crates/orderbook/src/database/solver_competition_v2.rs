@@ -13,8 +13,6 @@ use {
 };
 
 impl Postgres {
-    /// When `current_block` is `Some`, competitions whose deadline hasn't
-    /// passed yet are filtered out at the SQL level.
     pub async fn load_competition_by_id(
         &self,
         auction_id: i64,
