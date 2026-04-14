@@ -50,51 +50,61 @@ pub async fn auction_start_block(
 pub async fn load_by_id(
     ex: &mut PgConnection,
     id: AuctionId,
+    after_block: Option<i64>,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
--- exclude settlements from another environment for which observation is guaranteed to not exist
-WHERE sc.id = $1
+LEFT JOIN competition_auctions ca ON sc.id = ca.id
+WHERE sc.id = $1 AND ($2::bigint IS NULL OR ca.deadline < $2)
 GROUP BY sc.id
     ;"#;
-    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(id)
+        .bind(after_block)
+        .fetch_optional(ex)
+        .await
 }
 
 #[instrument(skip_all)]
 pub async fn load_latest_competitions(
     ex: &mut PgConnection,
     latest_competitions_count: u32,
+    after_block: Option<i64>,
 ) -> Result<Vec<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
+LEFT JOIN competition_auctions ca ON sc.id = ca.id
+WHERE ($2::bigint IS NULL OR ca.deadline < $2)
 GROUP BY sc.id
 ORDER BY sc.id DESC
 LIMIT $1
     ;"#;
     sqlx::query_as(QUERY)
         .bind(i64::from(latest_competitions_count))
+        .bind(after_block)
         .fetch_all(ex)
         .await
 }
 
 pub async fn load_latest_competition(
     ex: &mut PgConnection,
+    after_block: Option<i64>,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
-    let competitions = load_latest_competitions(ex, 1).await?;
-    let latest = competitions.into_iter().next();
-    Ok(latest)
+    let competitions = load_latest_competitions(ex, 1, after_block).await?;
+    Ok(competitions.into_iter().next())
 }
 
 #[instrument(skip_all)]
 pub async fn load_by_tx_hash(
     ex: &mut PgConnection,
     tx_hash: &TransactionHash,
+    after_block: Option<i64>,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
 WITH competition AS (
@@ -106,10 +116,16 @@ WITH competition AS (
 SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.solution_uid IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 JOIN settlements s ON sc.id = s.auction_id
+LEFT JOIN competition_auctions ca ON sc.id = ca.id
 WHERE sc.id = (SELECT id FROM competition) AND s.solution_uid IS NOT NULL
+    AND ($2::bigint IS NULL OR ca.deadline < $2)
 GROUP BY sc.id
     ;"#;
-    sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(tx_hash)
+        .bind(after_block)
+        .fetch_optional(ex)
+        .await
 }
 
 #[cfg(test)]
@@ -142,24 +158,27 @@ mod tests {
         assert_eq!(value_, "1234");
 
         // load by id works
-        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
+        let value_ = load_by_id(&mut db, 0, None).await.unwrap().unwrap();
         assert_eq!(value, value_.json);
         assert!(value_.tx_hashes.is_empty());
 
         // load as latest works
-        let value_ = load_latest_competition(&mut db).await.unwrap().unwrap();
+        let value_ = load_latest_competition(&mut db, None)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(value, value_.json);
         assert!(value_.tx_hashes.is_empty());
         // load by tx doesn't work, as there is no settlement yet
         assert!(
-            load_by_tx_hash(&mut db, &ByteArray([0u8; 32]))
+            load_by_tx_hash(&mut db, &ByteArray([0u8; 32]), None)
                 .await
                 .unwrap()
                 .is_none()
         );
 
         // non-existent auction returns none
-        assert!(load_by_id(&mut db, 1).await.unwrap().is_none());
+        assert!(load_by_id(&mut db, 1, None).await.unwrap().is_none());
 
         // insert three settlement events for the same auction id, with one of them not
         // having solution UID (in practice, usually meaning it's from a different
@@ -221,26 +240,29 @@ mod tests {
             .unwrap();
 
         // load by id works, and finds two hashes
-        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
+        let value_ = load_by_id(&mut db, 0, None).await.unwrap().unwrap();
         assert!(value_.tx_hashes.len() == 2);
 
         // load as latest works, and finds two hashes
-        let value_ = load_latest_competition(&mut db).await.unwrap().unwrap();
-        assert!(value_.tx_hashes.len() == 2);
-
-        // load by tx works, and finds two hashes, no matter which tx hash is used
-        let value_ = load_by_tx_hash(&mut db, &ByteArray([0u8; 32]))
+        let value_ = load_latest_competition(&mut db, None)
             .await
             .unwrap()
             .unwrap();
         assert!(value_.tx_hashes.len() == 2);
-        let value_ = load_by_tx_hash(&mut db, &ByteArray([1u8; 32]))
+
+        // load by tx works, and finds two hashes, no matter which tx hash is used
+        let value_ = load_by_tx_hash(&mut db, &ByteArray([0u8; 32]), None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(value_.tx_hashes.len() == 2);
+        let value_ = load_by_tx_hash(&mut db, &ByteArray([1u8; 32]), None)
             .await
             .unwrap()
             .unwrap();
         assert!(value_.tx_hashes.len() == 2);
         // this one should not find any hashes since it's from another environment
-        let value_ = load_by_tx_hash(&mut db, &ByteArray([2u8; 32]))
+        let value_ = load_by_tx_hash(&mut db, &ByteArray([2u8; 32]), None)
             .await
             .unwrap();
         assert!(value_.is_none());

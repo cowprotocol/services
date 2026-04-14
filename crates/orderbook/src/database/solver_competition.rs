@@ -38,21 +38,11 @@ impl SolverCompetitionStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        let competition = match id {
-            Identifier::Id(id) => database::solver_competition::load_by_id(&mut ex, id)
-                .await
-                .context("solver_competition::load_by_id")?
-                .map(|row| {
-                    deserialize_solver_competition(
-                        row.json,
-                        row.id,
-                        row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
-                    )
-                }),
-            Identifier::Transaction(hash) => {
-                database::solver_competition::load_by_tx_hash(&mut ex, &ByteArray(hash.0))
+        match id {
+            Identifier::Id(id) => {
+                database::solver_competition::load_by_id(&mut ex, id, after_block)
                     .await
-                    .context("solver_competition::load_by_tx_hash")?
+                    .context("solver_competition::load_by_id")?
                     .map(|row| {
                         deserialize_solver_competition(
                             row.json,
@@ -61,9 +51,22 @@ impl SolverCompetitionStoring for Postgres {
                         )
                     })
             }
+            Identifier::Transaction(hash) => database::solver_competition::load_by_tx_hash(
+                &mut ex,
+                &ByteArray(hash.0),
+                after_block,
+            )
+            .await
+            .context("solver_competition::load_by_tx_hash")?
+            .map(|row| {
+                deserialize_solver_competition(
+                    row.json,
+                    row.id,
+                    row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
+                )
+            }),
         }
-        .ok_or(LoadSolverCompetitionError::NotFound)??;
-        hide_before_deadline(&mut ex, competition, after_block).await
+        .ok_or(LoadSolverCompetitionError::NotFound)?
     }
 
     async fn load_latest_competition(
@@ -76,7 +79,7 @@ impl SolverCompetitionStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        let competition = database::solver_competition::load_latest_competition(&mut ex)
+        database::solver_competition::load_latest_competition(&mut ex, after_block)
             .await
             .context("solver_competition::load_latest_competition")?
             .map(|row| {
@@ -86,8 +89,7 @@ impl SolverCompetitionStoring for Postgres {
                     row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
                 )
             })
-            .ok_or(LoadSolverCompetitionError::NotFound)??;
-        hide_before_deadline(&mut ex, competition, after_block).await
+            .ok_or(LoadSolverCompetitionError::NotFound)?
     }
 
     async fn load_latest_competitions(
@@ -104,6 +106,7 @@ impl SolverCompetitionStoring for Postgres {
         let latest_competitions = database::solver_competition::load_latest_competitions(
             &mut ex,
             latest_competitions_count,
+            None,
         )
         .await
         .context("solver_competition::load_latest_competitions")?
@@ -119,27 +122,6 @@ impl SolverCompetitionStoring for Postgres {
 
         Ok(latest_competitions)
     }
-}
-
-/// V1 competitions don't store the deadline in the legacy JSON format, so we
-/// check it via a separate query against `competition_auctions`.
-async fn hide_before_deadline(
-    ex: &mut sqlx::PgConnection,
-    competition: SolverCompetitionAPI,
-    after_block: Option<i64>,
-) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError> {
-    if let Some(block) = after_block {
-        let deadline: Option<i64> =
-            sqlx::query_scalar("SELECT deadline FROM competition_auctions WHERE id = $1")
-                .bind(competition.auction_id)
-                .fetch_optional(&mut *ex)
-                .await
-                .map_err(|e| LoadSolverCompetitionError::Other(e.into()))?;
-        if deadline.is_some_and(|d| d >= block) {
-            return Err(LoadSolverCompetitionError::NotFound);
-        }
-    }
-    Ok(competition)
 }
 
 #[cfg(test)]
