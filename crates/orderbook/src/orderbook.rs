@@ -563,9 +563,10 @@ impl Orderbook {
         };
 
         let latest_competition = async {
-            let competition = SolverCompetitionStoring::load_latest_competition(&self.database)
-                .await
-                .map_err(Into::<OrderStatusError>::into)?;
+            let competition =
+                SolverCompetitionStoring::load_latest_competition(&self.database, None)
+                    .await
+                    .map_err(Into::<OrderStatusError>::into)?;
             Ok::<_, OrderStatusError>(solutions(competition))
         };
 
@@ -586,7 +587,7 @@ impl Orderbook {
             Some(Some(tx_hash)) => {
                 let competition = self
                     .database
-                    .load_competition(Identifier::Transaction(tx_hash))
+                    .load_competition(Identifier::Transaction(tx_hash), None)
                     .await?;
                 return Ok(dto::order::Status::Traded(solutions(competition)));
             }

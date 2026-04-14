@@ -75,13 +75,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Returns `true` if competition data for an auction with the given
-    /// deadline block should be visible to API consumers.
-    pub(crate) fn is_competition_visible(&self, deadline_block: i64) -> bool {
-        if !self.hide_competition_before_deadline {
-            return true;
-        }
-        self.current_block_stream.borrow().number.cast_signed() > deadline_block
+    /// When the feature is enabled, returns the current block number so DB
+    /// queries can hide competition data whose deadline hasn't passed yet.
+    /// Returns `None` when the feature is off (no filtering).
+    pub(crate) fn hide_competition_before_block(&self) -> Option<i64> {
+        self.hide_competition_before_deadline
+            .then(|| self.current_block_stream.borrow().number.cast_signed())
     }
 }
 

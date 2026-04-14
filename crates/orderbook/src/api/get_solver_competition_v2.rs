@@ -22,9 +22,11 @@ pub async fn get_solver_competition_by_id_handler(
     }
 
     db(&state)
-        .load_competition_by_id(auction_id.cast_signed())
+        .load_competition_by_id(
+            auction_id.cast_signed(),
+            state.hide_competition_before_block(),
+        )
         .await
-        .and_then(|r| filter_by_deadline(&state, r))
         .map(Json)
         .into_response()
 }
@@ -34,9 +36,8 @@ pub async fn get_solver_competition_by_hash_handler(
     Path(tx_hash): Path<B256>,
 ) -> Response {
     db(&state)
-        .load_competition_by_tx_hash(tx_hash)
+        .load_competition_by_tx_hash(tx_hash, state.hide_competition_before_block())
         .await
-        .and_then(|r| filter_by_deadline(&state, r))
         .map(Json)
         .into_response()
 }
@@ -44,18 +45,10 @@ pub async fn get_solver_competition_by_hash_handler(
 pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CompetitionResponse>, LoadSolverCompetitionError> {
-    let response = db(&state).load_latest_competition().await?;
-    filter_by_deadline(&state, response).map(Json)
-}
-
-fn filter_by_deadline(
-    state: &AppState,
-    response: CompetitionResponse,
-) -> Result<CompetitionResponse, LoadSolverCompetitionError> {
-    if !state.is_competition_visible(response.auction_deadline_block) {
-        return Err(LoadSolverCompetitionError::NotFound);
-    }
-    Ok(response)
+    db(&state)
+        .load_latest_competition(state.hide_competition_before_block())
+        .await
+        .map(Json)
 }
 
 fn db(state: &AppState) -> &Postgres {

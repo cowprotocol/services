@@ -13,9 +13,12 @@ use {
 };
 
 impl Postgres {
+    /// When `current_block` is `Some`, competitions whose deadline hasn't
+    /// passed yet are filtered out at the SQL level.
     pub async fn load_competition_by_id(
         &self,
         auction_id: i64,
+        current_block: Option<i64>,
     ) -> Result<ApiResponse, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -23,7 +26,7 @@ impl Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        database::solver_competition_v2::load_by_id(&mut ex, auction_id)
+        database::solver_competition_v2::load_by_id(&mut ex, auction_id, current_block)
             .await
             .context("solver_competition_v2::load_by_id")?
             .map(try_into_dto)
@@ -33,6 +36,7 @@ impl Postgres {
     pub async fn load_competition_by_tx_hash(
         &self,
         tx_hash: B256,
+        current_block: Option<i64>,
     ) -> Result<ApiResponse, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -40,39 +44,32 @@ impl Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        database::solver_competition_v2::load_by_tx_hash(&mut ex, ByteArray(tx_hash.0))
-            .await
-            .context("solver_competition_v2::load_by_tx_hash")?
-            .map(try_into_dto)
-            .ok_or(LoadSolverCompetitionError::NotFound)?
+        database::solver_competition_v2::load_by_tx_hash(
+            &mut ex,
+            ByteArray(tx_hash.0),
+            current_block,
+        )
+        .await
+        .context("solver_competition_v2::load_by_tx_hash")?
+        .map(try_into_dto)
+        .ok_or(LoadSolverCompetitionError::NotFound)?
     }
 
-    pub async fn load_latest_competition(&self) -> Result<ApiResponse, LoadSolverCompetitionError> {
+    pub async fn load_latest_competition(
+        &self,
+        current_block: Option<i64>,
+    ) -> Result<ApiResponse, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["load_latest_solver_competition_v2"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        database::solver_competition_v2::load_latest(&mut ex)
+        database::solver_competition_v2::load_latest(&mut ex, current_block)
             .await
             .context("solver_competition_v2::load_latest")?
             .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
-    }
-
-    /// Returns the submission deadline block for the given auction, or `None`
-    /// if the auction doesn't exist in `competition_auctions`.
-    pub async fn get_auction_deadline(
-        &self,
-        auction_id: i64,
-    ) -> Result<Option<i64>, LoadSolverCompetitionError> {
-        let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        sqlx::query_scalar("SELECT deadline FROM competition_auctions WHERE id = $1")
-            .bind(auction_id)
-            .fetch_optional(&mut *ex)
-            .await
-            .map_err(|e| LoadSolverCompetitionError::Other(e.into()))
     }
 }
 
