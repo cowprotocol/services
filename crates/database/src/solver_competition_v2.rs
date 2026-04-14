@@ -111,8 +111,7 @@ pub async fn load_latest(
     let Some(auction_id) = auction_id else {
         return Ok(None);
     };
-    // No need to pass after_block here — we already filtered by deadline.
-    load_by_id(ex.deref_mut(), auction_id, None).await
+    load_by_id(ex.deref_mut(), auction_id, after_block).await
 }
 
 #[instrument(skip_all)]
