@@ -876,19 +876,29 @@ impl Competition {
         };
 
         let mut participants = Vec::new();
-        for bid in bids {
-            let bidder_solve_response: dto::SolveResponse =
-                match serde_json::from_slice(bid.data.as_slice()) {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        tracing::error!(error = %e, "failed to deserialize SolveResponse");
-                        return Err(anyhow::Error::new(e));
-                    }
-                };
+        let mut malformed_count = 0usize;
 
-            for solution in bidder_solve_response.solutions {
-                participants.push(Bid::new(solution));
+        for bid in bids {
+            match serde_json::from_slice::<dto::SolveResponse>(bid.data.as_slice()) {
+                Ok(resp) => {
+                    for solution in resp.solutions {
+                        participants.push(Bid::new(solution));
+                    }
+                }
+                Err(e) => {
+                    malformed_count += 1;
+                    tracing::warn!(
+                        error = %e,
+                        bidder = %bid.bidder,
+                        data_len = bid.data.len(),
+                        "skipping malformed bid"
+                    );
+                }
             }
+        }
+
+        if malformed_count > 0 {
+            tracing::warn!(malformed_count, "some bids were malformed and skipped");
         }
 
         Ok(participants)
