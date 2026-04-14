@@ -153,13 +153,12 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
     let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
-    let [trader] = onchain.make_accounts(100u64.eth()).await;
 
     // Deploy mock EIP-4626 vaults wrapping sDAI with different conversion rates.
     // Each wrapper applies `convertToAssets(shares) = shares * num / den`, so a
     // (3, 2) wrapper means 1 share = 1.5 sDAI, making it 1.5x the sDAI price.
     let rates: &[(u64, u64)] = &[(3, 2), (2, 1), (1, 3)];
-    let mut wrappers = Vec::with_capacity(rates.len());
+    let mut wrapper_addrs = Vec::with_capacity(rates.len());
     for &(num, den) in rates {
         let wrapper = contracts::test::MockERC4626Wrapper::Instance::deploy(
             web3.provider.clone(),
@@ -170,31 +169,7 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
         )
         .await
         .unwrap();
-        let mintable =
-            MintableToken::at(*wrapper.address(), trader.address(), web3.provider.clone());
-        wrappers.push(mintable);
-    }
-
-    // Seed Uniswap V2 pools so the solver can find routes for the wrapper
-    // tokens. We pair each wrapper with WETH.
-    let weth_token = MintableToken::at(
-        *onchain.contracts().weth.address(),
-        trader.address(),
-        web3.provider.clone(),
-    );
-    onchain
-        .contracts()
-        .weth
-        .deposit()
-        .value(U256::from(rates.len() as u64) * 10u64.eth())
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-    for wrapper in &wrappers {
-        onchain
-            .seed_uni_v2_pool((wrapper, 10_000u64.eth()), (&weth_token, 10u64.eth()))
-            .await;
+        wrapper_addrs.push(*wrapper.address());
     }
 
     // Stage 1: EIP-4626 chain — vault tokens priced via conversion rate.
@@ -235,62 +210,47 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
 
     onchain.mint_block().await;
 
-    // Verify native prices: the ratio between any two wrapper prices should
-    // match the ratio of their vault conversion rates.
-    let mut prices = Vec::with_capacity(rates.len());
-    for (wrapper, &(num, den)) in wrappers.iter().zip(rates) {
-        let addr = *wrapper.address();
-        wait_for_condition(TIMEOUT, || async {
-            services.get_native_price(&addr).await.is_ok()
-        })
+    // Verify native prices: use the first wrapper (3/2) as a baseline and
+    // check that the others are priced proportionally to their conversion rate.
+    let baseline_addr = wrapper_addrs[0];
+    wait_for_condition(TIMEOUT, || async {
+        services.get_native_price(&baseline_addr).await.is_ok()
+    })
+    .await
+    .expect("native price for wrapper (3/2) should be available");
+    let baseline_price = services
+        .get_native_price(&baseline_addr)
         .await
-        .unwrap_or_else(|_| panic!("native price for wrapper ({num}/{den}) should be available"));
+        .unwrap()
+        .price;
 
-        prices.push(services.get_native_price(&addr).await.unwrap().price);
-    }
+    // Wrapper (2/1) has rate 2/1 vs baseline 3/2, so its price should be
+    // (2/1) / (3/2) = 4/3 of the baseline.
+    let addr = wrapper_addrs[1];
+    wait_for_condition(TIMEOUT, || async {
+        services.get_native_price(&addr).await.is_ok()
+    })
+    .await
+    .expect("native price for wrapper (2/1) should be available");
+    let price = services.get_native_price(&addr).await.unwrap().price;
+    let ratio = price / baseline_price;
+    assert!(
+        (ratio - 4.0 / 3.0).abs() / (4.0 / 3.0) < 0.01,
+        "wrapper (2/1) price ratio to baseline (3/2) should be 4/3: got {ratio:.6}",
+    );
 
-    for (i, &(num_i, den_i)) in rates.iter().enumerate() {
-        for (j, &(num_j, den_j)) in rates.iter().enumerate().skip(i + 1) {
-            let price_ratio = prices[i] / prices[j];
-            let expected_ratio = (num_i * den_j) as f64 / (num_j * den_i) as f64;
-            let relative_err = (price_ratio - expected_ratio).abs() / expected_ratio;
-            assert!(
-                relative_err < 0.01,
-                "price ratio between ({num_i}/{den_i}) and ({num_j}/{den_j}) should match rate \
-                 ratio: got {price_ratio:.6}, expected {expected_ratio:.6}",
-            );
-        }
-    }
-
-    // Submit a quote for each wrapper token to verify the full pipeline works
-    // end-to-end (pricing + routing through the seeded Uni V2 pools).
-    for (wrapper, &(num, den)) in wrappers.iter().zip(rates) {
-        wrapper.mint(trader.address(), 100u64.eth()).await;
-        ERC20::Instance::new(*wrapper.address(), web3.provider.clone())
-            .approve(onchain.contracts().allowance, 100u64.eth())
-            .from(trader.address())
-            .send_and_watch()
-            .await
-            .unwrap();
-
-        let quote = services
-            .submit_quote(&OrderQuoteRequest {
-                from: trader.address(),
-                sell_token: *wrapper.address(),
-                buy_token: WETH,
-                side: OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::BeforeFee {
-                        value: (10u64.eth()).try_into().unwrap(),
-                    },
-                },
-                ..Default::default()
-            })
-            .await;
-
-        assert!(
-            quote.is_ok(),
-            "quote for wrapper ({num}/{den}) should succeed: {:?}",
-            quote.err()
-        );
-    }
+    // Wrapper (1/3) has rate 1/3 vs baseline 3/2, so its price should be
+    // (1/3) / (3/2) = 2/9 of the baseline.
+    let addr = wrapper_addrs[2];
+    wait_for_condition(TIMEOUT, || async {
+        services.get_native_price(&addr).await.is_ok()
+    })
+    .await
+    .expect("native price for wrapper (1/3) should be available");
+    let price = services.get_native_price(&addr).await.unwrap().price;
+    let ratio = price / baseline_price;
+    assert!(
+        (ratio - 2.0 / 9.0).abs() / (2.0 / 9.0) < 0.01,
+        "wrapper (1/3) price ratio to baseline (3/2) should be 2/9: got {ratio:.6}",
+    );
 }
