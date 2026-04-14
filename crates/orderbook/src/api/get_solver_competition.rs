@@ -23,11 +23,8 @@ pub async fn get_solver_competition_by_id_handler(
     if auction_id >= AuctionId::MAX.cast_unsigned() {
         return Err(LoadSolverCompetitionError::NotFound);
     }
-    // Uses database_write (not read replica) because the replication lag is
-    // not acceptable when the circuit breaker checks if a tx was out of
-    // competition.
-    state
-        .database_write
+
+    db(&state)
         .load_competition(
             Identifier::Id(auction_id.cast_signed()),
             state.hide_competition_before_block(),
@@ -40,8 +37,7 @@ pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
 ) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
-    state
-        .database_write
+    db(&state)
         .load_competition(
             Identifier::Transaction(tx_hash),
             state.hide_competition_before_block(),
@@ -54,11 +50,19 @@ pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
     SolverCompetitionStoring::load_latest_competition(
-        &state.database_write,
+        db(&state),
         state.hide_competition_before_block(),
     )
     .await
     .map(Json)
+}
+
+fn db(state: &AppState) -> &dyn SolverCompetitionStoring {
+    // While these queries actually don't write to the DB
+    // the latency incurred by the DB replication process
+    // is not acceptable in some cases (e.g. when the circuit
+    // breaker needs to decide whether an tx was out of competition).
+    &state.database_write
 }
 
 #[cfg(test)]
