@@ -6,7 +6,7 @@ use {
     contracts::{ERC20, IERC4626},
     ethrpc::AlloyProvider,
     futures::{FutureExt, future::BoxFuture},
-    num::ToPrimitive,
+    num::{BigInt, BigRational, ToPrimitive},
     number::conversions::u256_to_big_rational,
     std::{
         collections::HashSet,
@@ -16,9 +16,11 @@ use {
 };
 
 /// Estimates the native price of EIP-4626 vault tokens by:
-/// 1. Calling `asset()` and `decimals()` in parallel
-/// 2. Calling `convertToAssets(10^decimals)` to find the conversion rate
-/// 3. Delegating to an inner estimator for the underlying token's native price
+/// 1. Querying `asset()` and `decimals()` on the vault
+/// 2. Querying `convertToAssets(10^vault_decimals)` and `decimals()` on the
+///    underlying asset
+/// 3. Computing the conversion rate accounting for decimal differences
+/// 4. Delegating to an inner estimator for the underlying token's native price
 ///
 /// Tokens that fail the `asset()` call are remembered in a negative cache so
 /// subsequent requests skip the RPC entirely. Since most tokens are not
@@ -99,13 +101,12 @@ impl Eip4626 {
         let deadline = Instant::now() + timeout;
 
         let vault = IERC4626::Instance::new(token, self.provider.clone());
-        let erc20 = ERC20::Instance::new(token, self.provider.clone());
+        let vault_erc20 = ERC20::Instance::new(token, self.provider.clone());
 
-        // Parallel calls get batched into a single RPC request by alloy.
-        let asset_builder = vault.asset();
-        let decimals_builder = erc20.decimals();
+        let asset_fut = vault.asset();
+        let decimals_fut = vault_erc20.decimals();
         let (asset_result, decimals_result) = tokio::time::timeout(timeout, async {
-            tokio::join!(asset_builder.call(), decimals_builder.call())
+            tokio::join!(asset_fut.call(), decimals_fut.call())
         })
         .await
         .map_err(|_| {
@@ -117,37 +118,51 @@ impl Eip4626 {
         let asset: Address = match asset_result {
             Ok(addr) => addr,
             Err(e) => {
-                self.non_vault_tokens.lock().unwrap().insert(token);
+                {
+                    let mut cache = self.non_vault_tokens.lock().unwrap();
+                    cache.insert(token);
+                    metrics::non_vault_cache_size(cache.len());
+                }
                 return Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                     "failed to call asset() on {token}: {e}"
                 )));
             }
         };
 
-        let decimals: u8 = decimals_result.map_err(|e| {
+        let vault_decimals: u8 = decimals_result.map_err(|e| {
             PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                 "failed to call decimals() on {token}: {e}"
             ))
         })?;
 
-        let shares = U256::from(10u64).pow(U256::from(decimals));
-
+        let one_token = U256::from(10u64).pow(U256::from(vault_decimals));
+        let asset_erc20 = ERC20::Instance::new(asset, self.provider.clone());
+        let convert_fut = vault.convertToAssets(one_token);
+        let asset_decimals_fut = asset_erc20.decimals();
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let assets: U256 = tokio::time::timeout(remaining, vault.convertToAssets(shares).call())
-            .await
-            .map_err(|_| {
-                PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                    "timeout during convertToAssets() on {token}"
-                ))
-            })?
-            .map_err(|e| {
-                PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                    "failed to call convertToAssets() on {token}: {e}"
-                ))
-            })?;
+        let (convert_result, asset_decimals_result) = tokio::time::timeout(remaining, async {
+            tokio::join!(convert_fut.call(), asset_decimals_fut.call())
+        })
+        .await
+        .map_err(|_| {
+            PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                "timeout during convertToAssets()/asset decimals() on {token}"
+            ))
+        })?;
 
-        let rate = (u256_to_big_rational(&assets) / u256_to_big_rational(&shares))
-            .to_f64()
+        let assets: U256 = convert_result.map_err(|e| {
+            PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                "failed to call convertToAssets() on {token}: {e}"
+            ))
+        })?;
+
+        let asset_decimals: u8 = asset_decimals_result.map_err(|e| {
+            PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                "failed to call decimals() on underlying asset {asset}: {e}"
+            ))
+        })?;
+
+        let rate = conversion_rate(assets, asset_decimals)
             .context("conversion rate is not representable as f64")
             .map_err(PriceEstimationError::EstimatorInternal)?;
 
@@ -165,6 +180,41 @@ impl NativePriceEstimating for Eip4626 {
     }
 }
 
+/// Computes the full-asset-tokens per full-vault-token conversion rate.
+///
+/// `assets` is the return value of `convertToAssets(10^vault_decimals)` — i.e.
+/// asset-atomic-units for exactly 1 full vault token. Dividing by
+/// `10^asset_decimals` converts to full asset tokens.
+///
+/// Returns `None` when the result is not representable as `f64`.
+fn conversion_rate(assets: U256, asset_decimals: u8) -> Option<f64> {
+    let denominator = BigRational::from_integer(BigInt::from(10u64).pow(asset_decimals as u32));
+    (u256_to_big_rational(&assets) / denominator).to_f64()
+}
+
+mod metrics {
+    use {observe::metrics, prometheus::IntGauge};
+
+    #[derive(prometheus_metric_storage::MetricStorage)]
+    struct Metrics {
+        /// Number of tokens in the EIP-4626 negative cache (known non-vault
+        /// tokens).
+        eip4626_non_vault_cache_size: IntGauge,
+    }
+
+    impl Metrics {
+        fn get() -> &'static Self {
+            Metrics::instance(metrics::get_storage_registry()).unwrap()
+        }
+    }
+
+    pub(super) fn non_vault_cache_size(size: usize) {
+        Metrics::get()
+            .eip4626_non_vault_cache_size
+            .set(i64::try_from(size).unwrap_or(i64::MAX));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -173,15 +223,30 @@ mod tests {
     };
 
     #[test]
-    fn rate_math() {
-        // 6-decimal vault where 1 share = 1.5 underlying tokens
-        let decimals = 6u8;
-        let shares = U256::from(10u64).pow(U256::from(decimals));
-        let assets = U256::from(1_500_000u64); // 1.5 * 10^6
-        let rate = (u256_to_big_rational(&assets) / u256_to_big_rational(&shares))
-            .to_f64()
-            .unwrap();
-        assert!((rate - 1.5).abs() < 1e-9);
+    fn rate_math_same_decimals() {
+        // 18-decimal vault wrapping 18-decimal asset, 1 share = 1.5 asset tokens.
+        // convertToAssets(10^18) = 1.5 * 10^18 asset-atomic-units
+        let assets = U256::from(15u64) * U256::from(10u64).pow(U256::from(17u64));
+        let rate = conversion_rate(assets, 18).unwrap();
+        assert!((rate - 1.5).abs() < 1e-9, "rate={rate}");
+    }
+
+    #[test]
+    fn rate_math_vault_18_asset_6() {
+        // 18-decimal vault wrapping 6-decimal USDC, 1 share = 1.5 USDC.
+        // convertToAssets(10^18) = 1_500_000 asset-atomic-units (1.5 * 10^6)
+        let assets = U256::from(1_500_000u64);
+        let rate = conversion_rate(assets, 6).unwrap();
+        assert!((rate - 1.5).abs() < 1e-9, "rate={rate}");
+    }
+
+    #[test]
+    fn rate_math_vault_6_asset_18() {
+        // 6-decimal vault wrapping 18-decimal asset, 1 share = 2 asset tokens.
+        // convertToAssets(10^6) = 2 * 10^18 asset-atomic-units
+        let assets = U256::from(2u64) * U256::from(10u64).pow(U256::from(18u64));
+        let rate = conversion_rate(assets, 18).unwrap();
+        assert!((rate - 2.0).abs() < 1e-9, "rate={rate}");
     }
 
     #[tokio::test]
