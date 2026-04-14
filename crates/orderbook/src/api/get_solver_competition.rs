@@ -1,7 +1,7 @@
 use {
     crate::{
         api::AppState,
-        solver_competition::{Identifier, SolverCompetitionStoring},
+        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     alloy::primitives::B256,
     axum::{
@@ -24,28 +24,55 @@ pub async fn get_solver_competition_by_id_handler(
         return crate::solver_competition::LoadSolverCompetitionError::NotFound.into_response();
     }
 
-    db(&state)
+    match db(&state)
         .load_competition(Identifier::Id(auction_id.cast_signed()))
         .await
-        .map(Json)
-        .into_response()
+    {
+        Ok(c) => filter_by_deadline(&state, c)
+            .await
+            .map(Json)
+            .into_response(),
+        Err(e) => e.into_response(),
+    }
 }
 
 pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
 ) -> Response {
-    db(&state)
+    match db(&state)
         .load_competition(Identifier::Transaction(tx_hash))
         .await
-        .map(Json)
-        .into_response()
+    {
+        Ok(c) => filter_by_deadline(&state, c)
+            .await
+            .map(Json)
+            .into_response(),
+        Err(e) => e.into_response(),
+    }
 }
 
 pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SolverCompetitionAPI>, crate::solver_competition::LoadSolverCompetitionError> {
-    db(&state).load_latest_competition().await.map(Json)
+    let competition = db(&state).load_latest_competition().await?;
+    filter_by_deadline(&state, competition).await.map(Json)
+}
+
+async fn filter_by_deadline(
+    state: &AppState,
+    competition: SolverCompetitionAPI,
+) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError> {
+    if state.hide_competition_before_deadline
+        && let Some(deadline) = state
+            .database_write
+            .get_auction_deadline(competition.auction_id)
+            .await?
+        && !state.is_competition_visible(deadline)
+    {
+        return Err(LoadSolverCompetitionError::NotFound);
+    }
+    Ok(competition)
 }
 
 fn db(state: &AppState) -> &dyn SolverCompetitionStoring {

@@ -14,6 +14,7 @@ use {
         response::{IntoResponse, Json, Response},
         routing::{delete, get, post, put},
     },
+    ethrpc::block_stream::CurrentBlockWatcher,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     serde::{Deserialize, Serialize},
@@ -69,6 +70,19 @@ pub struct AppState {
     pub app_data: Arc<app_data::Registry>,
     pub native_price_estimator: Arc<dyn NativePriceEstimating>,
     pub quote_timeout: Duration,
+    pub current_block_stream: CurrentBlockWatcher,
+    pub hide_competition_before_deadline: bool,
+}
+
+impl AppState {
+    /// Returns `true` if competition data for an auction with the given
+    /// deadline block should be visible to API consumers.
+    pub(crate) fn is_competition_visible(&self, deadline_block: i64) -> bool {
+        if !self.hide_competition_before_deadline {
+            return true;
+        }
+        self.current_block_stream.borrow().number.cast_signed() > deadline_block
+    }
 }
 
 async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Response {
@@ -138,6 +152,7 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
+#[expect(clippy::too_many_arguments)]
 pub fn handle_all_routes(
     database_write: Postgres,
     database_read: Postgres,
@@ -146,6 +161,8 @@ pub fn handle_all_routes(
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
+    current_block_stream: CurrentBlockWatcher,
+    hide_competition_before_deadline: bool,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -157,6 +174,8 @@ pub fn handle_all_routes(
         app_data,
         native_price_estimator,
         quote_timeout,
+        current_block_stream,
+        hide_competition_before_deadline,
     });
 
     let routes = [

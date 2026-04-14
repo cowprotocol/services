@@ -60,6 +60,20 @@ impl Postgres {
             .map(try_into_dto)
             .ok_or(LoadSolverCompetitionError::NotFound)?
     }
+
+    /// Returns the submission deadline block for the given auction, or `None`
+    /// if the auction doesn't exist in `competition_auctions`.
+    pub async fn get_auction_deadline(
+        &self,
+        auction_id: i64,
+    ) -> Result<Option<i64>, LoadSolverCompetitionError> {
+        let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
+        sqlx::query_scalar("SELECT deadline FROM competition_auctions WHERE id = $1")
+            .bind(auction_id)
+            .fetch_optional(&mut *ex)
+            .await
+            .map_err(|e| LoadSolverCompetitionError::Other(e.into()))
+    }
 }
 
 fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionError> {

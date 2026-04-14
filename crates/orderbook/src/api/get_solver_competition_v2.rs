@@ -24,6 +24,7 @@ pub async fn get_solver_competition_by_id_handler(
     db(&state)
         .load_competition_by_id(auction_id.cast_signed())
         .await
+        .and_then(|r| filter_by_deadline(&state, r))
         .map(Json)
         .into_response()
 }
@@ -35,6 +36,7 @@ pub async fn get_solver_competition_by_hash_handler(
     db(&state)
         .load_competition_by_tx_hash(tx_hash)
         .await
+        .and_then(|r| filter_by_deadline(&state, r))
         .map(Json)
         .into_response()
 }
@@ -42,7 +44,18 @@ pub async fn get_solver_competition_by_hash_handler(
 pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CompetitionResponse>, LoadSolverCompetitionError> {
-    db(&state).load_latest_competition().await.map(Json)
+    let response = db(&state).load_latest_competition().await?;
+    filter_by_deadline(&state, response).map(Json)
+}
+
+fn filter_by_deadline(
+    state: &AppState,
+    response: CompetitionResponse,
+) -> Result<CompetitionResponse, LoadSolverCompetitionError> {
+    if !state.is_competition_visible(response.auction_deadline_block) {
+        return Err(LoadSolverCompetitionError::NotFound);
+    }
+    Ok(response)
 }
 
 fn db(state: &AppState) -> &Postgres {

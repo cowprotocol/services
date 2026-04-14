@@ -16,6 +16,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
+    reqwest::StatusCode,
     shared::web3::Web3,
     solvers_dto::solution::Solution,
     std::{collections::HashMap, str::FromStr},
@@ -91,6 +92,7 @@ async fn solver_competition(web3: Web3) {
 
     let services = Services::new(&onchain).await;
 
+    let base_config = Configuration::test_no_drivers();
     services
         .start_autopilot(
             None,
@@ -103,12 +105,17 @@ async fn solver_competition(web3: Web3) {
                     ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver"),
                     ExternalSolver::new("solver2", "http://localhost:11088/solver2"),
                 ]),
-                ..Configuration::test_no_drivers()
+                run_loop: RunLoopConfig {
+                    submission_deadline: 3,
+                    ..base_config.run_loop
+                },
+                ..base_config
             },
         )
         .await;
     services
         .start_api(configs::orderbook::Configuration {
+            hide_competition_before_deadline: true,
             order_quoting: OrderQuoting::test_with_drivers(vec![
                 ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver"),
                 ExternalSolver::new("solver2", "http://localhost:11088/solver2"),
@@ -146,6 +153,16 @@ async fn solver_competition(web3: Web3) {
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
+    // Competition data is saved before the settlement tx, so it is already in
+    // the DB. The deadline hasn't passed yet → 404.
+    assert_eq!(
+        services.get_latest_solver_competition().await.unwrap_err(),
+        StatusCode::NOT_FOUND,
+    );
+
+    // The indexed_trades poll mints a block on every iteration, which will
+    // advance past the 3-block deadline while also waiting for the event
+    // indexer to pick up the settlement.
     let indexed_trades = || async {
         onchain.mint_block().await;
         match services.get_trades(&uid).await.unwrap().first() {
