@@ -790,13 +790,32 @@ impl Competition {
             // up, the pool's acquire() blocks until the slot is free,  serializing
             // settlements.
             let this = Arc::clone(&self);
+
+            // Acquire a submission slot before spawning a submission task.
+            // This blocks until a slot can be acquired which applies backpressure
+            // and allows the settle queue to grow correctly in case the driver
+            // can't submit solutions as fast as the solver is winning.
+            let permit = match self.submitter_pool.acquire().await {
+                Some(guard) => guard,
+                None => {
+                    if let Err(err) = request.response_sender.send(Err(Error::SubmissionError)) {
+                        tracing::warn!(?err, "failed to report submission error");
+                    }
+                    return;
+                }
+            };
+
             tokio::spawn(async move {
-                this.handle_settle_request(request).await;
+                this.handle_settle_request(request, permit).await;
             });
         }
     }
 
-    async fn handle_settle_request(self: &Arc<Self>, request: SettleRequest) {
+    async fn handle_settle_request(
+        self: &Arc<Self>,
+        request: SettleRequest,
+        permit: SubmitterGuard,
+    ) {
         let SettleRequest {
             auction_id,
             solution_id,
@@ -816,8 +835,12 @@ impl Competition {
             }
 
             observe::settling();
-            let settle_fut =
-                Box::pin(self.process_settle_request(auction_id, solution_id, submission_deadline));
+            let settle_fut = Box::pin(self.process_settle_request(
+                auction_id,
+                solution_id,
+                submission_deadline,
+                permit,
+            ));
             let closed_fut = Box::pin(response_sender.closed());
             let result = match futures::future::select(closed_fut, settle_fut).await {
                 // Cancel the settlement task if the sender is closed (client likely
@@ -848,6 +871,7 @@ impl Competition {
         auction_id: auction::Id,
         solution_id: u64,
         submission_deadline: BlockNo,
+        permit: SubmitterGuard,
     ) -> Result<Settled, Error> {
         let settlement = {
             let mut lock = self.settlements.lock().unwrap();
@@ -877,19 +901,13 @@ impl Competition {
             });
         }
 
-        // Acquire a submission slot. The pool prefers the direct solver EOA
-        // (no forwarding overhead); falls back to a delegated EIP-7702
-        // submission account when the solver EOA is busy.
-        let guard = self
-            .submitter_pool
-            .acquire()
-            .await
-            .ok_or(Error::SubmissionError)?;
-        let mode = guard.submission_mode();
-
         let executed = self
             .mempools
-            .execute(&settlement, submission_deadline, &mode)
+            .execute(
+                &settlement,
+                submission_deadline,
+                &permit.submission_mode(),
+            )
             .await;
 
         notify::executed(
