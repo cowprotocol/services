@@ -903,11 +903,7 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(
-                &settlement,
-                submission_deadline,
-                &permit.submission_mode(),
-            )
+            .execute(&settlement, submission_deadline, &permit.submission_mode())
             .await;
 
         notify::executed(
