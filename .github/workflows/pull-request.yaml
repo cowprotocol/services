@@ -301,3 +301,33 @@ jobs:
             fi
             attempt=$((attempt+1))
           done
+
+  generated-contracts:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: 1.39.0
+      - uses: tombi-toml/setup-tombi@cebfd308ba02edadfcee148b7473536990950c92 # v1.0.8
+      - run: just generate-contracts
+      - name: Verify no changes to generated contracts
+        run: |
+          if git diff --exit-code; then
+            echo "✓ Generated contracts are up-to-date"
+          else
+            echo "✗ Generated contracts are out-of-date or were modified by hand. Please run 'just generate-contracts' and commit the changes."
+            # run the command again to show exactly what the changes would be
+            git diff --exit-code
+            exit 1
+          fi
