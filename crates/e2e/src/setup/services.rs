@@ -504,7 +504,7 @@ impl<'a> Services<'a> {
         let response = self
             .http
             .get(format!(
-                "{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/internal/{auction_id}"
+                "{API_HOST}/api/internal/v2/solver_competition/{auction_id}"
             ))
             .send()
             .await
