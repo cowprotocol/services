@@ -100,7 +100,7 @@ pub async fn load_latest(
     const FETCH_AUCTION_ID: &str = r#"
         SELECT id
         FROM competition_auctions
-        WHERE ($1::bigint IS NULL OR deadline < $1)
+        WHERE ($1::bigint IS NULL OR deadline <= $1)
         ORDER BY id DESC
         LIMIT 1;
     "#;
