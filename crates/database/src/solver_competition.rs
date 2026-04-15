@@ -80,7 +80,7 @@ FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 LEFT JOIN competition_auctions ca ON sc.id = ca.id
-WHERE ($2::bigint IS NULL OR ca.deadline < $2)
+WHERE ($2::bigint IS NULL OR ca.deadline <= $2)
 GROUP BY sc.id
 ORDER BY sc.id DESC
 LIMIT $1
