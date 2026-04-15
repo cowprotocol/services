@@ -70,6 +70,10 @@ struct SubmitterPool {
     direct_slot: Arc<tokio::sync::Semaphore>,
     /// EIP-7702 submission accounts. `None` in legacy single-EOA mode.
     delegated: Option<DelegatedSlots>,
+    /// Limits total in-flight settle requests (including those waiting for a
+    /// pool slot). This replaces the old settle-queue-based admission check
+    /// and allows buffering requests beyond the number of physical slots.
+    admission: Arc<tokio::sync::Semaphore>,
     solver_address: eth::Address,
 }
 
@@ -80,7 +84,12 @@ struct DelegatedSlots {
 }
 
 impl SubmitterPool {
-    fn new(solver_address: eth::Address, submission_accounts: Vec<Account>) -> Self {
+    fn new(
+        solver_address: eth::Address,
+        submission_accounts: Vec<Account>,
+        settle_queue_size: usize,
+    ) -> Self {
+        let num_delegated = submission_accounts.len();
         let delegated = if submission_accounts.is_empty() {
             None
         } else {
@@ -94,9 +103,12 @@ impl SubmitterPool {
                 acquire: tokio::sync::Mutex::new(rx),
             })
         };
+        let total_slots = 1 + num_delegated;
+        let admission_capacity = total_slots + settle_queue_size;
         Self {
             direct_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             delegated,
+            admission: Arc::new(tokio::sync::Semaphore::new(admission_capacity)),
             solver_address,
         }
     }
@@ -152,21 +164,10 @@ impl SubmitterPool {
         })
     }
 
-    fn total_slots(&self) -> usize {
-        // 1 slot for solver EOA + number of delegated EIP7702 accounts (if any)
-        1 + self
-            .delegated
-            .as_ref()
-            .map_or(0, |d| d.release.max_capacity())
-    }
-
-    fn has_capacity(&self) -> bool {
-        if self.direct_slot.available_permits() > 0 {
-            return true;
-        }
-        self.delegated
-            .as_ref()
-            .is_some_and(|d| d.release.capacity() < d.release.max_capacity())
+    /// Try to reserve an admission permit without blocking. Returns `None` if
+    /// the maximum number of in-flight settle requests has been reached.
+    fn try_admit(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        Arc::clone(&self.admission).try_acquire_owned().ok()
     }
 }
 
@@ -253,8 +254,10 @@ impl Competition {
                 "EIP-7702 parallel submission enabled"
             );
         }
-        let submitter_pool = SubmitterPool::new(solver.address(), submission_accounts);
-        let queue_size = submitter_pool.total_slots().max(solver.settle_queue_size());
+        let settle_queue_size = solver.settle_queue_size();
+        let submitter_pool =
+            SubmitterPool::new(solver.address(), submission_accounts, settle_queue_size);
+        let queue_size = submitter_pool.admission.available_permits();
         let (settle_sender, settle_receiver) = mpsc::channel(queue_size);
 
         let competition = Arc::new(Self {
@@ -749,6 +752,11 @@ impl Competition {
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
+        let admission_permit = self.submitter_pool.try_admit().ok_or_else(|| {
+            tracing::warn!("no idle submission slots; settle request rejected");
+            Error::TooManyPendingSettlements
+        })?;
+
         let (response_sender, response_receiver) = oneshot::channel();
 
         let request = SettleRequest {
@@ -757,6 +765,7 @@ impl Competition {
             submission_deadline,
             response_sender,
             tracing_span: tracing::Span::current(),
+            _admission_permit: admission_permit,
         };
 
         self.settle_queue.try_send(request).map_err(|err| {
@@ -771,7 +780,7 @@ impl Competition {
     }
 
     pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
-        if !self.submitter_pool.has_capacity() {
+        if self.submitter_pool.admission.available_permits() == 0 {
             tracing::warn!("no idle submission slots; auction is rejected");
             Err(Error::TooManyPendingSettlements)
         } else {
@@ -801,6 +810,7 @@ impl Competition {
             submission_deadline,
             mut response_sender,
             tracing_span,
+            _admission_permit,
         } = request;
         async {
             if self.eth.current_block().borrow().number >= submission_deadline.0 {
@@ -995,6 +1005,9 @@ struct SettleRequest {
     submission_deadline: BlockNo,
     response_sender: oneshot::Sender<Result<Settled, Error>>,
     tracing_span: tracing::Span,
+    /// Held for the lifetime of the request; released on drop so the pool
+    /// knows a slot has freed up.
+    _admission_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 /// Solution information sent to the protocol by the driver before the solution
