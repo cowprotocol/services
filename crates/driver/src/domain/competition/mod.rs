@@ -772,7 +772,9 @@ impl Competition {
 
     pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
         if !self.submitter_pool.has_capacity() && self.settle_queue.capacity() == 0 {
-            tracing::warn!("no idle submission slots; auction is rejected");
+            tracing::warn!(
+                "backlog of still to be submitted solutions too big; auction is rejected"
+            );
             Err(Error::TooManyPendingSettlements)
         } else {
             Ok(())
