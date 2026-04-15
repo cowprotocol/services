@@ -612,7 +612,7 @@ impl RunLoop {
         });
 
         // Shuffle so that sorting randomly splits ties.
-        bids.shuffle(&mut rand::thread_rng());
+        bids.shuffle(&mut rand::rng());
         bids
     }
 

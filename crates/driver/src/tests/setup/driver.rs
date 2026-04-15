@@ -70,7 +70,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     // The orders are shuffled before being sent to the driver, to ensure that the
     // driver sorts them correctly before forwarding them to the solver.
     let mut quotes = test.quoted_orders.clone();
-    quotes.shuffle(&mut rand::thread_rng());
+    quotes.shuffle(&mut rand::rng());
     for quote in quotes.iter() {
         let mut order = json!({
             "uid": quote.order_uid(&test.blockchain),
