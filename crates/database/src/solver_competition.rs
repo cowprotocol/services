@@ -118,7 +118,7 @@ FROM solver_competitions sc
 JOIN settlements s ON sc.id = s.auction_id
 LEFT JOIN competition_auctions ca ON sc.id = ca.id
 WHERE sc.id = (SELECT id FROM competition) AND s.solution_uid IS NOT NULL
-    AND ($2::bigint IS NULL OR ca.deadline < $2)
+    AND ($2::bigint IS NULL OR ca.deadline <= $2)
 GROUP BY sc.id
     ;"#;
     sqlx::query_as(QUERY)
