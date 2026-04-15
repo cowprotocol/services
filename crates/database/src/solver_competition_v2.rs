@@ -123,7 +123,7 @@ pub async fn load_by_id(
     const FETCH_AUCTION: &str = r#"
         SELECT id, order_uids, price_tokens, price_values, block, deadline
         FROM competition_auctions
-        WHERE id = $1 AND ($2::bigint IS NULL OR deadline < $2);
+        WHERE id = $1 AND ($2::bigint IS NULL OR deadline <= $2);
     "#;
     let auction: Option<Auction> = sqlx::query_as(FETCH_AUCTION)
         .bind(id)
