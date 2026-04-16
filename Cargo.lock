@@ -4129,6 +4129,7 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types",
+ "chain",
  "derive_more 1.0.0",
  "num",
  "number",

@@ -114,7 +114,7 @@ impl Settlement {
                 solution.approvals(eth, Internalization::Enable).await?,
                 Internalization::Enable,
                 solver_native_token,
-                eth.chain().id(),
+                eth.chain(),
             )?,
             uninternalized: encoding::tx(
                 auction,
@@ -123,7 +123,7 @@ impl Settlement {
                 solution.approvals(eth, Internalization::Disable).await?,
                 Internalization::Disable,
                 solver_native_token,
-                eth.chain().id(),
+                eth.chain(),
             )?,
             may_revert: solution.revertable(),
         };
