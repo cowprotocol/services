@@ -737,7 +737,7 @@ impl Competition {
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
         let admission_permit = self.submitter_pool.try_admit().ok_or_else(|| {
-            tracing::warn!("no idle submission slots; settle request rejected");
+            tracing::warn!("too many pending settlements; settle request rejected");
             Error::TooManyPendingSettlements
         })?;
 
