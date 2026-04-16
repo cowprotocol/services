@@ -313,7 +313,7 @@ pub fn handle_all_routes(
         ),
         (
             "GET",
-            "/api/internal/v2/solver_competition/{auction_id}",
+            "/restricted/api/internal/v2/solver_competition/{auction_id}",
             get(get_solver_competition_v2::get_solver_competition_by_id_unfiltered_handler),
         ),
         (
