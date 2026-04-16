@@ -347,7 +347,9 @@ async fn http_validation(web3: Web3) {
 
     // Malformed UID → 400
     let response = client
-        .get(format!("{API_HOST}/api/internal/v1/debug/simulation/bad_uid"))
+        .get(format!(
+            "{API_HOST}/api/internal/v1/debug/simulation/bad_uid"
+        ))
         .send()
         .await
         .unwrap();
