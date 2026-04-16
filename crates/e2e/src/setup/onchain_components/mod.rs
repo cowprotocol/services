@@ -12,8 +12,7 @@ use {
     },
     app_data::Hook,
     contracts::{
-        ERC20Mintable,
-        GPv2AllowListAuthentication::GPv2AllowListAuthentication,
+        ERC20Mintable, GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
     },
     ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
@@ -100,16 +99,6 @@ pub struct MintableToken {
 }
 
 impl MintableToken {
-    /// Wraps an existing on-chain contract whose `mint(address,uint256)`
-    /// selector matches `ERC20Mintable`. Useful for test contracts like
-    /// `MockERC4626Wrapper` that are ABI-compatible.
-    pub fn at(address: Address, minter: Address, provider: ethrpc::AlloyProvider) -> Self {
-        Self {
-            contract: ERC20Mintable::Instance::new(address, provider),
-            minter,
-        }
-    }
-
     pub async fn mint(&self, to: Address, amount: U256) {
         self.contract
             .mint(to, amount)

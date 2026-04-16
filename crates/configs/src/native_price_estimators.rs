@@ -22,15 +22,17 @@ impl<'de> Deserialize<'de> for NativePriceEstimators {
                 &"expected native price estimator stages to be configured",
             ));
         }
-        for (n, stage) in estimators.iter().enumerate() {
-            if stage.is_empty() {
-                return Err(serde::de::Error::invalid_length(
-                    0,
-                    &format!("stage {} is empty, all stages must not be empty", n).as_str(),
-                ));
-            }
+        match estimators
+            .iter()
+            .enumerate()
+            .find_map(|(n, stage)| stage.is_empty().then_some(n))
+        {
+            Some(n) => Err(serde::de::Error::invalid_length(
+                0,
+                &format!("stage {} is empty, all stages must not be empty", n).as_str(),
+            )),
+            None => Ok(Self(estimators)),
         }
-        Ok(Self(estimators))
     }
 }
 
@@ -114,75 +116,5 @@ impl Display for NativePriceEstimator {
             NativePriceEstimator::OneInchSpotPriceApi => write!(f, "OneInchSpotPriceApi"),
             NativePriceEstimator::CoinGecko => write!(f, "CoinGecko"),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Debug, Deserialize)]
-    struct Helper {
-        estimators: NativePriceEstimators,
-    }
-
-    #[test]
-    fn toml_deserialize_estimators_empty() {
-        #[derive(Deserialize)]
-        struct H {
-            _estimators: NativePriceEstimators,
-        }
-
-        assert!(toml::from_str::<H>("estimators = []").is_err());
-        assert!(toml::from_str::<H>("estimators = [[]]").is_err());
-    }
-
-    #[test]
-    fn toml_deserialize_estimators_single_stage() {
-        let toml = r#"
-        estimators = [[{type = "CoinGecko"}, {type = "OneInchSpotPriceApi"}]]
-        "#;
-
-        let parsed: Helper = toml::from_str(toml).unwrap();
-        assert_eq!(
-            parsed.estimators.as_slice(),
-            vec![vec![
-                NativePriceEstimator::CoinGecko,
-                NativePriceEstimator::OneInchSpotPriceApi,
-            ]]
-        );
-    }
-
-    #[test]
-    fn toml_deserialize_estimators_multiple_stages() {
-        let toml = r#"
-        estimators = [
-            [{type = "CoinGecko"}, {type = "Driver", name = "solver1", url = "http://localhost:8080"}],
-            [{type = "Forwarder", url = "http://localhost:12088"}],
-        ]
-        "#;
-
-        let parsed: Helper = toml::from_str(toml).unwrap();
-        assert_eq!(
-            parsed.estimators.as_slice(),
-            vec![
-                vec![
-                    NativePriceEstimator::CoinGecko,
-                    NativePriceEstimator::Driver(ExternalSolver {
-                        name: "solver1".to_string(),
-                        url: "http://localhost:8080".parse().unwrap(),
-                    }),
-                ],
-                vec![NativePriceEstimator::Forwarder {
-                    url: "http://localhost:12088".parse().unwrap(),
-                }],
-            ]
-        );
-    }
-
-    #[test]
-    fn toml_deserialize_estimators_default() {
-        let estimators = NativePriceEstimators::default();
-        assert!(estimators.as_slice().is_empty());
     }
 }

@@ -267,3 +267,78 @@ pub mod mocks {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toml_deserialize_estimators_empty() {
+        #[derive(Deserialize)]
+        struct Helper {
+            _estimators: NativePriceEstimators,
+        }
+
+        assert!(toml::from_str::<Helper>("estimators = []").is_err());
+        assert!(toml::from_str::<Helper>("estimators = [[]]").is_err());
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_single_stage() {
+        let toml = r#"
+        estimators = [[{type = "CoinGecko"}, {type = "OneInchSpotPriceApi"}]]
+        "#;
+
+        #[derive(Deserialize)]
+        struct Helper {
+            estimators: NativePriceEstimators,
+        }
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(
+            parsed.estimators.as_slice(),
+            vec![vec![
+                NativePriceEstimator::CoinGecko,
+                NativePriceEstimator::OneInchSpotPriceApi,
+            ]]
+        );
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_multiple_stages() {
+        let toml = r#"
+        estimators = [
+            [{type = "CoinGecko"}, {type = "Driver", name = "solver1", url = "http://localhost:8080"}],
+            [{type = "Forwarder", url = "http://localhost:12088"}],
+        ]
+        "#;
+
+        #[derive(Deserialize)]
+        struct Helper {
+            estimators: NativePriceEstimators,
+        }
+
+        let parsed: Helper = toml::from_str(toml).unwrap();
+        assert_eq!(
+            parsed.estimators.as_slice(),
+            vec![
+                vec![
+                    NativePriceEstimator::CoinGecko,
+                    NativePriceEstimator::Driver(ExternalSolver {
+                        name: "solver1".to_string(),
+                        url: "http://localhost:8080".parse().unwrap(),
+                    }),
+                ],
+                vec![NativePriceEstimator::Forwarder {
+                    url: "http://localhost:12088".parse().unwrap(),
+                }],
+            ]
+        );
+    }
+
+    #[test]
+    fn toml_deserialize_estimators_default() {
+        let estimators = NativePriceEstimators::default();
+        assert!(estimators.as_slice().is_empty());
+    }
+}
