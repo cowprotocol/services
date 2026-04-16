@@ -183,10 +183,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    async fn create_native_estimator<'b>(
+    async fn create_native_estimator(
         &mut self,
         source: &NativePriceEstimatorSource,
-        rest: &mut impl Iterator<Item = &'b NativePriceEstimatorSource>,
         weth: &WETH9::Instance,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
@@ -280,21 +279,6 @@ impl<'a> PriceEstimatorFactory<'a> {
 
                 Ok((name, coin_gecko))
             }
-            NativePriceEstimatorSource::Eip4626 { depth } => {
-                let next = rest
-                    .next()
-                    .context("Eip4626 must be followed by another estimator in the same stage")?;
-                let (mut name, mut current) =
-                    Box::pin(self.create_native_estimator(next, rest, weth)).await?;
-                for _ in 0..depth.get() {
-                    name = format!("Eip4626|{name}");
-                    current = Arc::new(InstrumentedPriceEstimator::new(
-                        native::Eip4626::new(current, self.network.web3.provider.clone()),
-                        name.clone(),
-                    ));
-                }
-                Ok((name, current))
-            }
         }
     }
 
@@ -384,7 +368,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
-    /// Creates a native price estimator from the given sources.
+    /// Creates a native price estimator from the given sources. When `eip4626`
+    /// is true the resulting estimator is wrapped in an [`native::Eip4626`]
+    /// layer that transparently prices vault tokens.
     pub async fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
@@ -394,12 +380,8 @@ impl<'a> PriceEstimatorFactory<'a> {
         let mut estimators = Vec::with_capacity(native.len());
         for stage in native.iter() {
             let mut stages = Vec::with_capacity(stage.len());
-            let mut iter = stage.iter();
-            while let Some(source) = iter.next() {
-                stages.push(
-                    self.create_native_estimator(source, &mut iter, weth)
-                        .await?,
-                );
+            for source in stage {
+                stages.push(self.create_native_estimator(source, weth).await?);
             }
             estimators.push(stages);
         }
@@ -413,17 +395,29 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     /// Creates a [`CachingNativePriceEstimator`] that wraps a native price
     /// estimator with an in-memory cache.
+    ///
+    /// If `eip4626` is true, it will wrap the estimator with EIP-4626
+    /// unwrapping.
     pub async fn caching_native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: &WETH9::Instance,
         cache: native_price_cache::Cache,
+        eip4626: bool,
     ) -> native_price_cache::CachingNativePriceEstimator {
         let inner = self
             .native_price_estimator(native, results_required, weth)
             .await
             .expect("failed to build native price estimator");
+        let inner = if eip4626 {
+            Box::new(InstrumentedPriceEstimator::new(
+                native::Eip4626::new(inner, self.network.web3.provider.clone()),
+                "Eip4626".to_string(),
+            ))
+        } else {
+            inner
+        };
         self.caching_native_price_estimator_from_inner(inner, cache)
             .await
     }

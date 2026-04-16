@@ -22,6 +22,7 @@ clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
+dashmap = { workspace = true }
 derive_more = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }

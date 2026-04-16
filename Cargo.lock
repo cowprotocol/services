@@ -6371,6 +6371,7 @@ dependencies = [
  "configs",
  "const-hex",
  "contracts",
+ "dashmap",
  "derive_more 1.0.0",
  "ethrpc",
  "futures",

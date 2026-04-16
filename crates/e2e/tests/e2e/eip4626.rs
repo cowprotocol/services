@@ -72,24 +72,14 @@ async fn eip4626_native_price_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Stage 1: EIP-4626 chain — vault tokens priced via conversion rate.
-    // Stage 2: driver fallback for non-vault tokens. The autopilot prices
-    //          WETH at startup and panics if it can't, so a plain driver
-    //          stage is required even though we're only testing vaults.
-    // results_required=1 so stage 2 only runs when stage 1 fails.
     let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
-            estimators: NativePriceEstimators::new(vec![
-                vec![
-                    NativePriceEstimator::eip4626(1.try_into().unwrap()),
-                    NativePriceEstimator::driver("test_quoter".to_string(), driver_url.clone()),
-                ],
-                vec![NativePriceEstimator::driver(
-                    "test_quoter".to_string(),
-                    driver_url,
-                )],
-            ]),
+            eip4626: true,
+            estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
+                "test_quoter".to_string(),
+                driver_url,
+            )]]),
             shared: configs::native_price::NativePriceConfig {
                 results_required: 1.try_into().unwrap(),
                 ..Default::default()
@@ -145,10 +135,10 @@ async fn forked_node_mainnet_eip4626_recursive_native_price() {
     .await;
 }
 
-/// Tests pricing and quoting of recursive EIP-4626 vaults with non-trivial
-/// conversion rates. Deploys mock wrapper vaults on top of sDAI (which itself
-/// wraps DAI) with different rates, seeds Uniswap V2 pools so the solver can
-/// find routes, and verifies both native prices and full quotes.
+/// Tests pricing of mock EIP-4626 vaults with non-trivial conversion rates.
+/// Deploys wrapper vaults on top of sDAI (which itself wraps DAI) with
+/// different rates and verifies native prices are proportional to their
+/// conversion rates.
 async fn eip4626_recursive_native_price_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
 
@@ -172,24 +162,14 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
         wrapper_addrs.push(*wrapper.address());
     }
 
-    // Stage 1: EIP-4626 chain — vault tokens priced via conversion rate.
-    // Stage 2: driver fallback for non-vault tokens. The autopilot prices
-    //          WETH at startup and panics if it can't, so a plain driver
-    //          stage is required even though we're only testing vaults.
-    // results_required=1 so stage 2 only runs when stage 1 fails.
     let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
     let autopilot_config = Configuration {
         native_price_estimation: NativePriceConfig {
-            estimators: NativePriceEstimators::new(vec![
-                vec![
-                    NativePriceEstimator::eip4626(2.try_into().unwrap()),
-                    NativePriceEstimator::driver("test_quoter".to_string(), driver_url.clone()),
-                ],
-                vec![NativePriceEstimator::driver(
-                    "test_quoter".to_string(),
-                    driver_url,
-                )],
-            ]),
+            eip4626: true,
+            estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
+                "test_quoter".to_string(),
+                driver_url,
+            )]]),
             shared: configs::native_price::NativePriceConfig {
                 results_required: 1.try_into().unwrap(),
                 ..Default::default()
