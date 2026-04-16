@@ -23,19 +23,16 @@ use {
     anyhow::Context as _,
     axum::{body::Body, http::Request},
     eth_domain_types as eth,
-    futures::{FutureExt, StreamExt, future::Either, stream::FuturesUnordered},
+    futures::{FutureExt, StreamExt, stream::FuturesUnordered},
     itertools::Itertools,
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
-        time::{Duration, Instant},
+        time::Instant,
     },
-    tokio::{
-        sync::{mpsc, oneshot},
-        task,
-    },
+    tokio::{sync::mpsc, task},
     tracing::{Instrument, instrument},
 };
 
@@ -104,7 +101,11 @@ impl SubmitterPool {
             })
         };
         let total_slots = 1 + num_delegated;
-        let admission_capacity = total_slots + settle_queue_size;
+        let admission_capacity = if num_delegated > 0 {
+            total_slots
+        } else {
+            total_slots + settle_queue_size
+        };
         Self {
             direct_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             delegated,
@@ -744,27 +745,26 @@ impl Competition {
             Error::TooManyPendingSettlements
         })?;
 
-        let (mut response_sender, response_receiver) = oneshot::channel();
-
         let this = Arc::clone(self);
         let tracing_span = tracing::Span::current();
-        tokio::spawn(async move {
-            let result = this
-                .execute_settle(
-                    auction_id,
-                    solution_id,
-                    submission_deadline,
-                    &mut response_sender,
-                )
-                .instrument(tracing_span)
-                .await;
-            observe::settled(this.solver.name(), &result);
-            let _ = response_sender.send(result);
-            drop(admission_permit);
-        });
+        let handle = tokio::spawn(
+            async move {
+                if this.eth.current_block().borrow().number >= submission_deadline.0 {
+                    return Err(DeadlineExceeded.into());
+                }
 
-        response_receiver.await.map_err(|err| {
-            tracing::error!(?err, "settle task terminated unexpectedly");
+                let result = this
+                    .process_settle_request(auction_id, solution_id, submission_deadline)
+                    .await;
+                observe::settled(this.solver.name(), &result);
+                drop(admission_permit);
+                result
+            }
+            .instrument(tracing_span),
+        );
+
+        handle.await.map_err(|err| {
+            tracing::error!(?err, "settle task panicked");
             Error::SubmissionError
         })?
     }
@@ -775,37 +775,6 @@ impl Competition {
             Err(Error::TooManyPendingSettlements)
         } else {
             Ok(())
-        }
-    }
-
-    async fn execute_settle(
-        &self,
-        auction_id: auction::Id,
-        solution_id: u64,
-        submission_deadline: BlockNo,
-        response_sender: &mut oneshot::Sender<Result<Settled, Error>>,
-    ) -> Result<Settled, Error> {
-        if self.eth.current_block().borrow().number >= submission_deadline.0 {
-            return Err(DeadlineExceeded.into());
-        }
-
-        let settle_fut =
-            Box::pin(self.process_settle_request(auction_id, solution_id, submission_deadline));
-        let closed_fut = Box::pin(response_sender.closed());
-        match futures::future::select(closed_fut, settle_fut).await {
-            // Cancel the settlement task if the caller disconnected (e.g.
-            // autopilot gave up). Grace period lets the driver cancel a
-            // pending tx if needed.
-            Either::Left((_closed, settle_fut)) => {
-                tracing::debug!("autopilot terminated settle call");
-                tokio::time::timeout(Duration::from_secs(1), settle_fut)
-                    .await
-                    .unwrap_or_else(|_| {
-                        tracing::error!("didn't finish tx submission within grace period");
-                        Err(DeadlineExceeded.into())
-                    })
-            }
-            Either::Right((res, _)) => res,
         }
     }
 
