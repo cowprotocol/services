@@ -316,13 +316,13 @@ pub fn handle_all_routes(
         ),
         (
             "GET",
-            "/restricted/api/internal/v2/solver_competition/{auction_id}",
-            get(get_solver_competition_v2::get_solver_competition_by_id_unfiltered_handler),
+            "/api/v2/trades",
+            get(get_trades_v2::get_trades_handler),
         ),
         (
             "GET",
-            "/api/v2/trades",
-            get(get_trades_v2::get_trades_handler),
+            "/restricted/api/internal/v2/solver_competition/{auction_id}",
+            get(get_solver_competition_v2::get_solver_competition_by_id_unfiltered_handler),
         ),
     ];
 
