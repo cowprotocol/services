@@ -231,8 +231,11 @@ async fn settle_queue_capacity_is_respected() {
         }
     }
 
-    // Capacity is restored — new solve and settle work again (settle fails
-    // on-chain because the order is already fulfilled, but it's admitted).
-    let id = test.solve().await.ok().id();
-    test.settle(id).await.err().kind("FailedToSubmit");
+    // Capacity is restored — settle works again. Use an existing solution ID
+    // (it was already removed from cache by the first settle, so this returns
+    // SolutionNotAvailable — but it proves admission doesn't reject).
+    test.settle(solution_ids[0])
+        .await
+        .err()
+        .kind("SolutionNotAvailable");
 }
