@@ -24,6 +24,14 @@ fn default_poll_interval_secs() -> u64 {
     3
 }
 
+fn default_fetch_concurrency() -> usize {
+    8
+}
+
+fn default_prefetch_concurrency() -> usize {
+    50
+}
+
 fn default_bind_address() -> SocketAddr {
     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 7777))
 }
@@ -79,6 +87,10 @@ pub struct NetworkConfig {
     /// Block number to seed at. Defaults to the subgraph's current block when
     /// `subgraph_url` is set.
     pub seed_block: Option<u64>,
+    #[serde(default = "default_fetch_concurrency")]
+    pub fetch_concurrency: usize,
+    #[serde(default = "default_prefetch_concurrency")]
+    pub prefetch_concurrency: usize,
 }
 
 /// The subset of [`NetworkConfig`] that [`UniswapV3Indexer`] needs.
@@ -94,6 +106,10 @@ pub struct IndexerConfig {
     pub poll_interval_secs: u64,
     #[serde(skip)]
     pub use_latest: bool,
+    #[serde(default = "default_fetch_concurrency")]
+    pub fetch_concurrency: usize,
+    #[serde(default = "default_prefetch_concurrency")]
+    pub prefetch_concurrency: usize,
 }
 
 impl NetworkConfig {
@@ -109,6 +125,8 @@ impl NetworkConfig {
             chunk_size: self.chunk_size,
             poll_interval_secs: self.poll_interval_secs,
             use_latest: self.use_latest,
+            fetch_concurrency: self.fetch_concurrency,
+            prefetch_concurrency: self.prefetch_concurrency,
         }
     }
 }

@@ -26,12 +26,6 @@ type DecimalsCache = HashMap<Address, u8>;
 /// Cached ERC-20 symbol string keyed by token address.
 type SymbolsCache = HashMap<Address, String>;
 
-/// Number of chunk log-fetches issued concurrently (overlap RPC I/O with DB
-/// writes).
-const FETCH_CONCURRENCY: usize = 8;
-/// Max concurrent eth_calls during prefetch phases.
-const PREFETCH_CONCURRENCY: usize = 50;
-
 /// Data for a newly discovered pool, sourced from a `PoolCreated` factory
 /// event.
 pub struct NewPoolData {
@@ -96,6 +90,8 @@ pub struct UniswapV3Indexer {
     factory: Address,
     chunk_size: u64,
     finality_tag: BlockNumberOrTag,
+    fetch_concurrency: usize,
+    prefetch_concurrency: usize,
 }
 
 impl UniswapV3Indexer {
@@ -111,6 +107,8 @@ impl UniswapV3Indexer {
             } else {
                 BlockNumberOrTag::Finalized
             },
+            fetch_concurrency: config.fetch_concurrency,
+            prefetch_concurrency: config.prefetch_concurrency,
         }
     }
 
@@ -119,6 +117,7 @@ impl UniswapV3Indexer {
             self.provider.clone(),
             self.db.clone(),
             self.chain_id,
+            self.prefetch_concurrency,
         ));
         loop {
             if let Err(err) = self.run_once().await {
@@ -193,13 +192,13 @@ impl UniswapV3Indexer {
             start = end + 1;
         }
 
-        // Fetch up to FETCH_CONCURRENCY chunks' logs in parallel; commit in order.
+        // Fetch chunks' logs in parallel; commit in order.
         futures::stream::iter(chunks)
             .map(|(start, end)| async move {
                 let logs = self.fetch_logs_bisecting(start, end).await?;
                 Ok::<_, anyhow::Error>((start, end, logs))
             })
-            .buffered(FETCH_CONCURRENCY)
+            .buffered(self.fetch_concurrency)
             .try_for_each(|(start, end, logs)| self.commit_chunk(start, end, logs))
             .await
     }
@@ -295,7 +294,7 @@ impl UniswapV3Indexer {
                 let liq = fetch_pool_liquidity(&self.provider, addr, block).await;
                 ((addr, block), liq)
             })
-            .buffer_unordered(PREFETCH_CONCURRENCY)
+            .buffer_unordered(self.prefetch_concurrency)
             .filter_map(|(key, opt)| async move { opt.map(|v| (key, v)) })
             .collect()
             .await
@@ -309,7 +308,7 @@ impl UniswapV3Indexer {
                 let dec = fetch_decimals(&self.provider, token).await;
                 (token, dec)
             })
-            .buffer_unordered(PREFETCH_CONCURRENCY)
+            .buffer_unordered(self.prefetch_concurrency)
             .filter_map(|(token, opt)| async move { opt.map(|d| (token, d)) })
             .collect()
             .await
@@ -323,7 +322,7 @@ impl UniswapV3Indexer {
                 let sym = fetch_symbol(&self.provider, token).await;
                 (token, sym)
             })
-            .buffer_unordered(PREFETCH_CONCURRENCY)
+            .buffer_unordered(self.prefetch_concurrency)
             .filter_map(|(token, opt)| async move { opt.map(|s| (token, s)) })
             .collect()
             .await
@@ -372,7 +371,12 @@ async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> 
         .ok()
 }
 
-async fn backfill_symbols(provider: AlloyProvider, db: sqlx::PgPool, chain_id: u64) {
+async fn backfill_symbols(
+    provider: AlloyProvider,
+    db: sqlx::PgPool,
+    chain_id: u64,
+    prefetch_concurrency: usize,
+) {
     let tokens = match db::get_tokens_missing_symbols(&db, chain_id).await {
         Ok(t) => t,
         Err(err) => {
@@ -401,7 +405,7 @@ async fn backfill_symbols(provider: AlloyProvider, db: sqlx::PgPool, chain_id: u
                     (token, sym)
                 }
             })
-            .buffer_unordered(PREFETCH_CONCURRENCY)
+            .buffer_unordered(prefetch_concurrency)
             .filter_map(|(token, opt)| async move { opt.map(|s| (token, s)) })
             .collect()
             .await;
