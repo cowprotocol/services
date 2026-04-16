@@ -314,3 +314,80 @@ async fn accepts_new_settle_requests_after_timeout() {
         .err()
         .kind("FailedToSubmit");
 }
+
+/// Verifies that the admission semaphore correctly limits in-flight settle
+/// requests to `pool_slots + settle_queue_size` (default 1 + 2 = 3).
+#[tokio::test]
+#[ignore]
+async fn admission_capacity_is_respected() {
+    let test = Arc::new(
+        tests::setup()
+            .allow_multiple_solve_requests()
+            .pool(ab_pool())
+            .order(ab_order())
+            .solution(ab_solution())
+            .settle_submission_deadline(6)
+            .done()
+            .await,
+    );
+
+    let solution_ids = join_all(vec![
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+        test.solve(),
+    ])
+    .await
+    .into_iter()
+    .map(|res| res.ok().id())
+    .collect::<Vec<_>>();
+
+    // Disable auto mining so settlements block on confirmation.
+    test.set_auto_mining(false).await;
+
+    let settle_futs: Vec<_> = solution_ids
+        .iter()
+        .map(|&id| {
+            let test_clone = Arc::clone(&test);
+            tokio::spawn(async move { test_clone.settle(id).await })
+        })
+        .collect();
+
+    // Wait for all requests to be either in-flight or rejected.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Admission capacity = 1 (pool slot) + 2 (settle_queue_size) = 3.
+    // The first 3 settle calls should be admitted; the solve endpoint must
+    // reject while capacity is exhausted.
+    test.solve().await.err().kind("TooManyPendingSettlements");
+
+    // Enable auto mining so the in-flight settlements complete.
+    test.set_auto_mining(true).await;
+
+    let results: Vec<_> = join_all(settle_futs)
+        .await
+        .into_iter()
+        .map(|r| r.unwrap())
+        .collect();
+
+    let mut admitted = 0;
+    let mut rejected = 0;
+    for result in &results {
+        match result.error_kind().as_deref() {
+            None | Some("FailedToSubmit") => admitted += 1,
+            Some("TooManyPendingSettlements") => rejected += 1,
+            Some(other) => panic!("unexpected error kind: {other}"),
+        }
+    }
+
+    // Exactly 3 admitted (1 slot + 2 buffer), 2 rejected.
+    assert_eq!(
+        admitted, 3,
+        "expected 3 admitted (pool slot + settle queue)"
+    );
+    assert_eq!(rejected, 2, "expected 2 rejected");
+
+    // Capacity is restored after settlements complete.
+    test.solve().await.ok();
+}

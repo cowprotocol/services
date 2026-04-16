@@ -1694,6 +1694,18 @@ pub struct SettleErr {
 }
 
 impl Settle {
+    /// Returns the error kind string if this is an error response, or `None`
+    /// if the settlement succeeded.
+    pub fn error_kind(&self) -> Option<String> {
+        match &self.status {
+            SettleStatus::Ok => None,
+            SettleStatus::Err { body, .. } => {
+                let parsed: serde_json::Value = serde_json::from_str(body).unwrap();
+                Some(parsed["kind"].as_str().unwrap().to_string())
+            }
+        }
+    }
+
     /// Expect the /settle endpoint to have returned a 200 OK response.
     pub async fn ok(self) -> SettleOk {
         // Ensure that the response is OK.

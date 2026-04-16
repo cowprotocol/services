@@ -104,7 +104,11 @@ impl SubmitterPool {
             })
         };
         let total_slots = 1 + num_delegated;
-        let admission_capacity = total_slots + settle_queue_size;
+        let admission_capacity = if num_delegated > 0 {
+            total_slots
+        } else {
+            total_slots + settle_queue_size
+        };
         Self {
             direct_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             delegated,
