@@ -63,7 +63,7 @@ async fn custom_order_simulation(web3: Web3) {
 
     // Trader has no sell tokens — simulation should revert.
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/api/internal/v1/debug/simulation"))
         .json(&request)
         .send()
         .await
@@ -87,7 +87,7 @@ async fn custom_order_simulation(web3: Web3) {
 
     // Simulation should now succeed.
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/api/internal/v1/debug/simulation"))
         .json(&request)
         .send()
         .await
@@ -183,7 +183,7 @@ async fn order_simulation(web3: Web3) {
     // Simulation at the block where the trader had no WETH must fail.
     let response = client
         .get(format!(
-            "{API_HOST}/api/v1/debug/simulation/{uid}?block_number={block_no_funds}"
+            "{API_HOST}/api/internal/v1/debug/simulation/{uid}?block_number={block_no_funds}"
         ))
         .send()
         .await
@@ -199,7 +199,7 @@ async fn order_simulation(web3: Web3) {
     // Simulation at the block where the trader has WETH must succeed.
     let response = client
         .get(format!(
-            "{API_HOST}/api/v1/debug/simulation/{uid}?block_number={block_with_funds}"
+            "{API_HOST}/api/internal/v1/debug/simulation/{uid}?block_number={block_with_funds}"
         ))
         .send()
         .await
@@ -215,7 +215,7 @@ async fn order_simulation(web3: Web3) {
     // Simulation at the latest block (block_number parameter omitted), must
     // succeed.
     let response = client
-        .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
+        .get(format!("{API_HOST}/api/internal/v1/debug/simulation/{uid}"))
         .send()
         .await
         .unwrap();
@@ -313,7 +313,7 @@ async fn order_simulation_partial_fill(web3: Web3) {
 
     // filledAmount=0 on-chain; full 4 WETH needed; trader only has 1 → must fail.
     let response = client
-        .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
+        .get(format!("{API_HOST}/api/internal/v1/debug/simulation/{uid}"))
         .send()
         .await
         .unwrap();
@@ -356,7 +356,7 @@ async fn order_simulation_partial_fill(web3: Web3) {
     // Without reading on-chain fill state the simulator would need the full
     // 4 WETH from the trader (who only holds ~2) and revert.
     let response = client
-        .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
+        .get(format!("{API_HOST}/api/internal/v1/debug/simulation/{uid}"))
         .send()
         .await
         .unwrap();

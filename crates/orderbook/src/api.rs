@@ -281,17 +281,17 @@ pub fn handle_all_routes(
         ("GET", "/api/v1/version", get(version::version_handler)),
         (
             "GET",
-            "/api/v1/debug/order/{uid}",
+            "/api/internal/v1/debug/order/{uid}",
             get(debug_order::debug_order_handler),
         ),
         (
             "GET",
-            "/api/v1/debug/simulation/{uid}",
+            "/api/internal/v1/debug/simulation/{uid}",
             get(debug_simulation::debug_simulation_handler),
         ),
         (
             "POST",
-            "/api/v1/debug/simulation",
+            "/api/internal/v1/debug/simulation",
             post(debug_simulation::debug_simulation_post_handler),
         ),
         // V2 routes
