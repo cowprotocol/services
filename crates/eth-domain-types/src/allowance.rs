@@ -67,14 +67,16 @@ impl Approval {
     /// be reset to 0 before setting a new value.
     pub fn requires_reset(&self, chain: Chain) -> bool {
         let tokens: &[Address] = match chain {
-            Chain::Mainnet => &[address!("dAC17F958D2ee523a2206206994597C13D831ec7")],
-            Chain::ArbitrumOne => &[address!("Fd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9")],
-            Chain::Gnosis => &[address!("4ECaBa5870353805a9F068101A40E0f32ed605C6")],
-            Chain::Optimism => &[address!("94b008aA00579c1307B0EF2c499aD98a8ce58e58")],
-            Chain::Polygon => &[address!("c2132D05D31c914a87C6611C10748AEb04B58e8F")],
-            Chain::Avalanche => &[address!("9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7")],
-            Chain::Bnb => &[address!("55d398326f99059fF775485246999027B3197955")],
-            Chain::Base => &[address!("fde4C96c8593536E31F229EA8f37b2ADa2699bb2")],
+            Chain::Mainnet => &[address!("dAC17F958D2ee523a2206206994597C13D831ec7")], // https://etherscan.io/token/0xdAC17F958D2ee523a2206206994597C13D831ec7
+
+            // Other implementations of USDT don't require you to reset the allowance first:
+            //    - Bnb: https://bscscan.com/token/0x55d398326f99059ff775485246999027b3197955
+            //    - Base: https://basescan.org/token/0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2
+            //    - Arbitrum: https://arbiscan.io/token/0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9
+            //    - Polygon: https://polygonscan.com/token/0xc2132d05d31c914a87c6611c10748aeb04b58e8f
+            //    - Avalanche: https://snowscan.xyz/token/0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7
+            //    - Linea: https://lineascan.build/token/0xa219439258ca9da29e9cc4ce5596924745e12b93
+            //    - Gnosis: https://gnosisscan.io/token/0x4ECaBa5870353805a9F068101A40E0f32ed605C6
             _ => &[],
         };
 
