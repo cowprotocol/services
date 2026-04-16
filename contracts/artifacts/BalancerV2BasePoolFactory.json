@@ -12,7 +12,9 @@
       ],
       "name": "PoolCreated",
       "type": "event"
-    },
+    }
+  ],
+  "_disabled": [
     {
       "inputs": [],
       "name": "getVault",

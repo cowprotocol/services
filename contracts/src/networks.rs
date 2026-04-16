@@ -7,7 +7,6 @@ pub const POLYGON: u64 = 137;
 pub const AVALANCHE: u64 = 43114;
 pub const BNB: u64 = 56;
 pub const OPTIMISM: u64 = 10;
-pub const LENS: u64 = 232;
 pub const LINEA: u64 = 59144;
 pub const PLASMA: u64 = 9745;
 pub const INK: u64 = 57073;

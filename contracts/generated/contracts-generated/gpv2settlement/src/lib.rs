@@ -1435,15 +1435,10 @@ interface GPv2Settlement {
     function authenticator() external view returns (address);
     function domainSeparator() external view returns (bytes32);
     function filledAmount(bytes memory) external view returns (uint256);
-    function freeFilledAmountStorage(bytes[] memory orderUids) external;
-    function freePreSignatureStorage(bytes[] memory orderUids) external;
-    function getStorageAt(uint256 offset, uint256 length) external view returns (bytes memory);
     function invalidateOrder(bytes memory orderUid) external;
-    function preSignature(bytes memory) external view returns (uint256);
     function setPreSignature(bytes memory orderUid, bool signed) external;
     function settle(address[] memory tokens, uint256[] memory clearingPrices, GPv2Trade.Data[] memory trades, GPv2Interaction.Data[][3] memory interactions) external;
     function simulateDelegatecall(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-    function simulateDelegatecallInternal(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
     function swap(IVault.BatchSwapStep[] memory swaps, address[] memory tokens, GPv2Trade.Data memory trade) external;
     function vault() external view returns (address);
     function vaultRelayer() external view returns (address);
@@ -1520,56 +1515,6 @@ interface GPv2Settlement {
   },
   {
     "type": "function",
-    "name": "freeFilledAmountStorage",
-    "inputs": [
-      {
-        "name": "orderUids",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "freePreSignatureStorage",
-    "inputs": [
-      {
-        "name": "orderUids",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getStorageAt",
-    "inputs": [
-      {
-        "name": "offset",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "invalidateOrder",
     "inputs": [
       {
@@ -1580,25 +1525,6 @@ interface GPv2Settlement {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "preSignature",
-    "inputs": [
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1723,30 +1649,6 @@ interface GPv2Settlement {
   {
     "type": "function",
     "name": "simulateDelegatecall",
-    "inputs": [
-      {
-        "name": "targetContract",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "calldataPayload",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "response",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "simulateDelegatecallInternal",
     "inputs": [
       {
         "name": "targetContract",
@@ -3184,451 +3086,6 @@ pub mod GPv2Settlement {
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `freeFilledAmountStorage(bytes[])` and selector `0xed9f35ce`.
-    ```solidity
-    function freeFilledAmountStorage(bytes[] memory orderUids) external;
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct freeFilledAmountStorageCall {
-        #[allow(missing_docs)]
-        pub orderUids: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-    }
-    ///Container type for the return parameters of the
-    /// [`freeFilledAmountStorage(bytes[])`](freeFilledAmountStorageCall)
-    /// function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct freeFilledAmountStorageReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<freeFilledAmountStorageCall> for UnderlyingRustTuple<'_> {
-                fn from(value: freeFilledAmountStorageCall) -> Self {
-                    (value.orderUids,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for freeFilledAmountStorageCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { orderUids: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<freeFilledAmountStorageReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: freeFilledAmountStorageReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for freeFilledAmountStorageReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl freeFilledAmountStorageReturn {
-            fn _tokenize(
-                &self,
-            ) -> <freeFilledAmountStorageCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for freeFilledAmountStorageCall {
-            type Parameters<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            type Return = freeFilledAmountStorageReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [237u8, 159u8, 53u8, 206u8];
-            const SIGNATURE: &'static str = "freeFilledAmountStorage(bytes[])";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (<alloy_sol_types::sol_data::Array<
-                    alloy_sol_types::sol_data::Bytes,
-                > as alloy_sol_types::SolType>::tokenize(
-                    &self.orderUids
-                ),)
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                freeFilledAmountStorageReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `freePreSignatureStorage(bytes[])` and selector `0xa2a7d51b`.
-    ```solidity
-    function freePreSignatureStorage(bytes[] memory orderUids) external;
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct freePreSignatureStorageCall {
-        #[allow(missing_docs)]
-        pub orderUids: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-    }
-    ///Container type for the return parameters of the
-    /// [`freePreSignatureStorage(bytes[])`](freePreSignatureStorageCall)
-    /// function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct freePreSignatureStorageReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<freePreSignatureStorageCall> for UnderlyingRustTuple<'_> {
-                fn from(value: freePreSignatureStorageCall) -> Self {
-                    (value.orderUids,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for freePreSignatureStorageCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { orderUids: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<freePreSignatureStorageReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: freePreSignatureStorageReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for freePreSignatureStorageReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl freePreSignatureStorageReturn {
-            fn _tokenize(
-                &self,
-            ) -> <freePreSignatureStorageCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for freePreSignatureStorageCall {
-            type Parameters<'a> =
-                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Bytes>,);
-            type Return = freePreSignatureStorageReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [162u8, 167u8, 213u8, 27u8];
-            const SIGNATURE: &'static str = "freePreSignatureStorage(bytes[])";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (<alloy_sol_types::sol_data::Array<
-                    alloy_sol_types::sol_data::Bytes,
-                > as alloy_sol_types::SolType>::tokenize(
-                    &self.orderUids
-                ),)
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                freePreSignatureStorageReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getStorageAt(uint256,uint256)` and selector `0x5624b25b`.
-    ```solidity
-    function getStorageAt(uint256 offset, uint256 length) external view returns (bytes memory);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getStorageAtCall {
-        #[allow(missing_docs)]
-        pub offset: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub length: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getStorageAt(uint256,uint256)`](getStorageAtCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getStorageAtReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getStorageAtCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getStorageAtCall) -> Self {
-                    (value.offset, value.length)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getStorageAtCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        offset: tuple.0,
-                        length: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getStorageAtReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getStorageAtReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getStorageAtReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getStorageAtCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [86u8, 36u8, 178u8, 91u8];
-            const SIGNATURE: &'static str = "getStorageAt(uint256,uint256)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.offset,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.length,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: getStorageAtReturn = r.into();
-                        r._0
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getStorageAtReturn = r.into();
-                    r._0
-                })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `invalidateOrder(bytes)` and selector `0x15337bc0`.
     ```solidity
     function invalidateOrder(bytes memory orderUid) external;
@@ -3763,149 +3220,6 @@ pub mod GPv2Settlement {
                     data,
                 )
                 .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `preSignature(bytes)` and selector `0xd08d33d1`.
-    ```solidity
-    function preSignature(bytes memory) external view returns (uint256);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct preSignatureCall(pub alloy_sol_types::private::Bytes);
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`preSignature(bytes)`](preSignatureCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct preSignatureReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<preSignatureCall> for UnderlyingRustTuple<'_> {
-                fn from(value: preSignatureCall) -> Self {
-                    (value.0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for preSignatureCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self(tuple.0)
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::primitives::aliases::U256,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<preSignatureReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: preSignatureReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for preSignatureReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for preSignatureCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Return = alloy_sol_types::private::primitives::aliases::U256;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [208u8, 141u8, 51u8, 209u8];
-            const SIGNATURE: &'static str = "preSignature(bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.0,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: preSignatureReturn = r.into();
-                        r._0
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: preSignatureReturn = r.into();
-                    r._0
-                })
             }
         }
     };
@@ -4417,166 +3731,6 @@ pub mod GPv2Settlement {
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `simulateDelegatecallInternal(address,bytes)` and selector `0x43218e19`.
-    ```solidity
-    function simulateDelegatecallInternal(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct simulateDelegatecallInternalCall {
-        #[allow(missing_docs)]
-        pub targetContract: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub calldataPayload: alloy_sol_types::private::Bytes,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`simulateDelegatecallInternal(address,
-    /// bytes)`](simulateDelegatecallInternalCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct simulateDelegatecallInternalReturn {
-        #[allow(missing_docs)]
-        pub response: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallInternalCall> for UnderlyingRustTuple<'_> {
-                fn from(value: simulateDelegatecallInternalCall) -> Self {
-                    (value.targetContract, value.calldataPayload)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for simulateDelegatecallInternalCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        targetContract: tuple.0,
-                        calldataPayload: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallInternalReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: simulateDelegatecallInternalReturn) -> Self {
-                    (value.response,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for simulateDelegatecallInternalReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { response: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for simulateDelegatecallInternalCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [67u8, 33u8, 142u8, 25u8];
-            const SIGNATURE: &'static str = "simulateDelegatecallInternal(address,bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.targetContract,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.calldataPayload,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: simulateDelegatecallInternalReturn = r.into();
-                        r.response
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: simulateDelegatecallInternalReturn = r.into();
-                    r.response
-                })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `swap((bytes32,uint256,uint256,uint256,bytes)[],address[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes))` and selector `0x845a101f`.
     ```solidity
     function swap(IVault.BatchSwapStep[] memory swaps, address[] memory tokens, GPv2Trade.Data memory trade) external;
@@ -5024,23 +4178,13 @@ pub mod GPv2Settlement {
         #[allow(missing_docs)]
         filledAmount(filledAmountCall),
         #[allow(missing_docs)]
-        freeFilledAmountStorage(freeFilledAmountStorageCall),
-        #[allow(missing_docs)]
-        freePreSignatureStorage(freePreSignatureStorageCall),
-        #[allow(missing_docs)]
-        getStorageAt(getStorageAtCall),
-        #[allow(missing_docs)]
         invalidateOrder(invalidateOrderCall),
-        #[allow(missing_docs)]
-        preSignature(preSignatureCall),
         #[allow(missing_docs)]
         setPreSignature(setPreSignatureCall),
         #[allow(missing_docs)]
         settle(settleCall),
         #[allow(missing_docs)]
         simulateDelegatecall(simulateDelegatecallCall),
-        #[allow(missing_docs)]
-        simulateDelegatecallInternal(simulateDelegatecallInternalCall),
         #[allow(missing_docs)]
         swap(swapCall),
         #[allow(missing_docs)]
@@ -5061,14 +4205,9 @@ pub mod GPv2Settlement {
             [21u8, 51u8, 123u8, 192u8],
             [35u8, 53u8, 199u8, 107u8],
             [36u8, 121u8, 251u8, 110u8],
-            [67u8, 33u8, 142u8, 25u8],
-            [86u8, 36u8, 178u8, 91u8],
             [132u8, 90u8, 16u8, 31u8],
             [155u8, 85u8, 44u8, 194u8],
-            [162u8, 167u8, 213u8, 27u8],
-            [208u8, 141u8, 51u8, 209u8],
             [236u8, 108u8, 177u8, 63u8],
-            [237u8, 159u8, 53u8, 206u8],
             [246u8, 152u8, 218u8, 37u8],
             [248u8, 68u8, 54u8, 189u8],
             [251u8, 250u8, 119u8, 207u8],
@@ -5079,14 +4218,9 @@ pub mod GPv2Settlement {
             <invalidateOrderCall as alloy_sol_types::SolCall>::SIGNATURE,
             <authenticatorCall as alloy_sol_types::SolCall>::SIGNATURE,
             <filledAmountCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getStorageAtCall as alloy_sol_types::SolCall>::SIGNATURE,
             <swapCall as alloy_sol_types::SolCall>::SIGNATURE,
             <vaultRelayerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <freePreSignatureStorageCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <preSignatureCall as alloy_sol_types::SolCall>::SIGNATURE,
             <setPreSignatureCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <freeFilledAmountStorageCall as alloy_sol_types::SolCall>::SIGNATURE,
             <domainSeparatorCall as alloy_sol_types::SolCall>::SIGNATURE,
             <simulateDelegatecallCall as alloy_sol_types::SolCall>::SIGNATURE,
             <vaultCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -5097,14 +4231,9 @@ pub mod GPv2Settlement {
             ::core::stringify!(invalidateOrder),
             ::core::stringify!(authenticator),
             ::core::stringify!(filledAmount),
-            ::core::stringify!(simulateDelegatecallInternal),
-            ::core::stringify!(getStorageAt),
             ::core::stringify!(swap),
             ::core::stringify!(vaultRelayer),
-            ::core::stringify!(freePreSignatureStorage),
-            ::core::stringify!(preSignature),
             ::core::stringify!(setPreSignature),
-            ::core::stringify!(freeFilledAmountStorage),
             ::core::stringify!(domainSeparator),
             ::core::stringify!(simulateDelegatecall),
             ::core::stringify!(vault),
@@ -5132,7 +4261,7 @@ pub mod GPv2Settlement {
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for GPv2SettlementCalls {
-        const COUNT: usize = 15usize;
+        const COUNT: usize = 10usize;
         const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "GPv2SettlementCalls";
 
@@ -5144,26 +4273,15 @@ pub mod GPv2Settlement {
                     <domainSeparatorCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::filledAmount(_) => <filledAmountCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::freeFilledAmountStorage(_) => {
-                    <freeFilledAmountStorageCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::freePreSignatureStorage(_) => {
-                    <freePreSignatureStorageCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getStorageAt(_) => <getStorageAtCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::invalidateOrder(_) => {
                     <invalidateOrderCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::preSignature(_) => <preSignatureCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::setPreSignature(_) => {
                     <setPreSignatureCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::settle(_) => <settleCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::simulateDelegatecall(_) => {
                     <simulateDelegatecallCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::simulateDelegatecallInternal(_) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::swap(_) => <swapCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::vault(_) => <vaultCall as alloy_sol_types::SolCall>::SELECTOR,
@@ -5216,24 +4334,6 @@ pub mod GPv2Settlement {
                     filledAmount
                 },
                 {
-                    fn simulateDelegatecallInternal(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(GPv2SettlementCalls::simulateDelegatecallInternal)
-                    }
-                    simulateDelegatecallInternal
-                },
-                {
-                    fn getStorageAt(data: &[u8]) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <getStorageAtCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GPv2SettlementCalls::getStorageAt)
-                    }
-                    getStorageAt
-                },
-                {
                     fn swap(data: &[u8]) -> alloy_sol_types::Result<GPv2SettlementCalls> {
                         <swapCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GPv2SettlementCalls::swap)
@@ -5248,24 +4348,6 @@ pub mod GPv2Settlement {
                     vaultRelayer
                 },
                 {
-                    fn freePreSignatureStorage(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <freePreSignatureStorageCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(GPv2SettlementCalls::freePreSignatureStorage)
-                    }
-                    freePreSignatureStorage
-                },
-                {
-                    fn preSignature(data: &[u8]) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <preSignatureCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GPv2SettlementCalls::preSignature)
-                    }
-                    preSignature
-                },
-                {
                     fn setPreSignature(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
@@ -5273,17 +4355,6 @@ pub mod GPv2Settlement {
                             .map(GPv2SettlementCalls::setPreSignature)
                     }
                     setPreSignature
-                },
-                {
-                    fn freeFilledAmountStorage(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <freeFilledAmountStorageCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(GPv2SettlementCalls::freeFilledAmountStorage)
-                    }
-                    freeFilledAmountStorage
                 },
                 {
                     fn domainSeparator(
@@ -5367,26 +4438,6 @@ pub mod GPv2Settlement {
                     filledAmount
                 },
                 {
-                    fn simulateDelegatecallInternal(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GPv2SettlementCalls::simulateDelegatecallInternal)
-                    }
-                    simulateDelegatecallInternal
-                },
-                {
-                    fn getStorageAt(data: &[u8]) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <getStorageAtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(GPv2SettlementCalls::getStorageAt)
-                    }
-                    getStorageAt
-                },
-                {
                     fn swap(data: &[u8]) -> alloy_sol_types::Result<GPv2SettlementCalls> {
                         <swapCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(GPv2SettlementCalls::swap)
@@ -5403,26 +4454,6 @@ pub mod GPv2Settlement {
                     vaultRelayer
                 },
                 {
-                    fn freePreSignatureStorage(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <freePreSignatureStorageCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GPv2SettlementCalls::freePreSignatureStorage)
-                    }
-                    freePreSignatureStorage
-                },
-                {
-                    fn preSignature(data: &[u8]) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <preSignatureCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(GPv2SettlementCalls::preSignature)
-                    }
-                    preSignature
-                },
-                {
                     fn setPreSignature(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
@@ -5432,17 +4463,6 @@ pub mod GPv2Settlement {
                         .map(GPv2SettlementCalls::setPreSignature)
                     }
                     setPreSignature
-                },
-                {
-                    fn freeFilledAmountStorage(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2SettlementCalls> {
-                        <freeFilledAmountStorageCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GPv2SettlementCalls::freeFilledAmountStorage)
-                    }
-                    freeFilledAmountStorage
                 },
                 {
                     fn domainSeparator(
@@ -5495,24 +4515,8 @@ pub mod GPv2Settlement {
                 Self::filledAmount(inner) => {
                     <filledAmountCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::freeFilledAmountStorage(inner) => {
-                    <freeFilledAmountStorageCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::freePreSignatureStorage(inner) => {
-                    <freePreSignatureStorageCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::getStorageAt(inner) => {
-                    <getStorageAtCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
                 Self::invalidateOrder(inner) => {
                     <invalidateOrderCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::preSignature(inner) => {
-                    <preSignatureCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::setPreSignature(inner) => {
                     <setPreSignatureCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -5522,11 +4526,6 @@ pub mod GPv2Settlement {
                 }
                 Self::simulateDelegatecall(inner) => {
                     <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::simulateDelegatecallInternal(inner) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
                 }
                 Self::swap(inner) => {
                     <swapCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -5552,24 +4551,8 @@ pub mod GPv2Settlement {
                 Self::filledAmount(inner) => {
                     <filledAmountCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
-                Self::freeFilledAmountStorage(inner) => {
-                    <freeFilledAmountStorageCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
-                    )
-                }
-                Self::freePreSignatureStorage(inner) => {
-                    <freePreSignatureStorageCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
-                    )
-                }
-                Self::getStorageAt(inner) => {
-                    <getStorageAtCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
                 Self::invalidateOrder(inner) => {
                     <invalidateOrderCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::preSignature(inner) => {
-                    <preSignatureCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::setPreSignature(inner) => {
                     <setPreSignatureCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -5579,11 +4562,6 @@ pub mod GPv2Settlement {
                 }
                 Self::simulateDelegatecall(inner) => {
                     <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
-                    )
-                }
-                Self::simulateDelegatecallInternal(inner) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner, out,
                     )
                 }
@@ -5965,47 +4943,12 @@ pub mod GPv2Settlement {
             self.call_builder(&filledAmountCall(_0))
         }
 
-        ///Creates a new call builder for the [`freeFilledAmountStorage`]
-        /// function.
-        pub fn freeFilledAmountStorage(
-            &self,
-            orderUids: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-        ) -> alloy_contract::SolCallBuilder<&P, freeFilledAmountStorageCall, N> {
-            self.call_builder(&freeFilledAmountStorageCall { orderUids })
-        }
-
-        ///Creates a new call builder for the [`freePreSignatureStorage`]
-        /// function.
-        pub fn freePreSignatureStorage(
-            &self,
-            orderUids: alloy_sol_types::private::Vec<alloy_sol_types::private::Bytes>,
-        ) -> alloy_contract::SolCallBuilder<&P, freePreSignatureStorageCall, N> {
-            self.call_builder(&freePreSignatureStorageCall { orderUids })
-        }
-
-        ///Creates a new call builder for the [`getStorageAt`] function.
-        pub fn getStorageAt(
-            &self,
-            offset: alloy_sol_types::private::primitives::aliases::U256,
-            length: alloy_sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, getStorageAtCall, N> {
-            self.call_builder(&getStorageAtCall { offset, length })
-        }
-
         ///Creates a new call builder for the [`invalidateOrder`] function.
         pub fn invalidateOrder(
             &self,
             orderUid: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, invalidateOrderCall, N> {
             self.call_builder(&invalidateOrderCall { orderUid })
-        }
-
-        ///Creates a new call builder for the [`preSignature`] function.
-        pub fn preSignature(
-            &self,
-            _0: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, preSignatureCall, N> {
-            self.call_builder(&preSignatureCall(_0))
         }
 
         ///Creates a new call builder for the [`setPreSignature`] function.
@@ -6047,19 +4990,6 @@ pub mod GPv2Settlement {
             calldataPayload: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, simulateDelegatecallCall, N> {
             self.call_builder(&simulateDelegatecallCall {
-                targetContract,
-                calldataPayload,
-            })
-        }
-
-        ///Creates a new call builder for the [`simulateDelegatecallInternal`]
-        /// function.
-        pub fn simulateDelegatecallInternal(
-            &self,
-            targetContract: alloy_sol_types::private::Address,
-            calldataPayload: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, simulateDelegatecallInternalCall, N> {
-            self.call_builder(&simulateDelegatecallInternalCall {
                 targetContract,
                 calldataPayload,
             })
@@ -6161,10 +5091,6 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
         137u64 => Some((
             ::alloy_primitives::address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
             Some(45859743u64),
-        )),
-        232u64 => Some((
-            ::alloy_primitives::address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
-            Some(2621745u64),
         )),
         8453u64 => Some((
             ::alloy_primitives::address!("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),

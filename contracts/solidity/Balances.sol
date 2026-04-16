@@ -38,6 +38,8 @@ contract Balances {
     /// contract when executing a trade.
     /// @return canTransfer - Returns whether or not the transfer into the
     /// settlement contract for the specified amount would succeed.
+    /// @return transferRevertReason - The revert reason bytes if the transfer
+    /// failed, or empty bytes if it succeeded.
     function balance(
         Contracts memory contracts,
         address trader,
@@ -49,7 +51,8 @@ contract Balances {
         uint256 tokenBalance,
         uint256 allowance,
         uint256 effectiveBalance,
-        bool canTransfer
+        bool canTransfer,
+        bytes memory transferRevertReason
     ) {
         // Execute the interactions within the current context. This ensures
         // that any pre-interactions that setup balances and/or allowances
@@ -96,8 +99,9 @@ contract Balances {
         try contracts.vaultRelayer.transferFromAccounts(transfers) {
             canTransfer = true;
         }
-        catch {
+        catch (bytes memory reason) {
             canTransfer = false;
+            transferRevertReason = reason;
         }
     }
 
