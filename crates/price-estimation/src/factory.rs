@@ -1,7 +1,6 @@
 use {
     super::{
-        NativePriceEstimator as NativePriceEstimatorSource,
-        PriceEstimating,
+        NativePriceEstimator as NativePriceEstimatorSource, PriceEstimating,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -412,7 +411,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .expect("failed to build native price estimator");
         let inner = if eip4626 {
             Box::new(InstrumentedPriceEstimator::new(
-                native::Eip4626::new(inner, self.network.web3.provider.clone()),
+                native::Eip4626::new(inner, self.network.web3.provider.clone(), *weth.address()),
                 "Eip4626".to_string(),
             ))
         } else {

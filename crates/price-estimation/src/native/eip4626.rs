@@ -33,57 +33,78 @@ pub struct Eip4626 {
 }
 
 impl Eip4626 {
-    pub fn new(inner: Box<dyn NativePriceEstimating>, provider: AlloyProvider) -> Self {
+    pub fn new(
+        inner: Box<dyn NativePriceEstimating>,
+        provider: AlloyProvider,
+        weth: Address,
+    ) -> Self {
         Self {
             inner,
             provider,
-            non_vault_tokens: DashSet::new(),
+            non_vault_tokens: {
+                let non_vault_tokens = DashSet::new();
+                non_vault_tokens.insert(weth);
+                non_vault_tokens
+            },
         }
     }
 
     async fn estimate(&self, token: Address, timeout: Duration) -> NativePriceEstimateResult {
-        // Known non-vault or no time budget for vault discovery: delegate
-        // directly. A zero timeout is used by callers (e.g. the autopilot's
-        // WETH price fetch) as a "best-effort / use cached data" signal — the
-        // inner estimator and its callers treat it as advisory, not as a hard
-        // cutoff. We must not feed it into `tokio::time::timeout` which would
-        // fire immediately.
-        if self.non_vault_tokens.contains(&token) || timeout.is_zero() {
+        // Known non-vault or zero timeout: delegate directly. A zero timeout is
+        // used by callers (e.g. the autopilot's WETH price fetch) as a
+        // "best-effort / use cached data" signal — the inner estimator and its
+        // callers treat it as advisory, not as a hard cutoff.
+        if self.non_vault_tokens.contains(&token) {
             return self.inner.estimate_native_price(token, timeout).await;
         }
 
         let deadline = Instant::now() + timeout;
-        let check_timeout = |token: Address| -> Result<Duration, PriceEstimationError> {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                    "timeout exceeded during vault RPC calls for {token}"
-                )));
-            }
-            Ok(remaining)
-        };
+        let time_remaining = || deadline.saturating_duration_since(Instant::now());
 
-        // Reserve at least half the budget for the inner estimator fallback.
-        let vault_budget = timeout / 2;
-        let conversion_rate_result =
-            match tokio::time::timeout(vault_budget, self.calculate_conversion_rate(token)).await {
-                Ok(res) => res,
-                Err(_timeout) => Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                    "timeout during vault RPC calls for {token}"
-                ))),
-            };
-        match conversion_rate_result {
-            Ok((asset, rate)) => {
-                let remaining = check_timeout(token)?;
-                let asset_price = self.estimate_native_price(asset, remaining).await?;
-                Ok(asset_price * rate)
-            }
-            // Vault RPC failed — if the token was just cached as non-vault,
-            // fall through to the inner estimator with remaining budget.
-            Err(_) if self.non_vault_tokens.contains(&token) => {
-                let remaining = check_timeout(token)?;
-                self.inner.estimate_native_price(token, remaining).await
-            }
+        // Iteratively unwrap vault layers, accumulating the conversion rate.
+        let mut current_token = token;
+        let mut cumulative_rate = 1.0;
+
+        while let Some((asset, rate)) = self
+            .unwrap_vault_layer(current_token, time_remaining())
+            .await?
+        {
+            cumulative_rate *= rate;
+            current_token = asset;
+        }
+
+        let asset_price = self
+            .inner
+            .estimate_native_price(current_token, time_remaining())
+            .await?;
+        Ok(asset_price * cumulative_rate)
+    }
+
+    /// Returns `Ok(Some((asset, rate)))` if `token` is a vault, `Ok(None)` if
+    /// it is known not to be a vault, or `Err` on a real RPC/computation
+    /// failure.
+    async fn unwrap_vault_layer(
+        &self,
+        token: Address,
+        timeout: Duration,
+    ) -> Result<Option<(Address, f64)>, PriceEstimationError> {
+        if self.non_vault_tokens.contains(&token) {
+            return Ok(None);
+        }
+
+        let result = tokio::time::timeout(timeout, self.calculate_conversion_rate(token))
+            .await
+            .map_err(|_| {
+                PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                    "timeout exceeded during vault RPC calls for {token}"
+                ))
+            })?;
+
+        match result {
+            Ok(result) => Ok(Some(result)),
+            // calculate_conversion_rate → fetch_vault_info adds the token to
+            // non_vault_tokens when asset() reverts but decimals() succeeds.
+            Err(_) if self.non_vault_tokens.contains(&token) => Ok(None),
             Err(e) => Err(e),
         }
     }
