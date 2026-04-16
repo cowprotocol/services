@@ -1,6 +1,6 @@
 use {
     super::{Address, TokenAddress},
-    alloy_primitives::U256,
+    alloy_primitives::{U256, address},
     derive_more::{From, Into},
 };
 
@@ -59,5 +59,15 @@ impl Approval {
             amount: U256::ZERO,
             ..self.0
         })
+    }
+
+    /// Some tokens (e.g. USDT on Mainnet) revert when approving a non-zero
+    /// value if the current allowance is also non-zero. For these tokens
+    /// the allowance must be reset to 0 before setting a new value.
+    pub fn requires_reset(&self) -> bool {
+        // Mainnet USDT
+        const USDT_MAINNET: Address = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
+
+        self.0.token.0 == USDT_MAINNET
     }
 }

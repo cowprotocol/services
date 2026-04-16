@@ -170,7 +170,10 @@ pub fn tx(
 
     // Encode allowances
     for approval in approvals {
-        interactions.push(approve(&approval.0))
+        if approval.requires_reset() {
+            interactions.push(approve(&approval.revoke().0));
+        }
+        interactions.push(approve(&approval.0));
     }
 
     // Encode interactions
