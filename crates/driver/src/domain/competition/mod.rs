@@ -765,7 +765,7 @@ impl Competition {
             submission_deadline,
             response_sender,
             tracing_span: tracing::Span::current(),
-            _admission_permit: admission_permit,
+            admission_permit,
         };
 
         self.settle_queue.try_send(request).map_err(|err| {
@@ -810,7 +810,7 @@ impl Competition {
             submission_deadline,
             mut response_sender,
             tracing_span,
-            _admission_permit,
+            admission_permit,
         } = request;
         async {
             if self.eth.current_block().borrow().number >= submission_deadline.0 {
@@ -846,6 +846,7 @@ impl Competition {
             };
             observe::settled(self.solver.name(), &result);
             let _ = response_sender.send(result);
+            drop(admission_permit);
         }
         .instrument(tracing_span)
         .await
@@ -1007,7 +1008,7 @@ struct SettleRequest {
     tracing_span: tracing::Span,
     /// Held for the lifetime of the request; released on drop so the pool
     /// knows a slot has freed up.
-    _admission_permit: tokio::sync::OwnedSemaphorePermit,
+    admission_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 /// Solution information sent to the protocol by the driver before the solution
