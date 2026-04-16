@@ -163,8 +163,9 @@ async fn settle_queue_capacity_is_respected() {
             .await,
     );
 
-    // MAX_SOLUTION_STORAGE = 5. Since this is hardcoded, no more solutions can be
-    // stored.
+    // Admission permits are only consumed by /settle, not /solve, so we can
+    // generate as many bids as we want. MAX_SOLUTION_STORAGE = 5 is the only
+    // cap here.
     let solution_ids = join_all(vec![
         test.solve(),
         test.solve(),
