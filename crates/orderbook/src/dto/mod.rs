@@ -15,7 +15,7 @@ pub use {
     order::Order,
 };
 
-/// Request body for the POST /api/internal/v1/debug/simulation endpoint.
+/// Request body for the POST /restricted/api/v1/debug/simulation endpoint.
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]

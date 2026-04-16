@@ -88,7 +88,7 @@ async fn debug_order(web3: Web3) {
     // Helper to fetch the debug report.
     let fetch_debug_report = || async {
         let response = client
-            .get(format!("{API_HOST}/api/internal/v1/debug/order/{uid}"))
+            .get(format!("{API_HOST}/restricted/api/v1/debug/order/{uid}"))
             .send()
             .await
             .unwrap();
@@ -151,7 +151,9 @@ async fn debug_order(web3: Web3) {
     // Non-existent order -> 404.
     let fake_uid = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
     let response = client
-        .get(format!("{API_HOST}/api/internal/v1/debug/order/{fake_uid}"))
+        .get(format!(
+            "{API_HOST}/restricted/api/v1/debug/order/{fake_uid}"
+        ))
         .send()
         .await
         .unwrap();
@@ -232,7 +234,7 @@ async fn debug_order_filter_reason(web3: Web3) {
     let has_invalid_event = || async {
         onchain.mint_block().await;
         let response = client
-            .get(format!("{API_HOST}/api/internal/v1/debug/order/{uid}"))
+            .get(format!("{API_HOST}/restricted/api/v1/debug/order/{uid}"))
             .send()
             .await
             .unwrap();
@@ -247,7 +249,7 @@ async fn debug_order_filter_reason(web3: Web3) {
         .unwrap();
 
     let response = client
-        .get(format!("{API_HOST}/api/internal/v1/debug/order/{uid}"))
+        .get(format!("{API_HOST}/restricted/api/v1/debug/order/{uid}"))
         .send()
         .await
         .unwrap();
