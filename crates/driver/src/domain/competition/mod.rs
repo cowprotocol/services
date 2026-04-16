@@ -229,7 +229,6 @@ pub struct Competition {
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
-    settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
 }
@@ -257,10 +256,8 @@ impl Competition {
         let settle_queue_size = solver.settle_queue_size();
         let submitter_pool =
             SubmitterPool::new(solver.address(), submission_accounts, settle_queue_size);
-        let queue_size = submitter_pool.admission.available_permits();
-        let (settle_sender, settle_receiver) = mpsc::channel(queue_size);
 
-        let competition = Arc::new(Self {
+        Arc::new(Self {
             solver,
             eth,
             liquidity,
@@ -268,21 +265,11 @@ impl Competition {
             simulator,
             mempools,
             settlements: Default::default(),
-            settle_queue: settle_sender,
             risk_detector,
             fetcher,
             order_sorting_strategies,
             submitter_pool,
-        });
-
-        let competition_clone = Arc::clone(&competition);
-        tokio::spawn(async move {
-            competition_clone
-                .process_settle_requests(settle_receiver)
-                .await;
-        });
-
-        competition
+        })
     }
 
     /// Solve an auction as part of this competition.
@@ -747,7 +734,7 @@ impl Competition {
     /// Execute the solution generated as part of this competition. Use
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(
-        &self,
+        self: &Arc<Self>,
         auction_id: auction::Id,
         solution_id: u64,
         submission_deadline: BlockNo,
@@ -757,24 +744,27 @@ impl Competition {
             Error::TooManyPendingSettlements
         })?;
 
-        let (response_sender, response_receiver) = oneshot::channel();
+        let (mut response_sender, response_receiver) = oneshot::channel();
 
-        let request = SettleRequest {
-            auction_id,
-            solution_id,
-            submission_deadline,
-            response_sender,
-            tracing_span: tracing::Span::current(),
-            admission_permit,
-        };
-
-        self.settle_queue.try_send(request).map_err(|err| {
-            tracing::warn!(?err, "Failed to enqueue /settle request");
-            Error::TooManyPendingSettlements
-        })?;
+        let this = Arc::clone(self);
+        let tracing_span = tracing::Span::current();
+        tokio::spawn(async move {
+            let result = this
+                .execute_settle(
+                    auction_id,
+                    solution_id,
+                    submission_deadline,
+                    &mut response_sender,
+                )
+                .instrument(tracing_span)
+                .await;
+            observe::settled(this.solver.name(), &result);
+            let _ = response_sender.send(result);
+            drop(admission_permit);
+        });
 
         response_receiver.await.map_err(|err| {
-            tracing::error!(?err, "Failed to dequeue /settle response");
+            tracing::error!(?err, "settle task terminated unexpectedly");
             Error::SubmissionError
         })?
     }
@@ -788,68 +778,35 @@ impl Competition {
         }
     }
 
-    async fn process_settle_requests(
-        self: Arc<Self>,
-        mut settle_receiver: mpsc::Receiver<SettleRequest>,
-    ) {
-        while let Some(request) = settle_receiver.recv().await {
-            // When only the direct solver EOA slot exists and no delegated accounts are set
-            // up, the pool's acquire() blocks until the slot is free,  serializing
-            // settlements.
-            let this = Arc::clone(&self);
-            tokio::spawn(async move {
-                this.handle_settle_request(request).await;
-            });
+    async fn execute_settle(
+        &self,
+        auction_id: auction::Id,
+        solution_id: u64,
+        submission_deadline: BlockNo,
+        response_sender: &mut oneshot::Sender<Result<Settled, Error>>,
+    ) -> Result<Settled, Error> {
+        if self.eth.current_block().borrow().number >= submission_deadline.0 {
+            return Err(DeadlineExceeded.into());
         }
-    }
 
-    async fn handle_settle_request(self: &Arc<Self>, request: SettleRequest) {
-        let SettleRequest {
-            auction_id,
-            solution_id,
-            submission_deadline,
-            mut response_sender,
-            tracing_span,
-            admission_permit,
-        } = request;
-        async {
-            if self.eth.current_block().borrow().number >= submission_deadline.0 {
-                if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
-                    tracing::error!(
-                        ?err,
-                        "settle deadline exceeded. unable to return a response"
-                    );
-                }
-                return;
+        let settle_fut =
+            Box::pin(self.process_settle_request(auction_id, solution_id, submission_deadline));
+        let closed_fut = Box::pin(response_sender.closed());
+        match futures::future::select(closed_fut, settle_fut).await {
+            // Cancel the settlement task if the caller disconnected (e.g.
+            // autopilot gave up). Grace period lets the driver cancel a
+            // pending tx if needed.
+            Either::Left((_closed, settle_fut)) => {
+                tracing::debug!("autopilot terminated settle call");
+                tokio::time::timeout(Duration::from_secs(1), settle_fut)
+                    .await
+                    .unwrap_or_else(|_| {
+                        tracing::error!("didn't finish tx submission within grace period");
+                        Err(DeadlineExceeded.into())
+                    })
             }
-
-            observe::settling();
-            let settle_fut =
-                Box::pin(self.process_settle_request(auction_id, solution_id, submission_deadline));
-            let closed_fut = Box::pin(response_sender.closed());
-            let result = match futures::future::select(closed_fut, settle_fut).await {
-                // Cancel the settlement task if the sender is closed (client likely
-                // disconnected). This is a fallback to recover from issues
-                // like a stuck driver (e.g., stalled block stream).
-                Either::Left((_closed, settle_fut)) => {
-                    tracing::debug!("autopilot terminated settle call");
-                    // Add a grace period to give driver the last chance to cancel the
-                    // tx if needed.
-                    tokio::time::timeout(Duration::from_secs(1), settle_fut)
-                        .await
-                        .unwrap_or_else(|_| {
-                            tracing::error!("didn't finish tx submission within grace period");
-                            Err(DeadlineExceeded.into())
-                        })
-                }
-                Either::Right((res, _)) => res,
-            };
-            observe::settled(self.solver.name(), &result);
-            let _ = response_sender.send(result);
-            drop(admission_permit);
+            Either::Right((res, _)) => res,
         }
-        .instrument(tracing_span)
-        .await
     }
 
     async fn process_settle_request(
@@ -998,17 +955,6 @@ fn merge(
         )
     });
     merged
-}
-
-struct SettleRequest {
-    auction_id: auction::Id,
-    solution_id: u64,
-    submission_deadline: BlockNo,
-    response_sender: oneshot::Sender<Result<Settled, Error>>,
-    tracing_span: tracing::Span,
-    /// Held for the lifetime of the request; released on drop so the pool
-    /// knows a slot has freed up.
-    admission_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 /// Solution information sent to the protocol by the driver before the solution
