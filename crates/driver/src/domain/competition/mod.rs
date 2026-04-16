@@ -213,6 +213,40 @@ impl Drop for SubmitterGuard {
     }
 }
 
+/// Wrapper around a spawned settlement task's [`JoinHandle`]. When dropped
+/// (e.g. because the HTTP handler was cancelled by the autopilot), the task is
+/// aborted after a short grace period to allow cleanup (e.g. cancelling a
+/// pending mempool tx).
+struct SettleTaskHandle(task::JoinHandle<Result<Settled, Error>>);
+
+impl std::future::Future for SettleTaskHandle {
+    type Output = Result<Settled, Error>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        std::pin::Pin::new(&mut self.0).poll(cx).map(|join_result| {
+            join_result.map_err(|err| {
+                tracing::error!(?err, "settle task panicked");
+                Error::SubmissionError
+            })?
+        })
+    }
+}
+
+impl Drop for SettleTaskHandle {
+    fn drop(&mut self) {
+        if !self.0.is_finished() {
+            let handle = self.0.abort_handle();
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                handle.abort();
+            });
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Competition {
     pub solver: Solver,
@@ -747,6 +781,9 @@ impl Competition {
 
         let this = Arc::clone(self);
         let tracing_span = tracing::Span::current();
+        // Spawn as a separate task to enable concurrent EIP-7702 submissions.
+        // SettleTaskHandle aborts the task (with a grace period) if the caller
+        // disconnects.
         let handle = tokio::spawn(
             async move {
                 let result = this
@@ -758,11 +795,7 @@ impl Competition {
             }
             .instrument(tracing_span),
         );
-
-        handle.await.map_err(|err| {
-            tracing::error!(?err, "settle task panicked");
-            Error::SubmissionError
-        })?
+        SettleTaskHandle(handle).await
     }
 
     pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
