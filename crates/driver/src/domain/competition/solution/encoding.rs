@@ -43,6 +43,7 @@ pub fn tx(
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
     solver_native_token: ManageNativeToken,
+    chain_id: u64,
 ) -> Result<eth::Tx, Error> {
     let mut tokens = Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut clearing_prices =
@@ -170,7 +171,7 @@ pub fn tx(
 
     // Encode allowances
     for approval in approvals {
-        if approval.requires_reset() {
+        if approval.requires_reset(chain_id) {
             interactions.push(approve(&approval.revoke().0));
         }
         interactions.push(approve(&approval.0));

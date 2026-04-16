@@ -61,13 +61,30 @@ impl Approval {
         })
     }
 
-    /// Some tokens (e.g. USDT on Mainnet) revert when approving a non-zero
-    /// value if the current allowance is also non-zero. For these tokens
-    /// the allowance must be reset to 0 before setting a new value.
-    pub fn requires_reset(&self) -> bool {
-        // Mainnet USDT
-        const USDT_MAINNET: Address = address!("dAC17F958D2ee523a2206206994597C13D831ec7");
+    /// Some tokens (e.g. USDT) revert when approving a non-zero value if the
+    /// current allowance is also non-zero. For these tokens the allowance must
+    /// be reset to 0 before setting a new value.
+    pub fn requires_reset(&self, chain_id: u64) -> bool {
+        let tokens: &[Address] = match chain_id {
+            // Mainnet
+            1 => &[address!("dAC17F958D2ee523a2206206994597C13D831ec7")],
+            // Arbitrum One
+            42161 => &[address!("Fd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9")],
+            // Gnosis
+            100 => &[address!("4ECaBa5870353805a9F068101A40E0f32ed605C6")],
+            // Optimism
+            10 => &[address!("94b008aA00579c1307B0EF2c499aD98a8ce58e58")],
+            // Polygon
+            137 => &[address!("c2132D05D31c914a87C6611C10748AEb04B58e8F")],
+            // Avalanche
+            43114 => &[address!("9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7")],
+            // BNB
+            56 => &[address!("55d398326f99059fF775485246999027B3197955")],
+            // Base
+            8453 => &[address!("fde4C96c8593536E31F229EA8f37b2ADa2699bb2")],
+            _ => &[],
+        };
 
-        self.0.token.0 == USDT_MAINNET
+        tokens.contains(&self.0.token.0)
     }
 }
