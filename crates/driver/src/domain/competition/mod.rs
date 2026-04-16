@@ -741,14 +741,14 @@ impl Competition {
             Error::TooManyPendingSettlements
         })?;
 
+        if self.eth.current_block().borrow().number >= submission_deadline.0 {
+            return Err(DeadlineExceeded.into());
+        }
+
         let this = Arc::clone(self);
         let tracing_span = tracing::Span::current();
         let handle = tokio::spawn(
             async move {
-                if this.eth.current_block().borrow().number >= submission_deadline.0 {
-                    return Err(DeadlineExceeded.into());
-                }
-
                 let result = this
                     .process_settle_request(auction_id, solution_id, submission_deadline)
                     .await;
