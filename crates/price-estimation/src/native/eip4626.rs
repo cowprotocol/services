@@ -33,17 +33,11 @@ pub struct Eip4626 {
 }
 
 impl Eip4626 {
-    pub fn new(
-        inner: Box<dyn NativePriceEstimating>,
-        provider: AlloyProvider,
-        weth: Address,
-    ) -> Self {
-        let non_vault_tokens = DashSet::new();
-        non_vault_tokens.insert(weth);
+    pub fn new(inner: Box<dyn NativePriceEstimating>, provider: AlloyProvider) -> Self {
         Self {
             inner,
             provider,
-            non_vault_tokens,
+            non_vault_tokens: DashSet::new(),
         }
     }
 
