@@ -15,6 +15,8 @@ CREATE TABLE uniswap_v3_pools (
     fee              INT      NOT NULL,  -- fee tier in bps (500, 3000, 10000)
     token0_decimals  SMALLINT,
     token1_decimals  SMALLINT,
+    token0_symbol    TEXT,
+    token1_symbol    TEXT,
     created_block    BIGINT   NOT NULL,
     PRIMARY KEY (chain_id, address)
 );

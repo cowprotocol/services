@@ -84,12 +84,12 @@ impl From<&db::PoolRow> for PoolResponse {
             token0: TokenInfo {
                 id: r.token0,
                 decimals: r.token0_decimals,
-                symbol: r.token0_symbol.clone(),
+                symbol: non_empty(&r.token0_symbol),
             },
             token1: TokenInfo {
                 id: r.token1,
                 decimals: r.token1_decimals,
-                symbol: r.token1_symbol.clone(),
+                symbol: non_empty(&r.token1_symbol),
             },
             fee_tier: r.fee,
             liquidity: r.liquidity.clone(),
@@ -98,6 +98,12 @@ impl From<&db::PoolRow> for PoolResponse {
             ticks: None,
         }
     }
+}
+
+/// Empty strings are a "tried-and-failed" sentinel written by the symbol
+/// backfill task; surface them as missing rather than as `""`.
+fn non_empty(s: &Option<String>) -> Option<String> {
+    s.as_ref().filter(|s| !s.is_empty()).cloned()
 }
 
 /// Returns all pools whose token symbols match the given filter(s).

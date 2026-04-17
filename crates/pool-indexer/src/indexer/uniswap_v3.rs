@@ -23,8 +23,6 @@ use {
 type LiquidityCache = HashMap<(Address, u64), u128>;
 /// Cached ERC-20 decimal value keyed by token address.
 type DecimalsCache = HashMap<Address, u8>;
-/// Cached ERC-20 symbol string keyed by token address.
-type SymbolsCache = HashMap<Address, String>;
 
 /// Data for a newly discovered pool, sourced from a `PoolCreated` factory
 /// event.
@@ -118,6 +116,7 @@ impl UniswapV3Indexer {
             self.db.clone(),
             self.chain_id,
             self.prefetch_concurrency,
+            poll_interval,
         ));
         loop {
             if let Err(err) = self.run_once().await {
@@ -230,15 +229,16 @@ impl UniswapV3Indexer {
 
     #[instrument(skip(self, logs), fields(chunk_start, chunk_end))]
     async fn commit_chunk(&self, chunk_start: u64, chunk_end: u64, logs: Vec<Log>) -> Result<()> {
-        // Pre-fetch all I/O (liquidity eth_calls + decimals/symbols eth_calls) in
-        // parallel before opening the DB transaction.
-        let (liq_cache, dec_cache, sym_cache) = tokio::join!(
+        // Pre-fetch all I/O (liquidity + decimals eth_calls) in parallel before
+        // opening the DB transaction. Symbols are intentionally excluded — a
+        // hung `symbol()` call must never block pool inserts. They're populated
+        // later by the async backfill task.
+        let (liq_cache, dec_cache) = tokio::join!(
             self.prefetch_liquidities(&logs),
             self.prefetch_decimals(&logs),
-            self.prefetch_symbols(&logs),
         );
 
-        let changes = self.collect_changes(&logs, &liq_cache, &dec_cache, &sym_cache);
+        let changes = self.collect_changes(&logs, &liq_cache, &dec_cache);
 
         tracing::debug!(
             chunk_start,
@@ -269,9 +269,8 @@ impl UniswapV3Indexer {
         logs: &[Log],
         liq_cache: &LiquidityCache,
         dec_cache: &DecimalsCache,
-        sym_cache: &SymbolsCache,
     ) -> ChunkChanges {
-        collect_log_changes(self.factory, logs, liq_cache, dec_cache, sym_cache)
+        collect_log_changes(self.factory, logs, liq_cache, dec_cache)
     }
 
     /// Parallel-fetch liquidity for every unique (pool, block) pair from
@@ -310,20 +309,6 @@ impl UniswapV3Indexer {
             })
             .buffer_unordered(self.prefetch_concurrency)
             .filter_map(|(token, opt)| async move { opt.map(|d| (token, d)) })
-            .collect()
-            .await
-    }
-
-    /// Parallel-fetch ERC-20 symbols for all tokens referenced in PoolCreated
-    /// events.
-    async fn prefetch_symbols(&self, logs: &[Log]) -> SymbolsCache {
-        futures::stream::iter(pool_created_token_addresses(self.factory, logs))
-            .map(|token| async move {
-                let sym = fetch_symbol(&self.provider, token).await;
-                (token, sym)
-            })
-            .buffer_unordered(self.prefetch_concurrency)
-            .filter_map(|(token, opt)| async move { opt.map(|s| (token, s)) })
             .collect()
             .await
     }
@@ -371,24 +356,40 @@ async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> 
         .ok()
 }
 
+/// Periodically fills in missing `token{0,1}_symbol` values on
+/// `uniswap_v3_pools`. Runs forever, sleeping `poll_interval` between passes so
+/// newly-indexed pools get their symbols backfilled.
+///
+/// Tokens whose `symbol()` call fails (revert, decode error, empty result) are
+/// persisted as the empty string so subsequent passes skip them — otherwise we
+/// would hammer known-broken tokens on every tick. A process restart re-probes
+/// them once (cheap, and useful if the earlier failure was transient).
 async fn backfill_symbols(
     provider: AlloyProvider,
     db: sqlx::PgPool,
     chain_id: u64,
     prefetch_concurrency: usize,
-) {
-    let tokens = match db::get_tokens_missing_symbols(&db, chain_id).await {
-        Ok(t) => t,
-        Err(err) => {
-            tracing::warn!(
-                ?err,
-                "failed to query tokens missing symbols, skipping backfill"
-            );
-            return;
+    poll_interval: std::time::Duration,
+) -> ! {
+    loop {
+        if let Err(err) = run_backfill_pass(&provider, &db, chain_id, prefetch_concurrency).await {
+            tracing::warn!(?err, "token symbol backfill pass failed");
         }
-    };
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
+async fn run_backfill_pass(
+    provider: &AlloyProvider,
+    db: &sqlx::PgPool,
+    chain_id: u64,
+    prefetch_concurrency: usize,
+) -> Result<()> {
+    let tokens = db::get_tokens_missing_symbols(db, chain_id)
+        .await
+        .context("get_tokens_missing_symbols")?;
     if tokens.is_empty() {
-        return;
+        return Ok(());
     }
     let total = tokens.len();
     tracing::info!(total, "backfilling token symbols");
@@ -398,20 +399,18 @@ async fn backfill_symbols(
 
     for chunk in tokens.chunks(500) {
         let symbols: Vec<(Address, String)> = futures::stream::iter(chunk.iter().copied())
-            .map(|token| {
-                let provider = provider.clone();
-                async move {
-                    let sym = fetch_symbol(&provider, token).await;
-                    (token, sym)
-                }
+            .map(|token| async move {
+                // `None` → "" sentinel: marks the token as "tried and failed" so
+                // the next backfill pass's `IS NULL` filter skips it.
+                let sym = fetch_symbol(provider, token).await.unwrap_or_default();
+                (token, sym)
             })
             .buffer_unordered(prefetch_concurrency)
-            .filter_map(|(token, opt)| async move { opt.map(|s| (token, s)) })
             .collect()
             .await;
 
         for (token, symbol) in &symbols {
-            match db::set_token_symbol(&db, chain_id, token, symbol).await {
+            match db::set_token_symbol(db, chain_id, token, symbol).await {
                 Ok(()) => updated += 1,
                 Err(err) => tracing::warn!(%token, ?err, "failed to backfill symbol"),
             }
@@ -421,7 +420,8 @@ async fn backfill_symbols(
         tracing::info!(processed, total, updated, "token symbol backfill progress");
     }
 
-    tracing::info!(updated, total, "token symbol backfill complete");
+    tracing::info!(updated, total, "token symbol backfill pass complete");
+    Ok(())
 }
 
 async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String> {
@@ -482,14 +482,10 @@ struct LogAccumulator {
 }
 
 impl LogAccumulator {
-    /// Records a newly discovered pool, filling token metadata from the
-    /// prefetch caches.
-    fn handle_pool_created(
-        &mut self,
-        log: &Log,
-        dec_cache: &DecimalsCache,
-        sym_cache: &SymbolsCache,
-    ) {
+    /// Records a newly discovered pool, filling decimals from the prefetch
+    /// cache. Symbols are left `None` here and populated later by the
+    /// background backfill task.
+    fn handle_pool_created(&mut self, log: &Log, dec_cache: &DecimalsCache) {
         let Ok(decoded) = PoolCreated::decode_log(&log.inner) else {
             return;
         };
@@ -508,8 +504,8 @@ impl LogAccumulator {
                 fee: e.fee.to::<u32>(),
                 token0_decimals: dec_cache.get(&token0).copied(),
                 token1_decimals: dec_cache.get(&token1).copied(),
-                token0_symbol: sym_cache.get(&token0).cloned(),
-                token1_symbol: sym_cache.get(&token1).cloned(),
+                token0_symbol: None,
+                token1_symbol: None,
                 created_block,
             },
         );
@@ -656,14 +652,13 @@ fn collect_log_changes(
     logs: &[Log],
     liq_cache: &LiquidityCache,
     dec_cache: &DecimalsCache,
-    sym_cache: &SymbolsCache,
 ) -> ChunkChanges {
     let mut acc = LogAccumulator::default();
     for log in logs {
         let Some(t) = log.topic0() else { continue };
         match *t {
             t if t == PoolCreated::SIGNATURE_HASH && log.address() == factory => {
-                acc.handle_pool_created(log, dec_cache, sym_cache);
+                acc.handle_pool_created(log, dec_cache);
             }
             t if t == Initialize::SIGNATURE_HASH => acc.handle_initialize(log),
             t if t == Swap::SIGNATURE_HASH => acc.handle_swap(log),
@@ -721,13 +716,7 @@ mod tests {
 
     #[test]
     fn empty_logs_produce_empty_changes() {
-        let c = collect_log_changes(
-            FACTORY,
-            &[],
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &[], &Default::default(), &Default::default());
         assert!(c.new_pools.is_empty());
         assert!(c.pool_states.is_empty());
         assert!(c.liquidity_updates.is_empty());
@@ -744,13 +733,7 @@ mod tests {
             pool: POOL,
         };
         let log = make_log(FACTORY, 100, event);
-        let c = collect_log_changes(
-            FACTORY,
-            &[log],
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
         assert_eq!(c.new_pools.len(), 1);
         assert_eq!(c.new_pools[0].address, POOL);
         assert_eq!(c.new_pools[0].fee, 500);
@@ -766,13 +749,7 @@ mod tests {
             pool: POOL,
         };
         let log = make_log(Address::repeat_byte(0xBB), 100, event);
-        let c = collect_log_changes(
-            FACTORY,
-            &[log],
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
         assert!(c.new_pools.is_empty());
     }
 
@@ -783,13 +760,7 @@ mod tests {
             tick: t(0),
         };
         let log = make_log(POOL, 100, event);
-        let c = collect_log_changes(
-            FACTORY,
-            &[log],
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
         assert_eq!(c.pool_states.len(), 1);
         assert_eq!(c.pool_states[0].pool_address, POOL);
         assert_eq!(c.pool_states[0].block_number, 100);
@@ -809,13 +780,7 @@ mod tests {
             tick: t(42),
         };
         let log = make_log(POOL, 200, event);
-        let c = collect_log_changes(
-            FACTORY,
-            &[log],
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
         assert_eq!(c.pool_states.len(), 1);
         assert_eq!(c.pool_states[0].tick, 42);
         assert_eq!(c.pool_states[0].liquidity, 500_000);
@@ -836,13 +801,7 @@ mod tests {
         };
         let liq_cache: LiquidityCache = HashMap::from([((POOL, 100u64), amount)]);
         let log = make_log(POOL, 100, event);
-        let c = collect_log_changes(
-            FACTORY,
-            &[log],
-            &liq_cache,
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &[log], &liq_cache, &Default::default());
 
         assert_eq!(c.tick_deltas.len(), 2);
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
@@ -881,13 +840,7 @@ mod tests {
         };
         let liq_cache: LiquidityCache = HashMap::from([((POOL, 201u64), after_mint_liq)]);
         let logs = vec![make_log(POOL, 200, swap), make_log(POOL, 201, mint)];
-        let c = collect_log_changes(
-            FACTORY,
-            &logs,
-            &liq_cache,
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &logs, &liq_cache, &Default::default());
 
         assert_eq!(c.pool_states.len(), 1);
         // Swap established full_state; Mint updated its liquidity from the cache.
@@ -917,13 +870,7 @@ mod tests {
             amount1: alloy::primitives::U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
-        let c = collect_log_changes(
-            FACTORY,
-            &logs,
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
         assert!(c.tick_deltas.is_empty(), "zero-net ticks must be pruned");
     }
 
@@ -949,13 +896,7 @@ mod tests {
             amount1: alloy::primitives::U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
-        let c = collect_log_changes(
-            FACTORY,
-            &logs,
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
 
         let expected = (mint_amount - burn_amount).cast_signed();
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
@@ -978,13 +919,7 @@ mod tests {
             tick: t(0),
         };
         let logs = vec![make_log(FACTORY, 100, created), make_log(POOL, 100, init)];
-        let c = collect_log_changes(
-            FACTORY,
-            &logs,
-            &Default::default(),
-            &Default::default(),
-            &Default::default(),
-        );
+        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
         assert_eq!(c.new_pools.len(), 1);
         assert_eq!(c.pool_states.len(), 1);
         assert_eq!(c.pool_states[0].pool_address, POOL);
