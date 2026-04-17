@@ -30,7 +30,7 @@ pub async fn get_checkpoint(
 }
 
 pub async fn set_checkpoint(
-    tx: &mut Transaction<'_, Postgres>,
+    executor: impl sqlx::PgExecutor<'_>,
     chain_id: u64,
     contract: &Address,
     block_number: u64,
@@ -43,7 +43,7 @@ pub async fn set_checkpoint(
     .bind(chain_id.cast_signed())
     .bind(contract.as_slice())
     .bind(block_number.cast_signed())
-    .execute(&mut **tx)
+    .execute(executor)
     .await
     .context("set_checkpoint")?;
     Ok(())
@@ -370,7 +370,7 @@ pub async fn batch_update_ticks(
 /// Used by the subgraph seeder where the subgraph value IS the authoritative
 /// net.
 pub async fn batch_seed_ticks(
-    tx: &mut Transaction<'_, Postgres>,
+    executor: impl sqlx::PgExecutor<'_>,
     chain_id: u64,
     ticks: &[TickDeltaData],
 ) -> Result<()> {
@@ -402,19 +402,19 @@ pub async fn batch_seed_ticks(
     .bind(addresses)
     .bind(tick_idxs)
     .bind(values)
-    .execute(&mut **tx)
+    .execute(executor)
     .await
     .context("batch_seed_ticks")?;
     Ok(())
 }
 
 pub async fn delete_ticks_for_chain(
-    tx: &mut Transaction<'_, Postgres>,
+    executor: impl sqlx::PgExecutor<'_>,
     chain_id: u64,
 ) -> Result<()> {
     sqlx::query("DELETE FROM uniswap_v3_ticks WHERE chain_id = $1")
         .bind(chain_id.cast_signed())
-        .execute(&mut **tx)
+        .execute(executor)
         .await
         .context("delete_ticks_for_chain")?;
     Ok(())

@@ -292,9 +292,7 @@ pub async fn seed(
     // Clear all existing tick data so seeded values are authoritative.
     // This prevents stale rows (e.g. ticks burned to 0 before the seed block)
     // from persisting if the seeder is re-run on a non-empty database.
-    let mut tx = db.begin().await.context("begin tick clear tx")?;
-    db::delete_ticks_for_chain(&mut tx, chain_id).await?;
-    tx.commit().await.context("commit tick clear")?;
+    db::delete_ticks_for_chain(db, chain_id).await?;
 
     let mut total_ticks = 0usize;
     let url = subgraph_url.to_owned();
@@ -310,9 +308,7 @@ pub async fn seed(
         let n = ticks.len();
 
         if !ticks.is_empty() {
-            let mut tx = db.begin().await.context("begin tick tx")?;
-            db::batch_seed_ticks(&mut tx, chain_id, &ticks).await?;
-            tx.commit().await.context("commit tick tx")?;
+            db::batch_seed_ticks(db, chain_id, &ticks).await?;
         }
 
         total_ticks += n;

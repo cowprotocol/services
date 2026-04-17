@@ -78,6 +78,8 @@ async fn start_pool_indexer(factory: Address) {
             use_latest: true,
             subgraph_url: None,
             seed_block: None,
+            fetch_concurrency: 8,
+            prefetch_concurrency: 50,
         }],
         api: ApiConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),

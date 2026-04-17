@@ -136,15 +136,13 @@ impl UniswapV3Indexer {
     /// checkpoint itself — it advances naturally per-chunk as blocks are
     /// indexed.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
-        let mut tx = self.db.begin().await.context("begin checkpoint tx")?;
         db::set_checkpoint(
-            &mut tx,
+            &self.db,
             self.chain_id,
             &self.factory,
             from_block.saturating_sub(1),
         )
         .await?;
-        tx.commit().await.context("commit checkpoint")?;
         loop {
             let finalized = self
                 .provider
@@ -256,7 +254,7 @@ impl UniswapV3Indexer {
         db::batch_upsert_pool_states(&mut tx, self.chain_id, &changes.pool_states).await?;
         db::batch_update_pool_liquidity(&mut tx, self.chain_id, &changes.liquidity_updates).await?;
         db::batch_update_ticks(&mut tx, self.chain_id, &changes.tick_deltas).await?;
-        db::set_checkpoint(&mut tx, self.chain_id, &self.factory, chunk_end).await?;
+        db::set_checkpoint(&mut *tx, self.chain_id, &self.factory, chunk_end).await?;
         tx.commit().await.context("commit transaction")?;
 
         Ok(())
@@ -372,14 +370,16 @@ async fn backfill_symbols(
     poll_interval: std::time::Duration,
 ) -> ! {
     loop {
-        if let Err(err) = run_backfill_pass(&provider, &db, chain_id, prefetch_concurrency).await {
+        if let Err(err) =
+            run_symbol_backfill_pass(&provider, &db, chain_id, prefetch_concurrency).await
+        {
             tracing::warn!(?err, "token symbol backfill pass failed");
         }
         tokio::time::sleep(poll_interval).await;
     }
 }
 
-async fn run_backfill_pass(
+async fn run_symbol_backfill_pass(
     provider: &AlloyProvider,
     db: &sqlx::PgPool,
     chain_id: u64,
