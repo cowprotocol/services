@@ -254,7 +254,12 @@ impl UniswapV3Indexer {
         // hung `symbol()` call must never block pool inserts. They're populated
         // later by the async backfill task.
         let prefetched = self.prefetch_chunk_data(&logs).await;
-        let changes = self.collect_changes(&logs, &prefetched);
+        let changes = collect_log_changes(
+            self.factory,
+            &logs,
+            &prefetched.liquidities,
+            &prefetched.decimals,
+        );
 
         tracing::debug!(
             chunk_start = chunk.start,
@@ -280,17 +285,6 @@ impl UniswapV3Indexer {
         tx.commit().await.context("commit transaction")?;
 
         Ok(())
-    }
-
-    /// Collect all state changes from a set of logs into in-memory structures.
-    /// This is pure computation — all I/O was done during the prefetch phase.
-    fn collect_changes(&self, logs: &[Log], prefetched: &PrefetchedChunkData) -> ChunkChanges {
-        collect_log_changes(
-            self.factory,
-            logs,
-            &prefetched.liquidities,
-            &prefetched.decimals,
-        )
     }
 
     async fn prefetch_chunk_data(&self, logs: &[Log]) -> PrefetchedChunkData {
