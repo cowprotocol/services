@@ -5,7 +5,7 @@ use {
     anyhow::Context,
     contracts::{ERC20, IERC4626},
     dashmap::DashSet,
-    ethrpc::AlloyProvider,
+    ethrpc::{AlloyProvider, alloy::errors::ContractErrorExt},
     futures::{FutureExt, future::BoxFuture},
     num::{BigInt, BigRational, ToPrimitive},
     number::conversions::u256_to_big_rational,
@@ -38,111 +38,116 @@ impl Eip4626 {
         provider: AlloyProvider,
         weth: Address,
     ) -> Self {
+        let non_vault_tokens = DashSet::new();
+        non_vault_tokens.insert(weth);
         Self {
             inner,
             provider,
-            non_vault_tokens: {
-                let non_vault_tokens = DashSet::new();
-                non_vault_tokens.insert(weth);
-                non_vault_tokens
-            },
+            non_vault_tokens,
         }
     }
 
     async fn estimate(&self, token: Address, timeout: Duration) -> NativePriceEstimateResult {
-        // Known non-vault or zero timeout: delegate directly. A zero timeout is
-        // used by callers (e.g. the autopilot's WETH price fetch) as a
-        // "best-effort / use cached data" signal — the inner estimator and its
-        // callers treat it as advisory, not as a hard cutoff.
-        if self.non_vault_tokens.contains(&token) {
-            return self.inner.estimate_native_price(token, timeout).await;
-        }
-
         let deadline = Instant::now() + timeout;
-        let time_remaining = || deadline.saturating_duration_since(Instant::now());
+        let (underlying, cumulative_rate) =
+            tokio::time::timeout(timeout, self.unwrap_all_layers(token))
+                .await
+                .map_err(|_| {
+                    PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                        "timeout while unwrapping EIP-4626 layers for {token}"
+                    ))
+                })??;
 
-        // Iteratively unwrap vault layers, accumulating the conversion rate.
-        let mut current_token = token;
-        let mut cumulative_rate = 1.0;
-
-        while let Some((asset, rate)) = self
-            .unwrap_vault_layer(current_token, time_remaining())
-            .await?
-        {
-            cumulative_rate *= rate;
-            current_token = asset;
-        }
-
+        let remaining = deadline.saturating_duration_since(Instant::now());
         let asset_price = self
             .inner
-            .estimate_native_price(current_token, time_remaining())
+            .estimate_native_price(underlying, remaining)
             .await?;
         Ok(asset_price * cumulative_rate)
     }
 
-    /// Returns `Ok(Some((asset, rate)))` if `token` is a vault, `Ok(None)` if
-    /// it is known not to be a vault, or `Err` on a real RPC/computation
-    /// failure.
+    /// Follows the vault chain (e.g. vault → vault → asset) until reaching a
+    /// non-vault token, returning the terminal token and the cumulative
+    /// shares-to-assets rate.
+    async fn unwrap_all_layers(
+        &self,
+        token: Address,
+    ) -> Result<(Address, f64), PriceEstimationError> {
+        let mut current_token = token;
+        let mut cumulative_rate = 1.0;
+        while let Some((asset, rate)) = self.unwrap_vault_layer(current_token).await? {
+            cumulative_rate *= rate;
+            current_token = asset;
+        }
+        Ok((current_token, cumulative_rate))
+    }
+
+    /// Returns:
+    /// - `Ok(Some((asset, rate)))` when `token` is a vault.
+    /// - `Ok(None)` when it's a plain ERC-20.
+    /// - `Err` on RPC/computation failures that don't let us classify the
+    ///   token.
     async fn unwrap_vault_layer(
         &self,
         token: Address,
-        timeout: Duration,
     ) -> Result<Option<(Address, f64)>, PriceEstimationError> {
         if self.non_vault_tokens.contains(&token) {
             return Ok(None);
         }
 
-        let result = tokio::time::timeout(timeout, self.calculate_conversion_rate(token))
-            .await
-            .map_err(|_| {
-                PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                    "timeout exceeded during vault RPC calls for {token}"
-                ))
-            })?;
-
-        match result {
-            Ok(result) => Ok(Some(result)),
-            // calculate_conversion_rate → fetch_vault_info adds the token to
-            // non_vault_tokens when asset() reverts but decimals() succeeds.
-            Err(_) if self.non_vault_tokens.contains(&token) => Ok(None),
-            Err(e) => Err(e),
-        }
+        let Some((asset, vault_decimals)) = self.fetch_vault_info(token).await? else {
+            self.non_vault_tokens.insert(token);
+            metrics::non_vault_cache_size(self.non_vault_tokens.len());
+            return Ok(None);
+        };
+        let (assets, asset_decimals) = self
+            .fetch_conversion_data(token, asset, vault_decimals)
+            .await?;
+        let rate = conversion_rate(assets, asset_decimals)
+            .context("conversion rate is not representable as f64")
+            .map_err(PriceEstimationError::EstimatorInternal)?;
+        Ok(Some((asset, rate)))
     }
 
-    /// Fetches the vault's underlying asset address and decimals.
-    /// On `asset()` revert the token is added to the negative cache if
-    /// `decimals()` succeeded (i.e. it's a valid ERC-20 but not a vault).
+    /// Fetches the vault's underlying asset address and vault token decimals.
+    ///
+    /// Returns:
+    /// - `Ok(Some(...))` when `token` is a vault.
+    /// - `Ok(None)` when `asset()` reverts (indicating it is a regular ERC-20).
+    /// - `Err` on transient transport failures — those are *not* cached as
+    ///   non-vault.
     async fn fetch_vault_info(
         &self,
         token: Address,
-    ) -> Result<(Address, u8), PriceEstimationError> {
+    ) -> Result<Option<(Address, u8)>, PriceEstimationError> {
         let vault = IERC4626::IERC4626::new(token, &self.provider);
         let vault_erc20 = ERC20::ERC20::new(token, &self.provider);
         let asset_call = vault.asset();
         let decimals_call = vault_erc20.decimals();
         let (asset_result, decimals_result) = tokio::join!(asset_call.call(), decimals_call.call());
-        let asset = match asset_result {
-            Ok(asset) => asset,
-            Err(err) => {
-                if decimals_result.is_ok() {
-                    self.non_vault_tokens.insert(token);
-                    metrics::non_vault_cache_size(self.non_vault_tokens.len());
-                }
-                return Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                    "failed to call asset() on {token}: {err}"
-                )));
+
+        match asset_result {
+            Ok(asset) => {
+                // EIP-4626 vaults implement ERC-20 so decimals() must succeed too.
+                let vault_decimals = decimals_result.map_err(|err| {
+                    PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                        "failed to call decimals() on {token}: {err}"
+                    ))
+                })?;
+                Ok(Some((asset, vault_decimals)))
             }
-        };
-        // EIP-4626 vaults implement ERC-20, so decimals() must succeed if asset() did.
-        let vault_decimals = decimals_result.map_err(|err| {
-            PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                "failed to call decimals() on {token}: {err}"
-            ))
-        })?;
-        Ok((asset, vault_decimals))
+            // `asset()` reverted but the contract is a valid ERC-20 (decimals()
+            // succeeded). Classify as non-vault.
+            Err(err) if err.is_contract_error() && decimals_result.is_ok() => Ok(None),
+            Err(err) => Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                "failed to call asset() on {token}: {err}"
+            ))),
+        }
     }
 
-    /// Queries `convertToAssets(10^vault_decimals)` and the asset's decimals.
+    /// Fetches `convertToAssets(10^vault_decimals)` — how many atomic units of
+    /// the underlying asset correspond to one full vault token — and the
+    /// asset's decimals.
     async fn fetch_conversion_data(
         &self,
         token: Address,
@@ -166,24 +171,6 @@ impl Eip4626 {
                 "failed to call convertToAssets()/decimals() on {token}: {err}"
             ))
         })
-    }
-
-    /// Fetches the underlying asset address and the shares-to-assets
-    /// conversion rate from on-chain vault calls. On `asset()` revert the
-    /// token is added to the negative cache. Transient errors (transport
-    /// failures) are not cached.
-    async fn calculate_conversion_rate(
-        &self,
-        token: Address,
-    ) -> Result<(Address, f64), PriceEstimationError> {
-        let (asset, vault_decimals) = self.fetch_vault_info(token).await?;
-        let (assets, asset_decimals) = self
-            .fetch_conversion_data(token, asset, vault_decimals)
-            .await?;
-        let rate = conversion_rate(assets, asset_decimals)
-            .context("conversion rate is not representable as f64")
-            .map_err(PriceEstimationError::EstimatorInternal)?;
-        Ok((asset, rate))
     }
 }
 

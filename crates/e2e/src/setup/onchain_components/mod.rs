@@ -12,7 +12,8 @@ use {
     },
     app_data::Hook,
     contracts::{
-        ERC20Mintable, GPv2AllowListAuthentication::GPv2AllowListAuthentication,
+        ERC20Mintable,
+        GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         test::CowProtocolToken,
     },
     ethrpc::alloy::{CallBuilderExt, ProviderSignerExt},
