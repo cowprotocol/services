@@ -484,6 +484,24 @@ impl OrderCreationAppData {
             }
         }
     }
+
+    /// Returns the `appCode` field from the full app data JSON, if present.
+    /// Returns `None` when only the hash is provided, when parsing fails, or
+    /// when the field is absent.
+    pub fn app_code(&self) -> Option<String> {
+        #[derive(Deserialize)]
+        struct AppCodeOnly {
+            #[serde(rename = "appCode")]
+            app_code: Option<String>,
+        }
+        let full = match self {
+            Self::Hash { .. } => return None,
+            Self::Full { full } | Self::Both { full, .. } => full,
+        };
+        serde_json::from_str::<AppCodeOnly>(full)
+            .ok()
+            .and_then(|r| r.app_code)
+    }
 }
 
 #[derive(Debug)]
@@ -1070,6 +1088,36 @@ mod tests {
         serde_json::json,
         testlib::assert_json_matches,
     };
+
+    #[test]
+    fn app_code_is_extracted_from_full_app_data() {
+        let full = r#"{"appCode":"CoW Swap","metadata":{}}"#.to_string();
+        let app_data = OrderCreationAppData::Full { full };
+        assert_eq!(app_data.app_code().as_deref(), Some("CoW Swap"));
+    }
+
+    #[test]
+    fn app_code_is_none_for_hash_only() {
+        let app_data = OrderCreationAppData::Hash {
+            hash: AppDataHash([0; 32]),
+        };
+        assert_eq!(app_data.app_code(), None);
+    }
+
+    #[test]
+    fn app_code_is_none_when_field_absent() {
+        let full = r#"{"metadata":{}}"#.to_string();
+        let app_data = OrderCreationAppData::Full { full };
+        assert_eq!(app_data.app_code(), None);
+    }
+
+    #[test]
+    fn app_code_is_none_on_invalid_json() {
+        let app_data = OrderCreationAppData::Full {
+            full: "not json".to_string(),
+        };
+        assert_eq!(app_data.app_code(), None);
+    }
 
     #[test]
     fn deserialization_and_back() {

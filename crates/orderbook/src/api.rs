@@ -71,6 +71,18 @@ pub struct AppState {
     pub quote_timeout: Duration,
 }
 
+/// Per-request metadata that handlers can attach to their response so the
+/// `summarize_request` middleware can include it in the structured log line.
+///
+/// Used by `post_quote` and `post_order` to surface the `appCode` (from
+/// `appData`) and the `from` address of the request. This lets us attribute
+/// traffic to specific integrators without resorting to WAF-layer inspection.
+#[derive(Clone, Default)]
+pub struct RequestMetadata {
+    pub app_code: Option<String>,
+    pub from: Option<String>,
+}
+
 async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Response {
     let method = req.method().to_string();
     let uri = req.uri().to_string();
@@ -86,10 +98,20 @@ async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Respon
     let response = next.run(req).await;
     let status = response.status().as_u16();
 
+    let meta = response
+        .extensions()
+        .get::<RequestMetadata>()
+        .cloned()
+        .unwrap_or_default();
+    let app_code = meta.app_code.as_deref().unwrap_or("unset");
+    let from = meta.from.as_deref().unwrap_or("unset");
+
     tracing::info!(
         method,
         uri,
         user_agent,
+        app_code,
+        from,
         status,
         elapsed = ?timer.elapsed(),
         "request_summary",

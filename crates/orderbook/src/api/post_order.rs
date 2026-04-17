@@ -1,6 +1,6 @@
 use {
     crate::{
-        api::{AppState, error},
+        api::{AppState, RequestMetadata, error},
         orderbook::{AddOrderError, OrderReplacementError},
     },
     axum::{
@@ -26,7 +26,11 @@ pub async fn post_order_handler(
     State(state): State<Arc<AppState>>,
     Json(order): Json<OrderCreation>,
 ) -> Response {
-    state
+    let metadata = RequestMetadata {
+        app_code: order.app_data.app_code(),
+        from: order.from.map(|a| format!("{a:?}")),
+    };
+    let mut response = state
         .orderbook
         .add_order(order.clone())
         .await
@@ -39,7 +43,9 @@ pub async fn post_order_handler(
         .inspect_err(|err| {
             tracing::debug!(?order, ?err, "error creating order");
         })
-        .into_response()
+        .into_response();
+    response.extensions_mut().insert(metadata);
+    response
 }
 
 pub struct PartialValidationErrorWrapper(pub PartialValidationError);

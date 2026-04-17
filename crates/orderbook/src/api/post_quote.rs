@@ -1,7 +1,7 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
     crate::{
-        api::{AppState, error, rich_error},
+        api::{AppState, RequestMetadata, error, rich_error},
         quoter::OrderQuoteError,
     },
     axum::{
@@ -19,13 +19,19 @@ pub async fn post_quote_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<OrderQuoteRequest>,
 ) -> Response {
-    state
+    let metadata = RequestMetadata {
+        app_code: request.app_data.app_code(),
+        from: Some(format!("{:?}", request.from)),
+    };
+    let mut response = state
         .quotes
         .calculate_quote(&request)
         .await
         .map(Json)
         .inspect_err(|err| tracing::warn!(%err, ?request, "post_quote error"))
-        .into_response()
+        .into_response();
+    response.extensions_mut().insert(metadata);
+    response
 }
 
 impl IntoResponse for OrderQuoteError {
