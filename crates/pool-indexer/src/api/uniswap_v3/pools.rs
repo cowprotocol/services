@@ -1,10 +1,12 @@
 use {
     super::{bad_request, internal_error, parse_hex_address, parse_pool_ids, serialize_display},
-    crate::{api::AppState, db::uniswap_v3 as db},
+    crate::{
+        api::{AppState, latest_indexed_block, resolve_chain_id},
+        db::uniswap_v3 as db,
+    },
     alloy_primitives::Address,
     axum::{
         extract::{Path, Query, State},
-        http::StatusCode,
         response::{IntoResponse, Json, Response},
     },
     bigdecimal::BigDecimal,
@@ -84,6 +86,42 @@ pub struct PoolsResponse {
     pub next_cursor: Option<String>,
 }
 
+enum PoolsRequest<'a> {
+    ByIds(&'a str),
+    Search {
+        token0: &'a str,
+        token1: Option<&'a str>,
+    },
+    PaginatedList,
+}
+
+impl PoolsQuery {
+    fn request(&self) -> PoolsRequest<'_> {
+        if let Some(pool_ids) = self.pool_ids.as_deref() {
+            PoolsRequest::ByIds(pool_ids)
+        } else if let Some(token0) = self.token0.as_deref() {
+            PoolsRequest::Search {
+                token0,
+                token1: self.token1.as_deref(),
+            }
+        } else {
+            PoolsRequest::PaginatedList
+        }
+    }
+
+    fn page_limit(&self) -> i64 {
+        self.limit.unwrap_or(1000).clamp(1, 5000)
+    }
+
+    fn cursor(&self) -> Result<Option<Vec<u8>>, Response> {
+        match self.after.as_deref().map(parse_hex_address) {
+            Some(Ok(address)) => Ok(Some(address.as_slice().to_vec())),
+            Some(Err(_)) => Err(bad_request("invalid cursor")),
+            None => Ok(None),
+        }
+    }
+}
+
 impl From<&db::PoolRow> for PoolResponse {
     fn from(r: &db::PoolRow) -> Self {
         Self {
@@ -113,6 +151,19 @@ fn non_empty(s: &Option<String>) -> Option<String> {
     s.as_ref().filter(|s| !s.is_empty()).cloned()
 }
 
+fn pools_response(
+    block_number: u64,
+    rows: &[db::PoolRow],
+    next_cursor: Option<String>,
+) -> Response {
+    Json(PoolsResponse {
+        block_number,
+        pools: rows.iter().map(PoolResponse::from).collect(),
+        next_cursor,
+    })
+    .into_response()
+}
+
 /// Returns all pools whose token symbols match the given filter(s).
 /// When only `token0` is supplied, matches any pool containing that symbol.
 /// When both are supplied, both symbols must match (order-independent).
@@ -130,12 +181,7 @@ async fn search_pools(
         db::search_pools_by_token(&state.db, chain_id, token0).await
     };
     match rows {
-        Ok(rows) => Json(PoolsResponse {
-            block_number,
-            pools: rows.iter().map(PoolResponse::from).collect(),
-            next_cursor: None,
-        })
-        .into_response(),
+        Ok(rows) => pools_response(block_number, &rows, None),
         Err(err) => internal_error(err),
     }
 }
@@ -150,43 +196,31 @@ async fn list_pools(
     block_number: u64,
     query: &PoolsQuery,
 ) -> Response {
-    let limit = query.limit.unwrap_or(1000).clamp(1, 5000);
-
-    let cursor_bytes = match query.after.as_deref().map(parse_hex_address) {
-        Some(Ok(addr)) => Some(addr.as_slice().to_vec()),
-        Some(Err(_)) => return bad_request("invalid cursor"),
-        None => None,
+    let limit = query.page_limit();
+    let cursor = match query.cursor() {
+        Ok(cursor) => cursor,
+        Err(response) => return response,
     };
 
     // Fetch one extra row to determine if there is a next page.
-    let rows = match cursor_bytes {
+    let rows = match cursor {
         Some(cursor) => db::get_pools_after(&state.db, chain_id, cursor, limit + 1).await,
         None => db::get_pools(&state.db, chain_id, limit + 1).await,
     };
-    let rows = match rows {
+    let mut rows = match rows {
         Ok(rows) => rows,
         Err(err) => return internal_error(err),
     };
 
     let limit_usize = usize::try_from(limit).unwrap_or(usize::MAX);
-    let has_next = rows.len() > limit_usize;
-    let rows = if has_next {
-        &rows[..limit_usize]
-    } else {
-        &rows[..]
-    };
-    let next_cursor = if has_next {
-        rows.last().map(|r| format!("{:?}", r.address))
+    let next_cursor = if rows.len() > limit_usize {
+        rows.truncate(limit_usize);
+        rows.last().map(|row| format!("{:?}", row.address))
     } else {
         None
     };
 
-    Json(PoolsResponse {
-        block_number,
-        pools: rows.iter().map(PoolResponse::from).collect(),
-        next_cursor,
-    })
-    .into_response()
+    pools_response(block_number, &rows, next_cursor)
 }
 
 /// Returns the pools with addresses in `pool_ids` (order not guaranteed to
@@ -199,21 +233,15 @@ async fn lookup_pools_by_ids(state: &AppState, chain_id: u64, raw_ids: &str) -> 
         Err(resp) => return resp,
     };
     let (block_res, pools_res) = tokio::join!(
-        db::get_latest_indexed_block(&state.db, chain_id),
+        latest_indexed_block(state, chain_id),
         db::get_pools_by_ids(&state.db, chain_id, &addresses),
     );
     let block_number = match block_res {
-        Ok(Some(block)) => block,
-        Ok(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        Err(err) => return internal_error(err),
+        Ok(block_number) => block_number,
+        Err(response) => return response,
     };
     match pools_res {
-        Ok(rows) => Json(PoolsResponse {
-            block_number,
-            pools: rows.iter().map(PoolResponse::from).collect(),
-            next_cursor: None,
-        })
-        .into_response(),
+        Ok(rows) => pools_response(block_number, &rows, None),
         Err(err) => internal_error(err),
     }
 }
@@ -226,30 +254,26 @@ pub async fn get_pools(
     Path(network): Path<String>,
     Query(query): Query<PoolsQuery>,
 ) -> Response {
-    let chain_id = match state.resolve_network(&network) {
-        Some(id) => id,
-        None => return StatusCode::NOT_FOUND.into_response(),
+    let chain_id = match resolve_chain_id(&state, &network) {
+        Ok(chain_id) => chain_id,
+        Err(response) => return response,
     };
 
-    if let Some(pool_ids) = query.pool_ids.as_deref() {
-        return lookup_pools_by_ids(&state, chain_id, pool_ids).await;
+    match query.request() {
+        PoolsRequest::ByIds(pool_ids) => lookup_pools_by_ids(&state, chain_id, pool_ids).await,
+        PoolsRequest::Search { token0, token1 } => {
+            let block_number = match latest_indexed_block(&state, chain_id).await {
+                Ok(block_number) => block_number,
+                Err(response) => return response,
+            };
+            search_pools(&state, chain_id, block_number, token0, token1).await
+        }
+        PoolsRequest::PaginatedList => {
+            let block_number = match latest_indexed_block(&state, chain_id).await {
+                Ok(block_number) => block_number,
+                Err(response) => return response,
+            };
+            list_pools(&state, chain_id, block_number, &query).await
+        }
     }
-
-    let block_number = match db::get_latest_indexed_block(&state.db, chain_id).await {
-        Ok(Some(block)) => block,
-        Ok(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
-        Err(err) => return internal_error(err),
-    };
-
-    if let Some(token0) = query.token0.as_deref() {
-        return search_pools(
-            &state,
-            chain_id,
-            block_number,
-            token0,
-            query.token1.as_deref(),
-        )
-        .await;
-    }
-    list_pools(&state, chain_id, block_number, &query).await
 }

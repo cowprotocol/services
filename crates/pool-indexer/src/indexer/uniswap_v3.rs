@@ -24,6 +24,8 @@ type LiquidityCache = HashMap<(Address, u64), u128>;
 /// Cached ERC-20 decimal value keyed by token address.
 type DecimalsCache = HashMap<Address, u8>;
 
+const SYMBOL_BACKFILL_BATCH_SIZE: usize = 500;
+
 /// Data for a newly discovered pool, sourced from a `PoolCreated` factory
 /// event.
 pub struct NewPoolData {
@@ -77,6 +79,17 @@ struct ChunkChanges {
     liquidity_updates: Vec<LiquidityUpdateData>,
     /// Accumulated tick deltas.
     tick_deltas: Vec<TickDeltaData>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ChunkRange {
+    start: u64,
+    end: u64,
+}
+
+struct PrefetchedChunkData {
+    liquidities: LiquidityCache,
+    decimals: DecimalsCache,
 }
 
 /// Indexes Uniswap V3 events for a single factory contract, persisting pool
@@ -143,61 +156,70 @@ impl UniswapV3Indexer {
             from_block.saturating_sub(1),
         )
         .await?;
+
         loop {
-            let finalized = self
-                .provider
-                .get_block_by_number(self.finality_tag)
-                .await
-                .context("get finalized block")?
-                .context("no finalized block")?
-                .header
-                .number;
-            let last = db::get_checkpoint(&self.db, self.chain_id, &self.factory)
-                .await?
-                .unwrap_or(0);
-            if last >= finalized {
-                tracing::info!(block = finalized, "caught up to finalized block");
+            let finalized_block = self.finalized_block().await?;
+            let last_indexed_block = self.last_indexed_block().await?;
+
+            if last_indexed_block >= finalized_block {
+                tracing::info!(block = finalized_block, "caught up to finalized block");
                 return Ok(());
             }
+
             self.run_once().await?;
         }
     }
 
     async fn run_once(&self) -> Result<()> {
-        let finalized = self
+        let finalized_block = self.finalized_block().await?;
+        let last_indexed_block = self.last_indexed_block().await?;
+
+        if last_indexed_block >= finalized_block {
+            return Ok(());
+        }
+
+        // Fetch chunks' logs in parallel; commit in order.
+        futures::stream::iter(self.pending_chunks(last_indexed_block, finalized_block))
+            .map(|chunk| async move {
+                let logs = self.fetch_logs_bisecting(chunk.start, chunk.end).await?;
+                Ok::<_, anyhow::Error>((chunk, logs))
+            })
+            .buffered(self.fetch_concurrency)
+            .try_for_each(|(chunk, logs)| self.commit_chunk(chunk, logs))
+            .await
+    }
+
+    async fn finalized_block(&self) -> Result<u64> {
+        Ok(self
             .provider
             .get_block_by_number(self.finality_tag)
             .await
             .context("get finalized block")?
             .context("no finalized block")?
             .header
-            .number;
+            .number)
+    }
 
-        let last_indexed = db::get_checkpoint(&self.db, self.chain_id, &self.factory)
+    async fn last_indexed_block(&self) -> Result<u64> {
+        Ok(db::get_checkpoint(&self.db, self.chain_id, &self.factory)
             .await?
-            .unwrap_or(0);
+            .unwrap_or(0))
+    }
 
-        if last_indexed >= finalized {
-            return Ok(());
-        }
-
+    fn pending_chunks(&self, last_indexed_block: u64, finalized_block: u64) -> Vec<ChunkRange> {
         let mut chunks = Vec::new();
-        let mut start = last_indexed + 1;
-        while start <= finalized {
-            let end = (start + self.chunk_size - 1).min(finalized);
-            chunks.push((start, end));
-            start = end + 1;
+        let mut next_start = last_indexed_block + 1;
+
+        while next_start <= finalized_block {
+            let next_end = (next_start + self.chunk_size - 1).min(finalized_block);
+            chunks.push(ChunkRange {
+                start: next_start,
+                end: next_end,
+            });
+            next_start = next_end + 1;
         }
 
-        // Fetch chunks' logs in parallel; commit in order.
-        futures::stream::iter(chunks)
-            .map(|(start, end)| async move {
-                let logs = self.fetch_logs_bisecting(start, end).await?;
-                Ok::<_, anyhow::Error>((start, end, logs))
-            })
-            .buffered(self.fetch_concurrency)
-            .try_for_each(|(start, end, logs)| self.commit_chunk(start, end, logs))
-            .await
+        chunks
     }
 
     /// Fetches logs for `[from, to]`, sequentially bisecting on
@@ -225,22 +247,18 @@ impl UniswapV3Indexer {
         })
     }
 
-    #[instrument(skip(self, logs), fields(chunk_start, chunk_end))]
-    async fn commit_chunk(&self, chunk_start: u64, chunk_end: u64, logs: Vec<Log>) -> Result<()> {
+    #[instrument(skip(self, logs), fields(chunk_start = chunk.start, chunk_end = chunk.end))]
+    async fn commit_chunk(&self, chunk: ChunkRange, logs: Vec<Log>) -> Result<()> {
         // Pre-fetch all I/O (liquidity + decimals eth_calls) in parallel before
         // opening the DB transaction. Symbols are intentionally excluded — a
         // hung `symbol()` call must never block pool inserts. They're populated
         // later by the async backfill task.
-        let (liq_cache, dec_cache) = tokio::join!(
-            self.prefetch_liquidities(&logs),
-            self.prefetch_decimals(&logs),
-        );
-
-        let changes = self.collect_changes(&logs, &liq_cache, &dec_cache);
+        let prefetched = self.prefetch_chunk_data(&logs).await;
+        let changes = self.collect_changes(&logs, &prefetched);
 
         tracing::debug!(
-            chunk_start,
-            chunk_end,
+            chunk_start = chunk.start,
+            chunk_end = chunk.end,
             log_count = logs.len(),
             new_pools = changes.new_pools.len(),
             pool_states = changes.pool_states.len(),
@@ -249,12 +267,16 @@ impl UniswapV3Indexer {
             "processing chunk"
         );
 
+        self.persist_chunk(chunk, changes).await
+    }
+
+    async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<()> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
         db::batch_insert_pools(&mut tx, self.chain_id, &changes.new_pools).await?;
         db::batch_upsert_pool_states(&mut tx, self.chain_id, &changes.pool_states).await?;
         db::batch_update_pool_liquidity(&mut tx, self.chain_id, &changes.liquidity_updates).await?;
         db::batch_update_ticks(&mut tx, self.chain_id, &changes.tick_deltas).await?;
-        db::set_checkpoint(&mut *tx, self.chain_id, &self.factory, chunk_end).await?;
+        db::set_checkpoint(&mut *tx, self.chain_id, &self.factory, chunk.end).await?;
         tx.commit().await.context("commit transaction")?;
 
         Ok(())
@@ -262,13 +284,25 @@ impl UniswapV3Indexer {
 
     /// Collect all state changes from a set of logs into in-memory structures.
     /// This is pure computation — all I/O was done during the prefetch phase.
-    fn collect_changes(
-        &self,
-        logs: &[Log],
-        liq_cache: &LiquidityCache,
-        dec_cache: &DecimalsCache,
-    ) -> ChunkChanges {
-        collect_log_changes(self.factory, logs, liq_cache, dec_cache)
+    fn collect_changes(&self, logs: &[Log], prefetched: &PrefetchedChunkData) -> ChunkChanges {
+        collect_log_changes(
+            self.factory,
+            logs,
+            &prefetched.liquidities,
+            &prefetched.decimals,
+        )
+    }
+
+    async fn prefetch_chunk_data(&self, logs: &[Log]) -> PrefetchedChunkData {
+        let (liquidities, decimals) = tokio::join!(
+            self.prefetch_liquidities(logs),
+            self.prefetch_decimals(logs),
+        );
+
+        PrefetchedChunkData {
+            liquidities,
+            decimals,
+        }
     }
 
     /// Parallel-fetch liquidity for every unique (pool, block) pair from
@@ -337,6 +371,10 @@ fn signed24_to_i32(v: alloy::primitives::aliases::I24) -> i32 {
     (raw << 8).cast_signed() >> 8
 }
 
+fn log_block_number(log: &Log) -> u64 {
+    log.block_number.unwrap_or_default()
+}
+
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
     contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
         .liquidity()
@@ -397,8 +435,8 @@ async fn run_symbol_backfill_pass(
     let mut updated = 0usize;
     let mut processed = 0usize;
 
-    for chunk in tokens.chunks(500) {
-        let symbols: Vec<(Address, String)> = futures::stream::iter(chunk.iter().copied())
+    for token_batch in tokens.chunks(SYMBOL_BACKFILL_BATCH_SIZE) {
+        let symbols: Vec<(Address, String)> = futures::stream::iter(token_batch.iter().copied())
             .map(|token| async move {
                 // `None` → "" sentinel: marks the token as "tried and failed" so
                 // the next backfill pass's `IS NULL` filter skips it.
@@ -416,7 +454,7 @@ async fn run_symbol_backfill_pass(
             }
         }
 
-        processed += chunk.len();
+        processed += token_batch.len();
         tracing::info!(processed, total, updated, "token symbol backfill progress");
     }
 
@@ -493,7 +531,7 @@ impl LogAccumulator {
         let pool: Address = e.pool;
         let token0: Address = e.token0;
         let token1: Address = e.token1;
-        let created_block = log.block_number.unwrap_or(0);
+        let created_block = log_block_number(log);
         tracing::debug!(%pool, %token0, %token1, fee = e.fee.to::<u32>(), "discovered pool");
         self.new_pools.insert(
             pool,
@@ -519,7 +557,7 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log.block_number.unwrap_or(0);
+        let block = log_block_number(log);
         let liquidity = self
             .full_states
             .get(&pool)
@@ -545,7 +583,7 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log.block_number.unwrap_or(0);
+        let block = log_block_number(log);
         self.full_states.insert(
             pool,
             PoolStateData {
@@ -567,16 +605,14 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log.block_number.unwrap_or(0);
+        let block = log_block_number(log);
         let amount = e.amount.cast_signed();
-        *self
-            .tick_deltas
-            .entry((pool, signed24_to_i32(e.tickLower)))
-            .or_default() += amount;
-        *self
-            .tick_deltas
-            .entry((pool, signed24_to_i32(e.tickUpper)))
-            .or_default() -= amount;
+        self.record_tick_range_delta(
+            pool,
+            signed24_to_i32(e.tickLower),
+            signed24_to_i32(e.tickUpper),
+            amount,
+        );
         self.update_liquidity_from_cache(pool, block, liq_cache);
     }
 
@@ -588,17 +624,26 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log.block_number.unwrap_or(0);
+        let block = log_block_number(log);
         let amount = e.amount.cast_signed();
-        *self
-            .tick_deltas
-            .entry((pool, signed24_to_i32(e.tickLower)))
-            .or_default() -= amount;
-        *self
-            .tick_deltas
-            .entry((pool, signed24_to_i32(e.tickUpper)))
-            .or_default() += amount;
+        self.record_tick_range_delta(
+            pool,
+            signed24_to_i32(e.tickLower),
+            signed24_to_i32(e.tickUpper),
+            -amount,
+        );
         self.update_liquidity_from_cache(pool, block, liq_cache);
+    }
+
+    fn record_tick_range_delta(
+        &mut self,
+        pool: Address,
+        lower_tick: i32,
+        upper_tick: i32,
+        liquidity_delta: i128,
+    ) {
+        *self.tick_deltas.entry((pool, lower_tick)).or_default() += liquidity_delta;
+        *self.tick_deltas.entry((pool, upper_tick)).or_default() -= liquidity_delta;
     }
 
     /// Refreshes the stored liquidity for `pool` at `block` using the

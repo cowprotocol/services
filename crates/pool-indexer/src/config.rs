@@ -93,22 +93,14 @@ pub struct NetworkConfig {
     pub prefetch_concurrency: usize,
 }
 
-/// The subset of [`NetworkConfig`] that [`UniswapV3Indexer`] needs.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+/// The subset of [`NetworkConfig`] that [`UniswapV3Indexer`] needs at runtime.
+#[derive(Debug, Clone, Copy)]
 pub struct IndexerConfig {
     pub chain_id: u64,
-    pub rpc_url: Url,
     pub factory_address: Address,
-    #[serde(default = "default_chunk_size")]
     pub chunk_size: u64,
-    #[serde(default = "default_poll_interval_secs")]
-    pub poll_interval_secs: u64,
-    #[serde(skip)]
     pub use_latest: bool,
-    #[serde(default = "default_fetch_concurrency")]
     pub fetch_concurrency: usize,
-    #[serde(default = "default_prefetch_concurrency")]
     pub prefetch_concurrency: usize,
 }
 
@@ -120,20 +112,12 @@ impl NetworkConfig {
     pub fn indexer_config(&self) -> IndexerConfig {
         IndexerConfig {
             chain_id: self.chain_id,
-            rpc_url: self.rpc_url.clone(),
             factory_address: self.factory_address,
             chunk_size: self.chunk_size,
-            poll_interval_secs: self.poll_interval_secs,
             use_latest: self.use_latest,
             fetch_concurrency: self.fetch_concurrency,
             prefetch_concurrency: self.prefetch_concurrency,
         }
-    }
-}
-
-impl IndexerConfig {
-    pub fn poll_interval(&self) -> Duration {
-        Duration::from_secs(self.poll_interval_secs)
     }
 }
 

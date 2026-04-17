@@ -22,6 +22,26 @@ impl AppState {
     }
 }
 
+pub(super) fn resolve_chain_id(
+    state: &AppState,
+    network: &str,
+) -> Result<u64, axum::response::Response> {
+    state
+        .resolve_network(network)
+        .ok_or_else(|| StatusCode::NOT_FOUND.into_response())
+}
+
+pub(super) async fn latest_indexed_block(
+    state: &AppState,
+    chain_id: u64,
+) -> Result<u64, axum::response::Response> {
+    match crate::db::uniswap_v3::get_latest_indexed_block(&state.db, chain_id).await {
+        Ok(Some(block_number)) => Ok(block_number),
+        Ok(None) => Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+        Err(err) => Err(uniswap_v3::internal_error(err)),
+    }
+}
+
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(health))

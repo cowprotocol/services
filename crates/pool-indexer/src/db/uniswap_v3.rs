@@ -12,6 +12,42 @@ fn bytes_to_addr(b: Vec<u8>) -> Result<Address> {
     Address::try_from(b.as_slice()).context("invalid address bytes")
 }
 
+fn sql_chain_id(chain_id: u64) -> i64 {
+    chain_id.cast_signed()
+}
+
+fn sql_block_number(block_number: u64) -> i64 {
+    block_number.cast_signed()
+}
+
+fn sql_fee(fee: u32) -> i32 {
+    fee.cast_signed()
+}
+
+fn sql_decimals(decimals: Option<u8>) -> Option<i16> {
+    decimals.map(i16::from)
+}
+
+fn sql_u128(value: u128) -> BigDecimal {
+    BigDecimal::from(BigInt::from(value))
+}
+
+fn sql_i128(value: i128) -> BigDecimal {
+    BigDecimal::from(BigInt::from(value))
+}
+
+fn address_bytes(address: &Address) -> &[u8] {
+    address.as_slice()
+}
+
+fn address_bytes_list(addresses: &[Address]) -> Vec<&[u8]> {
+    addresses.iter().map(|address| address.as_slice()).collect()
+}
+
+fn decode_pool_rows(rows: Vec<PgRow>) -> Result<Vec<PoolRow>> {
+    rows.into_iter().map(PoolRow::try_from).collect()
+}
+
 pub async fn get_checkpoint(
     pool: &PgPool,
     chain_id: u64,
@@ -20,8 +56,8 @@ pub async fn get_checkpoint(
     let row = sqlx::query(
         "SELECT block_number FROM pool_indexer_checkpoints WHERE chain_id = $1 AND contract = $2",
     )
-    .bind(chain_id.cast_signed())
-    .bind(contract.as_slice())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(contract))
     .fetch_optional(pool)
     .await
     .context("get_checkpoint")?;
@@ -40,9 +76,9 @@ pub async fn set_checkpoint(
          VALUES ($1, $2, $3)
          ON CONFLICT (chain_id, contract) DO UPDATE SET block_number = EXCLUDED.block_number",
     )
-    .bind(chain_id.cast_signed())
-    .bind(contract.as_slice())
-    .bind(block_number.cast_signed())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(contract))
+    .bind(sql_block_number(block_number))
     .execute(executor)
     .await
     .context("set_checkpoint")?;
@@ -68,14 +104,14 @@ pub async fn insert_pool(
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (chain_id, address) DO NOTHING",
     )
-    .bind(chain_id.cast_signed())
-    .bind(address.as_slice())
-    .bind(token0.as_slice())
-    .bind(token1.as_slice())
-    .bind(fee.cast_signed())
-    .bind(token0_decimals.map(i16::from))
-    .bind(token1_decimals.map(i16::from))
-    .bind(created_block.cast_signed())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(address))
+    .bind(address_bytes(token0))
+    .bind(address_bytes(token1))
+    .bind(sql_fee(fee))
+    .bind(sql_decimals(token0_decimals))
+    .bind(sql_decimals(token1_decimals))
+    .bind(sql_block_number(created_block))
     .execute(&mut **tx)
     .await
     .context("insert_pool")?;
@@ -102,11 +138,11 @@ pub async fn upsert_pool_state(
                  liquidity      = EXCLUDED.liquidity,
                  tick           = EXCLUDED.tick",
     )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
-    .bind(block_number.cast_signed())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(pool_address))
+    .bind(sql_block_number(block_number))
     .bind(u160_to_big_decimal(&sqrt_price_x96))
-    .bind(BigDecimal::from(BigInt::from(liquidity)))
+    .bind(sql_u128(liquidity))
     .bind(tick)
     .execute(&mut **tx)
     .await
@@ -126,10 +162,10 @@ pub async fn update_pool_liquidity(
          SET liquidity = $3, block_number = $4
          WHERE chain_id = $1 AND pool_address = $2",
     )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
-    .bind(BigDecimal::from(BigInt::from(liquidity)))
-    .bind(block_number.cast_signed())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(pool_address))
+    .bind(sql_u128(liquidity))
+    .bind(sql_block_number(block_number))
     .execute(&mut **tx)
     .await
     .context("update_pool_liquidity")?;
@@ -152,10 +188,10 @@ pub async fn update_tick_liquidity_net(
          ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
              SET liquidity_net = uniswap_v3_ticks.liquidity_net + EXCLUDED.liquidity_net",
     )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(pool_address))
     .bind(tick_idx)
-    .bind(BigDecimal::from(BigInt::from(delta)))
+    .bind(sql_i128(delta))
     .execute(&mut **tx)
     .await
     .context("update_tick_liquidity_net upsert")?;
@@ -164,8 +200,8 @@ pub async fn update_tick_liquidity_net(
         "DELETE FROM uniswap_v3_ticks
          WHERE chain_id = $1 AND pool_address = $2 AND tick_idx = $3 AND liquidity_net = 0",
     )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(pool_address))
     .bind(tick_idx)
     .execute(&mut **tx)
     .await
@@ -182,23 +218,32 @@ pub async fn batch_insert_pools(
     if pools.is_empty() {
         return Ok(());
     }
-    let addresses: Vec<&[u8]> = pools.iter().map(|p| p.address.as_slice()).collect();
-    let token0s: Vec<&[u8]> = pools.iter().map(|p| p.token0.as_slice()).collect();
-    let token1s: Vec<&[u8]> = pools.iter().map(|p| p.token1.as_slice()).collect();
-    let fees: Vec<i32> = pools.iter().map(|p| p.fee.cast_signed()).collect();
+    let addresses: Vec<&[u8]> = pools
+        .iter()
+        .map(|pool| address_bytes(&pool.address))
+        .collect();
+    let token0s: Vec<&[u8]> = pools
+        .iter()
+        .map(|pool| address_bytes(&pool.token0))
+        .collect();
+    let token1s: Vec<&[u8]> = pools
+        .iter()
+        .map(|pool| address_bytes(&pool.token1))
+        .collect();
+    let fees: Vec<i32> = pools.iter().map(|pool| sql_fee(pool.fee)).collect();
     let t0_decimals: Vec<Option<i16>> = pools
         .iter()
-        .map(|p| p.token0_decimals.map(i16::from))
+        .map(|pool| sql_decimals(pool.token0_decimals))
         .collect();
     let t1_decimals: Vec<Option<i16>> = pools
         .iter()
-        .map(|p| p.token1_decimals.map(i16::from))
+        .map(|pool| sql_decimals(pool.token1_decimals))
         .collect();
     let t0_symbols: Vec<Option<String>> = pools.iter().map(|p| p.token0_symbol.clone()).collect();
     let t1_symbols: Vec<Option<String>> = pools.iter().map(|p| p.token1_symbol.clone()).collect();
     let created_blocks: Vec<i64> = pools
         .iter()
-        .map(|p| p.created_block.cast_signed())
+        .map(|pool| sql_block_number(pool.created_block))
         .collect();
 
     sqlx::query(
@@ -211,7 +256,7 @@ pub async fn batch_insert_pools(
               AS t(addr, t0, t1, fee, t0d, t1d, t0s, t1s, cblk)
          ON CONFLICT (chain_id, address) DO NOTHING",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(addresses)
     .bind(token0s)
     .bind(token1s)
@@ -235,20 +280,23 @@ pub async fn batch_upsert_pool_states(
     if states.is_empty() {
         return Ok(());
     }
-    let addresses: Vec<&[u8]> = states.iter().map(|s| s.pool_address.as_slice()).collect();
+    let addresses: Vec<&[u8]> = states
+        .iter()
+        .map(|state| address_bytes(&state.pool_address))
+        .collect();
     let block_numbers: Vec<i64> = states
         .iter()
-        .map(|s| s.block_number.cast_signed())
+        .map(|state| sql_block_number(state.block_number))
         .collect();
     let sqrt_prices: Vec<BigDecimal> = states
         .iter()
-        .map(|s| u160_to_big_decimal(&s.sqrt_price_x96))
+        .map(|state| u160_to_big_decimal(&state.sqrt_price_x96))
         .collect();
     let liquidities: Vec<BigDecimal> = states
         .iter()
-        .map(|s| BigDecimal::from(BigInt::from(s.liquidity)))
+        .map(|state| sql_u128(state.liquidity))
         .collect();
-    let ticks: Vec<i32> = states.iter().map(|s| s.tick).collect();
+    let ticks: Vec<i32> = states.iter().map(|state| state.tick).collect();
 
     sqlx::query(
         "WITH latest AS (
@@ -268,7 +316,7 @@ pub async fn batch_upsert_pool_states(
                  liquidity      = EXCLUDED.liquidity,
                  tick           = EXCLUDED.tick",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(addresses)
     .bind(block_numbers)
     .bind(sqrt_prices)
@@ -288,14 +336,17 @@ pub async fn batch_update_pool_liquidity(
     if updates.is_empty() {
         return Ok(());
     }
-    let addresses: Vec<&[u8]> = updates.iter().map(|u| u.pool_address.as_slice()).collect();
+    let addresses: Vec<&[u8]> = updates
+        .iter()
+        .map(|update| address_bytes(&update.pool_address))
+        .collect();
     let liquidities: Vec<BigDecimal> = updates
         .iter()
-        .map(|u| BigDecimal::from(BigInt::from(u.liquidity)))
+        .map(|update| sql_u128(update.liquidity))
         .collect();
     let block_numbers: Vec<i64> = updates
         .iter()
-        .map(|u| u.block_number.cast_signed())
+        .map(|update| sql_block_number(update.block_number))
         .collect();
 
     sqlx::query(
@@ -309,7 +360,7 @@ pub async fn batch_update_pool_liquidity(
          FROM latest l
          WHERE s.chain_id = $1 AND s.pool_address = l.addr",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(addresses)
     .bind(liquidities)
     .bind(block_numbers)
@@ -327,12 +378,12 @@ pub async fn batch_update_ticks(
     if deltas.is_empty() {
         return Ok(());
     }
-    let addresses: Vec<&[u8]> = deltas.iter().map(|d| d.pool_address.as_slice()).collect();
-    let tick_idxs: Vec<i32> = deltas.iter().map(|d| d.tick_idx).collect();
-    let delta_values: Vec<BigDecimal> = deltas
+    let addresses: Vec<&[u8]> = deltas
         .iter()
-        .map(|d| BigDecimal::from(BigInt::from(d.delta)))
+        .map(|delta| address_bytes(&delta.pool_address))
         .collect();
+    let tick_idxs: Vec<i32> = deltas.iter().map(|delta| delta.tick_idx).collect();
+    let delta_values: Vec<BigDecimal> = deltas.iter().map(|delta| sql_i128(delta.delta)).collect();
 
     sqlx::query(
         "WITH input AS (
@@ -356,7 +407,7 @@ pub async fn batch_update_ticks(
            AND ticks.tick_idx   = upserted.tick_idx
            AND upserted.liquidity_net = 0",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(addresses)
     .bind(tick_idxs)
     .bind(delta_values)
@@ -377,12 +428,12 @@ pub async fn batch_seed_ticks(
     if ticks.is_empty() {
         return Ok(());
     }
-    let addresses: Vec<&[u8]> = ticks.iter().map(|d| d.pool_address.as_slice()).collect();
-    let tick_idxs: Vec<i32> = ticks.iter().map(|d| d.tick_idx).collect();
-    let values: Vec<BigDecimal> = ticks
+    let addresses: Vec<&[u8]> = ticks
         .iter()
-        .map(|d| BigDecimal::from(BigInt::from(d.delta)))
+        .map(|tick| address_bytes(&tick.pool_address))
         .collect();
+    let tick_idxs: Vec<i32> = ticks.iter().map(|tick| tick.tick_idx).collect();
+    let values: Vec<BigDecimal> = ticks.iter().map(|tick| sql_i128(tick.delta)).collect();
 
     sqlx::query(
         "WITH input AS (
@@ -398,7 +449,7 @@ pub async fn batch_seed_ticks(
          ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
              SET liquidity_net = EXCLUDED.liquidity_net",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(addresses)
     .bind(tick_idxs)
     .bind(values)
@@ -413,7 +464,7 @@ pub async fn delete_ticks_for_chain(
     chain_id: u64,
 ) -> Result<()> {
     sqlx::query("DELETE FROM uniswap_v3_ticks WHERE chain_id = $1")
-        .bind(chain_id.cast_signed())
+        .bind(sql_chain_id(chain_id))
         .execute(executor)
         .await
         .context("delete_ticks_for_chain")?;
@@ -461,7 +512,7 @@ impl TryFrom<PgRow> for PoolRow {
 
 /// Fetches a page of pools ordered by address with their current state.
 pub async fn get_pools(pool: &PgPool, chain_id: u64, limit: i64) -> Result<Vec<PoolRow>> {
-    sqlx::query(
+    let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
                 p.token0_decimals, p.token1_decimals,
                 p.token0_symbol, p.token1_symbol,
@@ -473,14 +524,13 @@ pub async fn get_pools(pool: &PgPool, chain_id: u64, limit: i64) -> Result<Vec<P
          ORDER BY p.address
          LIMIT $2",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(limit)
     .fetch_all(pool)
     .await
-    .context("get_pools")?
-    .into_iter()
-    .map(PoolRow::try_from)
-    .collect()
+    .context("get_pools")?;
+
+    decode_pool_rows(rows)
 }
 
 /// Fetches the next page of pools after `cursor` address (keyset pagination).
@@ -490,7 +540,7 @@ pub async fn get_pools_after(
     cursor: Vec<u8>,
     limit: i64,
 ) -> Result<Vec<PoolRow>> {
-    sqlx::query(
+    let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
                 p.token0_decimals, p.token1_decimals,
                 p.token0_symbol, p.token1_symbol,
@@ -503,15 +553,14 @@ pub async fn get_pools_after(
          ORDER BY p.address
          LIMIT $3",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(cursor)
     .bind(limit)
     .fetch_all(pool)
     .await
-    .context("get_pools_after")?
-    .into_iter()
-    .map(PoolRow::try_from)
-    .collect()
+    .context("get_pools_after")?;
+
+    decode_pool_rows(rows)
 }
 
 pub struct TickRow {
@@ -541,8 +590,7 @@ pub async fn get_pools_by_ids(
     if addresses.is_empty() {
         return Ok(Vec::new());
     }
-    let addrs: Vec<&[u8]> = addresses.iter().map(|a| a.as_slice()).collect();
-    sqlx::query(
+    let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
                 p.token0_decimals, p.token1_decimals,
                 p.token0_symbol, p.token1_symbol,
@@ -554,14 +602,13 @@ pub async fn get_pools_by_ids(
            AND p.address = ANY($2)
          ORDER BY p.address",
     )
-    .bind(chain_id.cast_signed())
-    .bind(addrs)
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes_list(addresses))
     .fetch_all(pool)
     .await
-    .context("get_pools_by_ids")?
-    .into_iter()
-    .map(PoolRow::try_from)
-    .collect()
+    .context("get_pools_by_ids")?;
+
+    decode_pool_rows(rows)
 }
 
 /// Fetches ticks for multiple pools in one query, capped at
@@ -578,7 +625,6 @@ pub async fn get_ticks_for_pools(
     if addresses.is_empty() {
         return Ok(Vec::new());
     }
-    let addrs: Vec<&[u8]> = addresses.iter().map(|a| a.as_slice()).collect();
     sqlx::query(
         "SELECT t.pool_address, t.tick_idx, t.liquidity_net
          FROM UNNEST($2::BYTEA[]) AS p(addr)
@@ -591,8 +637,8 @@ pub async fn get_ticks_for_pools(
          ) t ON TRUE
          ORDER BY t.pool_address, t.tick_idx",
     )
-    .bind(chain_id.cast_signed())
-    .bind(addrs)
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes_list(addresses))
     .bind(MAX_TICKS_PER_POOL)
     .fetch_all(pool)
     .await
@@ -621,8 +667,8 @@ pub async fn get_ticks(
          ORDER BY tick_idx
          LIMIT $3",
     )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(pool_address))
     .bind(MAX_TICKS_PER_POOL)
     .fetch_all(pool)
     .await
@@ -645,7 +691,7 @@ pub async fn search_pools_by_token(
     token: &str,
 ) -> Result<Vec<PoolRow>> {
     let pattern = format!("%{}%", token.to_lowercase());
-    sqlx::query(
+    let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
                 p.token0_decimals, p.token1_decimals,
                 p.token0_symbol, p.token1_symbol,
@@ -657,14 +703,13 @@ pub async fn search_pools_by_token(
            AND (LOWER(p.token0_symbol) LIKE $2 OR LOWER(p.token1_symbol) LIKE $2)
          ORDER BY s.liquidity DESC",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(&pattern)
     .fetch_all(pool)
     .await
-    .context("search_pools_by_token")?
-    .into_iter()
-    .map(PoolRow::try_from)
-    .collect()
+    .context("search_pools_by_token")?;
+
+    decode_pool_rows(rows)
 }
 
 /// Searches pools matching a pair of token symbols (partial, case-insensitive,
@@ -677,7 +722,7 @@ pub async fn search_pools_by_pair(
 ) -> Result<Vec<PoolRow>> {
     let t0 = format!("%{}%", token0.to_lowercase());
     let t1 = format!("%{}%", token1.to_lowercase());
-    sqlx::query(
+    let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
                 p.token0_decimals, p.token1_decimals,
                 p.token0_symbol, p.token1_symbol,
@@ -692,15 +737,14 @@ pub async fn search_pools_by_pair(
            )
          ORDER BY s.liquidity DESC",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .bind(&t0)
     .bind(&t1)
     .fetch_all(pool)
     .await
-    .context("search_pools_by_pair")?
-    .into_iter()
-    .map(PoolRow::try_from)
-    .collect()
+    .context("search_pools_by_pair")?;
+
+    decode_pool_rows(rows)
 }
 
 /// Returns all distinct token addresses that have no symbol recorded yet.
@@ -714,7 +758,7 @@ pub async fn get_tokens_missing_symbols(pool: &PgPool, chain_id: u64) -> Result<
              WHERE chain_id = $1 AND token1_symbol IS NULL
          ) t",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .fetch_all(pool)
     .await
     .context("get_tokens_missing_symbols")?;
@@ -737,8 +781,8 @@ pub async fn set_token_symbol(
         "UPDATE uniswap_v3_pools SET token0_symbol = $3
          WHERE chain_id = $1 AND token0 = $2 AND token0_symbol IS NULL",
     )
-    .bind(chain_id.cast_signed())
-    .bind(token.as_slice())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(token))
     .bind(symbol)
     .execute(&mut *tx)
     .await
@@ -748,8 +792,8 @@ pub async fn set_token_symbol(
         "UPDATE uniswap_v3_pools SET token1_symbol = $3
          WHERE chain_id = $1 AND token1 = $2 AND token1_symbol IS NULL",
     )
-    .bind(chain_id.cast_signed())
-    .bind(token.as_slice())
+    .bind(sql_chain_id(chain_id))
+    .bind(address_bytes(token))
     .bind(symbol)
     .execute(&mut *tx)
     .await
@@ -763,7 +807,7 @@ pub async fn get_latest_indexed_block(pool: &PgPool, chain_id: u64) -> Result<Op
     let row = sqlx::query(
         "SELECT MAX(block_number) AS max_block FROM pool_indexer_checkpoints WHERE chain_id = $1",
     )
-    .bind(chain_id.cast_signed())
+    .bind(sql_chain_id(chain_id))
     .fetch_one(pool)
     .await
     .context("get_latest_indexed_block")?;

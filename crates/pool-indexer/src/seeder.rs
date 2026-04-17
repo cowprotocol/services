@@ -98,113 +98,311 @@ struct MetaBlock {
     number: u64,
 }
 
-/// Executes a GraphQL query against `url` and deserialises the `data` field.
-/// Returns an error if the response contains a top-level `errors` array.
-async fn gql<T: for<'de> Deserialize<'de>>(
-    client: &Client,
-    url: &str,
-    query: &str,
-    vars: Value,
-) -> Result<T> {
-    let resp = client
-        .post(url)
-        .json(&json!({ "query": query, "variables": vars }))
-        .send()
-        .await
-        .context("subgraph HTTP request")?;
-    let gql_resp: GqlResponse = resp.json().await.context("decode subgraph response")?;
-    if let Some(errors) = gql_resp.errors {
-        bail!("subgraph errors: {errors}");
-    }
-    let data = gql_resp.data.context("missing data field")?;
-    serde_json::from_value(data).context("decode subgraph data")
-}
-
-async fn fetch_current_block(client: &Client, url: &str) -> Result<u64> {
-    let page: MetaPage = gql(client, url, "{ _meta { block { number } } }", json!({})).await?;
-    Ok(page.meta.block.number)
-}
-
-/// Fetches one page of pools at `block`, ordered by id and starting after
-/// `cursor` (empty string to start from the beginning).
-async fn fetch_pools_page(
-    client: &Client,
-    url: &str,
-    block: u64,
-    cursor: &str,
-) -> Result<Vec<SubgraphPool>> {
-    let query = "query($block: Int!, $cursor: String!) {
-        pools(first: 1000, orderBy: id, where: {id_gt: $cursor}, block: {number: $block}) {
-            id
-            token0 { id decimals symbol }
-            token1 { id decimals symbol }
-            feeTier
-            createdAtBlockNumber
-            sqrtPrice
-            liquidity
-            tick
-        }
-    }";
-    let page: PoolsPage = gql(
-        client,
-        url,
-        query,
-        json!({ "block": block, "cursor": cursor }),
-    )
-    .await?;
-    Ok(page.pools)
-}
-
-/// Fetches all ticks for `pool_id` at `block` using keyset pagination.
-/// Returns each tick as a [`TickDeltaData`] where `delta` is the subgraph's
-/// `liquidityNet` (treated as an absolute value, not a running delta).
-async fn fetch_ticks_for_pool(
-    client: Client,
+#[derive(Clone)]
+struct SubgraphClient {
+    http: Client,
     url: String,
-    pool_id: String,
-    block: u64,
-) -> Result<Vec<TickDeltaData>> {
-    let query = "query($pool: String!, $cursor: Int!, $block: Int!) {
-        ticks(
-            first: 1000,
-            orderBy: tickIdx,
-            where: { pool: $pool, tickIdx_gt: $cursor },
-            block: { number: $block }
-        ) {
-            tickIdx
-            liquidityNet
-        }
-    }";
+}
 
-    let pool_addr: Address = pool_id.parse().context("parse pool address")?;
-    let mut ticks = Vec::new();
-    let mut cursor: i64 = TICK_IDX_CURSOR_START;
+impl SubgraphClient {
+    fn new(url: &str) -> Result<Self> {
+        let http = Client::builder()
+            .timeout(SUBGRAPH_REQUEST_TIMEOUT)
+            .build()
+            .context("build HTTP client")?;
 
-    loop {
-        let page: TicksPage = gql(
-            &client,
-            &url,
-            query,
-            json!({ "pool": pool_id, "cursor": cursor, "block": block }),
-        )
-        .await?;
-
-        let n = page.ticks.len();
-        for t in &page.ticks {
-            ticks.push(TickDeltaData {
-                pool_address: pool_addr,
-                tick_idx: t.tick_idx.parse().context("parse tickIdx")?,
-                delta: t.liquidity_net.parse().context("parse liquidityNet")?,
-            });
-        }
-
-        if n < PAGE_SIZE {
-            break;
-        }
-        cursor = ticks.last().unwrap().tick_idx as i64;
+        Ok(Self {
+            http,
+            url: url.to_owned(),
+        })
     }
 
-    Ok(ticks)
+    /// Executes a GraphQL query and deserialises the `data` field.
+    /// Returns an error if the response contains a top-level `errors` array.
+    async fn query<T: for<'de> Deserialize<'de>>(&self, query: &str, vars: Value) -> Result<T> {
+        let response = self
+            .http
+            .post(&self.url)
+            .json(&json!({ "query": query, "variables": vars }))
+            .send()
+            .await
+            .context("subgraph HTTP request")?;
+
+        let gql_response: GqlResponse =
+            response.json().await.context("decode subgraph response")?;
+        if let Some(errors) = gql_response.errors {
+            bail!("subgraph errors: {errors}");
+        }
+
+        let data = gql_response.data.context("missing data field")?;
+        serde_json::from_value(data).context("decode subgraph data")
+    }
+
+    async fn current_block(&self) -> Result<u64> {
+        let page: MetaPage = self
+            .query("{ _meta { block { number } } }", json!({}))
+            .await?;
+        Ok(page.meta.block.number)
+    }
+
+    /// Fetches one page of pools at `block`, ordered by id and starting after
+    /// `cursor` (empty string to start from the beginning).
+    async fn fetch_pools_page(&self, block: u64, cursor: &str) -> Result<Vec<SubgraphPool>> {
+        let query = "query($block: Int!, $cursor: String!) {
+            pools(first: 1000, orderBy: id, where: {id_gt: $cursor}, block: {number: $block}) {
+                id
+                token0 { id decimals symbol }
+                token1 { id decimals symbol }
+                feeTier
+                createdAtBlockNumber
+                sqrtPrice
+                liquidity
+                tick
+            }
+        }";
+
+        let page: PoolsPage = self
+            .query(query, json!({ "block": block, "cursor": cursor }))
+            .await?;
+        Ok(page.pools)
+    }
+
+    /// Fetches all ticks for `pool_id` at `block` using keyset pagination.
+    /// Returns each tick as a [`TickDeltaData`] where `delta` is the subgraph's
+    /// `liquidityNet` (treated as an absolute value, not a running delta).
+    async fn fetch_ticks_for_pool(
+        &self,
+        pool_id: String,
+        block: u64,
+    ) -> Result<Vec<TickDeltaData>> {
+        let query = "query($pool: String!, $cursor: Int!, $block: Int!) {
+            ticks(
+                first: 1000,
+                orderBy: tickIdx,
+                where: { pool: $pool, tickIdx_gt: $cursor },
+                block: { number: $block }
+            ) {
+                tickIdx
+                liquidityNet
+            }
+        }";
+
+        let pool_address: Address = pool_id.parse().context("parse pool address")?;
+        let mut ticks = Vec::new();
+        let mut cursor = TICK_IDX_CURSOR_START;
+
+        loop {
+            let page: TicksPage = self
+                .query(
+                    query,
+                    json!({ "pool": pool_id, "cursor": cursor, "block": block }),
+                )
+                .await?;
+
+            for tick in &page.ticks {
+                ticks.push(TickDeltaData {
+                    pool_address,
+                    tick_idx: tick.tick_idx.parse().context("parse tickIdx")?,
+                    delta: tick.liquidity_net.parse().context("parse liquidityNet")?,
+                });
+            }
+
+            if page.ticks.len() < PAGE_SIZE {
+                break;
+            }
+
+            cursor = ticks.last().expect("tick page is non-empty").tick_idx as i64;
+        }
+
+        Ok(ticks)
+    }
+}
+
+struct SubgraphSeeder<'a> {
+    db: &'a PgPool,
+    chain_id: u64,
+    subgraph: SubgraphClient,
+    snapshot_block: u64,
+}
+
+impl<'a> SubgraphSeeder<'a> {
+    async fn new(
+        db: &'a PgPool,
+        chain_id: u64,
+        subgraph_url: &str,
+        block: Option<u64>,
+    ) -> Result<Self> {
+        let subgraph = SubgraphClient::new(subgraph_url)?;
+        let snapshot_block = match block {
+            Some(block) => block,
+            None => subgraph
+                .current_block()
+                .await
+                .context("fetch current subgraph block")?,
+        };
+
+        Ok(Self {
+            db,
+            chain_id,
+            subgraph,
+            snapshot_block,
+        })
+    }
+
+    async fn seed(self) -> Result<u64> {
+        info!(
+            block = self.snapshot_block,
+            "seeding pool-indexer from subgraph"
+        );
+
+        let pool_ids = self.seed_pools().await?;
+        let total_ticks = self.seed_ticks(&pool_ids).await?;
+
+        info!(
+            block = self.snapshot_block,
+            pools = pool_ids.len(),
+            ticks = total_ticks,
+            "seeding complete"
+        );
+        Ok(self.snapshot_block)
+    }
+
+    async fn seed_pools(&self) -> Result<Vec<String>> {
+        let mut all_pool_ids = Vec::new();
+        let mut cursor = String::new();
+
+        loop {
+            let page = self
+                .subgraph
+                .fetch_pools_page(self.snapshot_block, &cursor)
+                .await?;
+            let page_len = page.len();
+
+            all_pool_ids.extend(self.persist_pool_page(&page).await?);
+            info!(total = all_pool_ids.len(), "pools seeded");
+
+            if page_len < PAGE_SIZE {
+                break;
+            }
+
+            cursor = page.last().expect("full pages are non-empty").id.clone();
+        }
+
+        info!(
+            total = all_pool_ids.len(),
+            "all pools seeded — starting tick seeding"
+        );
+        Ok(all_pool_ids)
+    }
+
+    async fn persist_pool_page(&self, page: &[SubgraphPool]) -> Result<Vec<String>> {
+        let mut pool_ids = Vec::with_capacity(page.len());
+        let mut new_pools = Vec::with_capacity(page.len());
+        let mut pool_states = Vec::with_capacity(page.len());
+
+        for pool in page {
+            let (pool_id, new_pool, pool_state) = parse_seeded_pool(pool, self.snapshot_block)?;
+            pool_ids.push(pool_id);
+            new_pools.push(new_pool);
+
+            if let Some(pool_state) = pool_state {
+                pool_states.push(pool_state);
+            }
+        }
+
+        let mut tx = self.db.begin().await.context("begin pool tx")?;
+        db::batch_insert_pools(&mut tx, self.chain_id, &new_pools).await?;
+        db::batch_upsert_pool_states(&mut tx, self.chain_id, &pool_states).await?;
+        tx.commit().await.context("commit pool tx")?;
+
+        Ok(pool_ids)
+    }
+
+    async fn seed_ticks(&self, pool_ids: &[String]) -> Result<usize> {
+        // Clear all existing tick data so seeded values are authoritative.
+        // This prevents stale rows (e.g. ticks burned to 0 before the seed block)
+        // from persisting if the seeder is re-run on a non-empty database.
+        db::delete_ticks_for_chain(self.db, self.chain_id).await?;
+
+        let mut total_ticks = 0usize;
+        for pool_batch in pool_ids.chunks(TICK_CONCURRENCY) {
+            let ticks = self.fetch_tick_batch(pool_batch).await?;
+
+            if !ticks.is_empty() {
+                db::batch_seed_ticks(self.db, self.chain_id, &ticks).await?;
+            }
+
+            total_ticks += ticks.len();
+            info!(total = total_ticks, "ticks seeded");
+        }
+
+        Ok(total_ticks)
+    }
+
+    async fn fetch_tick_batch(&self, pool_batch: &[String]) -> Result<Vec<TickDeltaData>> {
+        let subgraph = self.subgraph.clone();
+        let snapshot_block = self.snapshot_block;
+
+        let tick_batches: Vec<Vec<TickDeltaData>> =
+            futures::stream::iter(pool_batch.iter().cloned())
+                .map(move |pool_id| {
+                    let subgraph = subgraph.clone();
+                    async move { subgraph.fetch_ticks_for_pool(pool_id, snapshot_block).await }
+                })
+                .buffer_unordered(TICK_CONCURRENCY)
+                .try_collect()
+                .await?;
+
+        Ok(tick_batches.into_iter().flatten().collect())
+    }
+}
+
+fn parse_seeded_pool(
+    pool: &SubgraphPool,
+    snapshot_block: u64,
+) -> Result<(String, NewPoolData, Option<PoolStateData>)> {
+    let address: Address = pool.id.parse().context("parse pool id")?;
+    let new_pool = NewPoolData {
+        address,
+        token0: pool.token0.id.parse().context("parse token0")?,
+        token1: pool.token1.id.parse().context("parse token1")?,
+        fee: pool.fee_tier.parse().context("parse feeTier")?,
+        token0_decimals: pool.token0.decimals.parse::<u8>().ok(),
+        token1_decimals: pool.token1.decimals.parse::<u8>().ok(),
+        token0_symbol: pool.token0.symbol.clone(),
+        token1_symbol: pool.token1.symbol.clone(),
+        created_block: pool
+            .created_at_block_number
+            .parse()
+            .context("parse createdAtBlockNumber")?,
+    };
+
+    Ok((
+        pool.id.clone(),
+        new_pool,
+        parse_seeded_pool_state(pool, address, snapshot_block)?,
+    ))
+}
+
+fn parse_seeded_pool_state(
+    pool: &SubgraphPool,
+    address: Address,
+    snapshot_block: u64,
+) -> Result<Option<PoolStateData>> {
+    let Some(tick) = pool.tick.as_deref() else {
+        return Ok(None);
+    };
+    if pool.sqrt_price == "0" {
+        return Ok(None);
+    }
+
+    Ok(Some(PoolStateData {
+        pool_address: address,
+        block_number: snapshot_block,
+        sqrt_price_x96: pool.sqrt_price.parse::<U160>().context("parse sqrtPrice")?,
+        liquidity: pool.liquidity.parse().context("parse liquidity")?,
+        tick: tick.parse().context("parse tick")?,
+    }))
 }
 
 /// Seeds pools and ticks from the subgraph and returns the block number that
@@ -216,110 +414,8 @@ pub async fn seed(
     subgraph_url: &str,
     block: Option<u64>,
 ) -> Result<u64> {
-    let client = Client::builder()
-        .timeout(SUBGRAPH_REQUEST_TIMEOUT)
-        .build()
-        .context("build HTTP client")?;
-
-    let block = match block {
-        Some(b) => b,
-        None => fetch_current_block(&client, subgraph_url)
-            .await
-            .context("fetch current subgraph block")?,
-    };
-    info!(block, "seeding pool-indexer from subgraph");
-
-    let mut pool_ids: Vec<String> = Vec::new();
-    let mut cursor = String::new();
-
-    loop {
-        let page = fetch_pools_page(&client, subgraph_url, block, &cursor).await?;
-        let n = page.len();
-
-        let mut new_pools = Vec::with_capacity(n);
-        let mut pool_states = Vec::with_capacity(n);
-
-        for p in &page {
-            let address: Address = p.id.parse().context("parse pool id")?;
-            new_pools.push(NewPoolData {
-                address,
-                token0: p.token0.id.parse().context("parse token0")?,
-                token1: p.token1.id.parse().context("parse token1")?,
-                fee: p.fee_tier.parse().context("parse feeTier")?,
-                token0_decimals: p.token0.decimals.parse::<u8>().ok(),
-                token1_decimals: p.token1.decimals.parse::<u8>().ok(),
-                token0_symbol: p.token0.symbol.clone(),
-                token1_symbol: p.token1.symbol.clone(),
-                created_block: p
-                    .created_at_block_number
-                    .parse()
-                    .context("parse createdAtBlockNumber")?,
-            });
-
-            if let Some(tick_str) = &p.tick
-                && p.sqrt_price != "0"
-            {
-                pool_states.push(PoolStateData {
-                    pool_address: address,
-                    block_number: block,
-                    sqrt_price_x96: p.sqrt_price.parse::<U160>().context("parse sqrtPrice")?,
-                    liquidity: p.liquidity.parse().context("parse liquidity")?,
-                    tick: tick_str.parse().context("parse tick")?,
-                });
-            }
-
-            pool_ids.push(p.id.clone());
-        }
-
-        let mut tx = db.begin().await.context("begin pool tx")?;
-        db::batch_insert_pools(&mut tx, chain_id, &new_pools).await?;
-        db::batch_upsert_pool_states(&mut tx, chain_id, &pool_states).await?;
-        tx.commit().await.context("commit pool tx")?;
-
-        info!(total = pool_ids.len(), "pools seeded");
-
-        if n < PAGE_SIZE {
-            break;
-        }
-        cursor = page.last().unwrap().id.clone();
-    }
-
-    info!(
-        total = pool_ids.len(),
-        "all pools seeded — starting tick seeding"
-    );
-
-    // Clear all existing tick data so seeded values are authoritative.
-    // This prevents stale rows (e.g. ticks burned to 0 before the seed block)
-    // from persisting if the seeder is re-run on a non-empty database.
-    db::delete_ticks_for_chain(db, chain_id).await?;
-
-    let mut total_ticks = 0usize;
-    let url = subgraph_url.to_owned();
-
-    for chunk in pool_ids.chunks(TICK_CONCURRENCY) {
-        let tick_batches: Vec<Vec<TickDeltaData>> = futures::stream::iter(chunk.iter().cloned())
-            .map(|pool_id| fetch_ticks_for_pool(client.clone(), url.clone(), pool_id, block))
-            .buffer_unordered(TICK_CONCURRENCY)
-            .try_collect()
-            .await?;
-
-        let ticks: Vec<TickDeltaData> = tick_batches.into_iter().flatten().collect();
-        let n = ticks.len();
-
-        if !ticks.is_empty() {
-            db::batch_seed_ticks(db, chain_id, &ticks).await?;
-        }
-
-        total_ticks += n;
-        info!(total = total_ticks, "ticks seeded");
-    }
-
-    info!(
-        block,
-        pools = pool_ids.len(),
-        ticks = total_ticks,
-        "seeding complete"
-    );
-    Ok(block)
+    SubgraphSeeder::new(db, chain_id, subgraph_url, block)
+        .await?
+        .seed()
+        .await
 }
