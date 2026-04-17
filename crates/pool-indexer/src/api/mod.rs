@@ -30,6 +30,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(uniswap_v3::get_pools),
         )
         .route(
+            "/api/v1/{network}/uniswap/v3/pools/ticks",
+            get(uniswap_v3::get_ticks_bulk),
+        )
+        .route(
             "/api/v1/{network}/uniswap/v3/pools/{pool_address}/ticks",
             get(uniswap_v3::get_ticks),
         )

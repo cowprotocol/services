@@ -520,7 +520,93 @@ pub struct TickRow {
 }
 
 /// Maximum number of ticks returned per pool query (safety bound).
-const MAX_TICKS_PER_POOL: i64 = 10_000;
+pub const MAX_TICKS_PER_POOL: i64 = 10_000;
+
+/// A tick tagged with its owning pool, used by bulk-tick queries that span
+/// multiple pools.
+pub struct PoolTickRow {
+    pub pool_address: Address,
+    pub tick_idx: i32,
+    pub liquidity_net: BigDecimal,
+}
+
+/// Fetches pools matching any of `addresses` with their current state. Returns
+/// fewer rows than requested when some addresses are unknown. Ordered by
+/// address to give callers a stable iteration order.
+pub async fn get_pools_by_ids(
+    pool: &PgPool,
+    chain_id: u64,
+    addresses: &[Address],
+) -> Result<Vec<PoolRow>> {
+    if addresses.is_empty() {
+        return Ok(Vec::new());
+    }
+    let addrs: Vec<&[u8]> = addresses.iter().map(|a| a.as_slice()).collect();
+    sqlx::query(
+        "SELECT p.address, p.token0, p.token1, p.fee,
+                p.token0_decimals, p.token1_decimals,
+                p.token0_symbol, p.token1_symbol,
+                s.sqrt_price_x96, s.liquidity, s.tick
+         FROM uniswap_v3_pools p
+         JOIN uniswap_v3_pool_states s
+             ON s.chain_id = p.chain_id AND s.pool_address = p.address
+         WHERE p.chain_id = $1
+           AND p.address = ANY($2)
+         ORDER BY p.address",
+    )
+    .bind(chain_id.cast_signed())
+    .bind(addrs)
+    .fetch_all(pool)
+    .await
+    .context("get_pools_by_ids")?
+    .into_iter()
+    .map(PoolRow::try_from)
+    .collect()
+}
+
+/// Fetches ticks for multiple pools in one query, capped at
+/// [`MAX_TICKS_PER_POOL`] per pool. Uses a `LATERAL` join so each pool's
+/// limit is applied individually via the PK prefix index — a flat
+/// `WHERE pool_address = ANY($2)` with a single outer `LIMIT` could starve
+/// later pools when one has many ticks. Rows are ordered by
+/// `(pool_address, tick_idx)` so callers can group in a single pass.
+pub async fn get_ticks_for_pools(
+    pool: &PgPool,
+    chain_id: u64,
+    addresses: &[Address],
+) -> Result<Vec<PoolTickRow>> {
+    if addresses.is_empty() {
+        return Ok(Vec::new());
+    }
+    let addrs: Vec<&[u8]> = addresses.iter().map(|a| a.as_slice()).collect();
+    sqlx::query(
+        "SELECT t.pool_address, t.tick_idx, t.liquidity_net
+         FROM UNNEST($2::BYTEA[]) AS p(addr)
+         JOIN LATERAL (
+             SELECT pool_address, tick_idx, liquidity_net
+             FROM uniswap_v3_ticks
+             WHERE chain_id = $1 AND pool_address = p.addr
+             ORDER BY tick_idx
+             LIMIT $3
+         ) t ON TRUE
+         ORDER BY t.pool_address, t.tick_idx",
+    )
+    .bind(chain_id.cast_signed())
+    .bind(addrs)
+    .bind(MAX_TICKS_PER_POOL)
+    .fetch_all(pool)
+    .await
+    .context("get_ticks_for_pools")?
+    .into_iter()
+    .map(|r| {
+        Ok(PoolTickRow {
+            pool_address: bytes_to_addr(r.get("pool_address"))?,
+            tick_idx: r.get("tick_idx"),
+            liquidity_net: r.get("liquidity_net"),
+        })
+    })
+    .collect()
+}
 
 pub async fn get_ticks(
     pool: &PgPool,

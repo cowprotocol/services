@@ -1,5 +1,5 @@
 use {
-    super::{internal_error, parse_hex_address, serialize_display},
+    super::{bad_request, internal_error, parse_hex_address, parse_pool_ids, serialize_display},
     crate::{api::AppState, db::uniswap_v3 as db},
     alloy_primitives::Address,
     axum::{
@@ -14,17 +14,24 @@ use {
 
 /// Query parameters for the `/pools` endpoint.
 ///
-/// If `token0` is provided the response contains only matching pools (no
-/// pagination). If both `token0` and `token1` are provided the search is
-/// narrowed to that exact pair. Without any token filter the endpoint returns
-/// a cursor-paginated list of all pools.
+/// Dispatch (first match wins):
+/// 1. `pool_ids` — bulk lookup by pool address, returns only the requested
+///    pools (no pagination). Intended for clients that already know the pool
+///    addresses they care about, e.g. resolving pools referenced by an auction.
+/// 2. `token0` (+ optional `token1`) — symbol search. Returns all matching
+///    pools, ordered by liquidity descending. No pagination.
+/// 3. Neither — cursor-paginated list of all pools.
 #[derive(Deserialize)]
 pub struct PoolsQuery {
+    /// Comma-separated list of pool addresses (`0x…,0x…`). Capped at
+    /// [`super::MAX_POOL_IDS_PER_REQUEST`] entries; callers with more
+    /// addresses should chunk their requests.
+    pub pool_ids: Option<String>,
     /// Opaque cursor returned by the previous page; omit to start from the
-    /// beginning.
+    /// beginning. Ignored when `pool_ids` or `token0` is set.
     pub after: Option<String>,
     /// Maximum number of pools to return. Clamped to [1, 5000]; defaults to
-    /// 1000.
+    /// 1000. Ignored when `pool_ids` or `token0` is set.
     pub limit: Option<i64>,
     /// Filter by token symbol (partial, case-insensitive). Acts as the "base"
     /// token when `token1` is also supplied. Matched via SQL `LIKE` against
@@ -147,13 +154,7 @@ async fn list_pools(
 
     let cursor_bytes = match query.after.as_deref().map(parse_hex_address) {
         Some(Ok(addr)) => Some(addr.as_slice().to_vec()),
-        Some(Err(_)) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "invalid cursor"})),
-            )
-                .into_response();
-        }
+        Some(Err(_)) => return bad_request("invalid cursor"),
         None => None,
     };
 
@@ -188,10 +189,38 @@ async fn list_pools(
     .into_response()
 }
 
+/// Returns the pools with addresses in `pool_ids` (order not guaranteed to
+/// match the request). Silently skips unknown addresses so callers can treat
+/// a partial response as "these are the ones I have". Fetches the latest
+/// indexed block in parallel with the pool lookup.
+async fn lookup_pools_by_ids(state: &AppState, chain_id: u64, raw_ids: &str) -> Response {
+    let addresses = match parse_pool_ids(raw_ids) {
+        Ok(a) => a,
+        Err(resp) => return resp,
+    };
+    let (block_res, pools_res) = tokio::join!(
+        db::get_latest_indexed_block(&state.db, chain_id),
+        db::get_pools_by_ids(&state.db, chain_id, &addresses),
+    );
+    let block_number = match block_res {
+        Ok(Some(block)) => block,
+        Ok(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(err) => return internal_error(err),
+    };
+    match pools_res {
+        Ok(rows) => Json(PoolsResponse {
+            block_number,
+            pools: rows.iter().map(PoolResponse::from).collect(),
+            next_cursor: None,
+        })
+        .into_response(),
+        Err(err) => internal_error(err),
+    }
+}
+
 /// `GET /api/v1/{network}/uniswap/v3/pools`
 ///
-/// Dispatches to [`search_pools`] when a token filter is present, or
-/// [`list_pools`] for paginated listing of all pools.
+/// Dispatches based on query params — see [`PoolsQuery`].
 pub async fn get_pools(
     State(state): State<Arc<AppState>>,
     Path(network): Path<String>,
@@ -201,6 +230,11 @@ pub async fn get_pools(
         Some(id) => id,
         None => return StatusCode::NOT_FOUND.into_response(),
     };
+
+    if let Some(pool_ids) = query.pool_ids.as_deref() {
+        return lookup_pools_by_ids(&state, chain_id, pool_ids).await;
+    }
+
     let block_number = match db::get_latest_indexed_block(&state.db, chain_id).await {
         Ok(Some(block)) => block,
         Ok(None) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
