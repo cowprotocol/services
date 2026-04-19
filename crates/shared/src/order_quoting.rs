@@ -5,7 +5,7 @@ use {
         order_validation::PreOrderData,
     },
     account_balances::{BalanceFetching, Query},
-    alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
+    alloy::primitives::{Address, U256, U512, map::HashSet, ruint::UintTryFrom},
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
     database::quotes::{Quote as QuoteRow, QuoteKind},
@@ -420,6 +420,10 @@ pub struct OrderQuoter {
     validity: Validity,
     balance_fetcher: Arc<dyn BalanceFetching>,
     quote_verification: QuoteVerificationMode,
+    /// Symmetric set of (sell, buy) token pairs for which an unverified quote
+    /// must never be returned. Stored pre-expanded in both orderings so that
+    /// lookup is a single `contains` call regardless of trade direction.
+    verified_only_pairs: HashSet<(Address, Address)>,
     default_quote_timeout: std::time::Duration,
 }
 
@@ -433,8 +437,13 @@ impl OrderQuoter {
         validity: Validity,
         balance_fetcher: Arc<dyn BalanceFetching>,
         quote_verification: QuoteVerificationMode,
+        verified_only_pairs: HashSet<(Address, Address)>,
         default_quote_timeout: std::time::Duration,
     ) -> Self {
+        let verified_only_pairs = verified_only_pairs
+            .into_iter()
+            .flat_map(|(a, b)| [(a, b), (b, a)])
+            .collect();
         Self {
             price_estimator,
             native_price_estimator,
@@ -444,6 +453,7 @@ impl OrderQuoter {
             validity,
             balance_fetcher,
             quote_verification,
+            verified_only_pairs,
             default_quote_timeout,
         }
     }
@@ -536,13 +546,27 @@ impl OrderQuoter {
         parameters: &QuoteParameters,
         sell_amount: U256,
     ) -> Result<(), CalculateQuoteError> {
-        if estimate.verified
-            || !matches!(
-                self.quote_verification,
-                QuoteVerificationMode::EnforceWhenPossible
-            )
+        if estimate.verified {
+            // verification was successful
+            return Ok(());
+        }
+
+        if self
+            .verified_only_pairs
+            .contains(&(parameters.sell_token, parameters.buy_token))
         {
-            // verification was successful or not strictly required
+            // Pair is on the strict list: reject unverified unconditionally,
+            // with no balance-based exemption. This targets pairs where we
+            // know unverified quotes are systematically wrong (e.g. aTokens
+            // whose underlying reserve is drained).
+            return Err(CalculateQuoteError::QuoteNotVerified);
+        }
+
+        if !matches!(
+            self.quote_verification,
+            QuoteVerificationMode::EnforceWhenPossible
+        ) {
+            // verification was not strictly required
             return Ok(());
         }
 
@@ -790,7 +814,7 @@ mod tests {
         Address,
         U256 as AlloyU256,
         account_balances::MockBalanceFetching,
-        alloy::eips::eip1559::Eip1559Estimation,
+        alloy::{eips::eip1559::Eip1559Estimation, primitives::map::HashSet},
         chrono::Utc,
         futures::FutureExt,
         gas_price_estimation::FakeGasPriceEstimator,
@@ -938,6 +962,7 @@ mod tests {
             now: Arc::new(now),
             validity: super::Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1078,6 +1103,7 @@ mod tests {
             now: Arc::new(now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1213,6 +1239,7 @@ mod tests {
             now: Arc::new(now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1311,6 +1338,7 @@ mod tests {
             now: Arc::new(Utc::now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1384,6 +1412,7 @@ mod tests {
             now: Arc::new(Utc::now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1445,6 +1474,7 @@ mod tests {
             now: Arc::new(now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1528,6 +1558,7 @@ mod tests {
             now: Arc::new(now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1613,6 +1644,7 @@ mod tests {
             now: Arc::new(now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1686,6 +1718,7 @@ mod tests {
             now: Arc::new(now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1717,6 +1750,7 @@ mod tests {
             now: Arc::new(Utc::now),
             validity: Validity::default(),
             quote_verification: QuoteVerificationMode::Unverified,
+            verified_only_pairs: Default::default(),
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
@@ -1846,5 +1880,189 @@ mod tests {
                 assert_eq!(v1.jit_orders.len(), 2);
             }
         }
+    }
+
+    /// Build an OrderQuoter populated with throw-away mocks for every
+    /// dependency except the two that `verify_quote` actually consults
+    /// (balance fetcher and the verification knobs).
+    fn quoter_for_verify_tests(
+        quote_verification: QuoteVerificationMode,
+        verified_only_pairs: HashSet<(Address, Address)>,
+        balance_fetcher: Arc<dyn BalanceFetching>,
+    ) -> OrderQuoter {
+        OrderQuoter::new(
+            Arc::new(MockPriceEstimating::new()),
+            Arc::new(MockNativePriceEstimating::new()),
+            Arc::new(FakeGasPriceEstimator::default()),
+            Arc::new(MockQuoteStoring::new()),
+            Validity::default(),
+            balance_fetcher,
+            quote_verification,
+            verified_only_pairs,
+            HEALTHY_PRICE_ESTIMATION_TIME,
+        )
+    }
+
+    fn params_for(sell: Address, buy: Address, from: Address) -> QuoteParameters {
+        QuoteParameters {
+            sell_token: sell,
+            buy_token: buy,
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(100).unwrap(),
+                },
+            },
+            verification: Verification {
+                from,
+                ..Default::default()
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
+            timeout: None,
+        }
+    }
+
+    fn unverified_estimate() -> Estimate {
+        Estimate {
+            out_amount: AlloyU256::from(42),
+            gas: 3,
+            solver: Address::repeat_byte(1),
+            verified: false,
+            execution: Default::default(),
+        }
+    }
+
+    fn verified_estimate() -> Estimate {
+        Estimate {
+            verified: true,
+            ..unverified_estimate()
+        }
+    }
+
+    /// Balance fetcher that refuses to answer. Any code path that consults it
+    /// will fail the test — lets us assert that the pair-level gate short-
+    /// circuits before the balance-exemption logic.
+    fn panicking_balance_fetcher() -> Arc<dyn BalanceFetching> {
+        let mut mock = MockBalanceFetching::new();
+        mock.expect_get_balances()
+            .returning(|_| panic!("balance fetcher must not be called for verified-only pairs"));
+        Arc::new(mock)
+    }
+
+    #[tokio::test]
+    async fn verify_quote_rejects_unverified_for_listed_pair() {
+        let sell = Address::from([0xaa; 20]);
+        let buy = Address::from([0xbb; 20]);
+        let quoter = quoter_for_verify_tests(
+            // Even the most permissive global mode must not leak the pair.
+            QuoteVerificationMode::Unverified,
+            [(sell, buy)].into_iter().collect(),
+            panicking_balance_fetcher(),
+        );
+
+        let err = quoter
+            .verify_quote(
+                &unverified_estimate(),
+                &params_for(sell, buy, Address::from([3; 20])),
+                U256::from(100),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalculateQuoteError::QuoteNotVerified));
+    }
+
+    #[tokio::test]
+    async fn verify_quote_accepts_verified_for_listed_pair() {
+        let sell = Address::from([0xaa; 20]);
+        let buy = Address::from([0xbb; 20]);
+        let quoter = quoter_for_verify_tests(
+            QuoteVerificationMode::Unverified,
+            [(sell, buy)].into_iter().collect(),
+            panicking_balance_fetcher(),
+        );
+
+        quoter
+            .verify_quote(
+                &verified_estimate(),
+                &params_for(sell, buy, Address::from([3; 20])),
+                U256::from(100),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn verify_quote_pair_match_is_symmetric() {
+        let sell = Address::from([0xaa; 20]);
+        let buy = Address::from([0xbb; 20]);
+        // Config lists (sell, buy); trade queries the reverse direction.
+        let quoter = quoter_for_verify_tests(
+            QuoteVerificationMode::Unverified,
+            [(sell, buy)].into_iter().collect(),
+            panicking_balance_fetcher(),
+        );
+
+        let err = quoter
+            .verify_quote(
+                &unverified_estimate(),
+                &params_for(buy, sell, Address::from([3; 20])),
+                U256::from(100),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalculateQuoteError::QuoteNotVerified));
+    }
+
+    #[tokio::test]
+    async fn verify_quote_passes_unrelated_pair_in_unverified_mode() {
+        let quoter = quoter_for_verify_tests(
+            QuoteVerificationMode::Unverified,
+            [(Address::from([0xaa; 20]), Address::from([0xbb; 20]))]
+                .into_iter()
+                .collect(),
+            panicking_balance_fetcher(),
+        );
+
+        quoter
+            .verify_quote(
+                &unverified_estimate(),
+                &params_for(
+                    Address::from([1; 20]),
+                    Address::from([2; 20]),
+                    Address::from([3; 20]),
+                ),
+                U256::from(100),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn verify_quote_listed_pair_rejects_even_when_user_has_no_balance() {
+        // EnforceWhenPossible exempts users without the sell-token balance
+        // (the "get a quote, then deposit" flow). The pair-level gate must
+        // reject anyway, because the quote itself is known-broken.
+        let sell = Address::from([0xaa; 20]);
+        let buy = Address::from([0xbb; 20]);
+
+        let mut mock = MockBalanceFetching::new();
+        mock.expect_get_balances()
+            .returning(|addrs| addrs.iter().map(|_| Ok(U256::ZERO)).collect());
+
+        let quoter = quoter_for_verify_tests(
+            QuoteVerificationMode::EnforceWhenPossible,
+            [(sell, buy)].into_iter().collect(),
+            Arc::new(mock),
+        );
+
+        let err = quoter
+            .verify_quote(
+                &unverified_estimate(),
+                &params_for(sell, buy, Address::from([3; 20])),
+                U256::from(100),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CalculateQuoteError::QuoteNotVerified));
     }
 }

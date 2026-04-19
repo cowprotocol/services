@@ -361,14 +361,15 @@ pub async fn run(config: Configuration) {
             },
             balance_fetcher.clone(),
             verification,
+            config.price_estimation.verified_only_pairs.clone(),
             config.price_estimation.quote_timeout,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);
-    // Fast quoting is able to return early and if none of the produced quotes are
-    // verifiable we are left with no quote at all. Since fast estimates don't
-    // make any promises on correctness we can just skip quote verification for
-    // them.
+    // Fast quoting normally skips the global EnforceWhenPossible gate because it
+    // returns early and could otherwise produce no quote at all. The per-pair
+    // strict list, however, is still honoured — those are pairs we know are
+    // systematically mispriced, so even a fast quote must not leak.
     let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
 
     let app_data_validator = Validator::new(config.app_data_size_limit);

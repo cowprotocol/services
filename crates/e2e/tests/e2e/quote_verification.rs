@@ -25,6 +25,7 @@ use {
         trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
         trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
+    reqwest::StatusCode,
     serde_json::json,
     simulator::swap_simulator::SwapSimulator,
     std::sync::Arc,
@@ -82,6 +83,12 @@ async fn forked_node_mainnet_usdt_quote() {
         23112197,
     )
     .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_verified_only_pairs_enforcement() {
+    run_test(verified_only_pairs_enforcement).await;
 }
 
 /// Verified quotes work as expected.
@@ -533,6 +540,133 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
                     }
                 })
                 .to_string(),
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+}
+
+/// Covers both rejection and pass-through behaviour of the
+/// `verified_only_pairs` gate:
+///
+/// * listed pair + unverified estimate → rejected (both trade directions), even
+///   when the user has no balance (which would normally exempt them from
+///   `EnforceWhenPossible`);
+/// * listed pair + verified estimate → passes through unchanged;
+/// * unlisted pair + unverified estimate → passes (gate not applicable).
+async fn verified_only_pairs_enforcement(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
+    let [token_a, token_b, token_c] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    // token_c is set up with a real balance and approval so that its quote
+    // against WETH verifies successfully — that's how we prove the gate
+    // lets verified quotes through even when their pair is listed.
+    token_c.mint(trader.address(), 1u64.eth()).await;
+    token_c
+        .approve(onchain.contracts().allowance, 1u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    let orderbook_config = configs::orderbook::Configuration {
+        price_estimation: configs::price_estimation::PriceEstimation {
+            // Forcing every token_a quote to come back unverified is what
+            // lets us exercise the rejection side of the gate without
+            // depending on a natural verification failure.
+            tokens_without_verification: [*token_a.address()].into_iter().collect(),
+            // Two listed pairs: one that will always be unverified
+            // (token_a/token_b) and one that will naturally verify
+            // (token_c/weth).
+            verified_only_pairs: [
+                (*token_a.address(), *token_b.address()),
+                (*token_c.address(), *onchain.contracts().weth.address()),
+            ]
+            .into_iter()
+            .collect(),
+            ..configs::orderbook::Configuration::test_default().price_estimation
+        },
+        ..configs::orderbook::Configuration::test_default()
+    };
+    services
+        .start_protocol_with_args(
+            Configuration::test("test_solver", solver.address()),
+            orderbook_config,
+            solver,
+        )
+        .await;
+
+    let sell_amount = NonZeroU256::try_from(1u64.eth()).unwrap();
+
+    // Unlisted pair + unverified estimate → passes. The trader has no
+    // token_a balance so `EnforceWhenPossible` exempts them, and the
+    // pair-level gate doesn't fire because (token_a, weth) isn't listed.
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: *token_a.address(),
+            buy_token: *onchain.contracts().weth.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value: sell_amount },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(!response.verified);
+
+    // Listed pair + unverified estimate → rejected.
+    let (status, body) = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: *token_a.address(),
+            buy_token: *token_b.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value: sell_amount },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("QuoteNotVerified"));
+
+    // Reverse direction also rejected: pair matching is symmetric.
+    let (status, body) = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: *token_b.address(),
+            buy_token: *token_a.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value: sell_amount },
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("QuoteNotVerified"));
+
+    // Listed pair + verified estimate → passes. Being listed doesn't
+    // block verified quotes; the gate only exists to catch ones we
+    // couldn't verify.
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: *token_c.address(),
+            buy_token: *onchain.contracts().weth.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value: sell_amount },
             },
             ..Default::default()
         })

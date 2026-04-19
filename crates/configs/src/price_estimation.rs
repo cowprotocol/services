@@ -73,6 +73,16 @@ pub struct PriceEstimation {
     #[serde(default)]
     pub tokens_without_verification: HashSet<Address>,
 
+    /// Token pairs for which an unverified quote must never be returned.
+    /// Matched symmetrically (order of sell/buy does not matter). This is
+    /// stronger than `quote-verification = "enforce-when-possible"`: the
+    /// pair-level check has no balance-based exemption and applies even when
+    /// the global mode is `unverified` or `prefer`. Intended for pairs we
+    /// know are mispriced by solvers (e.g. aTokens whose underlying reserve
+    /// is drained) and can't safely settle at the quoted rate.
+    #[serde(default)]
+    pub verified_only_pairs: HashSet<(Address, Address)>,
+
     /// How much gas a single tx may consume at most. Any quote using more than
     /// this will fail during the verification.
     /// Defaults to the maximum transaction gas limit Ethereum introduced in the
@@ -123,6 +133,7 @@ impl Default for PriceEstimation {
             quote_timeout: default_quote_timeout(),
             balance_overrides: Default::default(),
             tokens_without_verification: Default::default(),
+            verified_only_pairs: Default::default(),
             max_gas_per_tx: default_max_gas_per_tx(),
             min_gas_amount_for_unverified_quotes: 0,
             max_gas_amount_for_unverified_quotes: u32::MAX,
@@ -323,6 +334,7 @@ mod tests {
         assert_eq!(config.balance_overrides.probing_depth, 60);
         assert_eq!(config.balance_overrides.cache_size, 1000);
         assert!(config.tokens_without_verification.is_empty());
+        assert!(config.verified_only_pairs.is_empty());
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 0);
         assert_eq!(config.max_gas_amount_for_unverified_quotes, u32::MAX);
     }
@@ -334,6 +346,9 @@ mod tests {
         quote-verification = "enforce-when-possible"
         quote-timeout = "10s"
         tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
+        verified-only-pairs = [
+            ["0x4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"],
+        ]
         amount-to-estimate-prices-with = "1000000000000000000"
         min-gas-amount-for-unverified-quotes = 400000
         max-gas-amount-for-unverified-quotes = 800000
@@ -398,6 +413,7 @@ mod tests {
         assert_eq!(config.balance_overrides.probing_depth, 30);
         assert_eq!(config.balance_overrides.cache_size, 500);
         assert_eq!(config.tokens_without_verification.len(), 1);
+        assert_eq!(config.verified_only_pairs.len(), 1);
         assert_eq!(config.min_gas_amount_for_unverified_quotes, 400_000);
         assert_eq!(config.max_gas_amount_for_unverified_quotes, 800_000);
     }

@@ -469,6 +469,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         },
         balance_fetcher.clone(),
         config.price_estimation.quote_verification,
+        config.price_estimation.verified_only_pairs.clone(),
         config.price_estimation.quote_timeout,
     ));
 
