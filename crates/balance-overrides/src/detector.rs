@@ -433,6 +433,30 @@ mod tests {
         );
     }
 
+    /// aEthWETH (Aave v3) can't be auto-detected: its `balanceOf` applies a
+    /// liquidity-index scaling so the verify step never sees back the exact
+    /// value we write. This documents the limitation and motivates the
+    /// `AaveV3AToken` hardcoded strategy. Kept separate from
+    /// `detects_storage_slots_mainnet` so this assertion is not gated by
+    /// unrelated expectations in that test.
+    /// Set `NODE_URL` environment to a mainnet RPC URL.
+    #[ignore]
+    #[tokio::test]
+    async fn detects_storage_slots_mainnet_aave_atoken_not_found() {
+        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT);
+
+        let result = detector
+            .detect(
+                address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8"),
+                Address::with_last_byte(1),
+            )
+            .await;
+        assert!(
+            matches!(result, Err(DetectionError::NotFound)),
+            "expected NotFound for aEthWETH, got {result:?}",
+        );
+    }
+
     /// Tests that we can detect storage slots by probing the first
     /// n slots or by checking hardcoded known slots.
     /// Set `NODE_URL` environment to an arbitrum RPC URL.
