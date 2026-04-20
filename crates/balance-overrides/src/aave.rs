@@ -21,10 +21,40 @@ use {
 };
 
 sol! {
-    /// Minimal interface for the Aave v3 `Pool` used to derive the current
-    /// liquidity index applied by aTokens when reporting `balanceOf`.
+    /// Mirrors Aave v3's `DataTypes.ReserveConfigurationMap`.
+    struct ReserveConfigurationMap {
+        uint256 data;
+    }
+
+    /// Mirrors Aave v3's `DataTypes.ReserveData`. Only the `aTokenAddress`
+    /// field is consumed here; the rest are present to keep the ABI layout
+    /// exactly matched so decoding doesn't go off the rails.
+    struct ReserveData {
+        ReserveConfigurationMap configuration;
+        uint128 liquidityIndex;
+        uint128 currentLiquidityRate;
+        uint128 variableBorrowIndex;
+        uint128 currentVariableBorrowRate;
+        uint128 currentStableBorrowRate;
+        uint40 lastUpdateTimestamp;
+        uint16 id;
+        address aTokenAddress;
+        address stableDebtTokenAddress;
+        address variableDebtTokenAddress;
+        address interestRateStrategyAddress;
+        uint128 accruedToTreasury;
+        uint128 unbacked;
+        uint128 isolationModeTotalDebt;
+    }
+
+    /// Minimal interface for the Aave v3 `Pool`. `getReserveNormalizedIncome`
+    /// gives the accrued liquidity index used when scaling `balanceOf`;
+    /// `getReserveData` returns the full reserve record which we use to
+    /// confirm a probed token really is the registered aToken for its
+    /// underlying.
     interface IAaveV3Pool {
         function getReserveNormalizedIncome(address asset) external view returns (uint256);
+        function getReserveData(address asset) external view returns (ReserveData memory);
     }
 
     /// Minimal interface for an Aave v3 `AToken`; used by the detector to
@@ -71,11 +101,12 @@ pub fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
     B256::new(packed.to_be_bytes::<32>())
 }
 
-/// Probes whether `token` looks like an Aave v3 aToken by querying
-/// `UNDERLYING_ASSET_ADDRESS()` and `POOL()`. Returns `Some((pool,
-/// underlying))` if both calls succeed and the returned pool responds to
-/// `getReserveNormalizedIncome(underlying)` — an extra safety check against
-/// tokens that happen to implement the two selectors but aren't Aave v3.
+/// Probes whether `token` is an Aave v3 aToken. The token self-declares its
+/// `UNDERLYING_ASSET_ADDRESS()` and `POOL()`; we then ask the pool for the
+/// registered `aTokenAddress` of that underlying and require it to equal the
+/// probed token. This catches both "contract doesn't look anything like an
+/// aToken" and "contract impersonates the aToken interface but is not
+/// registered with the pool for its declared underlying."
 pub async fn probe_a_token(web3: &Web3, token: Address) -> Option<(Address, Address)> {
     let underlying = call_address(
         web3,
@@ -84,9 +115,25 @@ pub async fn probe_a_token(web3: &Web3, token: Address) -> Option<(Address, Addr
     )
     .await?;
     let pool = call_address(web3, token, IAaveV3AToken::POOLCall {}.abi_encode()).await?;
-    // Sanity: confirm the pool actually exposes the expected interface.
-    fetch_normalized_income(web3, pool, underlying).await?;
-    Some((pool, underlying))
+    let reserve = fetch_reserve_data(web3, pool, underlying).await?;
+    (reserve.aTokenAddress == token).then_some((pool, underlying))
+}
+
+/// Fetches `getReserveData(underlying)` from an Aave v3 Pool.
+async fn fetch_reserve_data(
+    web3: &Web3,
+    pool: Address,
+    underlying: Address,
+) -> Option<ReserveData> {
+    let call = IAaveV3Pool::getReserveDataCall { asset: underlying };
+    let calldata = Bytes::from(call.abi_encode());
+    let tx = TransactionRequest {
+        to: Some(TxKind::Call(pool)),
+        input: TransactionInput::new(calldata),
+        ..Default::default()
+    };
+    let bytes = web3.provider.call(tx).block(BlockId::latest()).await.ok()?;
+    IAaveV3Pool::getReserveDataCall::abi_decode_returns(&bytes).ok()
 }
 
 /// Fetches `getReserveNormalizedIncome(underlying)` from an Aave v3 Pool.
@@ -171,18 +218,44 @@ async fn call_address(web3: &Web3, to: Address, calldata: Vec<u8>) -> Option<Add
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy_primitives::address, alloy_provider::mock::Asserter};
+    use {
+        super::*,
+        alloy_primitives::address,
+        alloy_provider::mock::Asserter,
+        alloy_sol_types::SolValue,
+    };
 
     fn encode_address(addr: Address) -> String {
         format!("0x{:0>64x}", U256::from_be_bytes(addr.into_word().0))
     }
 
-    fn encode_uint(value: U256) -> String {
-        format!("0x{:064x}", value)
+    /// Encodes a `ReserveData` struct as the ABI return payload the pool
+    /// would produce. All fields other than `aTokenAddress` are zero — we
+    /// only care about that one for the probe.
+    fn encode_reserve_data(a_token: Address) -> String {
+        let data = ReserveData {
+            configuration: ReserveConfigurationMap { data: U256::ZERO },
+            liquidityIndex: 0,
+            currentLiquidityRate: 0,
+            variableBorrowIndex: 0,
+            currentVariableBorrowRate: 0,
+            currentStableBorrowRate: 0,
+            lastUpdateTimestamp: alloy_primitives::Uint::ZERO,
+            id: 0,
+            aTokenAddress: a_token,
+            stableDebtTokenAddress: Address::ZERO,
+            variableDebtTokenAddress: Address::ZERO,
+            interestRateStrategyAddress: Address::ZERO,
+            accruedToTreasury: 0,
+            unbacked: 0,
+            isolationModeTotalDebt: 0,
+        };
+        format!("0x{}", alloy_primitives::hex::encode(data.abi_encode()))
     }
 
     /// The probe returns `Some((pool, underlying))` when the token exposes
-    /// both selectors and the pool responds to `getReserveNormalizedIncome`.
+    /// both selectors and the pool confirms the token as the registered
+    /// aToken for that underlying.
     #[tokio::test]
     async fn probe_a_token_accepts_valid_atoken() {
         let a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
@@ -194,8 +267,9 @@ mod tests {
         asserter.push_success(&encode_address(underlying));
         // 2. POOL() → pool
         asserter.push_success(&encode_address(pool));
-        // 3. pool.getReserveNormalizedIncome(underlying) → some ray value
-        asserter.push_success(&encode_uint(RAY));
+        // 3. pool.getReserveData(underlying) → ReserveData { aTokenAddress: a_token, ..
+        //    }
+        asserter.push_success(&encode_reserve_data(a_token));
 
         let web3 = Web3::with_asserter(asserter);
         assert_eq!(
@@ -216,11 +290,11 @@ mod tests {
         assert_eq!(probe_a_token(&web3, token).await, None);
     }
 
-    /// The probe also bails if the pool doesn't look like an Aave v3 Pool
-    /// (e.g. `getReserveNormalizedIncome` reverts). This guards against a
-    /// false positive where some random contract exposes both
-    /// `UNDERLYING_ASSET_ADDRESS()` and `POOL()` but has nothing to do with
-    /// Aave.
+    /// The probe bails if the pool doesn't look like an Aave v3 Pool
+    /// (e.g. `getReserveData` reverts). This guards against a false
+    /// positive where some random contract exposes both
+    /// `UNDERLYING_ASSET_ADDRESS()` and `POOL()` but the named pool has
+    /// nothing to do with Aave.
     #[tokio::test]
     async fn probe_a_token_rejects_when_pool_is_not_aave() {
         let token = address!("1111111111111111111111111111111111111111");
@@ -234,5 +308,25 @@ mod tests {
 
         let web3 = Web3::with_asserter(asserter);
         assert_eq!(probe_a_token(&web3, token).await, None);
+    }
+
+    /// A rogue contract that impersonates the aToken interface and points at
+    /// a real Aave pool is rejected: the pool registers a *different*
+    /// `aTokenAddress` for the underlying, so the identity check fails.
+    #[tokio::test]
+    async fn probe_a_token_rejects_when_pool_registers_a_different_atoken() {
+        let rogue = address!("bad000000000000000000000000000000000cafe");
+        let real_a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
+        let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
+        let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+
+        let asserter = Asserter::new();
+        asserter.push_success(&encode_address(underlying));
+        asserter.push_success(&encode_address(pool));
+        // Pool agrees on the pair but names the *real* aToken, not the rogue.
+        asserter.push_success(&encode_reserve_data(real_a_token));
+
+        let web3 = Web3::with_asserter(asserter);
+        assert_eq!(probe_a_token(&web3, rogue).await, None);
     }
 }
