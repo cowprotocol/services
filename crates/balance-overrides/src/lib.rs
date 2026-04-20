@@ -3,7 +3,7 @@ pub mod detector;
 
 use {
     self::{
-        aave::{mapping_slot_hash, pack_user_state, ray_div},
+        aave::mapping_slot_hash,
         detector::{DetectionError, Detector},
     },
     alloy_primitives::{Address, B256, U256, keccak256, map::AddressMap},
@@ -266,7 +266,7 @@ impl BalanceOverriding for DummyOverrider {
 mod tests {
     use {
         super::*,
-        crate::aave::RAY,
+        crate::aave::{RAY, pack_user_state, ray_div},
         alloy_primitives::{address, b256},
         ethrpc::mock,
         maplit::hashmap,
