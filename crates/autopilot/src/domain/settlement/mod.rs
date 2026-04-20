@@ -13,6 +13,7 @@ use {
     database::{orders::OrderKind, solver_competition_v2::Solution},
     eth_domain_types as eth,
     futures::TryFutureExt,
+    num::Zero,
     number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
 };
@@ -27,6 +28,14 @@ pub use {
     trade::{Trade, TradeEvent, math},
     transaction::Transaction,
 };
+
+/// Combined settlement metrics computed in a single pass for efficiency.
+#[derive(Debug)]
+pub struct SettlementMetrics {
+    pub surplus: eth::Ether,
+    pub fee: eth::Ether,
+    pub fee_breakdown: HashMap<domain::OrderUid, trade::FeeBreakdown>,
+}
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
@@ -144,6 +153,48 @@ impl Settlement {
             .iter()
             .filter_map(|trade| trade.as_jit())
             .collect()
+    }
+
+    /// Efficiently compute all settlement metrics in a single pass.
+    /// This method combines surplus, fee, and fee_breakdown calculations
+    /// to avoid redundant iterations and computations.
+    pub fn metrics(&self) -> SettlementMetrics {
+        let mut surplus = eth::Ether::zero();
+        let mut fee = eth::Ether::zero();
+        let mut fee_breakdown = HashMap::with_capacity(self.trades.len());
+
+        for trade in &self.trades {
+            let (trade_surplus, trade_fee, breakdown) = trade
+                .calculate_all_metrics(&self.auction)
+                .unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        trade = %trade.uid(),
+                        "possible incomplete metrics calculation",
+                    );
+                    (
+                        eth::Ether::zero(),
+                        eth::Ether::zero(),
+                        trade::FeeBreakdown {
+                            total: eth::Asset {
+                                token: trade.sell_token(),
+                                amount: num::zero(),
+                            },
+                            protocol: vec![],
+                        },
+                    )
+                });
+
+            surplus = surplus + trade_surplus;
+            fee = fee + trade_fee;
+            fee_breakdown.insert(*trade.uid(), breakdown);
+        }
+
+        SettlementMetrics {
+            surplus,
+            fee,
+            fee_breakdown,
+        }
     }
 
     pub async fn new(
@@ -1553,5 +1604,780 @@ mod tests {
         };
 
         assert_eq!(key, expected_key)
+    }
+
+    // Verify that the optimized metrics() method produces identical results
+    // to calling surplus_in_ether(), fee_in_ether(), and fee_breakdown()
+    // separately. Uses the same settlement data as settlement_with_protocol_fee
+    // test.
+    #[tokio::test]
+    async fn metrics_matches_individual_method_calls() {
+        let calldata = hex!(
+            "
+        13d79a0b
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000120
+        00000000000000000000000000000000000000000000000000000000000001c0
+        00000000000000000000000000000000000000000000000000000000000003e0
+        0000000000000000000000000000000000000000000000000000000000000004
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        0000000000000000000000000000000000000000000000000000000000000004
+        00000000000000000000000000000000000000000000000000000019b743b945
+        0000000000000000000000000000000000000000000000000000000000a87cf3
+        0000000000000000000000000000000000000000000000000000000000a87c7c
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000001
+        0000000000000000000000000000000000000000000000000000000000000020
+        0000000000000000000000000000000000000000000000000000000000000002
+        0000000000000000000000000000000000000000000000000000000000000003
+        000000000000000000000000f87da2093abee9b13a6f89671e4c3a3f80b42767
+        0000000000000000000000000000000000000000000000000000006d6e2edc00
+        0000000000000000000000000000000000000000000000000000000002cccdff
+        000000000000000000000000000000000000000000000000000000006799c219
+        2d365e5affcfa62cf1067b845add9c01bedcb2fc5d7a37442d2177262af26a0c
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000002
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000160
+        0000000000000000000000000000000000000000000000000000000000000041
+        e2ef661343676f9f4371ce809f728bb39a406f47835ee2b0104a8a1f340409ae
+        742dfe47fe469c024dc2fb7f80b99878b35985d66312856a8b5dcf5de4b069ee
+        1c00000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000520
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000003
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000140
+        00000000000000000000000000000000000000000000000000000000000002e0
+        000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000044
+        095ea7b3000000000000000000000000e592427a0aece92de3edee1f18e0157c
+        05861564ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        ffffffff00000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000dac17f958d2ee523a2206206994597c1
+        3d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb4800000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000019
+        b4b64b9b00000000000000000000000000000000000000000000000000000019
+        bdd90a1800000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb48000000000000000000000000056fd409e1d7a124bd7017459dfea2f3
+        87b6d5cd00000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000000
+        00a87cf300000000000000000000000000000000000000000000000000000019
+        bb4af52700000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        00000000008c912c"
+        )
+        .to_vec();
+
+        let domain_separator = eth::DomainSeparator(hex!(
+            "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
+        ));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
+
+        let transaction = super::transaction::Transaction::try_new(
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
+                    to: Some(settlement_contract),
+                    input: calldata.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            &domain_separator,
+            settlement_contract,
+            &MockAuthenticator,
+        )
+        .await
+        .unwrap();
+
+        let prices: auction::Prices = From::from([
+            (
+                eth::TokenAddress::from(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
+                auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
+                    .unwrap(),
+            ),
+            (
+                eth::TokenAddress::from(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
+                auction::Price::try_new(
+                    eth::U256::from(3177764302250520038326415654912u128).into(),
+                )
+                .unwrap(),
+            ),
+        ]);
+
+        let order_uid = transaction.trades[0].uid;
+        let auction = super::Auction {
+            block: eth::BlockNo(0),
+            prices,
+            surplus_capturing_jit_order_owners: Default::default(),
+            id: transaction.auction_id,
+            orders: HashMap::from([(
+                order_uid,
+                vec![domain::fee::Policy::Surplus {
+                    factor: 0.5f64.try_into().unwrap(),
+                    max_volume_factor: 0.01.try_into().unwrap(),
+                }],
+            )]),
+        };
+
+        let trades: Vec<super::Trade> = transaction
+            .trades
+            .into_iter()
+            .map(|trade| super::Trade::new(trade, &auction, 0))
+            .collect();
+
+        let settlement = super::Settlement {
+            gas: eth::Gas(eth::U256::from(100000u64)),
+            gas_price: eth::EffectiveGasPrice(eth::Ether::from(1000000000i32)),
+            block: eth::BlockNo(0),
+            solver: eth::Address::default(),
+            solution_uid: 1,
+            auction,
+            trades,
+        };
+
+        // Call individual methods
+        let surplus_individual = settlement.surplus_in_ether();
+        let fee_individual = settlement.fee_in_ether();
+        let fee_breakdown_individual = settlement.fee_breakdown();
+
+        // Call optimized method
+        let metrics = settlement.metrics();
+
+        // Verify they produce the same results
+        assert_eq!(
+            surplus_individual, metrics.surplus,
+            "Surplus mismatch: individual={:?}, optimized={:?}",
+            surplus_individual, metrics.surplus
+        );
+        assert_eq!(
+            fee_individual, metrics.fee,
+            "Fee mismatch: individual={:?}, optimized={:?}",
+            fee_individual, metrics.fee
+        );
+        assert_eq!(
+            fee_breakdown_individual.len(),
+            metrics.fee_breakdown.len(),
+            "Fee breakdown length mismatch"
+        );
+
+        // Verify each order's fee breakdown matches
+        for (uid, breakdown_individual) in &fee_breakdown_individual {
+            let breakdown_optimized = metrics
+                .fee_breakdown
+                .get(uid)
+                .expect("Order UID missing in optimized breakdown");
+
+            assert_eq!(
+                breakdown_individual.total.token, breakdown_optimized.total.token,
+                "Fee breakdown token mismatch for order {:?}",
+                uid
+            );
+            assert_eq!(
+                breakdown_individual.total.amount, breakdown_optimized.total.amount,
+                "Fee breakdown amount mismatch for order {:?}",
+                uid
+            );
+            assert_eq!(
+                breakdown_individual.protocol.len(),
+                breakdown_optimized.protocol.len(),
+                "Protocol fees count mismatch for order {:?}",
+                uid
+            );
+        }
+    }
+
+    // Test that the optimization works correctly with multiple protocol fee
+    // policies and doesn't redundantly call surplus_over_limit_price()
+    #[tokio::test]
+    async fn test_optimized_metrics_with_multiple_protocol_fees() {
+        let calldata = hex!(
+            "
+        13d79a0b
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000120
+        00000000000000000000000000000000000000000000000000000000000001c0
+        00000000000000000000000000000000000000000000000000000000000003e0
+        0000000000000000000000000000000000000000000000000000000000000004
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        0000000000000000000000000000000000000000000000000000000000000004
+        00000000000000000000000000000000000000000000000000000019b743b945
+        0000000000000000000000000000000000000000000000000000000000a87cf3
+        0000000000000000000000000000000000000000000000000000000000a87c7c
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000001
+        0000000000000000000000000000000000000000000000000000000000000020
+        0000000000000000000000000000000000000000000000000000000000000002
+        0000000000000000000000000000000000000000000000000000000000000003
+        000000000000000000000000f87da2093abee9b13a6f89671e4c3a3f80b42767
+        0000000000000000000000000000000000000000000000000000006d6e2edc00
+        0000000000000000000000000000000000000000000000000000000002cccdff
+        000000000000000000000000000000000000000000000000000000006799c219
+        2d365e5affcfa62cf1067b845add9c01bedcb2fc5d7a37442d2177262af26a0c
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000002
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000160
+        0000000000000000000000000000000000000000000000000000000000000041
+        e2ef661343676f9f4371ce809f728bb39a406f47835ee2b0104a8a1f340409ae
+        742dfe47fe469c024dc2fb7f80b99878b35985d66312856a8b5dcf5de4b069ee
+        1c00000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000520
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000003
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000140
+        00000000000000000000000000000000000000000000000000000000000002e0
+        000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000044
+        095ea7b3000000000000000000000000e592427a0aece92de3edee1f18e0157c
+        05861564ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        ffffffff00000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000dac17f958d2ee523a2206206994597c1
+        3d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb4800000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000019
+        b4b64b9b00000000000000000000000000000000000000000000000000000019
+        bdd90a1800000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb48000000000000000000000000056fd409e1d7a124bd7017459dfea2f3
+        87b6d5cd00000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000000
+        00a87cf300000000000000000000000000000000000000000000000000000019
+        bb4af52700000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        00000000008c912c"
+        )
+        .to_vec();
+
+        let domain_separator = eth::DomainSeparator(hex!(
+            "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
+        ));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
+
+        let transaction = super::transaction::Transaction::try_new(
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
+                    to: Some(settlement_contract),
+                    input: calldata.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            &domain_separator,
+            settlement_contract,
+            &MockAuthenticator,
+        )
+        .await
+        .unwrap();
+
+        let prices: auction::Prices = From::from([
+            (
+                eth::TokenAddress::from(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
+                auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
+                    .unwrap(),
+            ),
+            (
+                eth::TokenAddress::from(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
+                auction::Price::try_new(
+                    eth::U256::from(3177764302250520038326415654912u128).into(),
+                )
+                .unwrap(),
+            ),
+        ]);
+
+        let order_uid = transaction.trades[0].uid;
+
+        // Create auction with MULTIPLE protocol fee policies
+        let auction = super::Auction {
+            block: eth::BlockNo(0),
+            prices,
+            surplus_capturing_jit_order_owners: Default::default(),
+            id: transaction.auction_id,
+            orders: HashMap::from([(
+                order_uid,
+                vec![
+                    domain::fee::Policy::Surplus {
+                        factor: 0.3f64.try_into().unwrap(),
+                        max_volume_factor: 0.01.try_into().unwrap(),
+                    },
+                    domain::fee::Policy::Volume {
+                        factor: 0.001.try_into().unwrap(),
+                    },
+                ],
+            )]),
+        };
+
+        let trades: Vec<super::Trade> = transaction
+            .trades
+            .into_iter()
+            .map(|trade| super::Trade::new(trade, &auction, 0))
+            .collect();
+
+        let settlement = super::Settlement {
+            gas: eth::Gas(eth::U256::from(100000u64)),
+            gas_price: eth::EffectiveGasPrice(eth::Ether::from(1000000000i32)),
+            block: eth::BlockNo(0),
+            solver: eth::Address::default(),
+            solution_uid: 1,
+            auction,
+            trades,
+        };
+
+        // Call individual methods
+        let surplus_individual = settlement.surplus_in_ether();
+        let fee_individual = settlement.fee_in_ether();
+        let fee_breakdown_individual = settlement.fee_breakdown();
+
+        // Call optimized method
+        let metrics = settlement.metrics();
+
+        // Verify they produce the same results even with multiple protocol fees
+        assert_eq!(
+            surplus_individual, metrics.surplus,
+            "Surplus mismatch with multiple protocol fees: individual={:?}, optimized={:?}",
+            surplus_individual, metrics.surplus
+        );
+        assert_eq!(
+            fee_individual, metrics.fee,
+            "Fee mismatch with multiple protocol fees: individual={:?}, optimized={:?}",
+            fee_individual, metrics.fee
+        );
+        assert_eq!(
+            fee_breakdown_individual.len(),
+            metrics.fee_breakdown.len(),
+            "Fee breakdown length mismatch with multiple protocol fees"
+        );
+
+        // Verify fee breakdown details
+        for (uid, breakdown_individual) in &fee_breakdown_individual {
+            let breakdown_optimized = metrics
+                .fee_breakdown
+                .get(uid)
+                .expect("Order UID missing in optimized breakdown");
+
+            assert_eq!(
+                breakdown_individual.total.token, breakdown_optimized.total.token,
+                "Fee breakdown token mismatch for order {:?}",
+                uid
+            );
+            assert_eq!(
+                breakdown_individual.total.amount, breakdown_optimized.total.amount,
+                "Fee breakdown amount mismatch for order {:?}",
+                uid
+            );
+            assert_eq!(
+                breakdown_individual.protocol.len(),
+                breakdown_optimized.protocol.len(),
+                "Protocol fees count mismatch for order {:?}",
+                uid
+            );
+
+            // Verify each protocol fee matches
+            for (i, (fee_individual, fee_optimized)) in breakdown_individual
+                .protocol
+                .iter()
+                .zip(breakdown_optimized.protocol.iter())
+                .enumerate()
+            {
+                assert_eq!(
+                    fee_individual.policy, fee_optimized.policy,
+                    "Protocol fee policy mismatch at index {} for order {:?}",
+                    i, uid
+                );
+                assert_eq!(
+                    fee_individual.fee.token, fee_optimized.fee.token,
+                    "Protocol fee token mismatch at index {} for order {:?}",
+                    i, uid
+                );
+                assert_eq!(
+                    fee_individual.fee.amount, fee_optimized.fee.amount,
+                    "Protocol fee amount mismatch at index {} for order {:?}",
+                    i, uid
+                );
+            }
+        }
+
+        // Verify that we have multiple protocol fees (the test setup)
+        let breakdown = metrics.fee_breakdown.get(&order_uid).unwrap();
+        assert_eq!(
+            breakdown.protocol.len(),
+            2,
+            "Expected 2 protocol fees in test setup"
+        );
+    }
+
+    // test that verifies EVERY computed value matches between old and
+    // new methods
+    #[tokio::test]
+    async fn test_comprehensive_equivalence_old_vs_new() {
+        let calldata = hex!(
+            "
+        13d79a0b
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000120
+        00000000000000000000000000000000000000000000000000000000000001c0
+        00000000000000000000000000000000000000000000000000000000000003e0
+        0000000000000000000000000000000000000000000000000000000000000004
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        0000000000000000000000000000000000000000000000000000000000000004
+        00000000000000000000000000000000000000000000000000000019b743b945
+        0000000000000000000000000000000000000000000000000000000000a87cf3
+        0000000000000000000000000000000000000000000000000000000000a87c7c
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000001
+        0000000000000000000000000000000000000000000000000000000000000020
+        0000000000000000000000000000000000000000000000000000000000000002
+        0000000000000000000000000000000000000000000000000000000000000003
+        000000000000000000000000f87da2093abee9b13a6f89671e4c3a3f80b42767
+        0000000000000000000000000000000000000000000000000000006d6e2edc00
+        0000000000000000000000000000000000000000000000000000000002cccdff
+        000000000000000000000000000000000000000000000000000000006799c219
+        2d365e5affcfa62cf1067b845add9c01bedcb2fc5d7a37442d2177262af26a0c
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000002
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000160
+        0000000000000000000000000000000000000000000000000000000000000041
+        e2ef661343676f9f4371ce809f728bb39a406f47835ee2b0104a8a1f340409ae
+        742dfe47fe469c024dc2fb7f80b99878b35985d66312856a8b5dcf5de4b069ee
+        1c00000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000520
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000003
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000140
+        00000000000000000000000000000000000000000000000000000000000002e0
+        000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000044
+        095ea7b3000000000000000000000000e592427a0aece92de3edee1f18e0157c
+        05861564ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        ffffffff00000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000dac17f958d2ee523a2206206994597c1
+        3d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb4800000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000019
+        b4b64b9b00000000000000000000000000000000000000000000000000000019
+        bdd90a1800000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb48000000000000000000000000056fd409e1d7a124bd7017459dfea2f3
+        87b6d5cd00000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000000
+        00a87cf300000000000000000000000000000000000000000000000000000019
+        bb4af52700000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        00000000008c912c"
+        )
+        .to_vec();
+
+        let domain_separator = eth::DomainSeparator(hex!(
+            "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
+        ));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
+
+        let transaction = super::transaction::Transaction::try_new(
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
+                    to: Some(settlement_contract),
+                    input: calldata.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            &domain_separator,
+            settlement_contract,
+            &MockAuthenticator,
+        )
+        .await
+        .unwrap();
+
+        let prices: auction::Prices = From::from([
+            (
+                eth::TokenAddress::from(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
+                auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
+                    .unwrap(),
+            ),
+            (
+                eth::TokenAddress::from(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
+                auction::Price::try_new(
+                    eth::U256::from(3177764302250520038326415654912u128).into(),
+                )
+                .unwrap(),
+            ),
+        ]);
+
+        let order_uid = transaction.trades[0].uid;
+
+        // Create auction with multiple protocol fee policies for comprehensive testing
+        let auction = super::Auction {
+            block: eth::BlockNo(0),
+            prices,
+            surplus_capturing_jit_order_owners: Default::default(),
+            id: transaction.auction_id,
+            orders: HashMap::from([(
+                order_uid,
+                vec![
+                    domain::fee::Policy::Surplus {
+                        factor: 0.4f64.try_into().unwrap(),
+                        max_volume_factor: 0.015.try_into().unwrap(),
+                    },
+                    domain::fee::Policy::Volume {
+                        factor: 0.002.try_into().unwrap(),
+                    },
+                    domain::fee::Policy::Surplus {
+                        factor: 0.1f64.try_into().unwrap(),
+                        max_volume_factor: 0.005.try_into().unwrap(),
+                    },
+                ],
+            )]),
+        };
+
+        let trades: Vec<super::Trade> = transaction
+            .trades
+            .into_iter()
+            .map(|trade| super::Trade::new(trade, &auction, 0))
+            .collect();
+
+        let settlement = super::Settlement {
+            gas: eth::Gas(eth::U256::from(100000u64)),
+            gas_price: eth::EffectiveGasPrice(eth::Ether::from(1000000000i32)),
+            block: eth::BlockNo(0),
+            solver: eth::Address::default(),
+            solution_uid: 1,
+            auction,
+            trades,
+        };
+
+        // ===== OLD METHOD: Call each method separately =====
+        let old_surplus = settlement.surplus_in_ether();
+        let old_fee = settlement.fee_in_ether();
+        let old_fee_breakdown = settlement.fee_breakdown();
+
+        // ===== NEW METHOD: Call optimized metrics() =====
+        let new_metrics = settlement.metrics();
+
+        // ===== VERIFICATION 1: Top-level aggregated values =====
+        assert_eq!(
+            old_surplus, new_metrics.surplus,
+            "SURPLUS MISMATCH:\n  Old: {:?}\n  New: {:?}",
+            old_surplus, new_metrics.surplus
+        );
+
+        assert_eq!(
+            old_fee, new_metrics.fee,
+            "FEE MISMATCH:\n  Old: {:?}\n  New: {:?}",
+            old_fee, new_metrics.fee
+        );
+
+        assert_eq!(
+            old_fee_breakdown.len(),
+            new_metrics.fee_breakdown.len(),
+            "FEE BREAKDOWN COUNT MISMATCH:\n  Old: {}\n  New: {}",
+            old_fee_breakdown.len(),
+            new_metrics.fee_breakdown.len()
+        );
+
+        // ===== VERIFICATION 2: Per-order fee breakdown =====
+        for (uid, old_breakdown) in &old_fee_breakdown {
+            let new_breakdown = new_metrics
+                .fee_breakdown
+                .get(uid)
+                .unwrap_or_else(|| panic!("Order UID {:?} missing in new breakdown", uid));
+
+            // Verify total fee token
+            assert_eq!(
+                old_breakdown.total.token, new_breakdown.total.token,
+                "Order {:?}: TOTAL FEE TOKEN MISMATCH:\n  Old: {:?}\n  New: {:?}",
+                uid, old_breakdown.total.token, new_breakdown.total.token
+            );
+
+            // Verify total fee amount
+            assert_eq!(
+                old_breakdown.total.amount, new_breakdown.total.amount,
+                "Order {:?}: TOTAL FEE AMOUNT MISMATCH:\n  Old: {:?}\n  New: {:?}",
+                uid, old_breakdown.total.amount, new_breakdown.total.amount
+            );
+
+            // Verify protocol fees count
+            assert_eq!(
+                old_breakdown.protocol.len(),
+                new_breakdown.protocol.len(),
+                "Order {:?}: PROTOCOL FEES COUNT MISMATCH:\n  Old: {}\n  New: {}",
+                uid,
+                old_breakdown.protocol.len(),
+                new_breakdown.protocol.len()
+            );
+
+            // ===== VERIFICATION 3: Per-protocol-fee details =====
+            for (i, (old_protocol_fee, new_protocol_fee)) in old_breakdown
+                .protocol
+                .iter()
+                .zip(new_breakdown.protocol.iter())
+                .enumerate()
+            {
+                // Verify policy
+                assert_eq!(
+                    old_protocol_fee.policy, new_protocol_fee.policy,
+                    "Order {:?}, Protocol Fee #{}: POLICY MISMATCH:\n  Old: {:?}\n  New: {:?}",
+                    uid, i, old_protocol_fee.policy, new_protocol_fee.policy
+                );
+
+                // Verify fee token
+                assert_eq!(
+                    old_protocol_fee.fee.token, new_protocol_fee.fee.token,
+                    "Order {:?}, Protocol Fee #{}: FEE TOKEN MISMATCH:\n  Old: {:?}\n  New: {:?}",
+                    uid, i, old_protocol_fee.fee.token, new_protocol_fee.fee.token
+                );
+
+                // Verify fee amount (most critical!)
+                assert_eq!(
+                    old_protocol_fee.fee.amount,
+                    new_protocol_fee.fee.amount,
+                    "Order {:?}, Protocol Fee #{}: FEE AMOUNT MISMATCH:\n  Old: {:?}\n  New: \
+                     {:?}\n  Policy: {:?}",
+                    uid,
+                    i,
+                    old_protocol_fee.fee.amount,
+                    new_protocol_fee.fee.amount,
+                    old_protocol_fee.policy
+                );
+            }
+        }
+
+        // ===== VERIFICATION 4: Verify trade-level calculations =====
+        for trade in &settlement.trades {
+            let old_trade_surplus = trade.surplus_in_ether(&settlement.auction.prices).unwrap();
+            let old_trade_fee = trade.fee_in_ether(&settlement.auction.prices).unwrap();
+            let old_trade_breakdown = trade.fee_breakdown(&settlement.auction).unwrap();
+
+            let (new_trade_surplus, new_trade_fee, new_trade_breakdown) =
+                trade.calculate_all_metrics(&settlement.auction).unwrap();
+
+            assert_eq!(
+                old_trade_surplus,
+                new_trade_surplus,
+                "Trade {:?}: SURPLUS MISMATCH:\n  Old: {:?}\n  New: {:?}",
+                trade.uid(),
+                old_trade_surplus,
+                new_trade_surplus
+            );
+
+            assert_eq!(
+                old_trade_fee,
+                new_trade_fee,
+                "Trade {:?}: FEE MISMATCH:\n  Old: {:?}\n  New: {:?}",
+                trade.uid(),
+                old_trade_fee,
+                new_trade_fee
+            );
+
+            assert_eq!(
+                old_trade_breakdown.total.amount,
+                new_trade_breakdown.total.amount,
+                "Trade {:?}: BREAKDOWN TOTAL MISMATCH:\n  Old: {:?}\n  New: {:?}",
+                trade.uid(),
+                old_trade_breakdown.total.amount,
+                new_trade_breakdown.total.amount
+            );
+
+            assert_eq!(
+                old_trade_breakdown.protocol.len(),
+                new_trade_breakdown.protocol.len(),
+                "Trade {:?}: BREAKDOWN PROTOCOL COUNT MISMATCH:\n  Old: {}\n  New: {}",
+                trade.uid(),
+                old_trade_breakdown.protocol.len(),
+                new_trade_breakdown.protocol.len()
+            );
+        }
+
+        // ===== VERIFICATION 5: Verify sum of trade-level equals settlement-level =====
+        let trade_surplus_sum: eth::Ether = settlement
+            .trades
+            .iter()
+            .map(|t| t.surplus_in_ether(&settlement.auction.prices).unwrap())
+            .sum();
+
+        let trade_fee_sum: eth::Ether = settlement
+            .trades
+            .iter()
+            .map(|t| t.fee_in_ether(&settlement.auction.prices).unwrap())
+            .sum();
+
+        assert_eq!(
+            trade_surplus_sum, old_surplus,
+            "Sum of trade surplus != settlement surplus:\n  Sum: {:?}\n  Settlement: {:?}",
+            trade_surplus_sum, old_surplus
+        );
+
+        assert_eq!(
+            trade_fee_sum, old_fee,
+            "Sum of trade fees != settlement fee:\n  Sum: {:?}\n  Settlement: {:?}",
+            trade_fee_sum, old_fee
+        );
     }
 }

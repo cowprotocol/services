@@ -83,6 +83,55 @@ impl Trade {
         }
     }
 
+    /// Efficiently calculate all metrics (surplus, fee, breakdown) in a single
+    /// pass. This avoids redundant computation of surplus_over_limit_price.
+    pub fn calculate_all_metrics(
+        &self,
+        auction: &super::Auction,
+    ) -> Result<(eth::Ether, eth::Ether, FeeBreakdown), math::Error> {
+        let math_trade = math::Trade::from(self);
+
+        // Compute these expensive operations only once
+        let surplus_after = math_trade.surplus_over_limit_price()?;
+        let surplus_before = math_trade.surplus_over_limit_price_before_fee()?;
+
+        let surplus_token = math_trade.surplus_token();
+        let surplus_ether = match self {
+            Self::Jit(trade) if !trade.surplus_capturing => {
+                // Non-surplus-capturing JIT orders have zero surplus
+                eth::Ether::zero()
+            }
+            _ => {
+                let price = auction
+                    .prices
+                    .get(&surplus_token)
+                    .ok_or(math::Error::MissingPrice(surplus_token))?;
+                price.in_eth(eth::TokenAmount(surplus_after.0))
+            }
+        };
+
+        let fee_in_surplus_token = surplus_before
+            .0
+            .checked_sub(surplus_after.0)
+            .ok_or(math::error::Math::Negative)?;
+
+        let fee_ether = {
+            let price = auction
+                .prices
+                .get(&surplus_token)
+                .ok_or(math::Error::MissingPrice(surplus_token))?;
+            price.in_eth(eth::TokenAmount(fee_in_surplus_token))
+        };
+
+        let breakdown = math_trade.fee_breakdown_from_surplus(
+            surplus_before,
+            surplus_after,
+            &auction.orders,
+        )?;
+
+        Ok((surplus_ether, fee_ether, breakdown))
+    }
+
     pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
         if auction.orders.contains_key(&trade.uid) {
             Trade::Fulfillment(Fulfillment {

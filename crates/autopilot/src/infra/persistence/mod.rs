@@ -797,9 +797,13 @@ impl Persistence {
         if let Some(settlement) = settlement {
             let gas = settlement.gas();
             let gas_price = settlement.gas_price();
-            let surplus = settlement.surplus_in_ether();
-            let fee = settlement.fee_in_ether();
-            let fee_breakdown = settlement.fee_breakdown();
+
+            // Use optimized single-pass calculation
+            let metrics = settlement.metrics();
+            let surplus = metrics.surplus;
+            let fee = metrics.fee;
+            let fee_breakdown = metrics.fee_breakdown;
+
             let jit_orders = settlement.jit_orders();
             let solver: database::Address = ByteArray(settlement.solver().0.0);
 
