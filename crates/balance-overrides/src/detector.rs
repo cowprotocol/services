@@ -1,8 +1,8 @@
 use {
     super::Strategy,
-    crate::StrategyExt,
+    crate::{StrategyExt, aave},
     alloy_eips::BlockId,
-    alloy_primitives::{Address, B256, TxKind, U256, keccak256},
+    alloy_primitives::{Address, B256, TxKind, U256, keccak256, map::AddressMap},
     alloy_provider::ext::DebugApi,
     alloy_rpc_types::{
         TransactionInput,
@@ -70,6 +70,7 @@ fn create_strategies_from_slots(
     storage_slots: &[(Address, B256)],
     holder: &Address,
     heuristic_depth: usize,
+    aave_info: Option<AaveInfo>,
 ) -> Vec<Strategy> {
     // Build a map from heuristic slot hash to the map_slot index
     let mut solidity_mapping_slot_to_index = HashMap::new();
@@ -92,6 +93,20 @@ fn create_strategies_from_slots(
     let mut fallback_strategies = Vec::new();
     for (contract, slot) in storage_slots.iter().rev() {
         if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
+            // For Aave-compatible aTokens, prefer the AaveV3AToken strategy:
+            // it knows how to scale by the reserve's liquidity index and how
+            // to preserve the packed `UserState.additionalData`. The plain
+            // SolidityMapping entry is added afterwards as a fallback in case
+            // the probe was a false positive (another contract happens to
+            // expose the same two selectors).
+            if let Some(info) = aave_info.as_ref() {
+                heuristic_strategies.push(Strategy::AaveV3AToken {
+                    target_contract: *contract,
+                    pool: info.pool,
+                    underlying: info.underlying,
+                    map_slot: U256::from(map_slot_index),
+                });
+            }
             heuristic_strategies.push(Strategy::SolidityMapping {
                 target_contract: *contract,
                 map_slot: U256::from(map_slot_index),
@@ -112,6 +127,14 @@ fn create_strategies_from_slots(
     // "most recent first" order due to .rev() above.
     heuristic_strategies.extend(fallback_strategies);
     heuristic_strategies
+}
+
+/// Info returned by the Aave probe; plumbed into `create_strategies_from_slots`
+/// so mapping-style slots can also be tried as `AaveV3AToken`.
+#[derive(Clone, Copy, Debug)]
+struct AaveInfo {
+    pool: Address,
+    underlying: Address,
 }
 
 impl Detector {
@@ -166,10 +189,26 @@ impl Detector {
             return Err(DetectionError::NotFound);
         }
 
-        let strategies =
-            create_strategies_from_slots(&storage_slots, &holder, self.probing_depth.into());
+        // Probe whether this token looks like an Aave v3 aToken (has
+        // `UNDERLYING_ASSET_ADDRESS()` and `POOL()` and the pool responds to
+        // `getReserveNormalizedIncome`). If so, `create_strategies_from_slots`
+        // will also emit `AaveV3AToken` candidates so the verify loop picks
+        // them up and returns the right strategy without any hardcoded
+        // per-token config.
+        let aave_info = aave::probe_a_token(&self.web3, token)
+            .await
+            .map(|(pool, underlying)| AaveInfo { pool, underlying });
 
-        if strategies.len() == 1 {
+        let strategies = create_strategies_from_slots(
+            &storage_slots,
+            &holder,
+            self.probing_depth.into(),
+            aave_info,
+        );
+
+        // Only skip verification if there's a single candidate and we're not
+        // dealing with an Aave aToken (where a round-trip check is required).
+        if strategies.len() == 1 && aave_info.is_none() {
             let slot = storage_slots[0];
             tracing::debug!(
                 storage_context = ?slot.0,
@@ -315,6 +354,11 @@ impl Detector {
 
     /// Verifies that a strategy correctly controls the balance by applying it
     /// and checking balanceOf.
+    ///
+    /// For the `AaveV3AToken` variant we allow `balanceOf` to be off by one
+    /// wei, since Aave's ray rounding can slightly differ from our locally
+    /// computed scaled value; for every other variant the check is still an
+    /// exact equality.
     async fn verify_strategy(
         &self,
         token: Address,
@@ -324,8 +368,32 @@ impl Detector {
         // Use a unique test value to verify this strategy works
         let test_balance = U256::from(0x1337_1337_1337_1337_u64);
 
-        // Create state override using the strategy
-        let overrides = strategy.state_override(&holder, &test_balance);
+        // Create state override using the strategy. `AaveV3AToken` needs an
+        // async call to the pool to compute the scaled storage value, so we
+        // reuse the production builder rather than `StrategyExt::state_override`
+        // (which intentionally `unreachable!()`s for this variant).
+        let overrides: AddressMap<_> = match strategy {
+            Strategy::AaveV3AToken {
+                target_contract,
+                pool,
+                underlying,
+                map_slot,
+            } => {
+                let (target, account_override) = aave::build_override(
+                    &self.web3,
+                    *target_contract,
+                    *pool,
+                    *underlying,
+                    *map_slot,
+                    holder,
+                    test_balance,
+                )
+                .await
+                .ok_or(DetectionError::NotFound)?;
+                std::iter::once((target, account_override)).collect()
+            }
+            _ => strategy.state_override(&holder, &test_balance),
+        };
 
         // Call balanceOf with the override
         let token_contract = ERC20::Instance::new(token, self.web3.provider.clone());
@@ -340,8 +408,21 @@ impl Detector {
                 )))
             })?;
 
-        // If the balance matches our test value, the strategy works
-        if balance == test_balance {
+        // aToken balances round-trip through rayDiv/rayMul so the reported
+        // balance may differ from the written value by one wei. Every other
+        // strategy must match exactly.
+        let ok = if matches!(strategy, Strategy::AaveV3AToken { .. }) {
+            let diff = if balance >= test_balance {
+                balance - test_balance
+            } else {
+                test_balance - balance
+            };
+            diff <= U256::from(1u64)
+        } else {
+            balance == test_balance
+        };
+
+        if ok {
             Ok(())
         } else {
             Err(DetectionError::NotFound)
@@ -433,27 +514,29 @@ mod tests {
         );
     }
 
-    /// aEthWETH (Aave v3) can't be auto-detected: its `balanceOf` applies a
-    /// liquidity-index scaling so the verify step never sees back the exact
-    /// value we write. This documents the limitation and motivates the
-    /// `AaveV3AToken` hardcoded strategy. Kept separate from
-    /// `detects_storage_slots_mainnet` so this assertion is not gated by
-    /// unrelated expectations in that test.
+    /// The detector recognises aEthWETH as an Aave v3 aToken (via
+    /// `UNDERLYING_ASSET_ADDRESS()` + `POOL()` probes) and returns the
+    /// right `AaveV3AToken` strategy, scaling and all, without any
+    /// hardcoded per-token config.
     /// Set `NODE_URL` environment to a mainnet RPC URL.
     #[ignore]
     #[tokio::test]
-    async fn detects_storage_slots_mainnet_aave_atoken_not_found() {
+    async fn detects_aave_v3_a_token_mainnet() {
         let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT);
 
-        let result = detector
-            .detect(
-                address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8"),
-                Address::with_last_byte(1),
-            )
-            .await;
-        assert!(
-            matches!(result, Err(DetectionError::NotFound)),
-            "expected NotFound for aEthWETH, got {result:?}",
+        let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
+        let strategy = detector
+            .detect(a_eth_weth, Address::with_last_byte(1))
+            .await
+            .unwrap();
+        assert_eq!(
+            strategy,
+            Strategy::AaveV3AToken {
+                target_contract: a_eth_weth,
+                pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
+                underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                map_slot: U256::from(52),
+            }
         );
     }
 
@@ -500,7 +583,7 @@ mod tests {
 
         // These slots don't match any heuristic, so should just be reversed and return
         // DirectSlot
-        let strategies = create_strategies_from_slots(&slots, &holder, 5);
+        let strategies = create_strategies_from_slots(&slots, &holder, 5, None);
 
         assert_eq!(
             strategies,
@@ -559,7 +642,7 @@ mod tests {
             (contract, heuristic_slot1),
         ];
 
-        let strategies = create_strategies_from_slots(&slots, &holder, 100);
+        let strategies = create_strategies_from_slots(&slots, &holder, 100, None);
 
         // After reverse: [heuristic, non_heuristic]
         // After sort: non-heuristic slots come before heuristic slots due to false <
@@ -616,7 +699,7 @@ mod tests {
             (contract, slot3),
         ];
 
-        let strategies = create_strategies_from_slots(&slots, &holder, 0);
+        let strategies = create_strategies_from_slots(&slots, &holder, 0, None);
 
         // With depth 0, no heuristic slots are created, so all become DirectSlot and
         // just reversed

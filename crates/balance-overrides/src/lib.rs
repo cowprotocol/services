@@ -1,28 +1,18 @@
+pub mod aave;
 pub mod detector;
 
 use {
-    self::detector::{DetectionError, Detector},
-    alloy_eips::BlockId,
-    alloy_primitives::{Address, B256, Bytes, TxKind, U256, keccak256, map::AddressMap},
-    alloy_provider::Provider,
-    alloy_rpc_types::{TransactionInput, TransactionRequest, state::AccountOverride},
-    alloy_sol_types::{SolCall, sol},
+    self::{
+        aave::{mapping_slot_hash, pack_user_state, ray_div},
+        detector::{DetectionError, Detector},
+    },
+    alloy_primitives::{Address, B256, U256, keccak256, map::AddressMap},
+    alloy_rpc_types::state::AccountOverride,
     cached::{Cached, SizedCache},
     configs::balance_overrides::Strategy,
     ethrpc::Web3,
     std::{collections::HashMap, iter, sync::Mutex},
 };
-
-sol! {
-    /// Minimal interface for the Aave v3 `Pool` used to derive the current
-    /// liquidity index applied by aTokens when reporting `balanceOf`.
-    interface IAaveV3Pool {
-        function getReserveNormalizedIncome(address asset) external view returns (uint256);
-    }
-}
-
-/// Ray (1e27) is Aave's 27-decimal fixed-point unit used in `rayDiv`.
-const RAY: U256 = U256::from_limbs([0x9fd0803ce8000000, 0x33b2e3c, 0, 0]);
 /// Token configurations for the `BalanceOverriding` component.
 #[derive(Clone, Debug, Default)]
 pub struct TokenConfiguration(HashMap<Address, Strategy>);
@@ -107,39 +97,6 @@ impl StrategyExt for Strategy {
     fn is_valid_for_all_holders(&self) -> bool {
         matches!(self, Self::DirectSlot { .. })
     }
-}
-
-/// Computes `keccak256(pad32(holder) ++ map_slot)` — the storage slot of
-/// `mapping(address => _)` entries in Solidity.
-fn mapping_slot_hash(holder: &Address, map_slot: &[u8; 32]) -> B256 {
-    let mut buf = [0u8; 64];
-    buf[12..32].copy_from_slice(holder.as_slice());
-    buf[32..64].copy_from_slice(map_slot);
-    keccak256(buf)
-}
-
-/// Packs a `UserState { uint128 balance; uint128 additionalData }` into a
-/// 32-byte word. The balance occupies the lower 128 bits; `additional_data`
-/// sits in the upper 128 bits.
-fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
-    let mask = (U256::from(1u64) << 128) - U256::from(1u64);
-    let packed: U256 = ((additional_data & mask) << 128) | (balance & mask);
-    B256::new(packed.to_be_bytes::<32>())
-}
-
-/// Ray-division: `(a * RAY + b/2) / b`, round-half-up. This matches Aave's
-/// `WadRayMath.rayDiv` bit-for-bit so the scaled amount we write into
-/// storage equals the one Aave will itself compute during a subsequent
-/// `_transfer`. Returns `None` if `b == 0` or the intermediate product
-/// overflows `U256`.
-fn ray_div(a: U256, b: U256) -> Option<U256> {
-    if b.is_zero() {
-        return None;
-    }
-    let half_b = b >> 1;
-    a.checked_mul(RAY)
-        .and_then(|prod| prod.checked_add(half_b))
-        .map(|num| num / b)
 }
 
 type DetectorCache = Mutex<SizedCache<(Address, Option<Address>), Option<Strategy>>>;
@@ -287,58 +244,7 @@ impl BalanceOverrides {
             );
             None
         })?;
-
-        let call = IAaveV3Pool::getReserveNormalizedIncomeCall { asset: underlying };
-        let calldata = Bytes::from(call.abi_encode());
-        let tx = TransactionRequest {
-            to: Some(TxKind::Call(pool)),
-            input: TransactionInput::new(calldata),
-            ..Default::default()
-        };
-        let index = match web3.provider.call(tx).block(BlockId::latest()).await {
-            Ok(bytes) => {
-                match IAaveV3Pool::getReserveNormalizedIncomeCall::abi_decode_returns(&bytes) {
-                    Ok(index) => index,
-                    Err(err) => {
-                        tracing::warn!(
-                            ?err,
-                            ?pool,
-                            ?underlying,
-                            "failed to decode Aave reserve normalized income response"
-                        );
-                        return None;
-                    }
-                }
-            }
-            Err(err) => {
-                tracing::warn!(
-                    ?err,
-                    ?pool,
-                    ?underlying,
-                    "failed to fetch Aave reserve normalized income"
-                );
-                return None;
-            }
-        };
-
-        let scaled = ray_div(amount, index)?;
-        let slot = mapping_slot_hash(&holder, &map_slot.to_be_bytes::<32>());
-        let value = pack_user_state(scaled, U256::ZERO);
-
-        tracing::trace!(
-            ?a_token,
-            ?holder,
-            %amount,
-            %index,
-            %scaled,
-            "computed AaveV3AToken balance override"
-        );
-
-        let state_override = AccountOverride {
-            state_diff: Some(iter::once((slot, value)).collect()),
-            ..Default::default()
-        };
-        Some((a_token, state_override))
+        aave::build_override(web3, a_token, pool, underlying, map_slot, holder, amount).await
     }
 }
 
@@ -360,6 +266,7 @@ impl BalanceOverriding for DummyOverrider {
 mod tests {
     use {
         super::*,
+        crate::aave::RAY,
         alloy_primitives::{address, b256},
         ethrpc::mock,
         maplit::hashmap,
