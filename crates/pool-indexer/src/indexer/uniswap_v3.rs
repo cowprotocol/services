@@ -222,29 +222,32 @@ impl UniswapV3Indexer {
         chunks
     }
 
-    /// Fetches logs for `[from, to]`, sequentially bisecting on
-    /// results-overflow errors. Bisection is sequential within a chunk to
-    /// avoid exponential RPC fan-out; the outer `buffered` layer provides
-    /// cross-chunk concurrency.
-    fn fetch_logs_bisecting(
-        &self,
-        from: u64,
-        to: u64,
-    ) -> futures::future::BoxFuture<'_, Result<Vec<Log>>> {
-        Box::pin(async move {
-            match self.fetch_logs(from, to).await {
-                Ok(logs) => Ok(logs),
-                Err(err) if is_range_too_large(&err) && to > from => {
-                    let mid = (from + to) / 2;
-                    tracing::debug!(from, to, mid, "range too large, bisecting");
-                    let mut left = self.fetch_logs_bisecting(from, mid).await?;
-                    let right = self.fetch_logs_bisecting(mid + 1, to).await?;
-                    left.extend(right);
-                    Ok(left)
-                }
-                Err(err) => Err(err),
-            }
-        })
+    async fn fetch_logs_bisecting(&self, from: u64, to: u64) -> Result<Vec<Log>> {
+        // No address filter: `PoolCreated` is emitted by the factory but the
+        // other four events are emitted by each pool contract, and that
+        // address list (tens of thousands on mainnet) would blow past most
+        // RPCs' filter-size caps. `eth_getLogs` applies the address filter
+        // across all events at once, so we can't scope each topic
+        // independently. Instead, we filter client-side:
+        //   - PoolCreated is matched against `self.factory` in
+        //     `LogAccumulator::handle_pool_created`.
+        //   - Mint/Burn/Swap/Initialize from unknown pools are silently
+        //     dropped by the SQL `WHERE EXISTS (... uniswap_v3_pools ...)`
+        //     guards in the batch writers.
+        bisecting_get_logs(
+            &self.provider,
+            from,
+            to,
+            vec![],
+            vec![
+                PoolCreated::SIGNATURE_HASH,
+                Initialize::SIGNATURE_HASH,
+                Mint::SIGNATURE_HASH,
+                Burn::SIGNATURE_HASH,
+                Swap::SIGNATURE_HASH,
+            ],
+        )
+        .await
     }
 
     #[instrument(skip(self, logs), fields(chunk_start = chunk.start, chunk_end = chunk.end))]
@@ -338,29 +341,10 @@ impl UniswapV3Indexer {
             .collect()
             .await
     }
-
-    async fn fetch_logs(&self, from: u64, to: u64) -> Result<Vec<Log>> {
-        let topics = FilterSet::from_iter([
-            PoolCreated::SIGNATURE_HASH,
-            Initialize::SIGNATURE_HASH,
-            Mint::SIGNATURE_HASH,
-            Burn::SIGNATURE_HASH,
-            Swap::SIGNATURE_HASH,
-        ]);
-        let filter = Filter::new()
-            .from_block(from)
-            .to_block(to)
-            .event_signature(topics);
-
-        self.provider
-            .get_logs(&filter)
-            .await
-            .with_context(|| format!("get_logs({from}..={to})"))
-    }
 }
 
 /// Sign-extends a 24-bit signed integer (alloy I24) to i32.
-fn signed24_to_i32(v: alloy::primitives::aliases::I24) -> i32 {
+pub(crate) fn signed24_to_i32(v: alloy::primitives::aliases::I24) -> i32 {
     let raw = v.into_raw().as_limbs()[0] as u32;
     (raw << 8).cast_signed() >> 8
 }
@@ -468,15 +452,55 @@ async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String
     (!cleaned.is_empty()).then_some(cleaned)
 }
 
-/// Returns true when the RPC rejects a request because the result set would
-/// exceed its limit. Checks the full error chain because anyhow context wraps
-/// the inner RPC error.
-fn is_range_too_large(err: &anyhow::Error) -> bool {
+/// Returns true when the RPC rejects — or gives up on — a request because
+/// the range is too wide. Checks the full error chain because anyhow
+/// context wraps the inner RPC error. Extend when a new rejection phrase
+/// appears in the wild.
+pub(crate) fn is_range_too_large(err: &anyhow::Error) -> bool {
     err.chain().any(|e| {
         let msg = e.to_string().to_lowercase();
-        msg.contains("max results")
-            || msg.contains("result limit")
-            || msg.contains("too many results")
+        // Alchemy: "query exceeds max block range 10000"
+        msg.contains("max block range")
+        // OVH: "request timed out" — the server cuts off oversized queries
+        // instead of rejecting with a size error, so bisecting on timeout
+        // eventually lands on a tractable range.
+        || msg.contains("timed out")
+    })
+}
+
+/// Fetches logs for `[from, to]` filtered by the given contract addresses
+/// and `topic0` event signatures, sequentially bisecting the block range on
+/// "too large" rejections until each sub-range is tractable. An empty
+/// `addresses` list means "any contract".
+pub(crate) fn bisecting_get_logs(
+    provider: &AlloyProvider,
+    from: u64,
+    to: u64,
+    addresses: Vec<Address>,
+    topics: Vec<alloy::primitives::B256>,
+) -> futures::future::BoxFuture<'_, Result<Vec<Log>>> {
+    Box::pin(async move {
+        let filter = Filter::new()
+            .address(addresses.clone())
+            .event_signature(FilterSet::from_iter(topics.clone()))
+            .from_block(from)
+            .to_block(to);
+
+        let err = match provider.get_logs(&filter).await {
+            Ok(logs) => return Ok(logs),
+            Err(err) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
+        };
+        if is_range_too_large(&err) && to > from {
+            let mid = (from + to) / 2;
+            tracing::debug!(from, to, mid, "range too large, bisecting");
+            let mut left =
+                bisecting_get_logs(provider, from, mid, addresses.clone(), topics.clone()).await?;
+            let right = bisecting_get_logs(provider, mid + 1, to, addresses, topics).await?;
+            left.extend(right);
+            Ok(left)
+        } else {
+            Err(err)
+        }
     })
 }
 

@@ -1,7 +1,7 @@
 use {
-    super::{bad_request, internal_error, parse_hex_address, parse_pool_ids, serialize_display},
+    super::{parse_hex_address, parse_pool_ids, serialize_display},
     crate::{
-        api::{AppState, latest_indexed_block, resolve_chain_id},
+        api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
         db::uniswap_v3 as db,
     },
     alloy_primitives::Address,
@@ -65,35 +65,21 @@ pub struct BulkTicksResponse {
 pub async fn get_ticks(
     State(state): State<Arc<AppState>>,
     Path((network, pool_address)): Path<(String, String)>,
-) -> Response {
-    let chain_id = match resolve_chain_id(&state, &network) {
-        Ok(chain_id) => chain_id,
-        Err(response) => return response,
-    };
-    let pool = match parse_hex_address(&pool_address) {
-        Ok(pool) => pool,
-        Err(_) => return bad_request("invalid pool address"),
-    };
+) -> Result<Response, ApiError> {
+    let chain_id = resolve_chain_id(&state, &network)?;
+    let pool = parse_hex_address(&pool_address)?;
 
-    let (block_result, ticks_result) = tokio::join!(
+    let (block, ticks) = tokio::join!(
         latest_indexed_block(&state, chain_id),
         db::get_ticks(&state.db, chain_id, &pool),
     );
-    let block_number = match block_result {
-        Ok(block_number) => block_number,
-        Err(response) => return response,
-    };
-    let ticks = match ticks_result {
-        Ok(rows) => rows,
-        Err(err) => return internal_error(err),
-    };
 
-    Json(TicksResponse {
-        block_number,
+    Ok(Json(TicksResponse {
+        block_number: block?,
         pool,
-        ticks: ticks.into_iter().map(TickEntry::from).collect(),
+        ticks: ticks?.into_iter().map(TickEntry::from).collect(),
     })
-    .into_response()
+    .into_response())
 }
 
 /// `GET /api/v1/{network}/uniswap/v3/pools/ticks?pool_ids=0x…,0x…`
@@ -106,35 +92,20 @@ pub async fn get_ticks_bulk(
     State(state): State<Arc<AppState>>,
     Path(network): Path<String>,
     Query(query): Query<BulkTicksQuery>,
-) -> Response {
-    let chain_id = match resolve_chain_id(&state, &network) {
-        Ok(chain_id) => chain_id,
-        Err(response) => return response,
-    };
+) -> Result<Response, ApiError> {
+    let chain_id = resolve_chain_id(&state, &network)?;
+    let pool_ids = parse_pool_ids(&query.pool_ids)?;
 
-    let pool_ids = match parse_pool_ids(&query.pool_ids) {
-        Ok(pool_ids) => pool_ids,
-        Err(response) => return response,
-    };
-
-    let (block_result, ticks_result) = tokio::join!(
+    let (block, ticks) = tokio::join!(
         latest_indexed_block(&state, chain_id),
         db::get_ticks_for_pools(&state.db, chain_id, &pool_ids),
     );
-    let block_number = match block_result {
-        Ok(block_number) => block_number,
-        Err(response) => return response,
-    };
-    let rows = match ticks_result {
-        Ok(rows) => rows,
-        Err(err) => return internal_error(err),
-    };
 
-    Json(BulkTicksResponse {
-        block_number,
-        pools: group_ticks_by_pool(rows),
+    Ok(Json(BulkTicksResponse {
+        block_number: block?,
+        pools: group_ticks_by_pool(ticks?),
     })
-    .into_response()
+    .into_response())
 }
 
 fn group_ticks_by_pool(rows: Vec<db::PoolTickRow>) -> Vec<PoolTicks> {

@@ -511,7 +511,7 @@ impl TryFrom<PgRow> for PoolRow {
 }
 
 /// Fetches a page of pools ordered by address with their current state.
-pub async fn get_pools(pool: &PgPool, chain_id: u64, limit: i64) -> Result<Vec<PoolRow>> {
+pub async fn get_pools(pool: &PgPool, chain_id: u64, limit: u64) -> Result<Vec<PoolRow>> {
     let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
                 p.token0_decimals, p.token1_decimals,
@@ -525,7 +525,7 @@ pub async fn get_pools(pool: &PgPool, chain_id: u64, limit: i64) -> Result<Vec<P
          LIMIT $2",
     )
     .bind(sql_chain_id(chain_id))
-    .bind(limit)
+    .bind(limit.cast_signed())
     .fetch_all(pool)
     .await
     .context("get_pools")?;
@@ -538,7 +538,7 @@ pub async fn get_pools_after(
     pool: &PgPool,
     chain_id: u64,
     cursor: Vec<u8>,
-    limit: i64,
+    limit: u64,
 ) -> Result<Vec<PoolRow>> {
     let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
@@ -555,7 +555,7 @@ pub async fn get_pools_after(
     )
     .bind(sql_chain_id(chain_id))
     .bind(cursor)
-    .bind(limit)
+    .bind(limit.cast_signed())
     .fetch_all(pool)
     .await
     .context("get_pools_after")?;

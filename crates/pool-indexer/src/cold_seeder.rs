@@ -19,16 +19,11 @@ use {
             NewPoolData,
             PoolStateData,
             TickDeltaData,
-            is_range_too_large,
+            bisecting_get_logs,
             signed24_to_i32,
         },
     },
-    alloy::{
-        primitives::Address,
-        providers::Provider,
-        rpc::types::{Filter, FilterSet, Log},
-        sol_types::SolEvent,
-    },
+    alloy::{primitives::Address, providers::Provider, rpc::types::Log, sol_types::SolEvent},
     anyhow::{Context, Result},
     contracts::{
         ERC20,
@@ -57,8 +52,11 @@ const HISTORY_BLOCK_CHUNK: u64 = 10_000;
 /// Number of pools per `eth_getLogs` address-filter list in phase 3. Must stay
 /// under the RPC provider's filter-size limit.
 const POOL_ADDRESS_BATCH: usize = 100;
-/// Concurrency for per-pool eth_calls (decimals, slot0, liquidity).
-const ETH_CALL_CONCURRENCY: usize = 50;
+
+/// Concurrent view-call fan-out for the per-contract reads we issue during
+/// seeding: ERC-20 `decimals()` in phase 1 and pool `slot0()` / `liquidity()`
+/// in phase 2.
+const POOL_VIEW_CALL_CONCURRENCY: usize = 50;
 
 /// Concurrency for concurrent `eth_getLogs` calls.
 const LOG_FETCH_CONCURRENCY: usize = 8;
@@ -161,32 +159,20 @@ async fn discover_pools(
         .collect())
 }
 
-fn fetch_pool_created_logs(
+async fn fetch_pool_created_logs(
     provider: &AlloyProvider,
     factory: Address,
     from: u64,
     to: u64,
-) -> futures::future::BoxFuture<'_, Result<Vec<Log>>> {
-    Box::pin(async move {
-        let filter = Filter::new()
-            .address(factory)
-            .event_signature(PoolCreated::SIGNATURE_HASH)
-            .from_block(from)
-            .to_block(to);
-        let err: anyhow::Error = match provider.get_logs(&filter).await {
-            Ok(logs) => return Ok(logs),
-            Err(err) => anyhow::Error::new(err),
-        };
-        if is_range_too_large(&err) && to > from {
-            let mid = (from + to) / 2;
-            let mut left = fetch_pool_created_logs(provider, factory, from, mid).await?;
-            let right = fetch_pool_created_logs(provider, factory, mid + 1, to).await?;
-            left.extend(right);
-            Ok(left)
-        } else {
-            Err(err.context(format!("get_logs({from}..={to})")))
-        }
-    })
+) -> Result<Vec<Log>> {
+    bisecting_get_logs(
+        provider,
+        from,
+        to,
+        vec![factory],
+        vec![PoolCreated::SIGNATURE_HASH],
+    )
+    .await
 }
 
 async fn fetch_decimals_concurrent(
@@ -205,7 +191,7 @@ async fn fetch_decimals_concurrent(
                 (token, dec)
             }
         })
-        .buffer_unordered(ETH_CALL_CONCURRENCY)
+        .buffer_unordered(POOL_VIEW_CALL_CONCURRENCY)
         .filter_map(|(token, opt)| async move { opt.map(|d| (token, d)) })
         .collect()
         .await
@@ -230,7 +216,7 @@ async fn snapshot_pool_states(
             let provider = provider.clone();
             async move { fetch_pool_state(&provider, pool, at_block).await }
         })
-        .buffer_unordered(ETH_CALL_CONCURRENCY)
+        .buffer_unordered(POOL_VIEW_CALL_CONCURRENCY)
         .filter_map(|res| async move { res })
         .collect()
         .await;
@@ -356,36 +342,20 @@ async fn reconstruct_and_persist_ticks(
     Ok(())
 }
 
-fn fetch_mint_burn_logs(
+async fn fetch_mint_burn_logs(
     provider: &AlloyProvider,
     pool_batch: Vec<Address>,
     from: u64,
     to: u64,
-) -> futures::future::BoxFuture<'_, Result<Vec<Log>>> {
-    Box::pin(async move {
-        let filter = Filter::new()
-            .address(pool_batch.clone())
-            .event_signature(FilterSet::from_iter([
-                Mint::SIGNATURE_HASH,
-                Burn::SIGNATURE_HASH,
-            ]))
-            .from_block(from)
-            .to_block(to);
-        let err: anyhow::Error = match provider.get_logs(&filter).await {
-            Ok(logs) => return Ok(logs),
-            Err(err) => anyhow::Error::new(err),
-        };
-        if is_range_too_large(&err) && to > from {
-            let mid = (from + to) / 2;
-            let mut left = fetch_mint_burn_logs(provider, pool_batch.clone(), from, mid).await?;
-            let right = fetch_mint_burn_logs(provider, pool_batch, mid + 1, to).await?;
-            left.extend(right);
-            Ok(left)
-        } else {
-            Err(err.context(format!(
-                "mint_burn_logs({from}..={to}, pools={})",
-                pool_batch.len()
-            )))
-        }
-    })
+) -> Result<Vec<Log>> {
+    let pool_count = pool_batch.len();
+    bisecting_get_logs(
+        provider,
+        from,
+        to,
+        pool_batch,
+        vec![Mint::SIGNATURE_HASH, Burn::SIGNATURE_HASH],
+    )
+    .await
+    .with_context(|| format!("mint_burn_logs({from}..={to}, pools={pool_count})"))
 }

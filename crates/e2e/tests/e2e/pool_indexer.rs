@@ -72,7 +72,7 @@ async fn start_pool_indexer(factory: Address) {
             name: NetworkName::new("mainnet"),
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
-            factory_address: factory,
+            factories: vec![factory],
             chunk_size: 1000,
             poll_interval_secs: 1,
             use_latest: true,

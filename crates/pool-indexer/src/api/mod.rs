@@ -2,7 +2,13 @@ pub mod uniswap_v3;
 
 use {
     crate::config::NetworkName,
-    axum::{Router, http::StatusCode, response::IntoResponse, routing::get},
+    axum::{
+        Json,
+        Router,
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::get,
+    },
     sqlx::PgPool,
     std::{collections::HashMap, sync::Arc},
     tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
@@ -22,24 +28,62 @@ impl AppState {
     }
 }
 
-pub(super) fn resolve_chain_id(
-    state: &AppState,
-    network: &str,
-) -> Result<u64, axum::response::Response> {
-    state
-        .resolve_network(network)
-        .ok_or_else(|| StatusCode::NOT_FOUND.into_response())
+/// Structured error type for API handlers. Each variant decides its own HTTP
+/// status + body via the `IntoResponse` impl so formatting lives in one place
+/// and helpers can `?`-propagate failures instead of handing around prebuilt
+/// `Response` values.
+#[derive(Debug)]
+pub enum ApiError {
+    NetworkNotFound,
+    NotReady,
+    InvalidPoolId,
+    InvalidPoolAddress,
+    InvalidCursor,
+    TooManyPoolIds { max: usize },
+    Internal(anyhow::Error),
 }
 
-pub(super) async fn latest_indexed_block(
-    state: &AppState,
-    chain_id: u64,
-) -> Result<u64, axum::response::Response> {
-    match crate::db::uniswap_v3::get_latest_indexed_block(&state.db, chain_id).await {
-        Ok(Some(block_number)) => Ok(block_number),
-        Ok(None) => Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
-        Err(err) => Err(uniswap_v3::internal_error(err)),
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::NetworkNotFound => StatusCode::NOT_FOUND.into_response(),
+            Self::NotReady => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            Self::InvalidPoolId => bad_request("invalid pool id"),
+            Self::InvalidPoolAddress => bad_request("invalid pool address"),
+            Self::InvalidCursor => bad_request("invalid cursor"),
+            Self::TooManyPoolIds { max } => bad_request(format!("too many pool ids; max {max}")),
+            Self::Internal(err) => {
+                tracing::error!(?err, "internal error");
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        }
     }
+}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Internal(err)
+    }
+}
+
+fn bad_request(message: impl Into<String>) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": message.into() })),
+    )
+        .into_response()
+}
+
+pub(super) fn resolve_chain_id(state: &AppState, network: &str) -> Result<u64, ApiError> {
+    state
+        .resolve_network(network)
+        .ok_or(ApiError::NetworkNotFound)
+}
+
+pub(super) async fn latest_indexed_block(state: &AppState, chain_id: u64) -> Result<u64, ApiError> {
+    crate::db::uniswap_v3::get_latest_indexed_block(&state.db, chain_id)
+        .await?
+        .ok_or(ApiError::NotReady)
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
