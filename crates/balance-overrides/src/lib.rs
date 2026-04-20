@@ -1,4 +1,4 @@
-pub mod aave;
+mod aave;
 pub mod detector;
 
 use {
@@ -50,40 +50,76 @@ pub struct BalanceOverrideRequest {
     pub amount: U256,
 }
 
+#[async_trait::async_trait]
 trait StrategyExt {
     /// Computes the storage slot and value to override for a particular token
-    /// holder and amount.
-    fn state_override(&self, holder: &Address, amount: &U256) -> AddressMap<AccountOverride>;
+    /// holder and amount. `web3` is only consulted by strategies that need
+    /// on-chain reads at override time (currently `AaveV3AToken`); other
+    /// variants ignore it and complete synchronously.
+    async fn state_override(
+        &self,
+        web3: Option<&Web3>,
+        holder: &Address,
+        amount: &U256,
+    ) -> AddressMap<AccountOverride>;
 
     fn is_valid_for_all_holders(&self) -> bool;
 }
 
+#[async_trait::async_trait]
 impl StrategyExt for Strategy {
-    fn state_override(&self, holder: &Address, amount: &U256) -> AddressMap<AccountOverride> {
+    async fn state_override(
+        &self,
+        web3: Option<&Web3>,
+        holder: &Address,
+        amount: &U256,
+    ) -> AddressMap<AccountOverride> {
         let (target_contract, key) = match self {
             Self::SolidityMapping {
                 target_contract,
                 map_slot,
             } => (
-                target_contract,
+                *target_contract,
                 mapping_slot_hash(holder, &map_slot.to_be_bytes::<32>()),
             ),
             Self::SoladyMapping { target_contract } => {
                 let mut buf = [0; 32];
                 buf[0..20].copy_from_slice(holder.as_slice());
                 buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
-                (target_contract, keccak256(buf))
+                (*target_contract, keccak256(buf))
             }
             Self::DirectSlot {
                 target_contract,
                 slot,
-            } => (target_contract, *slot),
-            // AaveV3AToken requires an async call to fetch the current
-            // normalized income, so it is handled separately in
-            // `BalanceOverrides::state_override`.
-            Self::AaveV3AToken { .. } => unreachable!(
-                "AaveV3AToken strategy must be resolved asynchronously, not via StrategyExt"
-            ),
+            } => (*target_contract, *slot),
+            Self::AaveV3AToken {
+                target_contract,
+                pool,
+                underlying,
+                map_slot,
+            } => {
+                let Some(web3) = web3 else {
+                    tracing::warn!(
+                        ?target_contract,
+                        "AaveV3AToken balance override requested but web3 is not configured",
+                    );
+                    return AddressMap::default();
+                };
+                return match aave::build_override(
+                    web3,
+                    *target_contract,
+                    *pool,
+                    *underlying,
+                    *map_slot,
+                    *holder,
+                    *amount,
+                )
+                .await
+                {
+                    Some((addr, override_)) => iter::once((addr, override_)).collect(),
+                    None => AddressMap::default(),
+                };
+            }
         };
 
         let state_override = AccountOverride {
@@ -91,7 +127,7 @@ impl StrategyExt for Strategy {
             ..Default::default()
         };
 
-        iter::once((*target_contract, state_override)).collect()
+        iter::once((target_contract, state_override)).collect()
     }
 
     fn is_valid_for_all_holders(&self) -> bool {
@@ -115,10 +151,16 @@ pub struct BalanceOverrides {
     /// the caching policy.
     pub hardcoded: HashMap<Address, Strategy>,
     /// The balance override detector and its cache. Set to `None` if
-    /// auto-detection is not enabled.
+    /// auto-detection is disabled. The detector internally holds its own
+    /// `Web3` handle for tracing and verification calls.
     pub detector: Option<(Detector, DetectorCache)>,
-    /// Optional web3 handle used by strategies that need runtime on-chain
-    /// reads (e.g. `AaveV3AToken` fetching the reserve's normalized income).
+    /// `Web3` handle used by strategies that need on-chain reads at
+    /// override-resolution time (currently only `AaveV3AToken`, which
+    /// fetches the live liquidity index from the Aave pool). Kept separate
+    /// from the detector's own web3 so that hardcoded `AaveV3AToken`
+    /// entries still resolve when auto-detection is disabled. Both handles
+    /// typically point at the same underlying `Web3` instance; `Web3` is
+    /// cheaply cloneable, so the double-reference is just two `Arc` bumps.
     pub web3: Option<Web3>,
 }
 
@@ -200,55 +242,11 @@ impl BalanceOverriding for BalanceOverrides {
             self.cached_detection(request.token, request.holder).await
         }?;
 
-        if let Strategy::AaveV3AToken {
-            target_contract,
-            pool,
-            underlying,
-            map_slot,
-        } = &strategy
-        {
-            return self
-                .aave_v3_a_token_override(
-                    *target_contract,
-                    *pool,
-                    *underlying,
-                    *map_slot,
-                    request.holder,
-                    request.amount,
-                )
-                .await;
-        }
-
         strategy
-            .state_override(&request.holder, &request.amount)
+            .state_override(self.web3.as_ref(), &request.holder, &request.amount)
+            .await
             .into_iter()
             .last()
-    }
-}
-
-impl BalanceOverrides {
-    /// Resolves an `AaveV3AToken` balance override. We need the current
-    /// normalized income from the Aave pool to invert the scaling applied by
-    /// aToken `balanceOf`. Writes the scaled amount into the low 128 bits of
-    /// the packed `UserState` slot; the upper 128 bits (`additionalData`) are
-    /// zeroed, which is safe for fresh holders like the spardose.
-    async fn aave_v3_a_token_override(
-        &self,
-        a_token: Address,
-        pool: Address,
-        underlying: Address,
-        map_slot: U256,
-        holder: Address,
-        amount: U256,
-    ) -> Option<(Address, AccountOverride)> {
-        let web3 = self.web3.as_ref().or_else(|| {
-            tracing::warn!(
-                ?a_token,
-                "AaveV3AToken balance override requested but web3 is not configured",
-            );
-            None
-        })?;
-        aave::build_override(web3, a_token, pool, underlying, map_slot, holder, amount).await
     }
 }
 
@@ -745,6 +743,8 @@ mod tests {
         );
     }
 
+    /// When no detector is configured, there's no `Web3` handle available
+    /// and the `AaveV3AToken` resolver must cleanly fail rather than panic.
     #[tokio::test]
     async fn aave_v3_a_token_override_none_without_web3() {
         let a_token = address!("4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8");

@@ -2,7 +2,7 @@ use {
     super::Strategy,
     crate::{StrategyExt, aave},
     alloy_eips::BlockId,
-    alloy_primitives::{Address, B256, TxKind, U256, keccak256, map::AddressMap},
+    alloy_primitives::{Address, B256, TxKind, U256, keccak256},
     alloy_provider::ext::DebugApi,
     alloy_rpc_types::{
         TransactionInput,
@@ -147,17 +147,57 @@ impl Detector {
         }))
     }
 
-    /// Detects the balance storage slot using debug_traceCall, similar to
-    /// Foundry's `deal`. This traces a balanceOf call and finds which
-    /// storage slot is accessed. If more than one slot is accessed, we reverse
-    /// by order accessed, sort by if the slot was one that would normally
-    /// be seen in solidity mapping, and test one by one to see if the
-    /// override is effective.
+    /// The `Web3` handle shared with whoever constructed the detector; also
+    /// used by `BalanceOverrides` for strategies that need on-chain reads at
+    /// override-resolution time (e.g. `AaveV3AToken`).
+    pub fn web3(&self) -> &ethrpc::Web3 {
+        &self.web3
+    }
+
+    /// Detects the balance storage slot for `token`.
+    ///
+    /// Takes a fast path for Aave v3 aTokens: a cheap two-call probe, plus
+    /// a single verification using the canonical `_userState` slot — no
+    /// `debug_traceCall` needed on the happy path. Everything else falls
+    /// through to the generic SLOAD-trace detection.
     pub async fn detect(
         &self,
         token: Address,
         holder: Address,
     ) -> Result<Strategy, DetectionError<TransportErrorKind>> {
+        // Aave fast-path. If the token self-identifies as a v3 aToken and the
+        // pool confirms it, try the canonical `_userState` slot directly. For
+        // an Aave v3 fork that moved `_userState` to a different slot this
+        // verification fails and we fall through to the trace-based path
+        // below, which will still produce an `AaveV3AToken` candidate with
+        // the traced slot.
+        let aave_info = aave::probe_a_token(&self.web3, token)
+            .await
+            .map(|(pool, underlying)| AaveInfo { pool, underlying });
+        if let Some(info) = aave_info.as_ref() {
+            let candidate = Strategy::AaveV3AToken {
+                target_contract: token,
+                pool: info.pool,
+                underlying: info.underlying,
+                map_slot: U256::from(aave::USER_STATE_SLOT),
+            };
+            if self
+                .verify_strategy(token, holder, &candidate)
+                .await
+                .is_ok()
+            {
+                tracing::debug!(
+                    ?token,
+                    "detected Aave v3 aToken via fast-path (no debug_traceCall)"
+                );
+                return Ok(candidate);
+            }
+            tracing::debug!(
+                ?token,
+                "Aave probe succeeded but canonical slot didn't verify; falling back to trace"
+            );
+        }
+
         let balance_of_call = ERC20::ERC20::balanceOfCall { account: holder };
         let calldata = balance_of_call.abi_encode();
 
@@ -188,16 +228,6 @@ impl Detector {
             tracing::debug!("no SLOAD operations found in trace for token {:?}", token);
             return Err(DetectionError::NotFound);
         }
-
-        // Probe whether this token looks like an Aave v3 aToken (has
-        // `UNDERLYING_ASSET_ADDRESS()` and `POOL()` and the pool responds to
-        // `getReserveNormalizedIncome`). If so, `create_strategies_from_slots`
-        // will also emit `AaveV3AToken` candidates so the verify loop picks
-        // them up and returns the right strategy without any hardcoded
-        // per-token config.
-        let aave_info = aave::probe_a_token(&self.web3, token)
-            .await
-            .map(|(pool, underlying)| AaveInfo { pool, underlying });
 
         let strategies = create_strategies_from_slots(
             &storage_slots,
@@ -368,32 +398,12 @@ impl Detector {
         // Use a unique test value to verify this strategy works
         let test_balance = U256::from(0x1337_1337_1337_1337_u64);
 
-        // Create state override using the strategy. `AaveV3AToken` needs an
-        // async call to the pool to compute the scaled storage value, so we
-        // reuse the production builder rather than `StrategyExt::state_override`
-        // (which intentionally `unreachable!()`s for this variant).
-        let overrides: AddressMap<_> = match strategy {
-            Strategy::AaveV3AToken {
-                target_contract,
-                pool,
-                underlying,
-                map_slot,
-            } => {
-                let (target, account_override) = aave::build_override(
-                    &self.web3,
-                    *target_contract,
-                    *pool,
-                    *underlying,
-                    *map_slot,
-                    holder,
-                    test_balance,
-                )
-                .await
-                .ok_or(DetectionError::NotFound)?;
-                std::iter::once((target, account_override)).collect()
-            }
-            _ => strategy.state_override(&holder, &test_balance),
-        };
+        let overrides = strategy
+            .state_override(Some(&self.web3), &holder, &test_balance)
+            .await;
+        if overrides.is_empty() {
+            return Err(DetectionError::NotFound);
+        }
 
         // Call balanceOf with the override
         let token_contract = ERC20::Instance::new(token, self.web3.provider.clone());

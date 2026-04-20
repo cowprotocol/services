@@ -1,21 +1,16 @@
-//! Helpers shared between the production balance-override path
-//! (`BalanceOverrides`) and the auto-detector for Aave v3 aTokens.
+//! Helpers shared between the `BalanceOverrides` override builder and the
+//! `Detector` probe/verify for Aave v3 aTokens.
 //!
 //! aTokens break the usual "balanceOf = storage[slot]" assumption twice:
 //! - `balanceOf` returns `scaled_balance × getReserveNormalizedIncome / RAY`,
 //!   not the raw slot value.
 //! - Storage is packed `UserState { uint128 balance; uint128 additionalData }`
 //!   in a single slot per holder.
-//!
-//! The helpers below encode exactly these two facts so both the override
-//! builder and the detector probe/verify use the same math.
 
 use {
-    alloy_eips::BlockId,
-    alloy_primitives::{Address, B256, Bytes, TxKind, U256, keccak256},
-    alloy_provider::Provider,
-    alloy_rpc_types::{TransactionInput, TransactionRequest, state::AccountOverride},
-    alloy_sol_types::{SolCall, sol},
+    alloy_primitives::{Address, B256, U256, keccak256},
+    alloy_rpc_types::state::AccountOverride,
+    alloy_sol_types::sol,
     ethrpc::Web3,
     std::iter,
 };
@@ -58,6 +53,7 @@ sol! {
     /// underlying.
     ///
     /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/interfaces/IPool.sol>
+    #[sol(rpc)]
     interface IAaveV3Pool {
         function getReserveNormalizedIncome(address asset) external view returns (uint256);
         function getReserveData(address asset) external view returns (ReserveData memory);
@@ -67,6 +63,7 @@ sol! {
     /// decide whether a token is an aToken without any hardcoded list.
     ///
     /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/interfaces/IAToken.sol>
+    #[sol(rpc)]
     interface IAaveV3AToken {
         function UNDERLYING_ASSET_ADDRESS() external view returns (address);
         function POOL() external view returns (address);
@@ -74,7 +71,16 @@ sol! {
 }
 
 /// Ray (1e27) — Aave's 27-decimal fixed-point unit.
+///
+/// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/libraries/math/WadRayMath.sol>
 pub const RAY: U256 = U256::from_limbs([0x9fd0803ce8000000, 0x33b2e3c, 0, 0]);
+
+/// Storage slot index of `_userState` in the Aave v3 `IncentivizedERC20`
+/// base contract. All canonical v3 aTokens inherit this layout, so the
+/// detector can try this slot directly without a `debug_traceCall`.
+///
+/// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/tokenization/base/IncentivizedERC20.sol>
+pub const USER_STATE_SLOT: u64 = 52;
 
 /// Ray-division: `(a * RAY + b/2) / b`, round-half-up. Matches Aave's
 /// `WadRayMath.rayDiv` bit-for-bit so the scaled amount we write into
@@ -109,23 +115,17 @@ pub fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
     B256::new(packed.to_be_bytes::<32>())
 }
 
-/// Probes whether `token` is an Aave v3 aToken. The token self-declares its
-/// `UNDERLYING_ASSET_ADDRESS()` and `POOL()`; we then ask the pool for the
-/// registered `aTokenAddress` of that underlying and require it to equal the
-/// probed token. This catches both "contract doesn't look anything like an
-/// aToken" and "contract impersonates the aToken interface but is not
-/// registered with the pool for its declared underlying."
+/// Probes whether `token` is an Aave v3 aToken and returns its `(pool,
+/// underlying)` pair. Accepts the token iff the pool registers it as the
+/// aToken for its declared underlying — rogue contracts implementing the
+/// aToken selectors aren't enough.
 pub async fn probe_a_token(web3: &Web3, token: Address) -> Option<(Address, Address)> {
-    let (underlying, pool) = tokio::join!(
-        call_address(
-            web3,
-            token,
-            IAaveV3AToken::UNDERLYING_ASSET_ADDRESSCall {}.abi_encode(),
-        ),
-        call_address(web3, token, IAaveV3AToken::POOLCall {}.abi_encode()),
-    );
-    let underlying = underlying?;
-    let pool = pool?;
+    let a_token = IAaveV3AToken::new(token, web3.provider.clone());
+    let underlying_call = a_token.UNDERLYING_ASSET_ADDRESS();
+    let pool_call = a_token.POOL();
+    let (underlying, pool) = tokio::join!(underlying_call.call(), pool_call.call());
+    let underlying = underlying.ok()?;
+    let pool = pool.ok()?;
     let reserve = fetch_reserve_data(web3, pool, underlying).await?;
     (reserve.aTokenAddress == token).then_some((pool, underlying))
 }
@@ -136,15 +136,11 @@ async fn fetch_reserve_data(
     pool: Address,
     underlying: Address,
 ) -> Option<ReserveData> {
-    let call = IAaveV3Pool::getReserveDataCall { asset: underlying };
-    let calldata = Bytes::from(call.abi_encode());
-    let tx = TransactionRequest {
-        to: Some(TxKind::Call(pool)),
-        input: TransactionInput::new(calldata),
-        ..Default::default()
-    };
-    let bytes = web3.provider.call(tx).block(BlockId::latest()).await.ok()?;
-    IAaveV3Pool::getReserveDataCall::abi_decode_returns(&bytes).ok()
+    IAaveV3Pool::new(pool, web3.provider.clone())
+        .getReserveData(underlying)
+        .call()
+        .await
+        .ok()
 }
 
 /// Fetches `getReserveNormalizedIncome(underlying)` from an Aave v3 Pool.
@@ -153,15 +149,11 @@ pub async fn fetch_normalized_income(
     pool: Address,
     underlying: Address,
 ) -> Option<U256> {
-    let call = IAaveV3Pool::getReserveNormalizedIncomeCall { asset: underlying };
-    let calldata = Bytes::from(call.abi_encode());
-    let tx = TransactionRequest {
-        to: Some(TxKind::Call(pool)),
-        input: TransactionInput::new(calldata),
-        ..Default::default()
-    };
-    let bytes = web3.provider.call(tx).block(BlockId::latest()).await.ok()?;
-    IAaveV3Pool::getReserveNormalizedIncomeCall::abi_decode_returns(&bytes).ok()
+    IAaveV3Pool::new(pool, web3.provider.clone())
+        .getReserveNormalizedIncome(underlying)
+        .call()
+        .await
+        .ok()
 }
 
 /// Builds a state override that makes `balanceOf(holder)` on the aToken
@@ -222,25 +214,6 @@ pub async fn build_override(
         ..Default::default()
     };
     Some((a_token, state_override))
-}
-
-/// Helper: `eth_call` a zero-argument view returning `address`. Returns
-/// `None` on any RPC error or decode failure (including the common case of
-/// the token not exposing this selector at all).
-async fn call_address(web3: &Web3, to: Address, calldata: Vec<u8>) -> Option<Address> {
-    let tx = TransactionRequest {
-        to: Some(TxKind::Call(to)),
-        input: TransactionInput::new(calldata.into()),
-        ..Default::default()
-    };
-    let bytes = web3.provider.call(tx).block(BlockId::latest()).await.ok()?;
-    if bytes.len() < 32 {
-        return None;
-    }
-    // ABI-encoded `address` is right-aligned in the 32-byte word.
-    let addr = Address::from_slice(&bytes[12..32]);
-    // Treat zero as "not an aToken" — a zero underlying/pool is never legal.
-    (!addr.is_zero()).then_some(addr)
 }
 
 #[cfg(test)]
