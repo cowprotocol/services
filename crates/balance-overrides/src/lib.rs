@@ -95,7 +95,11 @@ impl StrategyExt for Strategy {
     }
 
     fn is_valid_for_all_holders(&self) -> bool {
-        matches!(self, Self::DirectSlot { .. })
+        // `AaveV3AToken` fields (target, pool, underlying, map_slot) are all
+        // token-level constants; the slot and value are derived per-holder at
+        // override time. Caching the strategy once per token avoids re-running
+        // the probe for every new `from` address.
+        matches!(self, Self::DirectSlot { .. } | Self::AaveV3AToken { .. })
     }
 }
 

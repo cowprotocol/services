@@ -84,9 +84,11 @@ async fn forked_node_mainnet_usdt_quote() {
     .await;
 }
 
-/// Quote verification for an Aave v3 aToken as the sell token. The
-/// auto-detector cannot resolve aToken balance slots (scaled `balanceOf` +
-/// packed `UserState`), so we rely on the `AaveV3AToken` hardcoded strategy.
+/// Quote verification for an Aave v3 aToken as the sell token. Exercises
+/// the `AaveV3AToken` strategy end-to-end through `BalanceOverrides`. The
+/// detector is disabled (`detector: None`) to isolate the hardcoded-strategy
+/// path; auto-detection is covered by `detects_aave_v3_a_token_mainnet` in
+/// the `balance-overrides` crate.
 #[tokio::test]
 #[ignore]
 async fn forked_node_mainnet_aave_atoken_quote() {

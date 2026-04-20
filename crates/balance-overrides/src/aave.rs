@@ -116,13 +116,16 @@ pub fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
 /// aToken" and "contract impersonates the aToken interface but is not
 /// registered with the pool for its declared underlying."
 pub async fn probe_a_token(web3: &Web3, token: Address) -> Option<(Address, Address)> {
-    let underlying = call_address(
-        web3,
-        token,
-        IAaveV3AToken::UNDERLYING_ASSET_ADDRESSCall {}.abi_encode(),
-    )
-    .await?;
-    let pool = call_address(web3, token, IAaveV3AToken::POOLCall {}.abi_encode()).await?;
+    let (underlying, pool) = tokio::join!(
+        call_address(
+            web3,
+            token,
+            IAaveV3AToken::UNDERLYING_ASSET_ADDRESSCall {}.abi_encode(),
+        ),
+        call_address(web3, token, IAaveV3AToken::POOLCall {}.abi_encode()),
+    );
+    let underlying = underlying?;
+    let pool = pool?;
     let reserve = fetch_reserve_data(web3, pool, underlying).await?;
     (reserve.aTokenAddress == token).then_some((pool, underlying))
 }
@@ -185,7 +188,23 @@ pub async fn build_override(
         }
     };
 
-    let scaled = ray_div(amount, index)?;
+    let scaled = match ray_div(amount, index) {
+        Some(scaled) => scaled,
+        None => {
+            // Either `amount * RAY` overflowed U256 (only possible for an
+            // astronomically large requested amount) or the pool returned a
+            // zero index (never should happen for a live reserve). Either
+            // way, surface it explicitly so we don't silently drop the
+            // override.
+            tracing::warn!(
+                ?a_token,
+                %amount,
+                %index,
+                "ray_div overflow computing AaveV3AToken scaled balance"
+            );
+            return None;
+        }
+    };
     let slot = mapping_slot_hash(&holder, &map_slot.to_be_bytes::<32>());
     let value = pack_user_state(scaled, U256::ZERO);
 
