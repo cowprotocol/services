@@ -22,6 +22,8 @@ use {
 
 sol! {
     /// Mirrors Aave v3's `DataTypes.ReserveConfigurationMap`.
+    ///
+    /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/libraries/types/DataTypes.sol>
     struct ReserveConfigurationMap {
         uint256 data;
     }
@@ -29,6 +31,8 @@ sol! {
     /// Mirrors Aave v3's `DataTypes.ReserveData`. Only the `aTokenAddress`
     /// field is consumed here; the rest are present to keep the ABI layout
     /// exactly matched so decoding doesn't go off the rails.
+    ///
+    /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/libraries/types/DataTypes.sol>
     struct ReserveData {
         ReserveConfigurationMap configuration;
         uint128 liquidityIndex;
@@ -52,6 +56,8 @@ sol! {
     /// `getReserveData` returns the full reserve record which we use to
     /// confirm a probed token really is the registered aToken for its
     /// underlying.
+    ///
+    /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/interfaces/IPool.sol>
     interface IAaveV3Pool {
         function getReserveNormalizedIncome(address asset) external view returns (uint256);
         function getReserveData(address asset) external view returns (ReserveData memory);
@@ -59,6 +65,8 @@ sol! {
 
     /// Minimal interface for an Aave v3 `AToken`; used by the detector to
     /// decide whether a token is an aToken without any hardcoded list.
+    ///
+    /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/interfaces/IAToken.sol>
     interface IAaveV3AToken {
         function UNDERLYING_ASSET_ADDRESS() external view returns (address);
         function POOL() external view returns (address);
