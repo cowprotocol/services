@@ -20,6 +20,7 @@ pub struct Config {
     pub mempools: Vec<Mempool>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub orderbook: Orderbook,
+    pub flashloans_enabled: bool,
 }
 
 pub struct Driver {
@@ -69,7 +70,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     // The orders are shuffled before being sent to the driver, to ensure that the
     // driver sorts them correctly before forwarding them to the solver.
     let mut quotes = test.quoted_orders.clone();
-    quotes.shuffle(&mut rand::thread_rng());
+    quotes.shuffle(&mut rand::rng());
     for quote in quotes.iter() {
         let mut order = json!({
             "uid": quote.order_uid(&test.blockchain),
@@ -219,7 +220,7 @@ async fn create_config_file(
         config.orderbook.addr
     )
     .unwrap();
-    writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "flashloans-enabled = {}", config.flashloans_enabled).unwrap();
     writeln!(file, "tx-gas-limit = \"45000000\"").unwrap();
     write!(
         file,

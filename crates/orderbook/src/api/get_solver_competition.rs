@@ -1,12 +1,12 @@
 use {
     crate::{
         api::AppState,
-        solver_competition::{Identifier, SolverCompetitionStoring},
+        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     alloy::primitives::B256,
     axum::{
         extract::{Path, State},
-        response::{IntoResponse, Json, Response},
+        response::Json,
     },
     model::{AuctionId, solver_competition::SolverCompetitionAPI},
     std::sync::Arc,
@@ -15,37 +15,46 @@ use {
 pub async fn get_solver_competition_by_id_handler(
     State(state): State<Arc<AppState>>,
     Path(auction_id): Path<u64>,
-) -> Response {
+) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
     // We use u64 to ensure that negative numbers are returned as BAD_REQUEST
     // however, there's a gap between u64::MAX and i64::MAX, numbers beyond i64::MAX
     // will be marked as NOT_FOUND as they're positive (and as such, valid) but
     // they are not covered by our system
     if auction_id >= AuctionId::MAX.cast_unsigned() {
-        return crate::solver_competition::LoadSolverCompetitionError::NotFound.into_response();
+        return Err(LoadSolverCompetitionError::NotFound);
     }
 
     db(&state)
-        .load_competition(Identifier::Id(auction_id.cast_signed()))
+        .load_competition(
+            Identifier::Id(auction_id.cast_signed()),
+            state.hide_competition_before_block(),
+        )
         .await
         .map(Json)
-        .into_response()
 }
 
 pub async fn get_solver_competition_by_hash_handler(
     State(state): State<Arc<AppState>>,
     Path(tx_hash): Path<B256>,
-) -> Response {
+) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
     db(&state)
-        .load_competition(Identifier::Transaction(tx_hash))
+        .load_competition(
+            Identifier::Transaction(tx_hash),
+            state.hide_competition_before_block(),
+        )
         .await
         .map(Json)
-        .into_response()
 }
 
 pub async fn get_solver_competition_latest_handler(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<SolverCompetitionAPI>, crate::solver_competition::LoadSolverCompetitionError> {
-    db(&state).load_latest_competition().await.map(Json)
+) -> Result<Json<SolverCompetitionAPI>, LoadSolverCompetitionError> {
+    SolverCompetitionStoring::load_latest_competition(
+        db(&state),
+        state.hide_competition_before_block(),
+    )
+    .await
+    .map(Json)
 }
 
 fn db(state: &AppState) -> &dyn SolverCompetitionStoring {

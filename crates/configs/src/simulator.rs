@@ -64,7 +64,12 @@ pub struct TenderlyConfig {
 
     /// Tenderly requires api key to work. Optional since Tenderly could be
     /// skipped in access lists estimators.
-    #[serde(default)]
+    /// Supports reading from an environment variable with the `%ENV_VAR`
+    /// format.
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_env::deserialize_string_from_env"
+    )]
     pub api_key: String,
 
     /// The URL of the Tenderly API.

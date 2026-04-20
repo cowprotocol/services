@@ -346,6 +346,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
+                config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("api_native_price_estimator"))
             .await,
@@ -358,6 +359,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
+                config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("competition_native_price_updater"))
             .await;

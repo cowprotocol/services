@@ -18,7 +18,7 @@ use {
     anyhow::{Context, Result, anyhow},
     eth_domain_types as eth,
     futures::StreamExt,
-    rand::Rng,
+    rand::Rng as _,
     std::time::Duration,
 };
 
@@ -177,7 +177,7 @@ impl Observer {
                     errors.push(err);
                     tries += 1;
                     // wait a little to give temporary errors a chance to resolve themselves
-                    let timeout_with_jitter = 50u64 + rand::thread_rng().gen_range(0..=50);
+                    let timeout_with_jitter = 50u64 + rand::rng().random_range(0..=50);
                     tokio::time::sleep(Duration::from_millis(timeout_with_jitter)).await;
                 }
             }
