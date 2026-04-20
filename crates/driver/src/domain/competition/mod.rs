@@ -33,7 +33,7 @@ use {
         time::Instant,
     },
     tokio::{sync::mpsc, task},
-    tracing::{Instrument, instrument},
+    tracing::{Instrument},
 };
 
 pub mod auction;
@@ -326,17 +326,24 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
+        // Clone orders so unsupported detection can run in parallel while
+        // preserving the existing auction ownership model.
+        let orders_for_filtering = auction.orders.clone();
+        let unsupported_uids_future = self.risk_detector.unsupported_order_uids(&orders_for_filtering);
+
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
             Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
-        // We can sort the orders and fetch auction data in parallel
-        let (auction, balances, app_data) =
-            tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
+        // We can sort the orders, fetch auction data, and detect unsupported
+        // orders in parallel.
+        let (auction, balances, app_data, unsupported_uids) = tokio::join!(
+            sort_orders_future,tasks.balances,tasks.app_data,unsupported_uids_future
+        );
 
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
+        let mut auction = Self::run_blocking_with_timer("update_orders", move || {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
@@ -344,16 +351,28 @@ impl Competition {
         })
         .await;
 
-        // We can run bad token filtering and liquidity fetching in parallel
-        let (liquidity, auction) = tokio::join!(
-            async {
-                match self.solver.liquidity() {
-                    solver::Liquidity::Fetch => tasks.liquidity.await,
-                    solver::Liquidity::Skip => Arc::new(Vec::new()),
-                }
-            },
-            self.without_unsupported_orders(auction)
-        );
+        let filter_auction = async move {
+            if !self.solver.config().flashloans_enabled {
+                auction.orders.retain(|o| o.app_data.flashloan().is_none());
+            }
+
+            if !unsupported_uids.is_empty() {
+                auction
+                    .orders
+                    .retain(|order| !unsupported_uids.contains(&order.uid));
+            }
+
+            auction
+        };
+
+        let fetch_liquidity = async {
+            match self.solver.liquidity() {
+                solver::Liquidity::Fetch => tasks.liquidity.await,
+                solver::Liquidity::Skip => Arc::new(Vec::new()),
+            }
+        };
+
+        let (auction, liquidity) = tokio::join!(filter_auction, fetch_liquidity);
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -901,16 +920,6 @@ impl Competition {
             }));
         }
         Ok(())
-    }
-
-    #[instrument(skip_all)]
-    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
-        if !self.solver.config().flashloans_enabled {
-            auction.orders.retain(|o| o.app_data.flashloan().is_none());
-        }
-        self.risk_detector
-            .filter_unsupported_orders_in_auction(auction)
-            .await
     }
 }
 

@@ -16,11 +16,12 @@
 //! we were not able to predict issues with orders and pre-emptively
 //! filter them out of the auction.
 use {
-    crate::domain::competition::{Auction, order::Uid},
+    crate::domain::competition::{order::Uid},
     eth_domain_types as eth,
     futures::{StreamExt, stream::FuturesUnordered},
-    std::{collections::HashMap, fmt, time::Instant},
+    std::{collections::{HashMap, HashSet}, fmt, time::Instant},
 };
+use crate::domain::competition::Order;
 
 pub mod bad_orders;
 pub mod bad_tokens;
@@ -80,72 +81,73 @@ impl Detector {
         self
     }
 
-    /// Removes all unsupported orders from the auction.
-    pub async fn filter_unsupported_orders_in_auction(&self, mut auction: Auction) -> Auction {
+    pub async fn unsupported_order_uids(&self, orders: &[Order]) -> HashSet<Uid> {
         let now = Instant::now();
 
-        // reuse the original allocation
-        let supported_orders = std::mem::take(&mut auction.orders);
         let mut token_quality_checks = FuturesUnordered::new();
         let mut removed_uids = Vec::new();
 
-        let mut supported_orders: Vec<_> = supported_orders
-            .into_iter()
-            .filter(|order| {
-                self.metrics
-                    .as_ref()
-                    .map(|metrics| metrics.get_quality(&order.uid, now))
-                    .is_none_or(|q| q != Quality::Unsupported)
-            })
-            .filter_map(|order| {
-                let sell = self.get_token_quality(order.sell.token, now);
-                let buy = self.get_token_quality(order.buy.token, now);
-                match (sell, buy) {
-                    // both tokens supported => keep order
-                    (Quality::Supported, Quality::Supported) => Some(order),
-                    // at least 1 token unsupported => drop order
-                    (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
-                        removed_uids.push(order.uid);
-                        None
-                    }
-                    // sell token quality is unknown => keep order if token is supported
-                    (Quality::Unknown, _) => {
-                        let Some(detector) = &self.simulation_detector else {
-                            // we can't determine quality => assume order is good
-                            return Some(order);
-                        };
-                        let check_tokens_fut = async move {
-                            let quality = detector.determine_sell_token_quality(&order, now).await;
-                            (order, quality)
-                        };
-                        token_quality_checks.push(check_tokens_fut);
-                        None
-                    }
-                    // buy token quality is unknown => keep order (because we can't
-                    // determine quality and assume it's good)
-                    (_, Quality::Unknown) => Some(order),
-                }
-            })
-            .collect();
-
-        while let Some((order, quality)) = token_quality_checks.next().await {
-            if quality == Quality::Supported {
-                supported_orders.push(order);
-            } else {
+        orders.iter().for_each(|order| {
+            if self
+                .metrics
+                .as_ref()
+                .map(|metrics| metrics.get_quality(&order.uid, now))
+                .is_some_and(|q| q == Quality::Unsupported)
+            {
                 removed_uids.push(order.uid);
+                return;
+            }
+
+            let sell = self.get_token_quality(order.sell.token, now);
+            let buy = self.get_token_quality(order.buy.token, now);
+
+            match (sell, buy) {
+                // at least 1 token unsupported => drop order
+                (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
+                    removed_uids.push(order.uid);
+                }
+
+                // sell token quality is unknown => keep order if token is supported
+                (Quality::Unknown, _) => {
+                    let Some(detector) = &self.simulation_detector else {
+                        // we can't determine quality => assume order is good
+                        return;
+                    };
+
+                    let check_tokens_fut = async move {
+                        let quality = detector.determine_sell_token_quality(order, now).await;
+                        (order.uid, quality)
+                    };
+                    token_quality_checks.push(check_tokens_fut);
+                }
+
+                // both tokens supported => keep order
+                (Quality::Supported, Quality::Supported) => {}
+
+                // buy token quality is unknown => keep order (because we can't
+                // determine quality and assume it's good)
+                (_, Quality::Unknown) => {}
+            }
+        });
+
+        while let Some((uid, quality)) = token_quality_checks.next().await {
+            if quality != Quality::Supported {
+                removed_uids.push(uid);
             }
         }
 
-        auction.orders = supported_orders;
         if !removed_uids.is_empty() {
-            tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
+            tracing::debug!(
+            orders = ?removed_uids,
+            "ignored orders with unsupported tokens"
+        );
         }
 
         if let Some(detector) = &self.simulation_detector {
             detector.evict_outdated_entries();
         }
 
-        auction
+        removed_uids.into_iter().collect()
     }
 
     /// Updates the tokens quality metric for successful operation.
