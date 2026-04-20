@@ -23,19 +23,16 @@ use {
     anyhow::Context as _,
     axum::{body::Body, http::Request},
     eth_domain_types as eth,
-    futures::{FutureExt, StreamExt, future::Either, stream::FuturesUnordered},
+    futures::{FutureExt, StreamExt, stream::FuturesUnordered},
     itertools::Itertools,
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet, VecDeque},
         sync::{Arc, Mutex},
-        time::{Duration, Instant},
+        time::Instant,
     },
-    tokio::{
-        sync::{mpsc, oneshot},
-        task,
-    },
+    tokio::{sync::mpsc, task},
     tracing::{Instrument, instrument},
 };
 
@@ -70,6 +67,10 @@ struct SubmitterPool {
     direct_slot: Arc<tokio::sync::Semaphore>,
     /// EIP-7702 submission accounts. `None` in legacy single-EOA mode.
     delegated: Option<DelegatedSlots>,
+    /// Limits total in-flight settle requests (including those waiting for a
+    /// pool slot). This replaces the old settle-queue-based admission check
+    /// and allows buffering requests beyond the number of physical slots.
+    admission: Arc<tokio::sync::Semaphore>,
     solver_address: eth::Address,
 }
 
@@ -80,7 +81,12 @@ struct DelegatedSlots {
 }
 
 impl SubmitterPool {
-    fn new(solver_address: eth::Address, submission_accounts: Vec<Account>) -> Self {
+    fn new(
+        solver_address: eth::Address,
+        submission_accounts: Vec<Account>,
+        settle_queue_size: usize,
+    ) -> Self {
+        let num_delegated = submission_accounts.len();
         let delegated = if submission_accounts.is_empty() {
             None
         } else {
@@ -94,9 +100,12 @@ impl SubmitterPool {
                 acquire: tokio::sync::Mutex::new(rx),
             })
         };
+        let total_slots = 1 + num_delegated;
+        let admission_capacity = total_slots + settle_queue_size;
         Self {
             direct_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             delegated,
+            admission: Arc::new(tokio::sync::Semaphore::new(admission_capacity)),
             solver_address,
         }
     }
@@ -152,21 +161,10 @@ impl SubmitterPool {
         })
     }
 
-    fn total_slots(&self) -> usize {
-        // 1 slot for solver EOA + number of delegated EIP7702 accounts (if any)
-        1 + self
-            .delegated
-            .as_ref()
-            .map_or(0, |d| d.release.max_capacity())
-    }
-
-    fn has_capacity(&self) -> bool {
-        if self.direct_slot.available_permits() > 0 {
-            return true;
-        }
-        self.delegated
-            .as_ref()
-            .is_some_and(|d| d.release.capacity() < d.release.max_capacity())
+    /// Try to reserve an admission permit without blocking. Returns `None` if
+    /// the maximum number of in-flight settle requests has been reached.
+    fn try_admit(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        Arc::clone(&self.admission).try_acquire_owned().ok()
     }
 }
 
@@ -215,6 +213,40 @@ impl Drop for SubmitterGuard {
     }
 }
 
+/// Wrapper around a spawned settlement task's [`JoinHandle`]. When dropped
+/// (e.g. because the HTTP handler was cancelled by the autopilot), the task is
+/// aborted after a short grace period to allow cleanup (e.g. cancelling a
+/// pending mempool tx).
+struct SettleTaskHandle(task::JoinHandle<Result<Settled, Error>>);
+
+impl std::future::Future for SettleTaskHandle {
+    type Output = Result<Settled, Error>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        std::pin::Pin::new(&mut self.0).poll(cx).map(|join_result| {
+            join_result.map_err(|err| {
+                tracing::error!(?err, "settle task panicked");
+                Error::SubmissionError
+            })?
+        })
+    }
+}
+
+impl Drop for SettleTaskHandle {
+    fn drop(&mut self) {
+        if !self.0.is_finished() {
+            let handle = self.0.abort_handle();
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                handle.abort();
+            });
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Competition {
     pub solver: Solver,
@@ -228,7 +260,6 @@ pub struct Competition {
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
-    settle_queue: mpsc::Sender<SettleRequest>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
 }
@@ -253,11 +284,11 @@ impl Competition {
                 "EIP-7702 parallel submission enabled"
             );
         }
-        let submitter_pool = SubmitterPool::new(solver.address(), submission_accounts);
-        let queue_size = submitter_pool.total_slots().max(solver.settle_queue_size());
-        let (settle_sender, settle_receiver) = mpsc::channel(queue_size);
+        let settle_queue_size = solver.settle_queue_size();
+        let submitter_pool =
+            SubmitterPool::new(solver.address(), submission_accounts, settle_queue_size);
 
-        let competition = Arc::new(Self {
+        Arc::new(Self {
             solver,
             eth,
             liquidity,
@@ -265,21 +296,11 @@ impl Competition {
             simulator,
             mempools,
             settlements: Default::default(),
-            settle_queue: settle_sender,
             risk_detector,
             fetcher,
             order_sorting_strategies,
             submitter_pool,
-        });
-
-        let competition_clone = Arc::clone(&competition);
-        tokio::spawn(async move {
-            competition_clone
-                .process_settle_requests(settle_receiver)
-                .await;
-        });
-
-        competition
+        })
     }
 
     /// Solve an auction as part of this competition.
@@ -298,7 +319,6 @@ impl Competition {
             })?;
         let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
 
-        let settlement_contract = *self.eth.contracts().settlement().address();
         let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
@@ -306,16 +326,10 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
-        let settlement = settlement_contract;
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
-            Self::sort_orders(
-                auction,
-                solver_address,
-                order_sorting_strategies,
-                settlement,
-            )
+            Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
         // We can sort the orders and fetch auction data in parallel
@@ -326,7 +340,7 @@ impl Competition {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders, &settlement)
+            Self::update_orders(auction, balances, app_data, cow_amm_orders)
         })
         .await;
 
@@ -583,7 +597,6 @@ impl Competition {
         mut auction: Auction,
         solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-        _settlement_contract: eth::Address,
     ) -> Auction {
         sorting::sort_orders(
             &mut auction.orders,
@@ -603,7 +616,6 @@ impl Competition {
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
-        settlement_contract: &eth::Address,
     ) -> Auction {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
@@ -631,13 +643,12 @@ impl Competition {
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
-                if order.app_data.flashloan().is_some() {
-                    // If an order requires a flashloan we assume all the necessary
-                    // sell tokens will come from there. But the receiver must be the
-                    // settlement contract because that is how the driver expects
-                    // the flashloan to be repaid for now.
-                    return order.receiver.as_ref() == Some(settlement_contract);
-                }
+            }
+
+            // Flashloan orders get their sell tokens from the flashloan at
+            // settlement time, so skip the balance check.
+            if order.app_data.flashloan().is_some() {
+                return true;
             }
 
             // wrappers can produce the required funds at settlement time
@@ -754,101 +765,46 @@ impl Competition {
     /// Execute the solution generated as part of this competition. Use
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(
-        &self,
+        self: &Arc<Self>,
         auction_id: auction::Id,
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
-        let (response_sender, response_receiver) = oneshot::channel();
-
-        let request = SettleRequest {
-            auction_id,
-            solution_id,
-            submission_deadline,
-            response_sender,
-            tracing_span: tracing::Span::current(),
-        };
-
-        self.settle_queue.try_send(request).map_err(|err| {
-            tracing::warn!(?err, "Failed to enqueue /settle request");
+        let admission_permit = self.submitter_pool.try_admit().ok_or_else(|| {
+            tracing::warn!("too many pending settlements; settle request rejected");
             Error::TooManyPendingSettlements
         })?;
 
-        response_receiver.await.map_err(|err| {
-            tracing::error!(?err, "Failed to dequeue /settle response");
-            Error::SubmissionError
-        })?
+        if self.eth.current_block().borrow().number >= submission_deadline.0 {
+            return Err(DeadlineExceeded.into());
+        }
+
+        let this = Arc::clone(self);
+        let tracing_span = tracing::Span::current();
+        // Spawn as a separate task to enable concurrent EIP-7702 submissions.
+        // SettleTaskHandle aborts the task (with a grace period) if the caller
+        // disconnects.
+        let handle = tokio::spawn(
+            async move {
+                let result = this
+                    .process_settle_request(auction_id, solution_id, submission_deadline)
+                    .await;
+                observe::settled(this.solver.name(), &result);
+                drop(admission_permit);
+                result
+            }
+            .instrument(tracing_span),
+        );
+        SettleTaskHandle(handle).await
     }
 
     pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
-        if !self.submitter_pool.has_capacity() {
+        if self.submitter_pool.admission.available_permits() == 0 {
             tracing::warn!("no idle submission slots; auction is rejected");
             Err(Error::TooManyPendingSettlements)
         } else {
             Ok(())
         }
-    }
-
-    async fn process_settle_requests(
-        self: Arc<Self>,
-        mut settle_receiver: mpsc::Receiver<SettleRequest>,
-    ) {
-        while let Some(request) = settle_receiver.recv().await {
-            // When only the direct solver EOA slot exists and no delegated accounts are set
-            // up, the pool's acquire() blocks until the slot is free,  serializing
-            // settlements.
-            let this = Arc::clone(&self);
-            tokio::spawn(async move {
-                this.handle_settle_request(request).await;
-            });
-        }
-    }
-
-    async fn handle_settle_request(self: &Arc<Self>, request: SettleRequest) {
-        let SettleRequest {
-            auction_id,
-            solution_id,
-            submission_deadline,
-            mut response_sender,
-            tracing_span,
-        } = request;
-        async {
-            if self.eth.current_block().borrow().number >= submission_deadline.0 {
-                if let Err(err) = response_sender.send(Err(DeadlineExceeded.into())) {
-                    tracing::error!(
-                        ?err,
-                        "settle deadline exceeded. unable to return a response"
-                    );
-                }
-                return;
-            }
-
-            observe::settling();
-            let settle_fut =
-                Box::pin(self.process_settle_request(auction_id, solution_id, submission_deadline));
-            let closed_fut = Box::pin(response_sender.closed());
-            let result = match futures::future::select(closed_fut, settle_fut).await {
-                // Cancel the settlement task if the sender is closed (client likely
-                // disconnected). This is a fallback to recover from issues
-                // like a stuck driver (e.g., stalled block stream).
-                Either::Left((_closed, settle_fut)) => {
-                    tracing::debug!("autopilot terminated settle call");
-                    // Add a grace period to give driver the last chance to cancel the
-                    // tx if needed.
-                    tokio::time::timeout(Duration::from_secs(1), settle_fut)
-                        .await
-                        .unwrap_or_else(|_| {
-                            tracing::error!("didn't finish tx submission within grace period");
-                            Err(DeadlineExceeded.into())
-                        })
-                }
-                Either::Right((res, _)) => res,
-            };
-            observe::settled(self.solver.name(), &result);
-            let _ = response_sender.send(result);
-        }
-        .instrument(tracing_span)
-        .await
     }
 
     async fn process_settle_request(
@@ -884,6 +840,8 @@ impl Competition {
                 }
             });
         }
+
+        notify::settlement_started(&self.solver, settlement.auction_id, settlement.solution());
 
         // Acquire a submission slot. The pool prefers the direct solver EOA
         // (no forwarding overhead); falls back to a delegated EIP-7702
@@ -997,14 +955,6 @@ fn merge(
         )
     });
     merged
-}
-
-struct SettleRequest {
-    auction_id: auction::Id,
-    solution_id: u64,
-    submission_deadline: BlockNo,
-    response_sender: oneshot::Sender<Result<Settled, Error>>,
-    tracing_span: tracing::Span,
 }
 
 /// Solution information sent to the protocol by the driver before the solution

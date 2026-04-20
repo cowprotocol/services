@@ -10,7 +10,6 @@ use {
         state,
     },
     alloy_primitives::{Address, U256},
-    std::collections::HashMap,
 };
 pub type Scored = state::Scored<U256>;
 pub type Ranked = state::Ranked<U256>;
@@ -29,13 +28,6 @@ pub struct Solution<State> {
 
     /// Orders executed in this solution.
     orders: Vec<Order>,
-
-    /// Uniform clearing prices for all tokens in the solution.
-    ///
-    /// Maps token address to its price in the native token.
-    /// These are the prices at which all orders trading these tokens are
-    /// settled.
-    prices: HashMap<Address, U256>,
 
     /// State marker (score and ranking information).
     state: State,
@@ -56,11 +48,6 @@ impl<T> Solution<T> {
     pub fn orders(&self) -> &[Order] {
         &self.orders
     }
-
-    /// Get the clearing prices.
-    pub fn prices(&self) -> &HashMap<Address, U256> {
-        &self.prices
-    }
 }
 
 impl<State> state::HasState for Solution<State> {
@@ -72,7 +59,6 @@ impl<State> state::HasState for Solution<State> {
             id: self.id,
             solver: self.solver,
             orders: self.orders,
-            prices: self.prices,
             state,
         }
     }
@@ -84,17 +70,11 @@ impl<State> state::HasState for Solution<State> {
 
 impl Solution<Unscored> {
     /// Create a new unscored solution.
-    pub fn new(
-        id: u64,
-        solver: Address,
-        orders: Vec<Order>,
-        prices: HashMap<Address, U256>,
-    ) -> Self {
+    pub fn new(id: u64, solver: Address, orders: Vec<Order>) -> Self {
         Self {
             id,
             solver,
             orders,
-            prices,
             state: Unscored,
         }
     }

@@ -1,0 +1,19 @@
+[package]
+name = "contracts-generate"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+alloy-sol-macro-expander = "1.4.1"
+alloy-sol-macro-input = { version = "1.4.1", features = ["json"] }
+anyhow = "1.0.100"
+prettyplease = "0.2.37"
+proc-macro2 = "1.0.103"
+quote = "1.0.41"
+rayon = "1"
+reqwest = { version = "0.13", features = ["blocking", "json"] }
+serde_json = "1.0.117"
+syn = "2.0.108"

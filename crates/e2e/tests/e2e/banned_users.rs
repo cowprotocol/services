@@ -3,7 +3,7 @@ use {
         primitives::{Address, address},
         providers::ext::{AnvilApi, ImpersonateConfig},
     },
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     e2e::setup::{OnchainComponents, Services, run_forked_test_with_block_number},
     ethrpc::Web3,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -24,9 +24,9 @@ async fn forked_node_mainnet_single_limit_order() {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-const FORK_BLOCK_MAINNET: u64 = 23112197;
+const FORK_BLOCK_MAINNET: u64 = 24843565;
 /// DAI whale address as per [FORK_BLOCK_MAINNET].
-const DAI_WHALE_MAINNET: Address = address!("762d46904B93a1EEDBfF2fD50445CB8ffA41F9FB");
+const DAI_WHALE_MAINNET: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
 const BANNED_USER: Address = address!("7F367cC41522cE07553e823bf3be79A889DEbe1B");
 
 async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {

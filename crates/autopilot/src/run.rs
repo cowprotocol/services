@@ -30,7 +30,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
-    contracts::alloy::{BalancerV2Vault, GPv2Settlement, WETH9},
+    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
     http_client::HttpClientFactory,
@@ -346,6 +346,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
+                config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("api_native_price_estimator"))
             .await,
@@ -358,6 +359,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
+                config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("competition_native_price_updater"))
             .await;

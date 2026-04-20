@@ -684,7 +684,7 @@ mod tests {
         super::*,
         alloy_eips::BlockNumberOrTag,
         alloy_primitives::b256,
-        contracts::alloy::GPv2Settlement,
+        contracts::GPv2Settlement,
         ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     };
 

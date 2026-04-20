@@ -16,7 +16,7 @@ use {
         orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     database::byte_array::ByteArray,
     e2e::setup::{
         proxy::{OnRequest, ReverseProxy},
@@ -101,7 +101,7 @@ async fn local_node_buy_order_with_haircut() {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-const FORK_BLOCK_MAINNET: u64 = 23112197;
+const FORK_BLOCK_MAINNET: u64 = 24843565;
 /// USDC whale address as per [FORK_BLOCK_MAINNET].
 const USDC_WHALE_MAINNET: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
 
@@ -117,7 +117,7 @@ async fn forked_node_mainnet_single_limit_order() {
     .await;
 }
 
-const FORK_BLOCK_GNOSIS: u64 = 41502478;
+const FORK_BLOCK_GNOSIS: u64 = 45588623;
 /// USDC whale address as per [FORK_BLOCK_GNOSIS].
 const USDC_WHALE_GNOSIS: Address = address!("d4A39d219ADB43aB00739DC5D876D98Fdf0121Bf");
 

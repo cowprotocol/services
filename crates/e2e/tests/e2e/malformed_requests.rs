@@ -343,11 +343,13 @@ async fn http_validation(web3: Web3) {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-    // GET /api/v1/debug/simulation/{uid} error cases
+    // GET /restricted/api/v1/debug/simulation/{uid} error cases
 
     // Malformed UID → 400
     let response = client
-        .get(format!("{API_HOST}/api/v1/debug/simulation/bad_uid"))
+        .get(format!(
+            "{API_HOST}/restricted/api/v1/debug/simulation/bad_uid"
+        ))
         .send()
         .await
         .unwrap();
@@ -360,7 +362,7 @@ async fn http_validation(web3: Web3) {
     // Valid UID but order not found → 404
     let response = client
         .get(format!(
-            "{API_HOST}/api/v1/debug/simulation/{VALID_ORDER_UID}"
+            "{API_HOST}/restricted/api/v1/debug/simulation/{VALID_ORDER_UID}"
         ))
         .send()
         .await
@@ -377,7 +379,8 @@ async fn http_validation(web3: Web3) {
     // Invalid block_number query param → 400
     let response = client
         .get(format!(
-            "{API_HOST}/api/v1/debug/simulation/{VALID_ORDER_UID}?block_number=notanumber"
+            "{API_HOST}/restricted/api/v1/debug/simulation/{VALID_ORDER_UID}?\
+             block_number=notanumber"
         ))
         .send()
         .await
@@ -388,11 +391,11 @@ async fn http_validation(web3: Web3) {
         "non-numeric block_number should return 400"
     );
 
-    // POST /api/v1/debug/simulation error cases
+    // POST /restricted/api/v1/debug/simulation error cases
 
     // Invalid JSON body → 400
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .header("Content-Type", "application/json")
         .body("{invalid json}")
         .send()
@@ -406,7 +409,7 @@ async fn http_validation(web3: Web3) {
 
     // Missing required fields → 422
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({}))
         .send()
         .await
@@ -419,7 +422,7 @@ async fn http_validation(web3: Web3) {
 
     // Invalid field type (bad address) → 422
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({
             "sellToken": "not-an-address",
             "buyToken": VALID_ADDRESS,
@@ -439,7 +442,7 @@ async fn http_validation(web3: Web3) {
 
     // Zero sellAmount (NonZeroU256 rejects zero at deserialization) → 422
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({
             "sellToken": VALID_ADDRESS,
             "buyToken": VALID_ADDRESS,
@@ -459,7 +462,7 @@ async fn http_validation(web3: Web3) {
 
     // Invalid kind enum value → 422
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({
             "sellToken": VALID_ADDRESS,
             "buyToken": VALID_ADDRESS,
@@ -480,7 +483,7 @@ async fn http_validation(web3: Web3) {
     // Invalid appData (non-JSON string triggers MalformedInput) → 400
     let bad_app_data = "not valid json";
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({
             "sellToken": VALID_ADDRESS,
             "buyToken": VALID_ADDRESS,
@@ -539,7 +542,7 @@ async fn simulation_not_enabled(web3: Web3) {
     // GET → 405 when simulation is not enabled
     let response = client
         .get(format!(
-            "{API_HOST}/api/v1/debug/simulation/{VALID_ORDER_UID}"
+            "{API_HOST}/restricted/api/v1/debug/simulation/{VALID_ORDER_UID}"
         ))
         .send()
         .await
@@ -552,7 +555,7 @@ async fn simulation_not_enabled(web3: Web3) {
 
     // POST → 405 when simulation is not enabled
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({
             "sellToken": VALID_ADDRESS,
             "buyToken": VALID_ADDRESS,

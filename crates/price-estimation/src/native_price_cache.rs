@@ -165,7 +165,7 @@ struct CacheInner {
 
 impl Cache {
     pub fn new(max_age: Duration, initial_prices: HashMap<Address, BigDecimal>) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let now = std::time::Instant::now();
 
         let data = moka::sync::Cache::builder()
@@ -197,7 +197,7 @@ impl Cache {
     /// in the past, to avoid spikes of expired prices all being fetched at
     /// once.
     fn random_updated_at(max_age: Duration, now: Instant, rng: &mut impl Rng) -> Instant {
-        let percent_expired = rng.gen_range(50..=90);
+        let percent_expired = rng.random_range(50..=90);
         let age = max_age.as_secs() * percent_expired / 100;
         now - Duration::from_secs(age)
     }

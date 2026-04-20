@@ -36,6 +36,8 @@ pub enum Kind {
     NonBufferableTokensUsed(TokensUsed),
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(RequiredEther),
+    /// Solver won, driver is trying to  settle the transaction onchain.
+    SettlementStarted,
     /// Result of winning solver trying to settle the transaction onchain.
     Settled(Settlement),
     /// Some aspect of the driver logic failed preventing the solution from

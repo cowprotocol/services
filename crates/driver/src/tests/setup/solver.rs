@@ -14,7 +14,7 @@ use {
     },
     alloy::{primitives::Address, signers::local::PrivateKeySigner},
     const_hex::ToHexExt,
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     eth_domain_types as eth,
     gas_price_estimation::Eip1559EstimationExt,
     itertools::Itertools,

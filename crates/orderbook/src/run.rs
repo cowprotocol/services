@@ -17,7 +17,7 @@ use {
     chain::Chain,
     clap::Parser,
     configs::orderbook::Configuration,
-    contracts::alloy::{
+    contracts::{
         BalancerV2Vault,
         ChainalysisOracle,
         GPv2Settlement,
@@ -125,9 +125,9 @@ pub async fn run(config: Configuration) {
         .expect("Couldn't get vault relayer address");
     let signatures_contract = match config.shared.contracts.signatures {
         Some(address) => {
-            contracts::alloy::support::Signatures::Instance::new(address, web3.provider.clone())
+            contracts::support::Signatures::Instance::new(address, web3.provider.clone())
         }
-        None => contracts::alloy::support::Signatures::Instance::deployed(&web3.provider)
+        None => contracts::support::Signatures::Instance::deployed(&web3.provider)
             .await
             .expect("load signatures contract"),
     };
@@ -178,6 +178,7 @@ pub async fn run(config: Configuration) {
     let domain_separator = DomainSeparator::new(chain_id, *settlement_contract.address());
     let db_config = crate::database::Config {
         max_pool_size: config.database.max_connections.get(),
+        statement_timeout: config.database.statement_timeout,
     };
     let postgres_write = Postgres::try_new(config.database.write_url.as_str(), db_config.clone())
         .expect("failed to create database");
@@ -185,7 +186,7 @@ pub async fn run(config: Configuration) {
     let postgres_read = if let Some(db_read_url) = config.database.read_url
         && config.database.write_url != db_read_url
     {
-        Postgres::try_new(db_read_url.as_str(), db_config)
+        Postgres::try_new_with_timeout(db_read_url.as_str(), db_config)
             .expect("failed to create read replica database")
     } else {
         postgres_write.clone()
@@ -411,6 +412,14 @@ pub async fn run(config: Configuration) {
     ));
 
     let order_simulator = if let Some(config) = config.order_simulation {
+        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+            config.tenderly.as_ref().map(|tenderly_config| {
+                Box::new(simulator::tenderly::TenderlyApi::new(
+                    tenderly_config,
+                    &http_factory,
+                    chain.id().to_string(),
+                )) as _
+            });
         Some(Arc::new(OrderSimulator::new(
             SwapSimulator::new(
                 balance_overrider.clone(),
@@ -426,6 +435,7 @@ pub async fn run(config: Configuration) {
             .await
             .expect("failed to create SwapSimulator"),
             chain.id().to_string(),
+            tenderly,
         )))
     } else {
         None
@@ -472,6 +482,8 @@ pub async fn run(config: Configuration) {
         },
         native_price_estimator,
         config.price_estimation.quote_timeout,
+        current_block_stream,
+        config.hide_competition_before_deadline,
     );
 
     let mut metrics_address = config.bind_address;
@@ -544,6 +556,8 @@ fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
+    current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
+    hide_competition_before_deadline: bool,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -553,6 +567,8 @@ fn serve_api(
         app_data,
         native_price_estimator,
         quote_timeout,
+        current_block_stream,
+        hide_competition_before_deadline,
     );
     tracing::info!(%address, "serving order book");
 
