@@ -46,6 +46,12 @@ pub struct NativePriceConfig {
     )]
     pub prefetch_time: Duration,
 
+    /// Enable EIP-4626 vault token pricing. When enabled, the native price
+    /// estimator will attempt to price vault tokens by querying their
+    /// underlying asset and conversion rate on-chain.
+    #[serde(default)]
+    pub eip4626: bool,
+
     /// Shared native price settings (cache, approximation tokens, etc.).
     #[serde(flatten)]
     pub shared: crate::native_price::NativePriceConfig,
@@ -62,6 +68,7 @@ impl NativePriceConfig {
             api_estimators: Default::default(),
             cache_refresh_interval: default_native_price_cache_refresh(),
             prefetch_time: Duration::from_millis(500),
+            eip4626: false,
             shared: crate::native_price::NativePriceConfig {
                 cache: crate::native_price::CacheConfig {
                     max_age: Duration::from_secs(2),

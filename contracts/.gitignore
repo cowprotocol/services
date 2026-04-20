@@ -1,2 +1,4 @@
 /target
+/out
+/cache
 .DS_Store
