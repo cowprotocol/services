@@ -531,6 +531,12 @@ enum UniswapV3Config {
 
         graph_url: Url,
 
+        /// Optional bearer token used to access private subgraph endpoints
+        /// (e.g. Goldsky `/api/private/...`). When set, requests carry the
+        /// `Authorization: Bearer <api-key>` header.
+        #[serde(default)]
+        api_key: Option<String>,
+
         /// How many pool IDs can be present in a where clause of a Tick query
         /// at once. Some subgraphs are overloaded and throw errors when
         /// there are too many.
@@ -560,6 +566,12 @@ enum UniswapV3Config {
 
         /// The URL used to connect to uniswap v3 subgraph client.
         graph_url: Url,
+
+        /// Optional bearer token used to access private subgraph endpoints
+        /// (e.g. Goldsky `/api/private/...`). When set, requests carry the
+        /// `Authorization: Bearer <api-key>` header.
+        #[serde(default)]
+        api_key: Option<String>,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
@@ -597,6 +609,12 @@ enum BalancerV2Config {
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
+
+        /// Optional bearer token used to access private subgraph endpoints
+        /// (e.g. Goldsky `/api/private/...`). When set, requests carry the
+        /// `Authorization: Bearer <api-key>` header.
+        #[serde(default)]
+        api_key: Option<String>,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
@@ -638,6 +656,12 @@ enum BalancerV2Config {
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
+
+        /// Optional bearer token used to access private subgraph endpoints
+        /// (e.g. Goldsky `/api/private/...`). When set, requests carry the
+        /// `Authorization: Bearer <api-key>` header.
+        #[serde(default)]
+        api_key: Option<String>,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.

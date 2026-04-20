@@ -35,10 +35,15 @@ pub struct BalancerSubgraphClient(SubgraphClient);
 
 impl BalancerSubgraphClient {
     /// Creates a new Balancer subgraph client with full subgraph URL.
-    pub fn from_subgraph_url(subgraph_url: &Url, client: Client) -> Result<Self> {
+    pub fn from_subgraph_url(
+        subgraph_url: &Url,
+        client: Client,
+        api_key: Option<String>,
+    ) -> Result<Self> {
         Ok(Self(SubgraphClient::try_new(
             subgraph_url.clone(),
             client,
+            api_key,
             usize::MAX,
         )?))
     }

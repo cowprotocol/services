@@ -120,6 +120,7 @@ async fn init_liquidity(
             &config.graph_url,
             web3.clone(),
             boundary::liquidity::http_client(),
+            config.api_key.clone(),
             block_retriever,
             config.max_pools_to_initialize,
             config.max_pools_per_tick_query,

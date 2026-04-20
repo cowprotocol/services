@@ -138,12 +138,17 @@ impl PoolsCheckpointHandler {
     pub async fn new(
         subgraph_url: &Url,
         client: Client,
+        api_key: Option<String>,
         max_pools_to_initialize_cache: usize,
         max_pools_per_tick_query: usize,
     ) -> Result<Self> {
-        let graph_api =
-            UniV3SubgraphClient::from_subgraph_url(subgraph_url, client, max_pools_per_tick_query)
-                .await?;
+        let graph_api = UniV3SubgraphClient::from_subgraph_url(
+            subgraph_url,
+            client,
+            api_key,
+            max_pools_per_tick_query,
+        )
+        .await?;
         let mut registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
@@ -285,6 +290,7 @@ impl UniswapV3PoolFetcher {
         subgraph_url: &Url,
         web3: Web3,
         client: Client,
+        api_key: Option<String>,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: usize,
         max_pools_per_tick_query: usize,
@@ -293,6 +299,7 @@ impl UniswapV3PoolFetcher {
         let checkpoint = PoolsCheckpointHandler::new(
             subgraph_url,
             client,
+            api_key,
             max_pools_to_initialize,
             max_pools_per_tick_query,
         )

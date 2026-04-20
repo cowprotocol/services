@@ -170,6 +170,12 @@ pub struct UniswapV3 {
     /// The URL used to connect to uniswap v3 subgraph client.
     pub graph_url: Url,
 
+    /// Optional bearer token sent as `Authorization: Bearer <api_key>` with
+    /// every subgraph request. Used to access private subgraph endpoints
+    /// (e.g. Goldsky `/api/private/...`).
+    #[debug(ignore)]
+    pub api_key: Option<String>,
+
     /// How often the liquidity source should be reinitialized to
     /// become aware of new pools.
     pub reinit_interval: Option<Duration>,
@@ -192,6 +198,7 @@ impl UniswapV3 {
             router: contracts::UniswapV3SwapRouterV2::deployment_address(&chain.id())?.into(),
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
+            api_key: None,
             reinit_interval: None,
             max_pools_per_tick_query,
         })
@@ -228,6 +235,12 @@ pub struct BalancerV2 {
 
     /// The base URL used to connect to balancer v2 subgraph client.
     pub graph_url: Url,
+
+    /// Optional bearer token sent as `Authorization: Bearer <api_key>` with
+    /// every subgraph request. Used to access private subgraph endpoints
+    /// (e.g. Goldsky `/api/private/...`).
+    #[debug(ignore)]
+    pub api_key: Option<String>,
 
     /// How often the liquidty source should be re-initialized to become
     /// aware of new pools.
@@ -285,6 +298,7 @@ impl BalancerV2 {
             ),
             pool_deny_list: Vec::new(),
             graph_url: graph_url.clone(),
+            api_key: None,
             reinit_interval: None,
         })
     }

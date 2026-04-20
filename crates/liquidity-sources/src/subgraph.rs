@@ -16,6 +16,11 @@ const MAX_NUMBER_OF_ATTEMPTS_DEFAULT: usize = 10;
 pub struct SubgraphClient {
     client: Client,
     subgraph_url: Url,
+    /// Optional bearer token used to authenticate requests against private
+    /// subgraph endpoints (e.g. Goldsky private endpoints under
+    /// `/api/private/...`). When set, it is sent as the `Authorization:
+    /// Bearer <token>` header on every request.
+    api_key: Option<String>,
     max_pools_per_tick_query: usize,
     max_number_of_attempts: usize,
 }
@@ -32,14 +37,20 @@ pub struct Data<T> {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
+    ///
+    /// If `api_key` is provided, every request sent by this client will carry
+    /// an `Authorization: Bearer <api_key>` header so that private subgraph
+    /// endpoints (e.g. Goldsky private endpoints) can be used.
     pub fn try_new(
         subgraph_url: Url,
         client: Client,
+        api_key: Option<String>,
         max_pools_per_tick_query: usize,
     ) -> Result<Self> {
         Ok(Self {
             client,
             subgraph_url,
+            api_key,
             max_pools_per_tick_query,
             max_number_of_attempts: MAX_NUMBER_OF_ATTEMPTS_DEFAULT,
         })
@@ -74,9 +85,11 @@ impl SubgraphClient {
     where
         T: DeserializeOwned,
     {
-        match self
-            .client
-            .post(self.subgraph_url.clone())
+        let mut request = self.client.post(self.subgraph_url.clone());
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        match request
             .json(&Query {
                 query,
                 variables: variables.clone(),

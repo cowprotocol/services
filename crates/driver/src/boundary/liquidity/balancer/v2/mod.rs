@@ -177,6 +177,7 @@ async fn init_liquidity(
             boundary::liquidity::cache_config(),
             block_stream.clone(),
             boundary::liquidity::http_client(),
+            config.api_key.clone(),
             web3.clone(),
             &contracts,
             config.pool_deny_list.to_vec(),

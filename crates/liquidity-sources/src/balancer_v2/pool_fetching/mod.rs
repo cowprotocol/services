@@ -240,11 +240,13 @@ impl BalancerPoolFetcher {
         config: CacheConfig,
         block_stream: CurrentBlockWatcher,
         client: Client,
+        api_key: Option<String>,
         web3: Web3,
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<B256>,
     ) -> Result<Self> {
-        let pool_initializer = BalancerSubgraphClient::from_subgraph_url(subgraph_url, client)?;
+        let pool_initializer =
+            BalancerSubgraphClient::from_subgraph_url(subgraph_url, client, api_key)?;
         let web3 = web3.labeled("balancerV2");
         let fetcher = Arc::new(Cache::new(
             create_aggregate_pool_fetcher(
