@@ -89,8 +89,8 @@ async fn forked_node_mainnet_usdt_quote() {
 /// Quote verification for an Aave v3 aToken as the sell token. Exercises
 /// the `AaveV3AToken` strategy end-to-end through `BalanceOverrides`. The
 /// detector is disabled (`detector: None`) to isolate the hardcoded-strategy
-/// path; auto-detection is covered by `detects_aave_v3_a_token_mainnet` in
-/// the `balance-overrides` crate.
+/// path; auto-detection is covered by
+/// `forked_node_mainnet_aave_atoken_detection` below.
 #[tokio::test]
 #[ignore]
 async fn forked_node_mainnet_aave_atoken_quote() {
@@ -105,6 +105,21 @@ async fn forked_node_mainnet_aave_atoken_quote() {
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
         FORK_BLOCK,
         ["price_estimation=trace", "balance_overrides=trace"],
+    )
+    .await;
+}
+
+/// The auto-detector identifies aEthWETH as a canonical Aave v3 aToken via
+/// the probe + canonical-slot fast-path, returning the right strategy
+/// without running a `debug_traceCall`. This runs in the forked-e2e CI job.
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_aave_atoken_detection() {
+    run_forked_test_with_block_number(
+        aave_atoken_detection,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
     )
     .await;
 }
@@ -874,5 +889,28 @@ async fn aave_atoken_quote_verification(web3: Web3) {
     assert!(
         diff <= U256::from(1u64),
         "balanceOf after override returned {reported}, expected ~{amount} (diff {diff} wei)",
+    );
+}
+
+/// Auto-detection against the mainnet fork: the probe + canonical-slot
+/// fast-path must identify aEthWETH as an `AaveV3AToken` without falling
+/// through to `debug_traceCall`.
+async fn aave_atoken_detection(web3: Web3) {
+    use balance_overrides::detector::{DEFAULT_VERIFICATION_TIMEOUT, Detector};
+
+    let detector = Detector::new(web3, 60, DEFAULT_VERIFICATION_TIMEOUT);
+    let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
+    let strategy = detector
+        .detect(a_eth_weth, Address::with_last_byte(1))
+        .await
+        .unwrap();
+    assert_eq!(
+        strategy,
+        Strategy::AaveV3AToken {
+            target_contract: a_eth_weth,
+            pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
+            underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+            map_slot: U256::from(52),
+        }
     );
 }

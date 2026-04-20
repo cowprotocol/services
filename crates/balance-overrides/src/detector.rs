@@ -492,32 +492,6 @@ mod tests {
         );
     }
 
-    /// The detector recognises aEthWETH as an Aave v3 aToken (via
-    /// `UNDERLYING_ASSET_ADDRESS()` + `POOL()` probes) and returns the
-    /// right `AaveV3AToken` strategy, scaling and all, without any
-    /// hardcoded per-token config.
-    /// Set `NODE_URL` environment to a mainnet RPC URL.
-    #[ignore]
-    #[tokio::test]
-    async fn detects_aave_v3_a_token_mainnet() {
-        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT);
-
-        let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
-        let strategy = detector
-            .detect(a_eth_weth, Address::with_last_byte(1))
-            .await
-            .unwrap();
-        assert_eq!(
-            strategy,
-            Strategy::AaveV3AToken {
-                target_contract: a_eth_weth,
-                pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
-                underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                map_slot: U256::from(52),
-            }
-        );
-    }
-
     /// Tests that we can detect storage slots by probing the first
     /// n slots or by checking hardcoded known slots.
     /// Set `NODE_URL` environment to an arbitrum RPC URL.
