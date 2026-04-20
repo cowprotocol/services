@@ -319,6 +319,11 @@ pub fn handle_all_routes(
             "/api/v2/trades",
             get(get_trades_v2::get_trades_handler),
         ),
+        (
+            "GET",
+            "/restricted/api/v2/solver_competition/{auction_id}",
+            get(get_solver_competition_v2::get_solver_competition_by_id_unfiltered_handler),
+        ),
     ];
 
     // Initialize metrics
