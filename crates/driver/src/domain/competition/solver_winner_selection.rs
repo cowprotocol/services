@@ -213,7 +213,6 @@ impl From<&crate::infra::api::routes::solve::dto::solve_response::Solution>
                     },
                 })
                 .collect(),
-            solution.clearing_prices.clone(),
         )
     }
 }

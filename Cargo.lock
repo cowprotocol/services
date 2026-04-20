@@ -2577,12 +2577,14 @@ dependencies = [
  "cow-contract-honeyswaprouter",
  "cow-contract-hookstrampoline",
  "cow-contract-icowwrapper",
+ "cow-contract-ierc4626",
  "cow-contract-iswaprpair",
  "cow-contract-iuniswaplikepair",
  "cow-contract-iuniswaplikerouter",
  "cow-contract-iuniswapv3factory",
  "cow-contract-izeroex",
  "cow-contract-liquoricesettlement",
+ "cow-contract-mockerc4626wrapper",
  "cow-contract-nonstandarderc20balances",
  "cow-contract-pancakerouter",
  "cow-contract-permit2",
@@ -3255,6 +3257,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cow-contract-ierc4626"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
 name = "cow-contract-iswaprpair"
 version = "0.1.0"
 dependencies = [
@@ -3311,6 +3324,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-liquoricesettlement"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-mockerc4626wrapper"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
@@ -3714,28 +3738,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
 dependencies = [
  "darling_core 0.21.3",
- "quote",
- "syn 2.0.108",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
-dependencies = [
- "darling_core 0.23.0",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
-dependencies = [
- "darling_core 0.23.0",
  "quote",
  "syn 2.0.114",
 ]
@@ -6504,6 +6506,7 @@ dependencies = [
  "configs",
  "const-hex",
  "contracts",
+ "dashmap",
  "derive_more 1.0.0",
  "ethrpc",
  "futures",
@@ -7535,7 +7538,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c3c81b43dc2d8877c216a3fccf76677ee1ebccd429566d3e67447290d0c42b2"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.9.2",
+ "rand 0.9.4",
  "secp256k1-sys 0.11.0",
  "serde",
 ]
