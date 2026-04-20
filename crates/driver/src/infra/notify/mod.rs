@@ -95,6 +95,14 @@ pub fn simulation_failed(
     solver.notify(auction_id, Some(solution_id.clone()), kind);
 }
 
+pub fn settlement_started(solver: &Solver, auction_id: auction::Id, solution_id: &solution::Id) {
+    solver.notify(
+        Some(auction_id),
+        Some(solution_id.clone()),
+        notification::Kind::SettlementStarted,
+    );
+}
+
 pub fn executed(
     solver: &Solver,
     auction_id: auction::Id,
