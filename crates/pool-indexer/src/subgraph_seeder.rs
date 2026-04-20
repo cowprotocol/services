@@ -25,7 +25,7 @@ use {
     serde_json::{Value, json},
     sqlx::PgPool,
     std::time::Duration,
-    tracing::info,
+    tracing::{info, instrument},
 };
 
 /// Number of pools (or ticks) returned per GraphQL page.
@@ -249,6 +249,7 @@ impl<'a> SubgraphSeeder<'a> {
         })
     }
 
+    #[instrument(skip_all, fields(chain_id = self.chain_id))]
     async fn seed(self) -> Result<u64> {
         info!(
             block = self.snapshot_block,

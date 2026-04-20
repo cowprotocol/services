@@ -5,6 +5,7 @@ use {
         config::{Configuration, NetworkConfig},
         indexer::uniswap_v3::UniswapV3Indexer,
     },
+    alloy::primitives::Address,
     clap::Parser,
     ethrpc::{AlloyProvider, Config as EthRpcConfig, web3},
     sqlx::{PgPool, postgres::PgPoolOptions},
@@ -72,16 +73,71 @@ fn spawn_network_task(set: &mut JoinSet<()>, db: PgPool, network: NetworkConfig)
 }
 
 async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
-    tracing::info!(network = %network.name, chain_id = network.chain_id, "starting indexer");
+    tracing::info!(
+        network = %network.name,
+        chain_id = network.chain_id,
+        factories = network.factories.len(),
+        "starting network indexer",
+    );
 
     let provider = build_provider(&network);
-    let indexer = UniswapV3Indexer::new(provider.clone(), db.clone(), &network.indexer_config());
+    let network = Arc::new(network);
 
-    if let Some(subgraph_url) = network.subgraph_url.as_deref() {
-        let seeded_block =
-            crate::seeder::seed(&db, network.chain_id, subgraph_url, network.seed_block)
+    // One indexer task per factory, sharing the same provider and DB pool.
+    // Seeder + catch-up are per-factory because their checkpoints are keyed
+    // by `(chain_id, contract)`.
+    let mut factory_set = JoinSet::new();
+    for factory in network.factories.iter().copied() {
+        let indexer = UniswapV3Indexer::new(
+            provider.clone(),
+            db.clone(),
+            &network.indexer_config(factory),
+        );
+        factory_set.spawn(run_factory_indexer(
+            db.clone(),
+            provider.clone(),
+            indexer,
+            network.clone(),
+            factory,
+        ));
+    }
+
+    if let Some(result) = factory_set.join_next().await {
+        panic!("pool-indexer factory task exited: {result:?}");
+    }
+}
+
+async fn run_factory_indexer(
+    db: PgPool,
+    provider: AlloyProvider,
+    indexer: UniswapV3Indexer,
+    network: Arc<NetworkConfig>,
+    factory: Address,
+) {
+    tracing::info!(network = %network.name, chain_id = network.chain_id, %factory, "starting factory indexer");
+
+    // A checkpoint already means this (chain, factory) has been bootstrapped —
+    // e.g. a prior run seeded it. Skip the seed and resume live indexing.
+    let checkpoint = crate::db::uniswap_v3::get_checkpoint(&db, network.chain_id, &factory)
+        .await
+        .expect("failed to read checkpoint");
+
+    if checkpoint.is_none() {
+        let seeded_block = if let Some(subgraph_url) = network.subgraph_url.as_deref() {
+            crate::subgraph_seeder::seed(&db, network.chain_id, subgraph_url, network.seed_block)
                 .await
-                .expect("seeding failed");
+                .expect("subgraph seeding failed")
+        } else {
+            crate::cold_seeder::cold_seed(
+                &db,
+                network.chain_id,
+                provider,
+                factory,
+                network.seed_block,
+            )
+            .await
+            .expect("cold seeding failed")
+        };
         indexer
             .catch_up(seeded_block)
             .await
@@ -118,6 +174,24 @@ fn validate_networks(networks: &[NetworkConfig]) {
             chain_ids.insert(n.chain_id),
             "duplicate chain_id: {}",
             n.chain_id,
+        );
+        assert!(
+            !n.factories.is_empty(),
+            "network {} must list at least one factory",
+            n.name,
+        );
+        let mut seen = HashSet::new();
+        for f in &n.factories {
+            assert!(seen.insert(*f), "network {}: duplicate factory {f}", n.name,);
+        }
+        // A subgraph indexes one specific factory — applying one URL to many
+        // factories would double-seed the wrong data. Multi-factory networks
+        // must cold-seed each factory.
+        assert!(
+            !(n.factories.len() > 1 && n.subgraph_url.is_some()),
+            "network {}: subgraph-url cannot be combined with multiple factories (omit \
+             subgraph-url to cold-seed each factory)",
+            n.name,
         );
     }
 }

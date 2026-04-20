@@ -71,7 +71,10 @@ pub struct NetworkConfig {
     pub name: NetworkName,
     pub chain_id: u64,
     pub rpc_url: Url,
-    pub factory_address: Address,
+    /// One or more Uniswap V3 factory addresses to index. Each factory runs
+    /// its own seed + live-indexing loop; pools from all factories share the
+    /// per-chain namespace in the DB and API.
+    pub factories: Vec<Address>,
     #[serde(default = "default_chunk_size")]
     pub chunk_size: u64,
     #[serde(default = "default_poll_interval_secs")]
@@ -109,10 +112,10 @@ impl NetworkConfig {
         Duration::from_secs(self.poll_interval_secs)
     }
 
-    pub fn indexer_config(&self) -> IndexerConfig {
+    pub fn indexer_config(&self, factory: Address) -> IndexerConfig {
         IndexerConfig {
             chain_id: self.chain_id,
-            factory_address: self.factory_address,
+            factory_address: factory,
             chunk_size: self.chunk_size,
             use_latest: self.use_latest,
             fetch_concurrency: self.fetch_concurrency,
