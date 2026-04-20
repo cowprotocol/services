@@ -141,13 +141,13 @@ impl Order {
             }
             solver::Liquidity::Skip => Default::default(),
         };
-
-        let auction = self
+        let mut auction = self
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
-        let auction = risk_detector
-            .filter_unsupported_orders_in_auction(auction)
-            .await;
+        let unsupported_uids = risk_detector.unsupported_order_uids(&auction.orders).await;
+        if !unsupported_uids.is_empty() {
+            auction.orders.retain(|order| !unsupported_uids.contains(&order.uid));
+        }
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());
         }
