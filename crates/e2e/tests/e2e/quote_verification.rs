@@ -2,8 +2,9 @@ use {
     ::alloy::{
         primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
+        rpc::types::state::StateOverride,
     },
-    balance_overrides::{BalanceOverrides, BalanceOverriding},
+    balance_overrides::{BalanceOverrideRequest, BalanceOverrides, BalanceOverriding},
     bigdecimal::{BigDecimal, Zero},
     configs::{
         autopilot::Configuration,
@@ -11,6 +12,7 @@ use {
         price_estimation::BalanceOverridesConfig,
         test_util::TestDefault,
     },
+    contracts::ERC20,
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
@@ -27,7 +29,7 @@ use {
     },
     serde_json::json,
     simulator::swap_simulator::SwapSimulator,
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
 #[tokio::test]
@@ -823,21 +825,13 @@ async fn trace_based_balance_detection(web3: Web3) {
 /// rounding. This is the property `TradeVerifier` relies on when using
 /// the override to fund the spardose.
 async fn aave_atoken_quote_verification(web3: Web3) {
-    use {
-        ::alloy::rpc::types::state::StateOverride,
-        balance_overrides::BalanceOverrideRequest,
-        contracts::ERC20,
-        std::collections::HashMap,
-    };
-
     // aEthWETH / WETH / Aave v3 Pool on mainnet.
     let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
     let weth = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
     let aave_v3_pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
     let spardose = address!("0000000000000000000000000000000000020000");
 
-    let mut hardcoded = HashMap::new();
-    hardcoded.insert(
+    let hardcoded = HashMap::from([(
         a_eth_weth,
         Strategy::AaveV3AToken {
             target_contract: a_eth_weth,
@@ -845,14 +839,14 @@ async fn aave_atoken_quote_verification(web3: Web3) {
             underlying: weth,
             map_slot: U256::from(52),
         },
-    );
+    )]);
     let balance_overrides = BalanceOverrides {
         hardcoded,
         detector: None,
         web3: Some(web3.clone()),
     };
 
-    let amount = U256::from(5_000_000_000_000_000_000u128); // 5 aEthWETH
+    let amount = 5u64.eth(); // 5 aEthWETH
 
     let (target, override_) = balance_overrides
         .state_override(BalanceOverrideRequest {
@@ -876,11 +870,7 @@ async fn aave_atoken_quote_verification(web3: Web3) {
         .await
         .unwrap();
 
-    let diff = if reported > amount {
-        reported - amount
-    } else {
-        amount - reported
-    };
+    let diff = reported.abs_diff(amount);
     assert!(
         diff <= U256::from(1u64),
         "balanceOf after override returned {reported}, expected ~{amount} (diff {diff} wei)",

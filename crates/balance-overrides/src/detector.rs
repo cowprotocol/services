@@ -153,7 +153,7 @@ impl Detector {
         // will fall through to the generic trace-based path, which only
         // ever returns non-Aave strategies; such a fork needs an explicit
         // hardcoded config entry.
-        if let Some((pool, underlying)) = aave::probe_a_token(&self.web3, token).await {
+        if let Some((pool, underlying)) = aave::probe_aave_token(&self.web3, token).await {
             let candidate = Strategy::AaveV3AToken {
                 target_contract: token,
                 pool,
@@ -391,18 +391,20 @@ impl Detector {
                 )))
             })?;
 
-        // aToken balances round-trip through rayDiv/rayMul so the reported
-        // balance may differ from the written value by one wei. Every other
-        // strategy must match exactly.
-        let balance_matches = if matches!(strategy, Strategy::AaveV3AToken { .. }) {
-            balance.abs_diff(test_balance) <= U256::from(1u64)
-        } else {
-            balance == test_balance
-        };
-
-        balance_matches
+        verified_balance_matches(strategy, balance, test_balance)
             .then_some(())
             .ok_or(DetectionError::NotFound)
+    }
+}
+
+/// Is the `balance` returned by `balanceOf` after applying the override
+/// consistent with the `test_balance` we wrote? For `AaveV3AToken` we tolerate
+/// 1 wei of difference because Aave's ray-div / ray-mul round-trip is not
+/// identity by construction; every other strategy must match exactly.
+fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U256) -> bool {
+    match strategy {
+        Strategy::AaveV3AToken { .. } => balance.abs_diff(test_balance) <= U256::from(1u64),
+        _ => balance == test_balance,
     }
 }
 

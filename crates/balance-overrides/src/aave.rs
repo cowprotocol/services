@@ -119,7 +119,7 @@ pub fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
 /// underlying)` pair. Accepts the token iff the pool registers it as the
 /// aToken for its declared underlying — rogue contracts implementing the
 /// aToken selectors aren't enough.
-pub async fn probe_a_token(web3: &Web3, token: Address) -> Option<(Address, Address)> {
+pub async fn probe_aave_token(web3: &Web3, token: Address) -> Option<(Address, Address)> {
     let a_token = IAaveV3AToken::new(token, web3.provider.clone());
     let underlying_call = a_token.UNDERLYING_ASSET_ADDRESS();
     let pool_call = a_token.POOL();
@@ -220,13 +220,13 @@ pub async fn build_override(
 mod tests {
     use {
         super::*,
-        alloy_primitives::address,
+        alloy_primitives::{address, hex},
         alloy_provider::mock::Asserter,
         alloy_sol_types::SolValue,
     };
 
     fn encode_address(addr: Address) -> String {
-        format!("0x{:0>64x}", U256::from_be_bytes(addr.into_word().0))
+        hex::encode_prefixed(U256::from_be_bytes(addr.into_word().0).to_be_bytes::<32>())
     }
 
     /// Encodes a `ReserveData` struct as the ABI return payload the pool
@@ -250,14 +250,14 @@ mod tests {
             unbacked: 0,
             isolationModeTotalDebt: 0,
         };
-        format!("0x{}", alloy_primitives::hex::encode(data.abi_encode()))
+        hex::encode_prefixed(data.abi_encode())
     }
 
     /// The probe returns `Some((pool, underlying))` when the token exposes
     /// both selectors and the pool confirms the token as the registered
     /// aToken for that underlying.
     #[tokio::test]
-    async fn probe_a_token_accepts_valid_atoken() {
+    async fn probe_aave_token_accepts_valid_atoken() {
         let a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
         let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
         let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
@@ -273,7 +273,7 @@ mod tests {
 
         let web3 = Web3::with_asserter(asserter);
         assert_eq!(
-            probe_a_token(&web3, a_token).await,
+            probe_aave_token(&web3, a_token).await,
             Some((pool, underlying))
         );
     }
@@ -281,13 +281,13 @@ mod tests {
     /// Anything that doesn't answer both selectors is rejected, so non-aToken
     /// ERC-20s don't accidentally pick up the Aave strategy.
     #[tokio::test]
-    async fn probe_a_token_rejects_when_underlying_call_reverts() {
+    async fn probe_aave_token_rejects_when_underlying_call_reverts() {
         let token = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
         let asserter = Asserter::new();
         // First call (UNDERLYING_ASSET_ADDRESS) reverts → probe bails.
         asserter.push_failure_msg("execution reverted");
         let web3 = Web3::with_asserter(asserter);
-        assert_eq!(probe_a_token(&web3, token).await, None);
+        assert_eq!(probe_aave_token(&web3, token).await, None);
     }
 
     /// The probe bails if the pool doesn't look like an Aave v3 Pool
@@ -296,7 +296,7 @@ mod tests {
     /// `UNDERLYING_ASSET_ADDRESS()` and `POOL()` but the named pool has
     /// nothing to do with Aave.
     #[tokio::test]
-    async fn probe_a_token_rejects_when_pool_is_not_aave() {
+    async fn probe_aave_token_rejects_when_pool_is_not_aave() {
         let token = address!("1111111111111111111111111111111111111111");
         let pool = address!("2222222222222222222222222222222222222222");
         let underlying = address!("3333333333333333333333333333333333333333");
@@ -307,14 +307,14 @@ mod tests {
         asserter.push_failure_msg("execution reverted");
 
         let web3 = Web3::with_asserter(asserter);
-        assert_eq!(probe_a_token(&web3, token).await, None);
+        assert_eq!(probe_aave_token(&web3, token).await, None);
     }
 
     /// A rogue contract that impersonates the aToken interface and points at
     /// a real Aave pool is rejected: the pool registers a *different*
     /// `aTokenAddress` for the underlying, so the identity check fails.
     #[tokio::test]
-    async fn probe_a_token_rejects_when_pool_registers_a_different_atoken() {
+    async fn probe_aave_token_rejects_when_pool_registers_a_different_atoken() {
         let rogue = address!("bad000000000000000000000000000000000cafe");
         let real_a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
         let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
@@ -327,6 +327,6 @@ mod tests {
         asserter.push_success(&encode_reserve_data(real_a_token));
 
         let web3 = Web3::with_asserter(asserter);
-        assert_eq!(probe_a_token(&web3, rogue).await, None);
+        assert_eq!(probe_aave_token(&web3, rogue).await, None);
     }
 }
