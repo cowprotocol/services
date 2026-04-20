@@ -96,18 +96,17 @@ impl Trade {
         let surplus_before = math_trade.surplus_over_limit_price_before_fee()?;
 
         let surplus_token = math_trade.surplus_token();
+        let price = auction
+            .prices
+            .get(&surplus_token)
+            .ok_or(math::Error::MissingPrice(surplus_token))?;
+
         let surplus_ether = match self {
             Self::Jit(trade) if !trade.surplus_capturing => {
                 // Non-surplus-capturing JIT orders have zero surplus
                 eth::Ether::zero()
             }
-            _ => {
-                let price = auction
-                    .prices
-                    .get(&surplus_token)
-                    .ok_or(math::Error::MissingPrice(surplus_token))?;
-                price.in_eth(eth::TokenAmount(surplus_after.0))
-            }
+            _ => price.in_eth(eth::TokenAmount(surplus_after.0)),
         };
 
         let fee_in_surplus_token = surplus_before
@@ -115,13 +114,7 @@ impl Trade {
             .checked_sub(surplus_after.0)
             .ok_or(math::error::Math::Negative)?;
 
-        let fee_ether = {
-            let price = auction
-                .prices
-                .get(&surplus_token)
-                .ok_or(math::Error::MissingPrice(surplus_token))?;
-            price.in_eth(eth::TokenAmount(fee_in_surplus_token))
-        };
+        let fee_ether = price.in_eth(eth::TokenAmount(fee_in_surplus_token));
 
         let breakdown = math_trade.fee_breakdown_from_surplus(
             surplus_before,
