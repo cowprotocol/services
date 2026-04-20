@@ -253,65 +253,73 @@ mod tests {
         hex::encode_prefixed(data.abi_encode())
     }
 
-    /// The probe returns `Some((pool, underlying))` when the token exposes
-    /// both selectors and the pool confirms the token as the registered
-    /// aToken for that underlying.
+    /// Builds an `Asserter` primed with the three responses the probe
+    /// expects, in order: `UNDERLYING_ASSET_ADDRESS()`, `POOL()`, and
+    /// `getReserveData(underlying)`. `None` maps to a reverted call; `Some`
+    /// maps to a success response containing the given value.
+    fn probe_asserter(
+        underlying: Option<Address>,
+        pool: Option<Address>,
+        reserve_a_token: Option<Address>,
+    ) -> Asserter {
+        let asserter = Asserter::new();
+        match underlying {
+            Some(u) => asserter.push_success(&encode_address(u)),
+            None => asserter.push_failure_msg("execution reverted"),
+        }
+        match pool {
+            Some(p) => asserter.push_success(&encode_address(p)),
+            None => asserter.push_failure_msg("execution reverted"),
+        }
+        match reserve_a_token {
+            Some(a) => asserter.push_success(&encode_reserve_data(a)),
+            None => asserter.push_failure_msg("execution reverted"),
+        }
+        asserter
+    }
+
+    /// Probe returns `Some((pool, underlying))` when the token exposes both
+    /// selectors and the pool confirms the token as the registered aToken
+    /// for that underlying.
     #[tokio::test]
     async fn probe_aave_token_accepts_valid_atoken() {
         let a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
         let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
         let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+        let web3 = Web3::with_asserter(probe_asserter(Some(underlying), Some(pool), Some(a_token)));
 
-        let asserter = Asserter::new();
-        // 1. UNDERLYING_ASSET_ADDRESS() → underlying
-        asserter.push_success(&encode_address(underlying));
-        // 2. POOL() → pool
-        asserter.push_success(&encode_address(pool));
-        // 3. pool.getReserveData(underlying) → ReserveData { aTokenAddress: a_token, ..
-        //    }
-        asserter.push_success(&encode_reserve_data(a_token));
-
-        let web3 = Web3::with_asserter(asserter);
         assert_eq!(
             probe_aave_token(&web3, a_token).await,
             Some((pool, underlying))
         );
     }
 
-    /// Anything that doesn't answer both selectors is rejected, so non-aToken
-    /// ERC-20s don't accidentally pick up the Aave strategy.
+    /// A contract that doesn't expose the aToken selectors — `balanceOf`
+    /// throws when the probe calls `UNDERLYING_ASSET_ADDRESS()` — is
+    /// cleanly rejected so non-aToken ERC-20s don't accidentally pick up
+    /// the Aave strategy.
     #[tokio::test]
     async fn probe_aave_token_rejects_when_underlying_call_reverts() {
         let token = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let asserter = Asserter::new();
-        // First call (UNDERLYING_ASSET_ADDRESS) reverts → probe bails.
-        asserter.push_failure_msg("execution reverted");
-        let web3 = Web3::with_asserter(asserter);
+        let web3 = Web3::with_asserter(probe_asserter(None, None, None));
         assert_eq!(probe_aave_token(&web3, token).await, None);
     }
 
-    /// The probe bails if the pool doesn't look like an Aave v3 Pool
-    /// (e.g. `getReserveData` reverts). This guards against a false
-    /// positive where some random contract exposes both
-    /// `UNDERLYING_ASSET_ADDRESS()` and `POOL()` but the named pool has
-    /// nothing to do with Aave.
+    /// The probe bails if the claimed pool doesn't respond to
+    /// `getReserveData` — guards against a contract exposing both
+    /// `UNDERLYING_ASSET_ADDRESS()` and `POOL()` while pointing at
+    /// something that isn't actually an Aave v3 pool.
     #[tokio::test]
     async fn probe_aave_token_rejects_when_pool_is_not_aave() {
         let token = address!("1111111111111111111111111111111111111111");
         let pool = address!("2222222222222222222222222222222222222222");
         let underlying = address!("3333333333333333333333333333333333333333");
-
-        let asserter = Asserter::new();
-        asserter.push_success(&encode_address(underlying));
-        asserter.push_success(&encode_address(pool));
-        asserter.push_failure_msg("execution reverted");
-
-        let web3 = Web3::with_asserter(asserter);
+        let web3 = Web3::with_asserter(probe_asserter(Some(underlying), Some(pool), None));
         assert_eq!(probe_aave_token(&web3, token).await, None);
     }
 
-    /// A rogue contract that impersonates the aToken interface and points at
-    /// a real Aave pool is rejected: the pool registers a *different*
+    /// A rogue contract that impersonates the aToken interface and points
+    /// at a real Aave pool is rejected: the pool registers a *different*
     /// `aTokenAddress` for the underlying, so the identity check fails.
     #[tokio::test]
     async fn probe_aave_token_rejects_when_pool_registers_a_different_atoken() {
@@ -319,14 +327,12 @@ mod tests {
         let real_a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
         let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
         let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-
-        let asserter = Asserter::new();
-        asserter.push_success(&encode_address(underlying));
-        asserter.push_success(&encode_address(pool));
-        // Pool agrees on the pair but names the *real* aToken, not the rogue.
-        asserter.push_success(&encode_reserve_data(real_a_token));
-
-        let web3 = Web3::with_asserter(asserter);
+        let web3 = Web3::with_asserter(probe_asserter(
+            Some(underlying),
+            Some(pool),
+            // Pool agrees on the pair but names the *real* aToken, not the rogue.
+            Some(real_a_token),
+        ));
         assert_eq!(probe_aave_token(&web3, rogue).await, None);
     }
 }
