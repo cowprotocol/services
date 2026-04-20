@@ -411,22 +411,15 @@ impl Detector {
         // aToken balances round-trip through rayDiv/rayMul so the reported
         // balance may differ from the written value by one wei. Every other
         // strategy must match exactly.
-        let ok = if matches!(strategy, Strategy::AaveV3AToken { .. }) {
-            let diff = if balance >= test_balance {
-                balance - test_balance
-            } else {
-                test_balance - balance
-            };
-            diff <= U256::from(1u64)
+        let balance_matches = if matches!(strategy, Strategy::AaveV3AToken { .. }) {
+            balance.abs_diff(test_balance) <= U256::from(1u64)
         } else {
             balance == test_balance
         };
 
-        if ok {
-            Ok(())
-        } else {
-            Err(DetectionError::NotFound)
-        }
+        balance_matches
+            .then_some(())
+            .ok_or(DetectionError::NotFound)
     }
 }
 
