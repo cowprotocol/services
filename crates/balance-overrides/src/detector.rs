@@ -66,11 +66,14 @@ impl std::ops::Deref for Detector {
 /// 2. Use the Solidity mapping hashes as a heuristic and prioritize scanning
 ///    those storage slots first - these return `SolidityMapping` strategy
 /// 3. For non-heuristic slots, return `DirectSlot` strategy
+///
+/// Note: this function does not emit `AaveV3AToken` candidates. Aave v3 is
+/// handled by the fast-path in `detect()` which tries the canonical
+/// `_userState` slot directly; the fallback here is for non-Aave tokens only.
 fn create_strategies_from_slots(
     storage_slots: &[(Address, B256)],
     holder: &Address,
     heuristic_depth: usize,
-    aave_info: Option<AaveInfo>,
 ) -> Vec<Strategy> {
     // Build a map from heuristic slot hash to the map_slot index
     let mut solidity_mapping_slot_to_index = HashMap::new();
@@ -93,20 +96,6 @@ fn create_strategies_from_slots(
     let mut fallback_strategies = Vec::new();
     for (contract, slot) in storage_slots.iter().rev() {
         if let Some(&map_slot_index) = solidity_mapping_slot_to_index.get(slot) {
-            // For Aave-compatible aTokens, prefer the AaveV3AToken strategy:
-            // it knows how to scale by the reserve's liquidity index and how
-            // to preserve the packed `UserState.additionalData`. The plain
-            // SolidityMapping entry is added afterwards as a fallback in case
-            // the probe was a false positive (another contract happens to
-            // expose the same two selectors).
-            if let Some(info) = aave_info.as_ref() {
-                heuristic_strategies.push(Strategy::AaveV3AToken {
-                    target_contract: *contract,
-                    pool: info.pool,
-                    underlying: info.underlying,
-                    map_slot: U256::from(map_slot_index),
-                });
-            }
             heuristic_strategies.push(Strategy::SolidityMapping {
                 target_contract: *contract,
                 map_slot: U256::from(map_slot_index),
@@ -127,14 +116,6 @@ fn create_strategies_from_slots(
     // "most recent first" order due to .rev() above.
     heuristic_strategies.extend(fallback_strategies);
     heuristic_strategies
-}
-
-/// Info returned by the Aave probe; plumbed into `create_strategies_from_slots`
-/// so mapping-style slots can also be tried as `AaveV3AToken`.
-#[derive(Clone, Copy, Debug)]
-struct AaveInfo {
-    pool: Address,
-    underlying: Address,
 }
 
 impl Detector {
@@ -165,20 +146,18 @@ impl Detector {
         token: Address,
         holder: Address,
     ) -> Result<Strategy, DetectionError<TransportErrorKind>> {
-        // Aave fast-path. If the token self-identifies as a v3 aToken and the
-        // pool confirms it, try the canonical `_userState` slot directly. For
-        // an Aave v3 fork that moved `_userState` to a different slot this
-        // verification fails and we fall through to the trace-based path
-        // below, which will still produce an `AaveV3AToken` candidate with
-        // the traced slot.
-        let aave_info = aave::probe_a_token(&self.web3, token)
-            .await
-            .map(|(pool, underlying)| AaveInfo { pool, underlying });
-        if let Some(info) = aave_info.as_ref() {
+        // Aave fast-path. If the token self-identifies as a v3 aToken and
+        // the pool confirms it, try the canonical `_userState` slot
+        // directly — no `debug_traceCall` needed. An Aave v3 fork that
+        // moved `_userState` to a different slot won't verify here and
+        // will fall through to the generic trace-based path, which only
+        // ever returns non-Aave strategies; such a fork needs an explicit
+        // hardcoded config entry.
+        if let Some((pool, underlying)) = aave::probe_a_token(&self.web3, token).await {
             let candidate = Strategy::AaveV3AToken {
                 target_contract: token,
-                pool: info.pool,
-                underlying: info.underlying,
+                pool,
+                underlying,
                 map_slot: U256::from(aave::USER_STATE_SLOT),
             };
             if self
@@ -229,16 +208,10 @@ impl Detector {
             return Err(DetectionError::NotFound);
         }
 
-        let strategies = create_strategies_from_slots(
-            &storage_slots,
-            &holder,
-            self.probing_depth.into(),
-            aave_info,
-        );
+        let strategies =
+            create_strategies_from_slots(&storage_slots, &holder, self.probing_depth.into());
 
-        // Only skip verification if there's a single candidate and we're not
-        // dealing with an Aave aToken (where a round-trip check is required).
-        if strategies.len() == 1 && aave_info.is_none() {
+        if strategies.len() == 1 {
             let slot = storage_slots[0];
             tracing::debug!(
                 storage_context = ?slot.0,
@@ -586,7 +559,7 @@ mod tests {
 
         // These slots don't match any heuristic, so should just be reversed and return
         // DirectSlot
-        let strategies = create_strategies_from_slots(&slots, &holder, 5, None);
+        let strategies = create_strategies_from_slots(&slots, &holder, 5);
 
         assert_eq!(
             strategies,
@@ -645,7 +618,7 @@ mod tests {
             (contract, heuristic_slot1),
         ];
 
-        let strategies = create_strategies_from_slots(&slots, &holder, 100, None);
+        let strategies = create_strategies_from_slots(&slots, &holder, 100);
 
         // After reverse: [heuristic, non_heuristic]
         // After sort: non-heuristic slots come before heuristic slots due to false <
@@ -702,7 +675,7 @@ mod tests {
             (contract, slot3),
         ];
 
-        let strategies = create_strategies_from_slots(&slots, &holder, 0, None);
+        let strategies = create_strategies_from_slots(&slots, &holder, 0);
 
         // With depth 0, no heuristic slots are created, so all become DirectSlot and
         // just reversed
