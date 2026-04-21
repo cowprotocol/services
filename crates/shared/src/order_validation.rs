@@ -2919,11 +2919,25 @@ mod tests {
         }
     }
 
+    fn shadow_mode_sim(sim: MockEip1271Simulating) -> Eip1271Simulator {
+        Eip1271Simulator {
+            simulator: Arc::new(sim),
+            mode: Eip1271SimMode::Shadow,
+            timeout: DEFAULT_EIP1271_SIM_TIMEOUT,
+        }
+    }
+
+    fn enforce_mode_sim(sim: MockEip1271Simulating) -> Eip1271Simulator {
+        Eip1271Simulator {
+            simulator: Arc::new(sim),
+            mode: Eip1271SimMode::Enforce,
+            timeout: DEFAULT_EIP1271_SIM_TIMEOUT,
+        }
+    }
+
     fn build_1271_validator(
         signature_validator: MockSignatureValidating,
-        eip1271_simulator: Option<Arc<dyn Eip1271Simulating>>,
-        eip1271_sim_mode: Eip1271SimMode,
-        eip1271_sim_timeout: Duration,
+        eip1271_sim: Option<Eip1271Simulator>,
         eip1271_skip_creation_validation: bool,
     ) -> OrderValidator {
         let mut order_quoter = MockOrderQuoting::new();
@@ -2937,11 +2951,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
-        let eip1271_sim = eip1271_simulator.map(|simulator| Eip1271Simulator {
-            simulator,
-            mode: eip1271_sim_mode,
-            timeout: eip1271_sim_timeout,
-        });
         OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -2975,13 +2984,8 @@ mod tests {
             .returning(|_| Ok(0u64));
         let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| Ok(()));
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(shadow_mode_sim(sim)), false);
         let result = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3006,13 +3010,8 @@ mod tests {
                 tenderly_url: None,
             })
         });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(shadow_mode_sim(sim)), false);
         let result = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3032,13 +3031,8 @@ mod tests {
             .returning(|_| Err(SignatureValidationError::Invalid));
         let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| Ok(()));
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(shadow_mode_sim(sim)), false);
         let err = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3067,13 +3061,8 @@ mod tests {
                 tenderly_url: None,
             })
         });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(shadow_mode_sim(sim)), false);
         let err = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3102,13 +3091,8 @@ mod tests {
                 tenderly_url: None,
             })
         });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Enforce,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(enforce_mode_sim(sim)), false);
         let err = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3139,13 +3123,8 @@ mod tests {
                 tenderly_url: None,
             })
         });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Enforce,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(enforce_mode_sim(sim)), false);
         let err = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3169,13 +3148,8 @@ mod tests {
             .returning(|_| Ok(0u64));
         let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| Ok(()));
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Enforce,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(enforce_mode_sim(sim)), false);
         let result = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3199,9 +3173,11 @@ mod tests {
                 .returning(|_| Err(Eip1271SimError::Infra(anyhow!("RPC down"))));
             let validator = build_1271_validator(
                 signature_validator,
-                Some(Arc::new(sim)),
-                mode,
-                DEFAULT_EIP1271_SIM_TIMEOUT,
+                Some(Eip1271Simulator {
+                    simulator: Arc::new(sim),
+                    mode,
+                    timeout: DEFAULT_EIP1271_SIM_TIMEOUT,
+                }),
                 false,
             );
             let result = validator
@@ -3232,13 +3208,8 @@ mod tests {
                 tenderly_url: None,
             })
         });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(Arc::new(sim)),
-            Eip1271SimMode::Enforce,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            true,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(enforce_mode_sim(sim)), true);
         let result = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3256,13 +3227,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
-        let validator = build_1271_validator(
-            signature_validator,
-            None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
-            false,
-        );
+        let validator = build_1271_validator(signature_validator, None, false);
         let err = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
