@@ -11,20 +11,23 @@ At this point you have:
 
 ## Core Principles (read before executing)
 
-- **Signal over noise.** Report genuine concerns only. LGTM is a perfectly valid verdict and is the correct one whenever the PR is clean.
-- **Never post to GitHub.** Output is strictly for the user's terminal. No `gh pr review`, no `gh pr comment`, no `gh pr close`. The user decides what to say on GitHub.
+- **CRITICAL: Signal over noise.** Report genuine concerns only. LGTM is a perfectly valid verdict and is the correct one whenever the PR is clean. The goal is not to maximise finding count — the goal is to be worth a senior reviewer's attention.
+- **CRITICAL: Never post to GitHub.** Output is strictly for the user's terminal. No `gh pr review`, no `gh pr comment`, no `gh pr close`. The user decides what to say on GitHub.
+- **CRITICAL: Code is the primary source of truth.** `CLAUDE.md`, existing design docs, and this skill's own sibling docs can go stale. When a finding turns on *"X is called from Y"* or *"this field is read by Z"*, verify by grepping the codebase or using an LSP symbol tool — not by citing a doc. Docs give you higher-level *shape*; code gives you ground truth.
 - **Explain, don't just flag.** Each finding must give the reviewer enough context to understand *and defend* the point — not just forward AI-generated text.
 - **Actionable framing.** Every finding ends with either a concrete `Action:` or a specific `Question:`. Never both.
+- **Token discipline.** Don't read entire files when a grep or a targeted LSP symbol lookup suffices. Build a codemap (see [§3.5](#35-codemap-phase)) *before* reading file bodies. When you do need a file, read hunks adjacent to changed lines rather than the whole thing.
 
 ## Execution Flow
 
 1. Fetch PR metadata and linked issue(s) — [§2. Metadata Fetch](#2-metadata-fetch)
 2. Classify diff paths and load sibling context docs — [§3. Classification](#3-classification)
-3. Synthesize the context block — [§4. Context Synthesis](#4-context-synthesis)
-4. Produce findings by severity — [§5. Review and Severity](#5-review-and-severity)
-5. Print the structured report — [§6. Report Template](#6-report-template)
-6. Offer verification (background) — [§7. Verification Offer](#7-verification-offer)
-7. Print cleanup hint — [§8. Cleanup](#8-cleanup)
+3. Build a targeted codemap — [§3.5. Codemap Phase](#35-codemap-phase)
+4. Synthesize the context block — [§4. Context Synthesis](#4-context-synthesis)
+5. Produce findings by severity — [§5. Review and Severity](#5-review-and-severity)
+6. Print the structured report — [§6. Report Template](#6-report-template)
+7. Offer verification (background) — [§7. Verification Offer](#7-verification-offer)
+8. Print cleanup hint — [§8. Cleanup](#8-cleanup)
 
 Error behavior is consolidated in [§9. Error Playbook](#9-error-playbook).
 
@@ -90,6 +93,61 @@ This list will grow. When adding a new sibling doc (e.g. `solver-engine.md`, `au
 
 ---
 
+## 3.5 Codemap Phase
+
+**Purpose:** Before reading file bodies, build a targeted map of the symbols the diff touches, their callers, and their call sites. A codemap turns a 1000-line diff into a ~20-line mental model and preempts the "I read 10 files to find the impact" failure mode. It also catches findings that only become visible at the *shape* level (API ergonomics, unused abstractions, caller-count inconsistencies).
+
+### What to map
+
+For each non-trivial symbol the diff adds, modifies, or deletes:
+
+1. **New public types / traits / functions** — what are their fields / methods / signatures? (`rust-symbol-analyzer` or `get_symbols_overview`.)
+2. **Modified function signatures** — who calls them? (`rust-call-graph`, `find_referencing_symbols`, or `rg '<fn_name>\b' crates/`.) This is how you catch "this signature changed but 4 call sites weren't updated".
+3. **New trait impls** — which types implement the trait? Is the trait used anywhere outside the PR? (`rust-trait-explorer` or `find_referencing_symbols`.)
+4. **Error-type changes** — where do callers match on this error? (`rg '::<ErrorVariant>'` / `find_referencing_symbols`.)
+
+### Tools (prefer the cheapest viable option)
+
+In order of token cost, ascending:
+
+| Tool | When |
+|---|---|
+| `Grep` with `-n` on a symbol name | Fastest. Use when you need caller counts, not structure. Example: `rg 'OrderValidator::new\b' crates/` to verify all call sites were updated. |
+| `mcp__plugin_serena_serena__find_symbol` / `find_referencing_symbols` | Cheap, precise. Use when you need location + kind + signature, not the whole file. |
+| `mcp__plugin_serena_serena__get_symbols_overview` on a single file | Use before reading the file body — gets the symbol table for free. |
+| LSP-backed skills (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`) | Richer analysis — full call hierarchies, trait impl trees, type relationships. Use for diffs that touch cross-crate abstractions. |
+| Reading full files with `Read` | Last resort. Only when the diff hunks don't give enough surrounding context and the LSP tools can't pin down what you need. |
+
+### What the codemap produces
+
+A short block in the report header (shown to the reviewer) that looks like:
+
+```
+Codemap
+───────────────────────────────────────────────────────────
+New symbols (shared::order_validation):
+  Eip1271Simulating      (trait, new)
+  Eip1271Simulator       (struct, 3 pub fields, no constructor)
+  ValidationError::SimulationFailed(String)  (new variant)
+
+Callers of OrderValidator::new: 16 sites total (1 real, 15 test).
+  All updated in diff ✓
+
+Config asymmetry noted:
+  configs::Eip1271SimulationMode (3 variants, Disabled default)
+  shared::Eip1271SimulationMode  (2 variants, Shadow default)
+```
+
+This is not filler — it's the raw material §4 (synthesis) and §5 (findings) work from. A finding like *"`Eip1271Simulator` pub fields have no constructor; 16 callers means each future field addition is a source-break"* only becomes findable once the codemap surfaces the caller count.
+
+### When to skip the codemap
+
+- Trivial PRs (docs-only, single-line version bump, pure test addition) — skip.
+- Pure refactor PRs where the diff has no added public API — skim only.
+- Everything else — do it.
+
+---
+
 ## 4. Context Synthesis
 
 Produce a 1-3 paragraph block combining:
@@ -117,12 +175,31 @@ Produce a 1-3 paragraph block combining:
 
 ## 5. Review and Severity
 
-Read the diff. For non-trivial hunks, read the full changed file(s) for surrounding context. Apply, in order:
+With the codemap ([§3.5](#35-codemap-phase)) and context synthesis ([§4](#4-context-synthesis)) in hand, review the diff. For non-trivial hunks, read the full changed file only when the codemap + diff don't answer the question. Apply, in order:
 
-1. Generic Rust review from `actionbook/rust-skills`.
-2. CoW services conventions from `CLAUDE.md`.
-3. Conditionally loaded sibling docs from [§3](#3-classification).
+1. CoW services conventions from `CLAUDE.md`.
+2. Sibling docs from [§3](#3-classification) (conditionally loaded).
+3. **Activate installed Rust review skills by diff content (below).**
 4. Soft QM skill (`ra-qm-team`), if in `loaded_context`.
+
+### Skill router — activate installed Rust skills by diff content
+
+These skills are installed via `actionbook/rust-skills` (hard prereq) and the related ecosystem. They're most effective when *explicitly* activated based on what the diff contains. Before writing findings, scan the diff and invoke any skill whose trigger fires:
+
+| Skill | Trigger in diff | Why activate |
+|---|---|---|
+| `m06-error-handling` | Adds/modifies `Result`, `Option`, `?`, `.unwrap()`, `.expect()`, `anyhow!`, `thiserror`, or error-enum variants | Validates error taxonomy, propagation, lost context (e.g. `anyhow!("{err}")` flattening), panic-vs-Result choice. |
+| `m07-concurrency` | Adds `tokio::`, `async fn`, `.await`, `tokio::join!` / `try_join!`, `tokio::spawn`, `tokio::time::timeout`, `Mutex`, `RwLock`, `Arc<...>` in shared state | Validates timeout scoping, join-vs-try_join, deadlock/lock-contention, task cancellation semantics, Send/Sync bounds. |
+| `m04-zero-cost` | Adds new generics, `impl Trait`, `dyn Trait`, trait objects, `Box<dyn ...>` | Validates static-vs-dynamic dispatch choice, unnecessary allocation, trait-object safety, monomorphization cost on a workspace this large. |
+| `m05-type-driven` | Adds newtypes, `PhantomData`, marker traits, builder patterns, type-state | Validates "make invalid states unrepresentable" and whether the type design actually narrows the state space. |
+| `m15-anti-pattern` | Any non-trivial new code | Sanity pass for common Rust anti-patterns. Cheap; run it. |
+| `m10-performance` | Changes to hot paths (auction loop, settlement submission, per-order handlers, native price estimation) | Validates allocations, caching, loop invariants, lock granularity. |
+| `unsafe-checker` | Any `unsafe` block, FFI (`extern`), `transmute`, raw pointers, `MaybeUninit` | **Mandatory** — any finding here defaults to **High**. Soundness issues are never Small. |
+| `rust-trait-explorer` | Adds a new trait or a new impl of an existing trait | Maps the trait's existing impls — catches "you added a default method to a trait with 12 impls, one of them should override it". |
+| `rust-call-graph` / `rust-code-navigator` | Modified function signatures on cross-crate public APIs | Catches missed caller sites, breaking changes, downstream blast radius. |
+| `ra-qm-skills` | Soft prereq | QM checklists — supplementary if installed. |
+
+**Rule of thumb:** If a skill's trigger keywords appear in the diff's **added** lines, activate it. Don't run skills on context lines (unchanged code around the diff) — that wastes tokens on things you're not actually reviewing.
 
 ### Severity Rubric
 
@@ -157,6 +234,8 @@ A senior reviewer catches things that aren't bugs. They shape the code for futur
 6. **Stale comments.** When behavior changes, comments describing that behavior often rot. Read the comments *against* the code around them and flag any drift. A comment saying "zero timeout signals best-effort" attached to code that no longer has a zero-timeout path is a Medium finding — future readers will believe it.
 
 7. **Description-vs-code mismatches.** If the PR body describes `Mutex<HashSet>` and the code has `DashSet`, the description is stale. Flag it — not because it changes the code, but because whoever reads the PR as history will be confused. Small finding, usually.
+
+   **Related: design spec referenced but not committed.** If the PR body mentions a design spec (e.g. `docs/superpowers/specs/...`) that isn't in the PR's diff, that's a **Small** finding asking the author to commit it — teammates reading the PR six months from now can't see the rationale otherwise.
 
 8. **Bundled orthogonal changes.** When a PR contains a change that isn't clearly required by the main feature, ask: does this belong in its own PR? Sometimes the answer is "it's required, here's why" (fine — ask for the reason to be in the commit message or a code comment). Sometimes the answer is "you're right, let me split it" (better git history).
 
@@ -203,11 +282,20 @@ PR #<N> — <title>
 ═══════════════════════════════════════════════════════════
 Author:       @<author>
 Scope:        +<additions> −<deletions> across <N> files
+              (include a "(~X LOC human-written; rest generated/lockfile,
+              filtered)" suffix when the filter materially changed the count)
 Labels:       <labels, comma-separated; or "—">
 Base/Head:    <baseRef> ← <headRef>
 Linked issue: #<N> — <issue title>            (omit line if none)
 Loaded context: <comma-separated loaded_context list>
+Activated skills: <list of Rust skills fired by the skill router, e.g.
+                  m07-concurrency, m06-error-handling>
 Mode:         full checkout   |   degraded static-diff
+
+Codemap
+───────────────────────────────────────────────────────────
+<concise codemap from §3.5 — new symbols, modified signatures, caller counts.
+ Omit when the diff is trivial enough that §3.5 was skipped.>
 
 ───────────────────────────────────────────────────────────
 CONTEXT
@@ -338,6 +426,26 @@ Return with:   git switch <prior_branch>
 | Verification command fails or warns | Surface output in VERIFICATION block; add findings only for issues inside changed files. |
 
 **Rule of thumb:** never silently degrade behavior without the `Mode:` header reflecting it. If something went sideways, the reviewer should know from the report itself.
+
+---
+
+## 10. Code-vs-docs Discipline (Always Apply)
+
+When a finding rests on a claim about the codebase, verify the claim by looking at the code — not by trusting a doc, a comment, or this skill's own sibling files.
+
+- **Claim:** *"`OrderSimulator::encode_order` only reads `OrderData` and `Interactions`."*
+  **Wrong:** cite a doc comment.
+  **Right:** `rg 'fn encode_order' crates/orderbook/src/` → read the function body → verify.
+
+- **Claim:** *"All `OrderValidator::new` call sites have been updated."*
+  **Wrong:** count the test assertions in the diff.
+  **Right:** `rg 'OrderValidator::new\b' crates/` → compare the count to the diff's modified lines.
+
+- **Claim:** *"This module is only used by X."*
+  **Wrong:** trust the module's top-level comment.
+  **Right:** `find_referencing_symbols` on the public exports → see actual call graph.
+
+Docs age. Comments lie. Grep and LSP don't. When reporting a finding that depends on such a claim, verify *before* you write the finding — not after the author pushes back.
 
 ---
 
