@@ -29,6 +29,7 @@ use {
             OrderData,
             OrderKind,
             OrderMetadata,
+            OrderUid,
             SellTokenSource,
             VerificationError,
         },
@@ -91,6 +92,143 @@ pub enum Eip1271ShadowSimMode {
 /// Default per-call timeout for the EIP-1271 shadow simulation. Mirrored
 /// by `configs::orderbook::default_shadow_sim_timeout` in Task 6.
 pub const DEFAULT_SHADOW_SIM_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "eip1271_shadow_sim")]
+struct ShadowSimMetrics {
+    /// Shadow sim outcome vs. the cheap check. Labels are each one of
+    /// `pass | fail | infra`, giving a 3x3 confusion matrix.
+    #[metric(labels("cheap", "sim"))]
+    total: prometheus::IntCounterVec,
+    /// Shadow sim outcome when the cheap check was skipped via
+    /// `eip1271_skip_creation_validation`. Label is `pass | fail | infra`.
+    #[metric(labels("sim"))]
+    sim_only_total: prometheus::IntCounterVec,
+    /// Duration of the shadow simulation.
+    duration_seconds: prometheus::Histogram,
+}
+
+impl ShadowSimMetrics {
+    fn get() -> &'static Self {
+        Self::instance(observe::metrics::get_storage_registry())
+            .expect("unexpected error getting ShadowSimMetrics instance")
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum CheapOutcome {
+    Pass,
+    Fail,
+    Infra,
+}
+
+#[derive(Debug)]
+enum SimOutcome {
+    Pass,
+    Fail {
+        reason: String,
+        tenderly_url: Option<String>,
+    },
+    Infra(anyhow::Error),
+}
+
+impl CheapOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Pass => "pass",
+            Self::Fail => "fail",
+            Self::Infra => "infra",
+        }
+    }
+}
+
+impl SimOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Pass => "pass",
+            Self::Fail { .. } => "fail",
+            Self::Infra(_) => "infra",
+        }
+    }
+}
+
+fn classify_cheap(res: &Result<u64, SignatureValidationError>) -> CheapOutcome {
+    match res {
+        Ok(_) => CheapOutcome::Pass,
+        Err(SignatureValidationError::Invalid) => CheapOutcome::Fail,
+        Err(SignatureValidationError::Other(_)) => CheapOutcome::Infra,
+    }
+}
+
+fn classify_sim(res: &Result<(), ShadowSimError>) -> SimOutcome {
+    match res {
+        Ok(()) => SimOutcome::Pass,
+        Err(ShadowSimError::Reverted {
+            reason,
+            tenderly_url,
+        }) => SimOutcome::Fail {
+            reason: reason.clone(),
+            tenderly_url: tenderly_url.clone(),
+        },
+        Err(ShadowSimError::Infra(err)) => SimOutcome::Infra(anyhow!("{err}")),
+    }
+}
+
+fn record_shadow_outcome(
+    cheap: CheapOutcome,
+    sim: &SimOutcome,
+    order_uid: OrderUid,
+    owner: Address,
+) {
+    ShadowSimMetrics::get()
+        .total
+        .with_label_values(&[cheap.label(), sim.label()])
+        .inc();
+
+    let disagreement = matches!(
+        (&cheap, sim),
+        (CheapOutcome::Pass, SimOutcome::Fail { .. }) | (CheapOutcome::Fail, SimOutcome::Pass)
+    );
+    if disagreement {
+        let (reason, tenderly_url) = match sim {
+            SimOutcome::Fail {
+                reason,
+                tenderly_url,
+            } => (reason.as_str(), tenderly_url.as_deref()),
+            _ => ("", None),
+        };
+        tracing::warn!(
+            %order_uid,
+            %owner,
+            cheap = cheap.label(),
+            sim = sim.label(),
+            reason,
+            ?tenderly_url,
+            "eip1271 shadow-sim disagreement",
+        );
+    } else if let SimOutcome::Infra(err) = sim {
+        tracing::warn!(%order_uid, %owner, err = %err, "eip1271 shadow-sim infra error");
+    }
+}
+
+fn build_preview_order_for_sim(
+    data: &OrderData,
+    interactions: &Interactions,
+    owner: Address,
+    uid: OrderUid,
+    signature: Signature,
+) -> Order {
+    Order {
+        metadata: OrderMetadata {
+            owner,
+            uid,
+            ..Default::default()
+        },
+        data: *data,
+        signature,
+        interactions: interactions.clone(),
+    }
+}
 
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
@@ -298,11 +436,8 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
-    #[allow(dead_code)]
     shadow_simulator: Option<Arc<dyn Eip1271ShadowSimulator>>,
-    #[allow(dead_code)]
     shadow_sim_mode: Eip1271ShadowSimMode,
-    #[allow(dead_code)]
     shadow_sim_timeout: Duration,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
@@ -403,6 +538,105 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
+        }
+    }
+
+    async fn run_eip1271_checks(
+        &self,
+        check: SignatureCheck,
+        preview_order: &Order,
+        hash: B256,
+    ) -> Result<u64, ValidationError> {
+        if self.eip1271_skip_creation_validation {
+            if let Some(sim) = &self.shadow_simulator {
+                self.run_shadow_sim_only(sim.as_ref(), preview_order).await;
+            }
+            return Ok(0u64);
+        }
+
+        let cheap_fut = self
+            .signature_validator
+            .validate_signature_and_get_additional_gas(check);
+
+        let Some(sim) = &self.shadow_simulator else {
+            return cheap_fut.await.map_err(|err| match err {
+                SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
+                SignatureValidationError::Other(err) => ValidationError::Other(err),
+            });
+        };
+
+        let sim = sim.clone();
+        let sim_timeout = self.shadow_sim_timeout;
+        let order = preview_order.clone();
+        let sim_fut = async move {
+            tokio::time::timeout(sim_timeout, sim.simulate(&order))
+                .await
+                .unwrap_or_else(|_| Err(ShadowSimError::Infra(anyhow!("shadow sim timeout"))))
+        };
+
+        let timer = ShadowSimMetrics::get().duration_seconds.start_timer();
+        let (cheap_res, sim_res) = tokio::join!(cheap_fut, sim_fut);
+        drop(timer);
+
+        let cheap_outcome = classify_cheap(&cheap_res);
+        let sim_outcome = classify_sim(&sim_res);
+        record_shadow_outcome(
+            cheap_outcome,
+            &sim_outcome,
+            preview_order.metadata.uid,
+            preview_order.metadata.owner,
+        );
+
+        match (cheap_res, &sim_outcome, self.shadow_sim_mode) {
+            (Ok(_gas), SimOutcome::Fail { reason, .. }, Eip1271ShadowSimMode::Enforce) => {
+                Err(ValidationError::SimulationFailed(reason.clone()))
+            }
+            (Ok(gas), _, _) => Ok(gas),
+            (Err(SignatureValidationError::Invalid), _, _) => {
+                Err(ValidationError::InvalidEip1271Signature(hash))
+            }
+            (Err(SignatureValidationError::Other(err)), _, _) => Err(ValidationError::Other(err)),
+        }
+    }
+
+    async fn run_shadow_sim_only(&self, sim: &dyn Eip1271ShadowSimulator, preview_order: &Order) {
+        let timer = ShadowSimMetrics::get().duration_seconds.start_timer();
+        let res = tokio::time::timeout(self.shadow_sim_timeout, sim.simulate(preview_order)).await;
+        drop(timer);
+        let outcome = match res {
+            Ok(Ok(())) => SimOutcome::Pass,
+            Ok(Err(ShadowSimError::Reverted {
+                reason,
+                tenderly_url,
+            })) => SimOutcome::Fail {
+                reason,
+                tenderly_url,
+            },
+            Ok(Err(ShadowSimError::Infra(err))) => SimOutcome::Infra(err),
+            Err(_) => SimOutcome::Infra(anyhow!("shadow sim timeout")),
+        };
+        ShadowSimMetrics::get()
+            .sim_only_total
+            .with_label_values(&[outcome.label()])
+            .inc();
+        match &outcome {
+            SimOutcome::Fail {
+                reason,
+                tenderly_url,
+            } => tracing::info!(
+                order_uid = %preview_order.metadata.uid,
+                owner = %preview_order.metadata.owner,
+                reason = %reason,
+                ?tenderly_url,
+                "eip1271 shadow-sim (cheap check skipped)",
+            ),
+            SimOutcome::Infra(err) => tracing::warn!(
+                order_uid = %preview_order.metadata.uid,
+                owner = %preview_order.metadata.owner,
+                err = %err,
+                "eip1271 shadow-sim infra error (cheap check skipped)",
+            ),
+            SimOutcome::Pass => {}
         }
     }
 
@@ -702,34 +936,28 @@ impl OrderValidating for OrderValidator {
         let uid = data.uid(domain_separator, owner);
 
         let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
-            if self.eip1271_skip_creation_validation {
-                tracing::debug!(?signature, "skipping EIP-1271 signature validation");
-                // We don't care! Because we are skipping validation anyway
-                0u64
-            } else {
-                let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
-                self.signature_validator
-                    .validate_signature_and_get_additional_gas(SignatureCheck {
-                        signer: owner,
-                        hash: hash.0,
-                        signature: signature.to_owned(),
-                        interactions: app_data.interactions.pre.clone(),
-                        balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
-                            BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
-                            }
-                        }),
-                    })
-                    .await
-                    .map_err(|err| match err {
-                        SignatureValidationError::Invalid => {
-                            ValidationError::InvalidEip1271Signature(hash)
-                        }
-                        SignatureValidationError::Other(err) => ValidationError::Other(err),
-                    })?
-            }
+            let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
+            let check = SignatureCheck {
+                signer: owner,
+                hash: hash.0,
+                signature: signature.to_owned(),
+                interactions: app_data.interactions.pre.clone(),
+                balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
+                    BalanceOverrideRequest {
+                        token: loan.token,
+                        holder: loan.receiver,
+                        amount: loan.amount,
+                    }
+                }),
+            };
+            let preview_order = build_preview_order_for_sim(
+                &data,
+                &app_data.interactions,
+                owner,
+                uid,
+                order.signature.clone(),
+            );
+            self.run_eip1271_checks(check, &preview_order, hash).await?
         } else {
             // in any other case, just apply 0
             0u64
@@ -2700,5 +2928,379 @@ mod tests {
             .unwrap();
 
         assert_eq!(quote_id, returned_quote_id.and_then(|quote| quote.id));
+    }
+
+    fn make_1271_order_creation() -> OrderCreation {
+        OrderCreation {
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::ZERO,
+            from: Some(Address::repeat_byte(1)),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        }
+    }
+
+    fn build_1271_validator(
+        signature_validator: MockSignatureValidating,
+        shadow_simulator: Option<Arc<dyn Eip1271ShadowSimulator>>,
+        shadow_sim_mode: Eip1271ShadowSimMode,
+        shadow_sim_timeout: Duration,
+        eip1271_skip_creation_validation: bool,
+    ) -> OrderValidator {
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration::any(),
+            eip1271_skip_creation_validation,
+            Default::default(),
+            HooksTrampoline::Instance::new(
+                Address::from([0xcf; 20]),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validator),
+            shadow_simulator,
+            shadow_sim_mode,
+            shadow_sim_timeout,
+            Arc::new(limit_order_counter),
+            0,
+            Arc::new(MockCodeFetching::new()),
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        )
+    }
+
+    #[tokio::test]
+    async fn shadow_sim_pass_cheap_pass_accepts_in_shadow_mode() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(0u64));
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| Ok(()));
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Shadow,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let result = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn shadow_sim_fail_cheap_pass_accepts_in_shadow_mode() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(0u64));
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| {
+            Err(ShadowSimError::Reverted {
+                reason: "hook revert".into(),
+                tenderly_url: None,
+            })
+        });
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Shadow,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let result = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(result.is_ok(), "expected Ok in shadow mode, got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn shadow_sim_pass_cheap_fail_rejects_with_invalid_sig_in_shadow_mode() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| Ok(()));
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Shadow,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let err = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ValidationError::InvalidEip1271Signature(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn shadow_sim_fail_cheap_fail_rejects_with_invalid_sig_in_shadow_mode() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| {
+            Err(ShadowSimError::Reverted {
+                reason: "x".into(),
+                tenderly_url: None,
+            })
+        });
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Shadow,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let err = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ValidationError::InvalidEip1271Signature(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn enforce_mode_cheap_pass_sim_fail_rejects_with_simulation_failed() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(0u64));
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| {
+            Err(ShadowSimError::Reverted {
+                reason: "hook reverted: INSUFFICIENT_OUT".into(),
+                tenderly_url: None,
+            })
+        });
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Enforce,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let err = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap_err();
+        match err {
+            ValidationError::SimulationFailed(reason) => {
+                assert!(reason.contains("INSUFFICIENT_OUT"), "reason was {reason}");
+            }
+            other => panic!("expected SimulationFailed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn enforce_mode_cheap_fail_sim_fail_returns_invalid_sig() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| {
+            Err(ShadowSimError::Reverted {
+                reason: "x".into(),
+                tenderly_url: None,
+            })
+        });
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Enforce,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let err = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ValidationError::InvalidEip1271Signature(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn enforce_mode_cheap_pass_sim_pass_accepts() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(0u64));
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| Ok(()));
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Enforce,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let result = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(result.is_ok(), "got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn shadow_sim_infra_error_is_fail_open_in_both_modes() {
+        for mode in [Eip1271ShadowSimMode::Shadow, Eip1271ShadowSimMode::Enforce] {
+            let mut signature_validator = MockSignatureValidating::new();
+            signature_validator
+                .expect_validate_signature_and_get_additional_gas()
+                .returning(|_| Ok(0u64));
+            let mut shadow = MockEip1271ShadowSimulator::new();
+            shadow
+                .expect_simulate()
+                .returning(|_| Err(ShadowSimError::Infra(anyhow!("RPC down"))));
+            let validator = build_1271_validator(
+                signature_validator,
+                Some(Arc::new(shadow)),
+                mode,
+                DEFAULT_SHADOW_SIM_TIMEOUT,
+                false,
+            );
+            let result = validator
+                .validate_and_construct_order(
+                    make_1271_order_creation(),
+                    &DomainSeparator::default(),
+                    Default::default(),
+                    None,
+                )
+                .await;
+            assert!(
+                result.is_ok(),
+                "expected Ok for mode={mode:?}, got {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn skip_flag_runs_sim_only_and_never_rejects() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .times(0);
+        let mut shadow = MockEip1271ShadowSimulator::new();
+        shadow.expect_simulate().returning(|_| {
+            Err(ShadowSimError::Reverted {
+                reason: "x".into(),
+                tenderly_url: None,
+            })
+        });
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(Arc::new(shadow)),
+            Eip1271ShadowSimMode::Enforce,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            true,
+        );
+        let result = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(result.is_ok(), "got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn no_shadow_sim_configured_preserves_existing_behaviour() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        let validator = build_1271_validator(
+            signature_validator,
+            None,
+            Eip1271ShadowSimMode::Shadow,
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            false,
+        );
+        let err = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ValidationError::InvalidEip1271Signature(_)),
+            "got {err:?}"
+        );
     }
 }
