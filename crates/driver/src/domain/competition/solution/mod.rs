@@ -13,10 +13,10 @@ use {
             solver::{ManageNativeToken, Solver},
         },
     },
-    alloy::{network::TxSigner, primitives::ruint::aliases::U256},
+    alloy::network::TxSigner,
     chrono::Utc,
     contracts::ERC20::ERC20,
-    eth_domain_types::{self as eth, Address, Allowance, TokenAddress},
+    eth_domain_types::{self as eth, TokenAddress},
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
@@ -307,44 +307,30 @@ impl Solution {
         eth: &Ethereum,
         internalization: settlement::Internalization,
     ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, Error> {
-        // first reduce the approvals to only the highest values in case the solver
-        // already provided approval resets for USDT-like tokens
-        let mut requested_allowances = HashMap::<(Address, TokenAddress), U256>::default();
-        for allowance in self.allowances(internalization) {
-            let needed = requested_allowances
-                .entry((allowance.0.spender, allowance.0.token))
-                .or_default();
-            *needed = std::cmp::max(*needed, allowance.0.amount);
-        }
-
         let settlement_contract = *eth.contracts().settlement().address();
-        let allowances = try_join_all(requested_allowances.into_iter().map(
-            |((spender, token), amount)| async move {
-                let approval = eth::allowance::Approval(Allowance {
-                    token,
-                    spender,
-                    amount,
-                });
-                let erc20_token = ERC20::new(token.into(), &eth.web3().provider);
+        let allowances =
+            try_join_all(self.allowances(internalization).map(|required| async move {
+                let erc20_token = ERC20::new(required.0.token.into(), &eth.web3().provider);
 
                 let current_allowance = erc20_token
-                    .allowance(settlement_contract, spender)
+                    .allowance(settlement_contract, required.0.spender)
                     .call()
                     .await
                     .map_err(blockchain::Error::ContractRpc)?;
 
                 // if the current allowance is sufficient we can skip that interaction
-                if current_allowance >= amount {
-                    return Ok::<_, blockchain::Error>(vec![approval]);
+                if current_allowance >= required.0.amount {
+                    return Ok::<_, blockchain::Error>(vec![]);
                 }
 
                 let regular_approval_succeeds = erc20_token
-                    .approve(spender, amount)
+                    .approve(required.0.spender, required.0.amount)
                     .from(settlement_contract)
                     .call()
                     .await
                     .is_ok();
 
+                let approval = eth::allowance::Approval(required.0);
                 if regular_approval_succeeds {
                     Ok(vec![approval])
                 } else {
@@ -353,9 +339,8 @@ impl Solution {
                     // approval reset to 0 first
                     Ok(vec![approval.revoke(), approval])
                 }
-            },
-        ))
-        .await?;
+            }))
+            .await?;
         Ok(allowances.into_iter().flatten())
     }
 
