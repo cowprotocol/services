@@ -165,10 +165,7 @@ impl Detector {
                 .await
                 .is_ok()
             {
-                tracing::debug!(
-                    ?token,
-                    "detected Aave v3 aToken via fast-path (no debug_traceCall)"
-                );
+                tracing::debug!(?token, "detected Aave v3 aToken");
                 return Ok(candidate);
             }
             tracing::debug!(

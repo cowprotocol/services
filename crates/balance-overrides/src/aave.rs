@@ -123,37 +123,13 @@ pub async fn probe_aave_token(web3: &Web3, token: Address) -> Option<(Address, A
     let a_token = IAaveV3AToken::new(token, web3.provider.clone());
     let underlying_call = a_token.UNDERLYING_ASSET_ADDRESS();
     let pool_call = a_token.POOL();
-    let (underlying, pool) = tokio::join!(underlying_call.call(), pool_call.call());
-    let underlying = underlying.ok()?;
-    let pool = pool.ok()?;
-    let reserve = fetch_reserve_data(web3, pool, underlying).await?;
-    (reserve.aTokenAddress == token).then_some((pool, underlying))
-}
-
-/// Fetches `getReserveData(underlying)` from an Aave v3 Pool.
-async fn fetch_reserve_data(
-    web3: &Web3,
-    pool: Address,
-    underlying: Address,
-) -> Option<ReserveData> {
-    IAaveV3Pool::new(pool, web3.provider.clone())
+    let (underlying, pool) = tokio::try_join!(underlying_call.call(), pool_call.call()).ok()?;
+    let reserve = IAaveV3Pool::new(pool, web3.provider.clone())
         .getReserveData(underlying)
         .call()
         .await
-        .ok()
-}
-
-/// Fetches `getReserveNormalizedIncome(underlying)` from an Aave v3 Pool.
-pub async fn fetch_normalized_income(
-    web3: &Web3,
-    pool: Address,
-    underlying: Address,
-) -> Option<U256> {
-    IAaveV3Pool::new(pool, web3.provider.clone())
-        .getReserveNormalizedIncome(underlying)
-        .call()
-        .await
-        .ok()
+        .ok()?;
+    (reserve.aTokenAddress == token).then_some((pool, underlying))
 }
 
 /// Builds a state override that makes `balanceOf(holder)` on the aToken
@@ -168,36 +144,33 @@ pub async fn build_override(
     holder: Address,
     amount: U256,
 ) -> Option<(Address, AccountOverride)> {
-    let index = match fetch_normalized_income(web3, pool, underlying).await {
-        Some(index) => index,
-        None => {
-            tracing::warn!(
-                ?pool,
-                ?underlying,
-                "failed to fetch Aave reserve normalized income"
-            );
-            return None;
-        }
+    let Ok(index) = IAaveV3Pool::new(pool, web3.provider.clone())
+        .getReserveNormalizedIncome(underlying)
+        .call()
+        .await
+    else {
+        tracing::warn!(
+            ?pool,
+            ?underlying,
+            "failed to fetch Aave reserve normalized income"
+        );
+        return None;
     };
 
-    let scaled = match ray_div(amount, index) {
-        Some(scaled) => scaled,
-        None => {
-            // Either `amount * RAY` overflowed U256 (only possible for an
-            // astronomically large requested amount) or the pool returned a
-            // zero index (never should happen for a live reserve). Either
-            // way, surface it explicitly so we don't silently drop the
-            // override.
-            tracing::warn!(
-                ?a_token,
-                %amount,
-                %index,
-                "ray_div overflow computing AaveV3AToken scaled balance"
-            );
-            return None;
-        }
+    let Some(scaled) = ray_div(amount, index) else {
+        // Either `amount * RAY` overflowed U256 (only possible for an
+        // astronomically large requested amount) or the pool returned a
+        // zero index (never should happen for a live reserve). Either way,
+        // surface it explicitly so we don't silently drop the override.
+        tracing::warn!(
+            ?a_token,
+            %amount,
+            %index,
+            "ray_div overflow computing AaveV3AToken scaled balance"
+        );
+        return None;
     };
-    let slot = mapping_slot_hash(&holder, &map_slot.to_be_bytes::<32>());
+    let slot = mapping_slot_hash(&holder, &map_slot.to_be_bytes());
     let value = pack_user_state(scaled, U256::ZERO);
 
     tracing::trace!(
@@ -226,7 +199,7 @@ mod tests {
     };
 
     fn encode_address(addr: Address) -> String {
-        hex::encode_prefixed(U256::from_be_bytes(addr.into_word().0).to_be_bytes::<32>())
+        hex::encode_prefixed(addr.into_word())
     }
 
     /// Encodes a `ReserveData` struct as the ABI return payload the pool
@@ -278,21 +251,11 @@ mod tests {
         asserter
     }
 
-    /// Probe returns `Some((pool, underlying))` when the token exposes both
-    /// selectors and the pool confirms the token as the registered aToken
-    /// for that underlying.
-    #[tokio::test]
-    async fn probe_aave_token_accepts_valid_atoken() {
-        let a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
-        let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
-        let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let web3 = Web3::with_asserter(probe_asserter(Some(underlying), Some(pool), Some(a_token)));
-
-        assert_eq!(
-            probe_aave_token(&web3, a_token).await,
-            Some((pool, underlying))
-        );
-    }
+    // The happy path (probe accepts a valid aToken) is covered by the
+    // forked-e2e `forked_node_mainnet_aave_atoken_detection` test, which runs
+    // against a real mainnet fork. The tests below cover the rejection
+    // branches, which would require deploying scaffold contracts on a fork
+    // to reproduce — cheaper to simulate with the mock `Asserter`.
 
     /// A contract that doesn't expose the aToken selectors — `balanceOf`
     /// throws when the probe calls `UNDERLYING_ASSET_ADDRESS()` — is
