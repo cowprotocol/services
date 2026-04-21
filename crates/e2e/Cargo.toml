@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 alloy = { workspace = true, default-features = false, features = [
+  "contract",
   "json-rpc",
   "provider-anvil-api",
   "provider-debug-api",
@@ -21,7 +22,6 @@ alloy = { workspace = true, default-features = false, features = [
   "signer-local",
   "signer-mnemonic",
   "signers",
-  "contract",
   "sol-types",
   "transports"
 ] }

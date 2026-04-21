@@ -45,9 +45,9 @@ cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoke
 cow-contract-cowsettlementforwarder = { path = "../contracts-generated/cowsettlementforwarder" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }
 cow-contract-cowswaponchainorders = { path = "../contracts-generated/cowswaponchainorders" }
-cow-contract-erc1271signaturevalidator = { path = "../contracts-generated/erc1271signaturevalidator" }
 cow-contract-erc20 = { path = "../contracts-generated/erc20" }
 cow-contract-erc20mintable = { path = "../contracts-generated/erc20mintable" }
+cow-contract-erc1271signaturevalidator = { path = "../contracts-generated/erc1271signaturevalidator" }
 cow-contract-flashloanrouter = { path = "../contracts-generated/flashloanrouter" }
 cow-contract-gashog = { path = "../contracts-generated/gashog" }
 cow-contract-gnosissafe = { path = "../contracts-generated/gnosissafe" }

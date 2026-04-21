@@ -90,6 +90,7 @@ order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
 paste = "1.0"
 pin-project-lite = "0.2.14"
+pool-indexer = { path = "crates/pool-indexer" }
 prettyplease = "0.2.37"
 price-estimation = { path = "crates/price-estimation" }
 proc-macro2 = "1.0.103"
@@ -115,7 +116,6 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
-pool-indexer = { path = "crates/pool-indexer" }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
