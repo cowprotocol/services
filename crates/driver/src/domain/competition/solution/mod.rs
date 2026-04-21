@@ -319,8 +319,7 @@ impl Solution {
                 let current_allowance = erc20_token
                     .allowance(settlement_contract, required.0.spender)
                     .call()
-                    .await
-                    .map_err(blockchain::Error::ContractRpc)?;
+                    .await?;
 
                 // if the current allowance is sufficient we can skip that interaction
                 if current_allowance >= required.0.amount {
