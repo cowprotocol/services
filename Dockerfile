@@ -19,13 +19,14 @@ RUN rustup install stable && rustup default stable
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/target \
     CARGO_PROFILE_RELEASE_DEBUG=1 RUSTFLAGS="${RUSTFLAGS}" cargo build --release \
-    -p autopilot -p driver -p orderbook -p refunder -p solvers \
+    -p autopilot -p driver -p orderbook -p refunder -p solvers -p pool-indexer \
     ${CARGO_BUILD_FEATURES} && \
     cp target/release/autopilot / && \
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
-    cp target/release/solvers /
+    cp target/release/solvers / && \
+    cp target/release/pool-indexer /
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim AS intermediate
@@ -53,6 +54,10 @@ FROM intermediate AS solvers
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 ENTRYPOINT [ "solvers" ]
 
+FROM intermediate AS pool-indexer
+COPY --from=cargo-build /pool-indexer /usr/local/bin/pool-indexer
+ENTRYPOINT [ "pool-indexer" ]
+
 # Extract Binary
 FROM intermediate
 
@@ -62,5 +67,6 @@ COPY --from=cargo-build /driver /usr/local/bin/driver
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
+COPY --from=cargo-build /pool-indexer /usr/local/bin/pool-indexer
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "--"]
