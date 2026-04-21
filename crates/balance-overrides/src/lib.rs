@@ -266,7 +266,7 @@ impl BalanceOverriding for DummyOverrider {
 mod tests {
     use {
         super::*,
-        crate::aave::{RAY, pack_user_state, ray_div},
+        crate::aave::{pack_user_state, ray_div},
         alloy_primitives::{address, b256},
         ethrpc::mock,
         maplit::hashmap,
