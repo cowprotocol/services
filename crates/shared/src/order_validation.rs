@@ -90,8 +90,19 @@ pub enum Eip1271SimMode {
 }
 
 /// Default per-call timeout for the EIP-1271 order simulation. Mirrored
-/// by `configs::orderbook::default_eip1271_sim_timeout` in Task 6.
+/// by `configs::orderbook::default_eip1271_sim_timeout`.
 pub const DEFAULT_EIP1271_SIM_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Bundle of dependencies that enable running the EIP-1271 order
+/// simulation alongside the cheap signature check. All three fields must
+/// be present together — `mode` and `timeout` are only meaningful when
+/// `simulator` is available.
+#[derive(Clone)]
+pub struct Eip1271SimConfig {
+    pub simulator: Arc<dyn Eip1271Simulator>,
+    pub mode: Eip1271SimMode,
+    pub timeout: Duration,
+}
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "eip1271_sim")]
@@ -203,6 +214,47 @@ fn record_sim_outcome(cheap: CheapOutcome, sim: &SimOutcome, order_uid: OrderUid
         );
     } else if let SimOutcome::Infra(err) = sim {
         tracing::warn!(%order_uid, %owner, err = %err, "eip1271 sim infra error");
+    }
+}
+
+async fn run_eip1271_sim_only(config: &Eip1271SimConfig, preview_order: &Order) {
+    let timer = Eip1271SimMetrics::get().duration_seconds.start_timer();
+    let res = tokio::time::timeout(config.timeout, config.simulator.simulate(preview_order)).await;
+    drop(timer);
+    let outcome = match res {
+        Ok(Ok(())) => SimOutcome::Pass,
+        Ok(Err(Eip1271SimError::Reverted {
+            reason,
+            tenderly_url,
+        })) => SimOutcome::Fail {
+            reason,
+            tenderly_url,
+        },
+        Ok(Err(Eip1271SimError::Infra(err))) => SimOutcome::Infra(err),
+        Err(_) => SimOutcome::Infra(anyhow!("eip1271 sim timeout")),
+    };
+    Eip1271SimMetrics::get()
+        .sim_only_total
+        .with_label_values(&[outcome.label()])
+        .inc();
+    match &outcome {
+        SimOutcome::Fail {
+            reason,
+            tenderly_url,
+        } => tracing::info!(
+            order_uid = %preview_order.metadata.uid,
+            owner = %preview_order.metadata.owner,
+            reason = %reason,
+            ?tenderly_url,
+            "eip1271 sim (cheap check skipped)",
+        ),
+        SimOutcome::Infra(err) => tracing::warn!(
+            order_uid = %preview_order.metadata.uid,
+            owner = %preview_order.metadata.owner,
+            err = %err,
+            "eip1271 sim infra error (cheap check skipped)",
+        ),
+        SimOutcome::Pass => {}
     }
 }
 
@@ -431,9 +483,7 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
-    eip1271_simulator: Option<Arc<dyn Eip1271Simulator>>,
-    eip1271_sim_mode: Eip1271SimMode,
-    eip1271_sim_timeout: Duration,
+    eip1271_sim: Option<Eip1271SimConfig>,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
@@ -504,9 +554,7 @@ impl OrderValidator {
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
-        eip1271_simulator: Option<Arc<dyn Eip1271Simulator>>,
-        eip1271_sim_mode: Eip1271SimMode,
-        eip1271_sim_timeout: Duration,
+        eip1271_sim: Option<Eip1271SimConfig>,
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
@@ -524,9 +572,7 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
-            eip1271_simulator,
-            eip1271_sim_mode,
-            eip1271_sim_timeout,
+            eip1271_sim,
             limit_order_counter,
             max_limit_orders_per_user,
             code_fetcher,
@@ -543,8 +589,8 @@ impl OrderValidator {
         hash: B256,
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
-            if let Some(sim) = &self.eip1271_simulator {
-                self.run_eip1271_sim_only(sim.as_ref(), preview_order).await;
+            if let Some(config) = &self.eip1271_sim {
+                run_eip1271_sim_only(config, preview_order).await;
             }
             return Ok(0u64);
         }
@@ -553,15 +599,15 @@ impl OrderValidator {
             .signature_validator
             .validate_signature_and_get_additional_gas(check);
 
-        let Some(sim) = &self.eip1271_simulator else {
+        let Some(config) = &self.eip1271_sim else {
             return cheap_fut.await.map_err(|err| match err {
                 SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
                 SignatureValidationError::Other(err) => ValidationError::Other(err),
             });
         };
 
-        let sim = sim.clone();
-        let sim_timeout = self.eip1271_sim_timeout;
+        let sim = config.simulator.clone();
+        let sim_timeout = config.timeout;
         let order = preview_order.clone();
         let sim_fut = async move {
             tokio::time::timeout(sim_timeout, sim.simulate(&order))
@@ -582,7 +628,7 @@ impl OrderValidator {
             preview_order.metadata.owner,
         );
 
-        match (cheap_res, &sim_outcome, self.eip1271_sim_mode) {
+        match (cheap_res, &sim_outcome, config.mode) {
             (Ok(_gas), SimOutcome::Fail { reason, .. }, Eip1271SimMode::Enforce) => {
                 Err(ValidationError::SimulationFailed(reason.clone()))
             }
@@ -591,47 +637,6 @@ impl OrderValidator {
                 Err(ValidationError::InvalidEip1271Signature(hash))
             }
             (Err(SignatureValidationError::Other(err)), _, _) => Err(ValidationError::Other(err)),
-        }
-    }
-
-    async fn run_eip1271_sim_only(&self, sim: &dyn Eip1271Simulator, preview_order: &Order) {
-        let timer = Eip1271SimMetrics::get().duration_seconds.start_timer();
-        let res = tokio::time::timeout(self.eip1271_sim_timeout, sim.simulate(preview_order)).await;
-        drop(timer);
-        let outcome = match res {
-            Ok(Ok(())) => SimOutcome::Pass,
-            Ok(Err(Eip1271SimError::Reverted {
-                reason,
-                tenderly_url,
-            })) => SimOutcome::Fail {
-                reason,
-                tenderly_url,
-            },
-            Ok(Err(Eip1271SimError::Infra(err))) => SimOutcome::Infra(err),
-            Err(_) => SimOutcome::Infra(anyhow!("eip1271 sim timeout")),
-        };
-        Eip1271SimMetrics::get()
-            .sim_only_total
-            .with_label_values(&[outcome.label()])
-            .inc();
-        match &outcome {
-            SimOutcome::Fail {
-                reason,
-                tenderly_url,
-            } => tracing::info!(
-                order_uid = %preview_order.metadata.uid,
-                owner = %preview_order.metadata.owner,
-                reason = %reason,
-                ?tenderly_url,
-                "eip1271 sim (cheap check skipped)",
-            ),
-            SimOutcome::Infra(err) => tracing::warn!(
-                order_uid = %preview_order.metadata.uid,
-                owner = %preview_order.metadata.owner,
-                err = %err,
-                "eip1271 sim infra error (cheap check skipped)",
-            ),
-            SimOutcome::Pass => {}
         }
     }
 
@@ -1386,8 +1391,6 @@ mod tests {
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -1534,8 +1537,6 @@ mod tests {
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -1618,8 +1619,6 @@ mod tests {
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -1706,8 +1705,6 @@ mod tests {
             Arc::new(balance_fetcher),
             signature_validating,
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             max_limit_orders_per_user,
             Arc::new(MockCodeFetching::new()),
@@ -1922,8 +1919,6 @@ mod tests {
             Arc::new(balance_fetcher),
             signature_validating,
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
@@ -1998,8 +1993,6 @@ mod tests {
             Arc::new(balance_fetcher),
             signature_validating,
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
@@ -2062,8 +2055,6 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -2119,8 +2110,6 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -2180,8 +2169,6 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -2244,8 +2231,6 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -2307,8 +2292,6 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -2377,8 +2360,6 @@ mod tests {
                 Arc::new(balance_fetcher),
                 Arc::new(MockSignatureValidating::new()),
                 None,
-                Eip1271SimMode::Shadow,
-                DEFAULT_EIP1271_SIM_TIMEOUT,
                 Arc::new(limit_order_counter),
                 0,
                 Arc::new(MockCodeFetching::new()),
@@ -2471,8 +2452,6 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -2886,8 +2865,6 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
             None,
-            Eip1271SimMode::Shadow,
-            DEFAULT_EIP1271_SIM_TIMEOUT,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -2960,6 +2937,11 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let eip1271_sim = eip1271_simulator.map(|simulator| Eip1271SimConfig {
+            simulator,
+            mode: eip1271_sim_mode,
+            timeout: eip1271_sim_timeout,
+        });
         OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -2975,9 +2957,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
-            eip1271_simulator,
-            eip1271_sim_mode,
-            eip1271_sim_timeout,
+            eip1271_sim,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),

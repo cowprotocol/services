@@ -42,7 +42,7 @@ use {
     shared::{
         order_quoting::{self, OrderQuoter},
         order_validation::{
-            DEFAULT_EIP1271_SIM_TIMEOUT,
+            Eip1271SimConfig,
             Eip1271SimMode,
             OrderValidPeriodConfiguration,
             OrderValidator,
@@ -381,8 +381,8 @@ pub async fn run(config: Configuration) {
         .await
         .ok();
 
-    let (order_simulator, eip1271_simulator, eip1271_sim_mode, eip1271_sim_timeout) =
-        if let Some(sim_config) = config.order_simulation {
+    let (order_simulator, eip1271_sim) = match config.order_simulation {
+        Some(sim_config) => {
             let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
                 sim_config.tenderly.as_ref().map(|tenderly_config| {
                     Box::new(simulator::tenderly::TenderlyApi::new(
@@ -408,7 +408,7 @@ pub async fn run(config: Configuration) {
                 chain.id().to_string(),
                 tenderly,
             ));
-            let sim: Arc<dyn shared::order_validation::Eip1271Simulator> = Arc::new(
+            let simulator: Arc<dyn shared::order_validation::Eip1271Simulator> = Arc::new(
                 crate::eip1271_sim::OrderSimulatorAdapter::new(order_simulator.clone()),
             );
             let mode = match sim_config.eip1271_sim_mode {
@@ -417,18 +417,15 @@ pub async fn run(config: Configuration) {
             };
             (
                 Some(order_simulator),
-                Some(sim),
-                mode,
-                sim_config.eip1271_sim_timeout,
+                Some(Eip1271SimConfig {
+                    simulator,
+                    mode,
+                    timeout: sim_config.eip1271_sim_timeout,
+                }),
             )
-        } else {
-            (
-                None,
-                None,
-                Eip1271SimMode::Shadow,
-                DEFAULT_EIP1271_SIM_TIMEOUT,
-            )
-        };
+        }
+        None => (None, None),
+    };
 
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
@@ -444,9 +441,7 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
-        eip1271_simulator,
-        eip1271_sim_mode,
-        eip1271_sim_timeout,
+        eip1271_sim,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,
