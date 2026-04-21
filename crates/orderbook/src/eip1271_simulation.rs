@@ -52,14 +52,3 @@ fn map_simulator_err(err: order_simulator::Error) -> Eip1271SimulationError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn impls_trait() {
-        fn assert_impl<T: Eip1271Simulating>() {}
-        assert_impl::<OrderSimulatorAdapter>();
-    }
-}

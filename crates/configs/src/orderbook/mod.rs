@@ -73,14 +73,20 @@ pub struct OrderSimulationConfig {
     pub eip1271_simulation_timeout: Duration,
 }
 
-/// Mode for the EIP-1271 order simulation. Mirrored by
-/// `shared::order_validation::Eip1271SimulationMode`.
+/// Mode for the EIP-1271 order simulation at order creation.
+///
+/// `Disabled` turns the simulation off in the order-creation path entirely
+/// (useful for chains where the extra latency isn't worth it, or to
+/// troubleshoot false rejections without dropping the debug endpoint).
+/// The debug simulation endpoint continues to work regardless of this
+/// setting as long as `order_simulation` itself is configured.
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Eip1271SimulationMode {
     #[default]
     Shadow,
     Enforce,
+    Disabled,
 }
 
 fn default_eip1271_simulation_timeout() -> Duration {
@@ -487,5 +493,15 @@ eip1271-simulation-timeout = "5s"
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Enforce);
         assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn parses_simulation_mode_disabled() {
+        let toml = r#"
+gas-limit = "0x1000000"
+eip1271-simulation-mode = "disabled"
+"#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
     }
 }

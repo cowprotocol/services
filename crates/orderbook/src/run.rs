@@ -408,23 +408,26 @@ pub async fn run(config: Configuration) {
                 chain.id().to_string(),
                 tenderly,
             ));
-            let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
-                crate::eip1271_simulation::OrderSimulatorAdapter::new(order_simulator.clone()),
-            );
             let mode = match sim_config.eip1271_simulation_mode {
-                configs::orderbook::Eip1271SimulationMode::Shadow => Eip1271SimulationMode::Shadow,
-                configs::orderbook::Eip1271SimulationMode::Enforce => {
-                    Eip1271SimulationMode::Enforce
+                configs::orderbook::Eip1271SimulationMode::Shadow => {
+                    Some(Eip1271SimulationMode::Shadow)
                 }
+                configs::orderbook::Eip1271SimulationMode::Enforce => {
+                    Some(Eip1271SimulationMode::Enforce)
+                }
+                configs::orderbook::Eip1271SimulationMode::Disabled => None,
             };
-            (
-                Some(order_simulator),
-                Some(Eip1271Simulator {
+            let eip1271_simulator = mode.map(|mode| {
+                let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
+                    crate::eip1271_simulation::OrderSimulatorAdapter::new(order_simulator.clone()),
+                );
+                Eip1271Simulator {
                     simulator,
                     mode,
                     timeout: sim_config.eip1271_simulation_timeout,
-                }),
-            )
+                }
+            });
+            (Some(order_simulator), eip1271_simulator)
         }
         None => (None, None),
     };
