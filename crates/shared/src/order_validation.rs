@@ -2927,18 +2927,13 @@ mod tests {
         }
     }
 
-    fn shadow_mode_simulator(sim: MockEip1271Simulating) -> Eip1271Simulator {
+    fn simulator_with_mode(
+        sim: MockEip1271Simulating,
+        mode: Eip1271SimulationMode,
+    ) -> Eip1271Simulator {
         Eip1271Simulator {
             simulator: Arc::new(sim),
-            mode: Eip1271SimulationMode::Shadow,
-            timeout: DEFAULT_EIP1271_SIM_TIMEOUT,
-        }
-    }
-
-    fn enforce_mode_simulator(sim: MockEip1271Simulating) -> Eip1271Simulator {
-        Eip1271Simulator {
-            simulator: Arc::new(sim),
-            mode: Eip1271SimulationMode::Enforce,
+            mode,
             timeout: DEFAULT_EIP1271_SIM_TIMEOUT,
         }
     }
@@ -2984,198 +2979,100 @@ mod tests {
         )
     }
 
+    /// Verifies the full (signature × simulation × mode) outcome matrix.
+    ///
+    /// Only the `(signature Pass, simulation Fail, Enforce)` cell changes
+    /// behaviour relative to today. Every other cell must match the
+    /// existing signature-only behaviour.
     #[tokio::test]
-    async fn shadow_mode_simulation_pass_signature_pass_accepts() {
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulating::new();
-        sim.expect_simulate().returning(|_| Ok(()));
-        let validator =
-            build_1271_validator(signature_validator, Some(shadow_mode_simulator(sim)), false);
-        let result = validator
-            .validate_and_construct_order(
-                make_1271_order_creation(),
-                &DomainSeparator::default(),
-                Default::default(),
-                None,
-            )
-            .await;
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-    }
+    async fn signature_and_simulation_outcome_matrix() {
+        use Eip1271SimulationMode::{Enforce, Shadow};
 
-    #[tokio::test]
-    async fn shadow_mode_simulation_fail_signature_pass_accepts() {
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulating::new();
-        sim.expect_simulate().returning(|_| {
-            Err(Eip1271SimulationError::Reverted {
-                reason: "hook revert".into(),
-                tenderly_url: None,
-            })
-        });
-        let validator =
-            build_1271_validator(signature_validator, Some(shadow_mode_simulator(sim)), false);
-        let result = validator
-            .validate_and_construct_order(
-                make_1271_order_creation(),
-                &DomainSeparator::default(),
-                Default::default(),
-                None,
-            )
-            .await;
-        assert!(result.is_ok(), "expected Ok in shadow mode, got {result:?}");
-    }
-
-    #[tokio::test]
-    async fn shadow_mode_simulation_pass_signature_fail_rejects_with_invalid_signature() {
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Err(SignatureValidationError::Invalid));
-        let mut sim = MockEip1271Simulating::new();
-        sim.expect_simulate().returning(|_| Ok(()));
-        let validator =
-            build_1271_validator(signature_validator, Some(shadow_mode_simulator(sim)), false);
-        let err = validator
-            .validate_and_construct_order(
-                make_1271_order_creation(),
-                &DomainSeparator::default(),
-                Default::default(),
-                None,
-            )
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(err, ValidationError::InvalidEip1271Signature(_)),
-            "got {err:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn shadow_mode_simulation_fail_signature_fail_rejects_with_invalid_signature() {
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Err(SignatureValidationError::Invalid));
-        let mut sim = MockEip1271Simulating::new();
-        sim.expect_simulate().returning(|_| {
-            Err(Eip1271SimulationError::Reverted {
-                reason: "x".into(),
-                tenderly_url: None,
-            })
-        });
-        let validator =
-            build_1271_validator(signature_validator, Some(shadow_mode_simulator(sim)), false);
-        let err = validator
-            .validate_and_construct_order(
-                make_1271_order_creation(),
-                &DomainSeparator::default(),
-                Default::default(),
-                None,
-            )
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(err, ValidationError::InvalidEip1271Signature(_)),
-            "got {err:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn enforce_mode_signature_pass_simulation_fail_rejects_with_simulation_failed() {
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulating::new();
-        sim.expect_simulate().returning(|_| {
-            Err(Eip1271SimulationError::Reverted {
-                reason: "hook reverted: INSUFFICIENT_OUT".into(),
-                tenderly_url: None,
-            })
-        });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(enforce_mode_simulator(sim)),
-            false,
-        );
-        let err = validator
-            .validate_and_construct_order(
-                make_1271_order_creation(),
-                &DomainSeparator::default(),
-                Default::default(),
-                None,
-            )
-            .await
-            .unwrap_err();
-        match err {
-            ValidationError::SimulationFailed(reason) => {
-                assert!(reason.contains("INSUFFICIENT_OUT"), "reason was {reason}");
-            }
-            other => panic!("expected SimulationFailed, got {other:?}"),
+        #[derive(Copy, Clone, Debug)]
+        enum Sig {
+            Pass,
+            Invalid,
         }
-    }
+        #[derive(Copy, Clone, Debug)]
+        enum Sim {
+            Pass,
+            Reverted,
+        }
+        #[derive(Copy, Clone, Debug)]
+        enum Expected {
+            Accepted,
+            InvalidSignature,
+            SimulationFailed,
+        }
 
-    #[tokio::test]
-    async fn enforce_mode_signature_fail_simulation_fail_returns_invalid_signature() {
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Err(SignatureValidationError::Invalid));
-        let mut sim = MockEip1271Simulating::new();
-        sim.expect_simulate().returning(|_| {
-            Err(Eip1271SimulationError::Reverted {
-                reason: "x".into(),
-                tenderly_url: None,
-            })
-        });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(enforce_mode_simulator(sim)),
-            false,
-        );
-        let err = validator
-            .validate_and_construct_order(
-                make_1271_order_creation(),
-                &DomainSeparator::default(),
-                Default::default(),
-                None,
-            )
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(err, ValidationError::InvalidEip1271Signature(_)),
-            "got {err:?}"
-        );
-    }
+        let cases: &[(Sig, Sim, Eip1271SimulationMode, Expected)] = &[
+            (Sig::Pass, Sim::Pass, Shadow, Expected::Accepted),
+            (Sig::Pass, Sim::Reverted, Shadow, Expected::Accepted),
+            (Sig::Invalid, Sim::Pass, Shadow, Expected::InvalidSignature),
+            (
+                Sig::Invalid,
+                Sim::Reverted,
+                Shadow,
+                Expected::InvalidSignature,
+            ),
+            (Sig::Pass, Sim::Pass, Enforce, Expected::Accepted),
+            (
+                Sig::Pass,
+                Sim::Reverted,
+                Enforce,
+                Expected::SimulationFailed,
+            ),
+            (Sig::Invalid, Sim::Pass, Enforce, Expected::InvalidSignature),
+            (
+                Sig::Invalid,
+                Sim::Reverted,
+                Enforce,
+                Expected::InvalidSignature,
+            ),
+        ];
 
-    #[tokio::test]
-    async fn enforce_mode_signature_pass_simulation_pass_accepts() {
-        let mut signature_validator = MockSignatureValidating::new();
-        signature_validator
-            .expect_validate_signature_and_get_additional_gas()
-            .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulating::new();
-        sim.expect_simulate().returning(|_| Ok(()));
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(enforce_mode_simulator(sim)),
-            false,
-        );
-        let result = validator
-            .validate_and_construct_order(
-                make_1271_order_creation(),
-                &DomainSeparator::default(),
-                Default::default(),
-                None,
-            )
-            .await;
-        assert!(result.is_ok(), "got {result:?}");
+        for &(sig, simulation, mode, expected) in cases {
+            let label = format!("sig={sig:?} sim={simulation:?} mode={mode:?}");
+            let mut signature_validator = MockSignatureValidating::new();
+            signature_validator
+                .expect_validate_signature_and_get_additional_gas()
+                .returning(move |_| match sig {
+                    Sig::Pass => Ok(0u64),
+                    Sig::Invalid => Err(SignatureValidationError::Invalid),
+                });
+            let mut sim = MockEip1271Simulating::new();
+            sim.expect_simulate().returning(move |_| match simulation {
+                Sim::Pass => Ok(()),
+                Sim::Reverted => Err(Eip1271SimulationError::Reverted {
+                    reason: "hook reverted".into(),
+                    tenderly_url: None,
+                }),
+            });
+            let validator = build_1271_validator(
+                signature_validator,
+                Some(simulator_with_mode(sim, mode)),
+                false,
+            );
+            let result = validator
+                .validate_and_construct_order(
+                    make_1271_order_creation(),
+                    &DomainSeparator::default(),
+                    Default::default(),
+                    None,
+                )
+                .await;
+            match expected {
+                Expected::Accepted => assert!(result.is_ok(), "{label}: got {result:?}"),
+                Expected::InvalidSignature => assert!(
+                    matches!(result, Err(ValidationError::InvalidEip1271Signature(_))),
+                    "{label}: got {result:?}"
+                ),
+                Expected::SimulationFailed => assert!(
+                    matches!(result, Err(ValidationError::SimulationFailed(_))),
+                    "{label}: got {result:?}"
+                ),
+            }
+        }
     }
 
     #[tokio::test]
@@ -3228,8 +3125,11 @@ mod tests {
                 tenderly_url: None,
             })
         });
-        let validator =
-            build_1271_validator(signature_validator, Some(enforce_mode_simulator(sim)), true);
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(simulator_with_mode(sim, Eip1271SimulationMode::Enforce)),
+            true,
+        );
         let result = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3254,7 +3154,7 @@ mod tests {
         sim.expect_simulate().times(0);
         let validator = build_1271_validator(
             signature_validator,
-            Some(enforce_mode_simulator(sim)),
+            Some(simulator_with_mode(sim, Eip1271SimulationMode::Enforce)),
             false,
         );
 
