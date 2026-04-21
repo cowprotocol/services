@@ -385,8 +385,7 @@ pub enum ValidationError {
     InvalidEip1271Signature(B256),
     /// The EIP-1271 order simulation returned a revert in enforce mode. Only
     /// possible when the 1271 signature check passed but the full
-    /// order simulation failed. The Tenderly URL, when available, is
-    /// logged separately and is intentionally not surfaced here.
+    /// order simulation failed.
     SimulationFailed(String),
     ZeroAmount,
     IncompatibleSigningScheme,
