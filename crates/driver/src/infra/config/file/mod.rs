@@ -529,7 +529,16 @@ enum UniswapV3Config {
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
         max_pools_to_initialize: usize,
 
-        graph_url: Url,
+        /// The URL used to connect to uniswap v3 subgraph client. At least one
+        /// of `graph_url` or `pool_indexer_url` must be set; `pool_indexer_url`
+        /// takes precedence when both are provided.
+        #[serde(default)]
+        graph_url: Option<Url>,
+
+        /// Optional URL of a CoW pool-indexer service. When set, it replaces
+        /// the subgraph as the pool metadata source.
+        #[serde(default)]
+        pool_indexer_url: Option<Url>,
 
         /// How many pool IDs can be present in a where clause of a Tick query
         /// at once. Some subgraphs are overloaded and throw errors when
@@ -558,8 +567,16 @@ enum UniswapV3Config {
         #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
         max_pools_per_tick_query: usize,
 
-        /// The URL used to connect to uniswap v3 subgraph client.
-        graph_url: Url,
+        /// The URL used to connect to uniswap v3 subgraph client. At least one
+        /// of `graph_url` or `pool_indexer_url` must be set; `pool_indexer_url`
+        /// takes precedence when both are provided.
+        #[serde(default)]
+        graph_url: Option<Url>,
+
+        /// Optional URL of a CoW pool-indexer service. hen set, it replaces
+        /// the subgraph as the pool metadata source.
+        #[serde(default)]
+        pool_indexer_url: Option<Url>,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.

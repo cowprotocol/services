@@ -231,9 +231,9 @@ impl UniswapV3Indexer {
         // independently. Instead, we filter client-side:
         //   - PoolCreated is matched against `self.factory` in
         //     `LogAccumulator::handle_pool_created`.
-        //   - Mint/Burn/Swap/Initialize from unknown pools are silently
-        //     dropped by the SQL `WHERE EXISTS (... uniswap_v3_pools ...)`
-        //     guards in the batch writers.
+        //   - Mint/Burn/Swap/Initialize from unknown pools are silently dropped by the
+        //     SQL `WHERE EXISTS (... uniswap_v3_pools ...)` guards in the batch
+        //     writers.
         bisecting_get_logs(
             &self.provider,
             from,
