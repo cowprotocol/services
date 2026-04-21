@@ -76,14 +76,16 @@ pub trait Eip1271Simulating: Send + Sync {
 }
 
 /// Mode controlling whether the EIP-1271 order simulation can reject orders.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+/// The operational default lives in `configs::orderbook::Eip1271SimulationMode`
+/// (currently `Disabled`); this enum only represents the on-path states
+/// `OrderValidator` actually executes.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Eip1271SimulationMode {
-    /// Log disagreements, emit metrics. Never reject. **Default.**
-    #[default]
+    /// Log disagreements, emit metrics. Never reject.
     Shadow,
-    /// If the signature check passes but the order simulation fails, reject the
-    /// order with `ValidationError::SimulationFailed`. Infra errors still
-    /// never reject (fail-open).
+    /// If the signature check passes but the order simulation fails, reject
+    /// the order with `ValidationError::SimulationFailed`. Infra errors
+    /// still never reject (fail-open).
     Enforce,
 }
 
@@ -244,7 +246,7 @@ async fn run_eip1271_simulation_only(config: &Eip1271Simulator, preview_order: &
         SimulationOutcome::Fail {
             reason,
             tenderly_url,
-        } => tracing::info!(
+        } => tracing::warn!(
             order_uid = %preview_order.metadata.uid,
             ?reason,
             ?tenderly_url,
@@ -610,6 +612,9 @@ impl OrderValidator {
         let simulation_timeout = config.timeout;
         let order = preview_order.clone();
         let simulation_fut = async move {
+            let _timer = Eip1271SimulationMetrics::get()
+                .simulation_time
+                .start_timer();
             tokio::time::timeout(simulation_timeout, sim.simulate(&order))
                 .await
                 .unwrap_or_else(|_| {
@@ -619,12 +624,7 @@ impl OrderValidator {
                 })
         };
 
-        let (signature_res, simulation_res) = {
-            let _timer = Eip1271SimulationMetrics::get()
-                .simulation_time
-                .start_timer();
-            tokio::join!(signature_fut, simulation_fut)
-        };
+        let (signature_res, simulation_res) = tokio::join!(signature_fut, simulation_fut);
 
         let signature_outcome = classify_signature(&signature_res);
         let simulation_outcome = classify_simulation(&simulation_res);

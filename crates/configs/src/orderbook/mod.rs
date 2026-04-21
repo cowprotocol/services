@@ -490,6 +490,16 @@ eip1271-simulation-timeout = "5s"
     }
 
     #[test]
+    fn parses_simulation_mode_shadow() {
+        let toml = r#"
+gas-limit = "0x1000000"
+eip1271-simulation-mode = "shadow"
+"#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Shadow);
+    }
+
+    #[test]
     fn parses_simulation_mode_disabled() {
         let toml = r#"
 gas-limit = "0x1000000"
