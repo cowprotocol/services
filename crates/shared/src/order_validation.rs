@@ -73,7 +73,7 @@ pub enum Eip1271SimError {
 /// crate is refactored.
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
-pub trait Eip1271Simulator: Send + Sync {
+pub trait Eip1271Simulating: Send + Sync {
     async fn simulate(&self, order: &Order) -> Result<(), Eip1271SimError>;
 }
 
@@ -98,8 +98,8 @@ pub const DEFAULT_EIP1271_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 /// be present together — `mode` and `timeout` are only meaningful when
 /// `simulator` is available.
 #[derive(Clone)]
-pub struct Eip1271SimConfig {
-    pub simulator: Arc<dyn Eip1271Simulator>,
+pub struct Eip1271Simulator {
+    pub simulator: Arc<dyn Eip1271Simulating>,
     pub mode: Eip1271SimMode,
     pub timeout: Duration,
 }
@@ -217,7 +217,7 @@ fn record_sim_outcome(cheap: CheapOutcome, sim: &SimOutcome, order_uid: OrderUid
     }
 }
 
-async fn run_eip1271_sim_only(config: &Eip1271SimConfig, preview_order: &Order) {
+async fn run_eip1271_sim_only(config: &Eip1271Simulator, preview_order: &Order) {
     let timer = Eip1271SimMetrics::get().duration_seconds.start_timer();
     let res = tokio::time::timeout(config.timeout, config.simulator.simulate(preview_order)).await;
     drop(timer);
@@ -483,7 +483,7 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
-    eip1271_sim: Option<Eip1271SimConfig>,
+    eip1271_sim: Option<Eip1271Simulator>,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
@@ -554,7 +554,7 @@ impl OrderValidator {
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
-        eip1271_sim: Option<Eip1271SimConfig>,
+        eip1271_sim: Option<Eip1271Simulator>,
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
@@ -2921,7 +2921,7 @@ mod tests {
 
     fn build_1271_validator(
         signature_validator: MockSignatureValidating,
-        eip1271_simulator: Option<Arc<dyn Eip1271Simulator>>,
+        eip1271_simulator: Option<Arc<dyn Eip1271Simulating>>,
         eip1271_sim_mode: Eip1271SimMode,
         eip1271_sim_timeout: Duration,
         eip1271_skip_creation_validation: bool,
@@ -2937,7 +2937,7 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
-        let eip1271_sim = eip1271_simulator.map(|simulator| Eip1271SimConfig {
+        let eip1271_sim = eip1271_simulator.map(|simulator| Eip1271Simulator {
             simulator,
             mode: eip1271_sim_mode,
             timeout: eip1271_sim_timeout,
@@ -2973,7 +2973,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| Ok(()));
         let validator = build_1271_validator(
             signature_validator,
@@ -2999,7 +2999,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| {
             Err(Eip1271SimError::Reverted {
                 reason: "hook revert".into(),
@@ -3030,7 +3030,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| Ok(()));
         let validator = build_1271_validator(
             signature_validator,
@@ -3060,7 +3060,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| {
             Err(Eip1271SimError::Reverted {
                 reason: "x".into(),
@@ -3095,7 +3095,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| {
             Err(Eip1271SimError::Reverted {
                 reason: "hook reverted: INSUFFICIENT_OUT".into(),
@@ -3132,7 +3132,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| {
             Err(Eip1271SimError::Reverted {
                 reason: "x".into(),
@@ -3167,7 +3167,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Ok(0u64));
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| Ok(()));
         let validator = build_1271_validator(
             signature_validator,
@@ -3194,7 +3194,7 @@ mod tests {
             signature_validator
                 .expect_validate_signature_and_get_additional_gas()
                 .returning(|_| Ok(0u64));
-            let mut sim = MockEip1271Simulator::new();
+            let mut sim = MockEip1271Simulating::new();
             sim.expect_simulate()
                 .returning(|_| Err(Eip1271SimError::Infra(anyhow!("RPC down"))));
             let validator = build_1271_validator(
@@ -3225,7 +3225,7 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
-        let mut sim = MockEip1271Simulator::new();
+        let mut sim = MockEip1271Simulating::new();
         sim.expect_simulate().returning(|_| {
             Err(Eip1271SimError::Reverted {
                 reason: "x".into(),

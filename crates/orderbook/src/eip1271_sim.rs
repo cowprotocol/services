@@ -2,12 +2,12 @@ use {
     crate::order_simulator::{self, OrderSimulator},
     async_trait::async_trait,
     model::order::Order,
-    shared::order_validation::{Eip1271SimError, Eip1271Simulator},
+    shared::order_validation::{Eip1271SimError, Eip1271Simulating},
     std::sync::Arc,
 };
 
 /// Adapter exposing `OrderSimulator` via the
-/// `shared::order_validation::Eip1271Simulator` trait.
+/// `shared::order_validation::Eip1271Simulating` trait.
 ///
 /// This is a temporary shim. Once the `simulator` crate is refactored to own
 /// `OrderSimulator`, `OrderValidator` can depend on it directly and this
@@ -23,7 +23,7 @@ impl OrderSimulatorAdapter {
 }
 
 #[async_trait]
-impl Eip1271Simulator for OrderSimulatorAdapter {
+impl Eip1271Simulating for OrderSimulatorAdapter {
     async fn simulate(&self, order: &Order) -> Result<(), Eip1271SimError> {
         let swap = self
             .inner
@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn impls_trait() {
-        fn assert_impl<T: Eip1271Simulator>() {}
+        fn assert_impl<T: Eip1271Simulating>() {}
         assert_impl::<OrderSimulatorAdapter>();
     }
 }

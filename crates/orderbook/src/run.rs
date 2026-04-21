@@ -42,8 +42,8 @@ use {
     shared::{
         order_quoting::{self, OrderQuoter},
         order_validation::{
-            Eip1271SimConfig,
             Eip1271SimMode,
+            Eip1271Simulator,
             OrderValidPeriodConfiguration,
             OrderValidator,
         },
@@ -408,7 +408,7 @@ pub async fn run(config: Configuration) {
                 chain.id().to_string(),
                 tenderly,
             ));
-            let simulator: Arc<dyn shared::order_validation::Eip1271Simulator> = Arc::new(
+            let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
                 crate::eip1271_sim::OrderSimulatorAdapter::new(order_simulator.clone()),
             );
             let mode = match sim_config.eip1271_sim_mode {
@@ -417,7 +417,7 @@ pub async fn run(config: Configuration) {
             };
             (
                 Some(order_simulator),
-                Some(Eip1271SimConfig {
+                Some(Eip1271Simulator {
                     simulator,
                     mode,
                     timeout: sim_config.eip1271_sim_timeout,
