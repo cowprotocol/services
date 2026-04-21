@@ -77,20 +77,15 @@ pub trait Eip1271ShadowSimulator: Send + Sync {
 }
 
 /// Mode controlling whether the shadow sim can reject orders.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum Eip1271ShadowSimMode {
     /// Log disagreements, emit metrics. Never reject. **Default.**
+    #[default]
     Shadow,
     /// If the cheap check passes but the shadow sim fails, reject the
     /// order with `ValidationError::SimulationFailed`. Infra errors still
     /// never reject (fail-open).
     Enforce,
-}
-
-impl Default for Eip1271ShadowSimMode {
-    fn default() -> Self {
-        Self::Shadow
-    }
 }
 
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
@@ -200,10 +195,9 @@ pub enum ValidationError {
     InvalidEip1271Signature(B256),
     /// The shadow simulation returned a revert in enforce mode. Only
     /// possible when the cheap 1271 signature check passed but the full
-    /// order simulation failed.
-    SimulationFailed {
-        reason: String,
-    },
+    /// order simulation failed. The Tenderly URL, when available, is
+    /// logged separately and is intentionally not surfaced here.
+    SimulationFailed(String),
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
