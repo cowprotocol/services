@@ -22,7 +22,7 @@ APPDATA='{"version":"1.3.0","metadata":{}}'
 PRIVATE_KEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 
 # Wait for 2 minutes for all services are read
-echo -e "Waiting until all services are ready..."
+echo "Waiting until all services are ready..."
 curl --retry 24 --retry-delay 5 --retry-all-errors --fail-with-body -s --show-error \
   -H 'accept:application/json' \
   http://$HOST/api/v1/token/$BUY_TOKEN/native_price > /dev/null
@@ -108,10 +108,10 @@ print_settlement_tx() {
   fi
 }
 
-echo -e ">>> Polling order status..."
+echo ">>> Polling order status..."
 for i in $(seq 1 24);
 do
-  status_response=$(curl -s --show-error --max-time 10 --connect-timeout 3 \
+  status_response=$(curl --retry 5 --retry-delay 2 --retry-all-errors -s --show-error --max-time 10 --connect-timeout 3 \
     -H 'accept: application/json' \
     -w '\n%{http_code}' \
     "http://$HOST/api/v1/orders/$orderUid/status") || {
