@@ -380,6 +380,56 @@ pub async fn run(config: Configuration) {
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
         .await
         .ok();
+
+    let (order_simulator, shadow_simulator, shadow_sim_mode, shadow_sim_timeout) =
+        if let Some(sim_config) = config.order_simulation {
+            let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+                sim_config.tenderly.as_ref().map(|tenderly_config| {
+                    Box::new(simulator::tenderly::TenderlyApi::new(
+                        tenderly_config,
+                        &http_factory,
+                        chain.id().to_string(),
+                    )) as _
+                });
+            let order_simulator = Arc::new(OrderSimulator::new(
+                SwapSimulator::new(
+                    balance_overrider.clone(),
+                    *settlement_contract.address(),
+                    *native_token.address(),
+                    current_block_stream.clone(),
+                    web3,
+                    sim_config
+                        .gas_limit
+                        .try_into()
+                        .expect("gas_limit must fit in u64"),
+                )
+                .await
+                .expect("failed to create SwapSimulator"),
+                chain.id().to_string(),
+                tenderly,
+            ));
+            let shadow: Arc<dyn shared::order_validation::Eip1271ShadowSimulator> = Arc::new(
+                crate::eip1271_shadow_sim::OrderSimulatorAdapter::new(order_simulator.clone()),
+            );
+            let mode = match sim_config.eip1271_shadow_sim_mode {
+                configs::orderbook::Eip1271ShadowSimMode::Shadow => Eip1271ShadowSimMode::Shadow,
+                configs::orderbook::Eip1271ShadowSimMode::Enforce => Eip1271ShadowSimMode::Enforce,
+            };
+            (
+                Some(order_simulator),
+                Some(shadow),
+                mode,
+                sim_config.eip1271_shadow_sim_timeout,
+            )
+        } else {
+            (
+                None,
+                None,
+                Eip1271ShadowSimMode::Shadow,
+                DEFAULT_SHADOW_SIM_TIMEOUT,
+            )
+        };
+
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -394,9 +444,9 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
-        None,
-        Eip1271ShadowSimMode::Shadow,
-        DEFAULT_SHADOW_SIM_TIMEOUT,
+        shadow_simulator,
+        shadow_sim_mode,
+        shadow_sim_timeout,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,
@@ -418,36 +468,6 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
-
-    let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Box::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(Arc::new(OrderSimulator::new(
-            SwapSimulator::new(
-                balance_overrider.clone(),
-                *settlement_contract.address(),
-                *native_token.address(),
-                current_block_stream.clone(),
-                web3,
-                config
-                    .gas_limit
-                    .try_into()
-                    .expect("gas_limit must fit in u64"),
-            )
-            .await
-            .expect("failed to create SwapSimulator"),
-            chain.id().to_string(),
-            tenderly,
-        )))
-    } else {
-        None
-    };
 
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
