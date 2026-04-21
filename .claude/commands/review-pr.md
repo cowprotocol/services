@@ -1,5 +1,5 @@
 ---
-description: Produce a structured local review report for a CoW services PR (read-only; user posts comments manually)
+description: Produce a structured local PR review report for cowprotocol/services — synthesizes context, builds a codemap, applies CoW-specific + Rust review skills, and emits severity-ranked findings with actionable questions. Use when the user says "review this PR", "/review-pr 1234", "look at PR #1234", or pastes a cowprotocol/services PR URL. Read-only; the user posts any comments manually.
 ---
 
 Review PR: $ARGUMENTS
