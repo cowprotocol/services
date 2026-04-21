@@ -20,6 +20,7 @@ use {
     std::{
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         path::Path,
+        time::Duration,
     },
 };
 
@@ -59,6 +60,33 @@ pub struct OrderSimulationConfig {
     /// URL.
     #[serde(default)]
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
+
+    /// Shadow/enforce mode for the EIP-1271 shadow simulation. Defaults to
+    /// `shadow` (observability only; never rejects). Only set to `enforce`
+    /// after shadow-mode telemetry shows low-to-zero unexpected
+    /// disagreements AND flashloan support has landed in the simulator.
+    #[serde(default)]
+    pub eip1271_shadow_sim_mode: Eip1271ShadowSimMode,
+
+    /// Per-call timeout for the shadow simulation. Infra errors (including
+    /// timeouts) never reject the order. Default: 2s.
+    #[serde(default = "default_shadow_sim_timeout", with = "humantime_serde")]
+    pub eip1271_shadow_sim_timeout: Duration,
+}
+
+/// Mode for the EIP-1271 shadow simulation. Mirrored by
+/// `shared::order_validation::Eip1271ShadowSimMode`; conversion happens at
+/// the call site in `orderbook/run.rs`.
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Eip1271ShadowSimMode {
+    #[default]
+    Shadow,
+    Enforce,
+}
+
+fn default_shadow_sim_timeout() -> Duration {
+    Duration::from_secs(2)
 }
 
 /// Top-level orderbook service configuration.
@@ -228,6 +256,8 @@ pub mod test_util {
                 order_simulation: Some(OrderSimulationConfig {
                     gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
                     tenderly: None,
+                    eip1271_shadow_sim_mode: Default::default(),
+                    eip1271_shadow_sim_timeout: std::time::Duration::from_secs(2),
                 }),
                 hide_competition_before_deadline: false,
             }
@@ -437,5 +467,27 @@ mod tests {
             deserialized.hide_competition_before_deadline
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
+    }
+
+    #[test]
+    fn parses_shadow_sim_mode_default() {
+        let toml = r#"
+gas-limit = "0x1000000"
+"#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_shadow_sim_mode, Eip1271ShadowSimMode::Shadow);
+        assert_eq!(cfg.eip1271_shadow_sim_timeout, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn parses_shadow_sim_mode_enforce() {
+        let toml = r#"
+gas-limit = "0x1000000"
+eip1271-shadow-sim-mode = "enforce"
+eip1271-shadow-sim-timeout = "5s"
+"#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_shadow_sim_mode, Eip1271ShadowSimMode::Enforce);
+        assert_eq!(cfg.eip1271_shadow_sim_timeout, Duration::from_secs(5));
     }
 }
