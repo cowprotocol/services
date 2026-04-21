@@ -38,10 +38,10 @@ publish = false
 doctest = false
 
 [dependencies]
-alloy-primitives = { workspace = true }
-alloy-sol-types = { workspace = true }
 alloy-contract = { workspace = true }
+alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
+alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 
 [lints]
@@ -54,15 +54,15 @@ const WORKSPACE_CARGO_TOML: &str = "\
 [workspace]
 resolver = \"3\"
 members = [
-    \"contracts-facade\",
-    \"contracts-generated/*\",
+  \"contracts-facade\",
+  \"contracts-generated/*\",
 ]
 
 [workspace.dependencies]
-alloy-primitives = { version =  \"1.5.7\", default-features = false }
-alloy-sol-types = { version =  \"1.5.7\", default-features = false }
-alloy-contract = { version =  \"1.7.3\" }
-alloy-provider = { version =  \"1.7.3\", default-features = false }
+alloy-contract = { version = \"1.7.3\" }
+alloy-primitives = { version = \"1.5.7\", default-features = false }
+alloy-provider = { version = \"1.7.3\", default-features = false }
+alloy-sol-types = { version = \"1.5.7\", default-features = false }
 anyhow = \"1.0.100\"
 
 [workspace.lints.clippy]
