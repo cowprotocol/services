@@ -3242,6 +3242,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn simulator_is_not_invoked_for_non_eip1271_orders() {
+        // Build an EOA (Eip712) order and a simulator configured in enforce mode.
+        // The simulator should NOT be called — only EIP-1271 orders go through
+        // the simulation path.
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .times(0);
+        let mut sim = MockEip1271Simulating::new();
+        sim.expect_simulate().times(0);
+        let validator = build_1271_validator(
+            signature_validator,
+            Some(enforce_mode_simulator(sim)),
+            false,
+        );
+
+        let eoa_order = OrderCreation {
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            ..make_1271_order_creation()
+        };
+        // Ignore the final result (it will fail WrongOwner/etc. later in the
+        // pipeline — we only care that the sim was not invoked).
+        let _ = validator
+            .validate_and_construct_order(
+                eoa_order,
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        // `sim.expect_simulate().times(0)` asserts on drop.
+    }
+
+    #[tokio::test]
     async fn no_simulator_configured_preserves_existing_behaviour() {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
