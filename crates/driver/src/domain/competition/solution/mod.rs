@@ -299,9 +299,13 @@ impl Solution {
     }
 
     /// Approval interactions necessary for encoding the settlement.
-    /// This function handles approvals correctly for tokens like USDT which
-    /// first need to have the allowance set to 0 before it can be increased
-    /// again. See <https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729>
+    /// To support tokens like USDT which first need to have their allowance
+    /// set to 0 before it can be set to the desired value we simulate each
+    /// `approve()` call and inject additional `approve(0)` interactions when
+    /// we encounter a revert.
+    /// Whenever the needed allowance is less the current allowance no
+    /// `approve()` interactions get encoded to save on gas.
+    /// See <https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729>
     pub async fn approvals(
         &self,
         eth: &Ethereum,
