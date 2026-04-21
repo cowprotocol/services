@@ -2,7 +2,7 @@ use {
     crate::order_simulator::{self, OrderSimulator},
     async_trait::async_trait,
     model::order::Order,
-    shared::order_validation::{Eip1271SimError, Eip1271Simulating},
+    shared::order_validation::{Eip1271Simulating, Eip1271SimulationError},
     std::sync::Arc,
 };
 
@@ -24,7 +24,7 @@ impl OrderSimulatorAdapter {
 
 #[async_trait]
 impl Eip1271Simulating for OrderSimulatorAdapter {
-    async fn simulate(&self, order: &Order) -> Result<(), Eip1271SimError> {
+    async fn simulate(&self, order: &Order) -> Result<(), Eip1271SimulationError> {
         let swap = self
             .inner
             .encode_order(order, Vec::new(), None)
@@ -37,7 +37,7 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
             .map_err(map_simulator_err)?;
         match result.error {
             None => Ok(()),
-            Some(reason) => Err(Eip1271SimError::Reverted {
+            Some(reason) => Err(Eip1271SimulationError::Reverted {
                 reason,
                 tenderly_url: result.tenderly_url,
             }),
@@ -45,10 +45,10 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
     }
 }
 
-fn map_simulator_err(err: order_simulator::Error) -> Eip1271SimError {
+fn map_simulator_err(err: order_simulator::Error) -> Eip1271SimulationError {
     match err {
         order_simulator::Error::Other(e) | order_simulator::Error::MalformedInput(e) => {
-            Eip1271SimError::Infra(e)
+            Eip1271SimulationError::Infra(e)
         }
     }
 }
