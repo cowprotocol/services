@@ -47,6 +47,52 @@ use {
     tracing::instrument,
 };
 
+/// Outcome of the shadow simulation against a created order.
+#[derive(Debug)]
+pub enum ShadowSimError {
+    /// The simulation ran and the transaction reverted. `reason` is the
+    /// revert string returned by the EVM (or a Tenderly reason string).
+    Reverted {
+        reason: String,
+        tenderly_url: Option<String>,
+    },
+    /// The simulation could not run (RPC failure, Tenderly error, malformed
+    /// input, timeout). Treated as fail-open in both shadow and enforce
+    /// modes.
+    Infra(anyhow::Error),
+}
+
+/// Optional hook used by `OrderValidator` to run a full order simulation
+/// next to the cheap EIP-1271 signature check. A concrete implementation
+/// lives in `crates/orderbook/src/eip1271_shadow_sim.rs`.
+///
+/// The trait exists in `shared` because `OrderValidator` lives in `shared`
+/// and cannot depend upward on `orderbook`. It is designed to be replaced
+/// by a direct `simulator::OrderSimulator` dependency once the simulator
+/// crate is refactored.
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+#[async_trait::async_trait]
+pub trait Eip1271ShadowSimulator: Send + Sync {
+    async fn simulate(&self, order: &Order) -> Result<(), ShadowSimError>;
+}
+
+/// Mode controlling whether the shadow sim can reject orders.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Eip1271ShadowSimMode {
+    /// Log disagreements, emit metrics. Never reject. **Default.**
+    Shadow,
+    /// If the cheap check passes but the shadow sim fails, reject the
+    /// order with `ValidationError::SimulationFailed`. Infra errors still
+    /// never reject (fail-open).
+    Enforce,
+}
+
+impl Default for Eip1271ShadowSimMode {
+    fn default() -> Self {
+        Self::Shadow
+    }
+}
+
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderValidating: Send + Sync {
@@ -152,6 +198,12 @@ pub enum ValidationError {
     /// An invalid EIP-1271 signature, where the on-chain validation check
     /// reverted or did not return the expected value.
     InvalidEip1271Signature(B256),
+    /// The shadow simulation returned a revert in enforce mode. Only
+    /// possible when the cheap 1271 signature check passed but the full
+    /// order simulation failed.
+    SimulationFailed {
+        reason: String,
+    },
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
