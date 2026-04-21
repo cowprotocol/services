@@ -195,21 +195,21 @@ fn record_sim_outcome(signature: SignatureOutcome, sim: &SimOutcome, order_uid: 
                 tenderly_url,
             },
         ) => tracing::warn!(
-            %order_uid,
+            ?order_uid,
             signature = "pass",
             sim = "fail",
-            reason = %reason,
+            ?reason,
             ?tenderly_url,
             "eip1271 sim disagreement",
         ),
         (SignatureOutcome::Fail, SimOutcome::Pass) => tracing::warn!(
-            %order_uid,
+            ?order_uid,
             signature = "fail",
             sim = "pass",
             "eip1271 sim disagreement",
         ),
         (_, SimOutcome::Infra(err)) => {
-            tracing::warn!(%order_uid, err = %err, "eip1271 sim infra error")
+            tracing::warn!(?order_uid, ?err, "eip1271 sim infra error")
         }
         _ => {}
     }
@@ -242,13 +242,13 @@ async fn run_eip1271_sim_only(config: &Eip1271Simulator, preview_order: &Order) 
             tenderly_url,
         } => tracing::info!(
             order_uid = %preview_order.metadata.uid,
-            reason = %reason,
+            ?reason,
             ?tenderly_url,
             "eip1271 sim (signature check skipped)",
         ),
         SimOutcome::Infra(err) => tracing::warn!(
             order_uid = %preview_order.metadata.uid,
-            err = %err,
+            ?err,
             "eip1271 sim infra error (signature check skipped)",
         ),
         SimOutcome::Pass => {}
