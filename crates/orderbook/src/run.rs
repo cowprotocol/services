@@ -41,7 +41,12 @@ use {
     },
     shared::{
         order_quoting::{self, OrderQuoter},
-        order_validation::{Eip1271ShadowSimMode, OrderValidPeriodConfiguration, OrderValidator},
+        order_validation::{
+            DEFAULT_SHADOW_SIM_TIMEOUT,
+            Eip1271ShadowSimMode,
+            OrderValidPeriodConfiguration,
+            OrderValidator,
+        },
     },
     simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
@@ -391,7 +396,7 @@ pub async fn run(config: Configuration) {
         signature_validator,
         None,
         Eip1271ShadowSimMode::Shadow,
-        Duration::from_secs(2),
+        DEFAULT_SHADOW_SIM_TIMEOUT,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,
