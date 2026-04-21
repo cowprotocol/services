@@ -89,10 +89,9 @@ pub enum Eip1271SimMode {
     Enforce,
 }
 
-/// Bundle of dependencies that enable running the EIP-1271 order
-/// simulation alongside the cheap signature check. All three fields must
-/// be present together — `mode` and `timeout` are only meaningful when
-/// `simulator` is available.
+/// Runs a full order simulation alongside the cheap EIP-1271 signature
+/// check and decides, based on the configured mode, whether a failure
+/// should reject the order.
 #[derive(Clone)]
 pub struct Eip1271Simulator {
     pub simulator: Arc<dyn Eip1271Simulating>,
