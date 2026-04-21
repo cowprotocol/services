@@ -74,18 +74,12 @@ pub struct OrderSimulationConfig {
 }
 
 /// Mode for the EIP-1271 order simulation at order creation.
-///
-/// `Disabled` turns the simulation off in the order-creation path entirely
-/// (useful for chains where the extra latency isn't worth it, or to
-/// troubleshoot false rejections without dropping the debug endpoint).
-/// The debug simulation endpoint continues to work regardless of this
-/// setting as long as `order_simulation` itself is configured.
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Eip1271SimulationMode {
-    #[default]
     Shadow,
     Enforce,
+    #[default]
     Disabled,
 }
 
