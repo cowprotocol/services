@@ -89,10 +89,6 @@ pub enum Eip1271SimMode {
     Enforce,
 }
 
-/// Default per-call timeout for the EIP-1271 order simulation. Mirrored
-/// by `configs::orderbook::default_eip1271_sim_timeout`.
-pub const DEFAULT_EIP1271_SIM_TIMEOUT: Duration = Duration::from_secs(2);
-
 /// Bundle of dependencies that enable running the EIP-1271 order
 /// simulation alongside the cheap signature check. All three fields must
 /// be present together — `mode` and `timeout` are only meaningful when
@@ -1361,6 +1357,8 @@ mod tests {
         serde_json::json,
         signature_validator::MockSignatureValidating,
     };
+
+    const DEFAULT_EIP1271_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 
     #[tokio::test]
     async fn pre_validate_err() {
