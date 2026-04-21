@@ -45,9 +45,9 @@ cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoke
 cow-contract-cowsettlementforwarder = { path = "../contracts-generated/cowsettlementforwarder" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }
 cow-contract-cowswaponchainorders = { path = "../contracts-generated/cowswaponchainorders" }
+cow-contract-erc1271signaturevalidator = { path = "../contracts-generated/erc1271signaturevalidator" }
 cow-contract-erc20 = { path = "../contracts-generated/erc20" }
 cow-contract-erc20mintable = { path = "../contracts-generated/erc20mintable" }
-cow-contract-erc1271signaturevalidator = { path = "../contracts-generated/erc1271signaturevalidator" }
 cow-contract-flashloanrouter = { path = "../contracts-generated/flashloanrouter" }
 cow-contract-gashog = { path = "../contracts-generated/gashog" }
 cow-contract-gnosissafe = { path = "../contracts-generated/gnosissafe" }
@@ -59,12 +59,14 @@ cow-contract-gpv2settlement = { path = "../contracts-generated/gpv2settlement" }
 cow-contract-honeyswaprouter = { path = "../contracts-generated/honeyswaprouter" }
 cow-contract-hookstrampoline = { path = "../contracts-generated/hookstrampoline" }
 cow-contract-icowwrapper = { path = "../contracts-generated/icowwrapper" }
+cow-contract-ierc4626 = { path = "../contracts-generated/ierc4626" }
 cow-contract-iswaprpair = { path = "../contracts-generated/iswaprpair" }
 cow-contract-iuniswaplikepair = { path = "../contracts-generated/iuniswaplikepair" }
 cow-contract-iuniswaplikerouter = { path = "../contracts-generated/iuniswaplikerouter" }
 cow-contract-iuniswapv3factory = { path = "../contracts-generated/iuniswapv3factory" }
 cow-contract-izeroex = { path = "../contracts-generated/izeroex" }
 cow-contract-liquoricesettlement = { path = "../contracts-generated/liquoricesettlement" }
+cow-contract-mockerc4626wrapper = { path = "../contracts-generated/mockerc4626wrapper" }
 cow-contract-mockuniswapv3factory = { path = "../contracts-generated/mockuniswapv3factory" }
 cow-contract-mockuniswapv3pool = { path = "../contracts-generated/mockuniswapv3pool" }
 cow-contract-nonstandarderc20balances = { path = "../contracts-generated/nonstandarderc20balances" }

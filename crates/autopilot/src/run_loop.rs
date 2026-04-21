@@ -492,12 +492,9 @@ impl RunLoop {
                         buy_amount: order.executed_buy.0,
                     })
                     .collect(),
-                clearing_prices: bid
-                    .solution()
-                    .prices()
-                    .iter()
-                    .map(|(token, price)| (Address::from(*token), price.get().0))
-                    .collect(),
+                // Always empty — kept to avoid breaking the solver competition
+                // API (`/api/v1/solver_competition`).
+                clearing_prices: Default::default(),
                 is_winner: bid.is_winner(),
                 filtered_out: bid.is_filtered_out(),
             })
@@ -615,7 +612,7 @@ impl RunLoop {
         });
 
         // Shuffle so that sorting randomly splits ties.
-        bids.shuffle(&mut rand::thread_rng());
+        bids.shuffle(&mut rand::rng());
         bids
     }
 

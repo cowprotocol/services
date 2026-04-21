@@ -105,6 +105,7 @@ fn build_module() -> Module {
         // Misc
         .add_contract(Contract::new("ERC20"))
         .add_contract(Contract::new("ERC20Mintable"))
+        .add_contract(Contract::new("IERC4626"))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
         .add_contract(Contract::new("GnosisSafeCompatibilityFallbackHandler"))
@@ -505,6 +506,7 @@ fn build_module() -> Module {
             Submodule::new("test")
                 .add_contract(Contract::new("GasHog"))
                 .add_contract(Contract::new("Counter"))
+                .add_contract(Contract::new("MockERC4626Wrapper"))
                 .add_contract(Contract::new("MockUniswapV3Factory"))
                 .add_contract(Contract::new("MockUniswapV3Pool"))
                 .add_contract(Contract::new("CowProtocolToken").with_networks(networks![

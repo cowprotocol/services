@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -16,14 +10,11 @@ interface GPv2AllowListAuthentication {
     event SolverRemoved(address solver);
 
     function addSolver(address solver) external;
-    function getStorageAt(uint256 offset, uint256 length) external view returns (bytes memory);
     function initializeManager(address manager_) external;
     function isSolver(address prospectiveSolver) external view returns (bool);
     function manager() external view returns (address);
     function removeSolver(address solver) external;
-    function setManager(address manager_) external;
     function simulateDelegatecall(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-    function simulateDelegatecallInternal(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
 }
 ```
 
@@ -42,30 +33,6 @@ interface GPv2AllowListAuthentication {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getStorageAt",
-    "inputs": [
-      {
-        "name": "offset",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -127,44 +94,7 @@ interface GPv2AllowListAuthentication {
   },
   {
     "type": "function",
-    "name": "setManager",
-    "inputs": [
-      {
-        "name": "manager_",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "simulateDelegatecall",
-    "inputs": [
-      {
-        "name": "targetContract",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "calldataPayload",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "response",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "simulateDelegatecallInternal",
     "inputs": [
       {
         "name": "targetContract",
@@ -241,7 +171,8 @@ interface GPv2AllowListAuthentication {
     clippy::empty_structs_with_brackets
 )]
 pub mod GPv2AllowListAuthentication {
-    use {super::*, alloy_sol_types};
+    use super::*;
+    use alloy_sol_types as alloy_sol_types;
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -254,9 +185,9 @@ pub mod GPv2AllowListAuthentication {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ManagerChanged(address,address)` and selector `0x605c2dbf762e5f7d60a546d42e7205dcb1b011ebc62a61736a57c9089d3a4350`.
-    ```solidity
-    event ManagerChanged(address newManager, address oldManager);
-    ```*/
+```solidity
+event ManagerChanged(address newManager, address oldManager);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -277,25 +208,24 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for ManagerChanged {
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Address,
             );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-
-            const ANONYMOUS: bool = false;
             const SIGNATURE: &'static str = "ManagerChanged(address,address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    96u8, 92u8, 45u8, 191u8, 118u8, 46u8, 95u8, 125u8, 96u8, 165u8, 70u8, 212u8,
-                    46u8, 114u8, 5u8, 220u8, 177u8, 176u8, 17u8, 235u8, 198u8, 42u8, 97u8, 115u8,
-                    106u8, 87u8, 201u8, 8u8, 157u8, 58u8, 67u8, 80u8,
-                ]);
-
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                96u8, 92u8, 45u8, 191u8, 118u8, 46u8, 95u8, 125u8, 96u8, 165u8, 70u8,
+                212u8, 46u8, 114u8, 5u8, 220u8, 177u8, 176u8, 17u8, 235u8, 198u8, 42u8,
+                97u8, 115u8, 106u8, 87u8, 201u8, 8u8, 157u8, 58u8, 67u8, 80u8,
+            ]);
+            const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -307,21 +237,21 @@ pub mod GPv2AllowListAuthentication {
                     oldManager: data.1,
                 }
             }
-
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
-
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
@@ -333,12 +263,10 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (Self::SIGNATURE_HASH.into(),)
             }
-
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -347,7 +275,9 @@ pub mod GPv2AllowListAuthentication {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 Ok(())
             }
         }
@@ -356,7 +286,6 @@ pub mod GPv2AllowListAuthentication {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
-
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -371,9 +300,9 @@ pub mod GPv2AllowListAuthentication {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `SolverAdded(address)` and selector `0x41f9d09dd5159251f8a8e482bbe097b7c01a5e6f70c5a0ddb494906464fc9dd7`.
-    ```solidity
-    event SolverAdded(address solver);
-    ```*/
+```solidity
+event SolverAdded(address solver);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -392,22 +321,22 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for SolverAdded {
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (alloy_sol_types::sol_data::Address,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-
-            const ANONYMOUS: bool = false;
             const SIGNATURE: &'static str = "SolverAdded(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    65u8, 249u8, 208u8, 157u8, 213u8, 21u8, 146u8, 81u8, 248u8, 168u8, 228u8,
-                    130u8, 187u8, 224u8, 151u8, 183u8, 192u8, 26u8, 94u8, 111u8, 112u8, 197u8,
-                    160u8, 221u8, 180u8, 148u8, 144u8, 100u8, 100u8, 252u8, 157u8, 215u8,
-                ]);
-
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                65u8, 249u8, 208u8, 157u8, 213u8, 21u8, 146u8, 81u8, 248u8, 168u8, 228u8,
+                130u8, 187u8, 224u8, 151u8, 183u8, 192u8, 26u8, 94u8, 111u8, 112u8,
+                197u8, 160u8, 221u8, 180u8, 148u8, 144u8, 100u8, 100u8, 252u8, 157u8,
+                215u8,
+            ]);
+            const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -416,21 +345,21 @@ pub mod GPv2AllowListAuthentication {
             ) -> Self {
                 Self { solver: data.0 }
             }
-
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
-
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
@@ -439,12 +368,10 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (Self::SIGNATURE_HASH.into(),)
             }
-
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -453,7 +380,9 @@ pub mod GPv2AllowListAuthentication {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 Ok(())
             }
         }
@@ -462,7 +391,6 @@ pub mod GPv2AllowListAuthentication {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
-
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -477,9 +405,9 @@ pub mod GPv2AllowListAuthentication {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `SolverRemoved(address)` and selector `0x640e18a2587e1d83e4fdabf70257d0a800ca4b2c1aaad1dfc485a4ad8bbbd6c6`.
-    ```solidity
-    event SolverRemoved(address solver);
-    ```*/
+```solidity
+event SolverRemoved(address solver);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -498,22 +426,21 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for SolverRemoved {
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (alloy_sol_types::sol_data::Address,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-
-            const ANONYMOUS: bool = false;
             const SIGNATURE: &'static str = "SolverRemoved(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    100u8, 14u8, 24u8, 162u8, 88u8, 126u8, 29u8, 131u8, 228u8, 253u8, 171u8, 247u8,
-                    2u8, 87u8, 208u8, 168u8, 0u8, 202u8, 75u8, 44u8, 26u8, 170u8, 209u8, 223u8,
-                    196u8, 133u8, 164u8, 173u8, 139u8, 187u8, 214u8, 198u8,
-                ]);
-
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                100u8, 14u8, 24u8, 162u8, 88u8, 126u8, 29u8, 131u8, 228u8, 253u8, 171u8,
+                247u8, 2u8, 87u8, 208u8, 168u8, 0u8, 202u8, 75u8, 44u8, 26u8, 170u8,
+                209u8, 223u8, 196u8, 133u8, 164u8, 173u8, 139u8, 187u8, 214u8, 198u8,
+            ]);
+            const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -522,21 +449,21 @@ pub mod GPv2AllowListAuthentication {
             ) -> Self {
                 Self { solver: data.0 }
             }
-
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
-
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
@@ -545,12 +472,10 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (Self::SIGNATURE_HASH.into(),)
             }
-
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -559,7 +484,9 @@ pub mod GPv2AllowListAuthentication {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 Ok(())
             }
         }
@@ -568,7 +495,6 @@ pub mod GPv2AllowListAuthentication {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
-
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -583,17 +509,16 @@ pub mod GPv2AllowListAuthentication {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addSolver(address)` and selector `0xec58f4b8`.
-    ```solidity
-    function addSolver(address solver) external;
-    ```*/
+```solidity
+function addSolver(address solver) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addSolverCall {
         #[allow(missing_docs)]
         pub solver: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`addSolver(address)`](addSolverCall) function.
+    ///Container type for the return parameters of the [`addSolver(address)`](addSolverCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addSolverReturn {}
@@ -604,7 +529,7 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -613,7 +538,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -643,7 +570,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -666,28 +595,31 @@ pub mod GPv2AllowListAuthentication {
             }
         }
         impl addSolverReturn {
-            fn _tokenize(&self) -> <addSolverCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <addSolverCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for addSolverCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = addSolverReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [236u8, 88u8, 244u8, 184u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "addSolver(address)";
-
+            const SELECTOR: [u8; 4] = [236u8, 88u8, 244u8, 184u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -696,199 +628,40 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 addSolverReturn::_tokenize(ret)
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getStorageAt(uint256,uint256)` and selector `0x5624b25b`.
-    ```solidity
-    function getStorageAt(uint256 offset, uint256 length) external view returns (bytes memory);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getStorageAtCall {
-        #[allow(missing_docs)]
-        pub offset: alloy_sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub length: alloy_sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getStorageAt(uint256,uint256)`](getStorageAtCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getStorageAtReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getStorageAtCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getStorageAtCall) -> Self {
-                    (value.offset, value.length)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getStorageAtCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        offset: tuple.0,
-                        length: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getStorageAtReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getStorageAtReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getStorageAtReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getStorageAtCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Uint<256>,
-                alloy_sol_types::sol_data::Uint<256>,
-            );
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [86u8, 36u8, 178u8, 91u8];
-            const SIGNATURE: &'static str = "getStorageAt(uint256,uint256)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.offset,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.length,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: getStorageAtReturn = r.into();
-                        r._0
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getStorageAtReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `initializeManager(address)` and selector `0x7f7120fe`.
-    ```solidity
-    function initializeManager(address manager_) external;
-    ```*/
+```solidity
+function initializeManager(address manager_) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeManagerCall {
         #[allow(missing_docs)]
         pub manager_: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`initializeManager(address)`](initializeManagerCall) function.
+    ///Container type for the return parameters of the [`initializeManager(address)`](initializeManagerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeManagerReturn {}
@@ -899,7 +672,7 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -908,7 +681,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -917,14 +692,16 @@ pub mod GPv2AllowListAuthentication {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<initializeManagerCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<initializeManagerCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: initializeManagerCall) -> Self {
                     (value.manager_,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for initializeManagerCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for initializeManagerCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { manager_: tuple.0 }
                 }
@@ -938,7 +715,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -947,14 +726,16 @@ pub mod GPv2AllowListAuthentication {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<initializeManagerReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<initializeManagerReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: initializeManagerReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for initializeManagerReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for initializeManagerReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -970,21 +751,22 @@ pub mod GPv2AllowListAuthentication {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for initializeManagerCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = initializeManagerReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [127u8, 113u8, 32u8, 254u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "initializeManager(address)";
-
+            const SELECTOR: [u8; 4] = [127u8, 113u8, 32u8, 254u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -993,32 +775,33 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 initializeManagerReturn::_tokenize(ret)
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isSolver(address)` and selector `0x02cc250d`.
-    ```solidity
-    function isSolver(address prospectiveSolver) external view returns (bool);
-    ```*/
+```solidity
+function isSolver(address prospectiveSolver) external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isSolverCall {
@@ -1026,8 +809,7 @@ pub mod GPv2AllowListAuthentication {
         pub prospectiveSolver: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isSolver(address)`](isSolverCall) function.
+    ///Container type for the return parameters of the [`isSolver(address)`](isSolverCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isSolverReturn {
@@ -1041,7 +823,7 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1050,7 +832,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1068,9 +852,7 @@ pub mod GPv2AllowListAuthentication {
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for isSolverCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        prospectiveSolver: tuple.0,
-                    }
+                    Self { prospectiveSolver: tuple.0 }
                 }
             }
         }
@@ -1082,7 +864,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1107,21 +891,22 @@ pub mod GPv2AllowListAuthentication {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isSolverCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bool,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [2u8, 204u8, 37u8, 13u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isSolver(address)";
-
+            const SELECTOR: [u8; 4] = [2u8, 204u8, 37u8, 13u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1130,45 +915,48 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isSolverReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isSolverReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isSolverReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `manager()` and selector `0x481c6a75`.
-    ```solidity
-    function manager() external view returns (address);
-    ```*/
+```solidity
+function manager() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct managerCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`manager()`](managerCall) function.
+    ///Container type for the return parameters of the [`manager()`](managerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct managerReturn {
@@ -1182,7 +970,7 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1191,7 +979,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1221,7 +1011,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1246,66 +1038,70 @@ pub mod GPv2AllowListAuthentication {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for managerCall {
             type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [72u8, 28u8, 106u8, 117u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "manager()";
-
+            const SELECTOR: [u8; 4] = [72u8, 28u8, 106u8, 117u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: managerReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: managerReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: managerReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `removeSolver(address)` and selector `0x8fd57b92`.
-    ```solidity
-    function removeSolver(address solver) external;
-    ```*/
+```solidity
+function removeSolver(address solver) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct removeSolverCall {
         #[allow(missing_docs)]
         pub solver: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`removeSolver(address)`](removeSolverCall) function.
+    ///Container type for the return parameters of the [`removeSolver(address)`](removeSolverCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct removeSolverReturn {}
@@ -1316,7 +1112,7 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1325,7 +1121,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1355,7 +1153,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1378,28 +1178,31 @@ pub mod GPv2AllowListAuthentication {
             }
         }
         impl removeSolverReturn {
-            fn _tokenize(&self) -> <removeSolverCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <removeSolverCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for removeSolverCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = removeSolverReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [143u8, 213u8, 123u8, 146u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "removeSolver(address)";
-
+            const SELECTOR: [u8; 4] = [143u8, 213u8, 123u8, 146u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1408,168 +1211,33 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 removeSolverReturn::_tokenize(ret)
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `setManager(address)` and selector `0xd0ebdbe7`.
-    ```solidity
-    function setManager(address manager_) external;
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setManagerCall {
-        #[allow(missing_docs)]
-        pub manager_: alloy_sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the
-    /// [`setManager(address)`](setManagerCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setManagerReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setManagerCall> for UnderlyingRustTuple<'_> {
-                fn from(value: setManagerCall) -> Self {
-                    (value.manager_,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setManagerCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { manager_: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setManagerReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: setManagerReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setManagerReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl setManagerReturn {
-            fn _tokenize(&self) -> <setManagerCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for setManagerCall {
-            type Parameters<'a> = (alloy_sol_types::sol_data::Address,);
-            type Return = setManagerReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [208u8, 235u8, 219u8, 231u8];
-            const SIGNATURE: &'static str = "setManager(address)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.manager_,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                setManagerReturn::_tokenize(ret)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `simulateDelegatecall(address,bytes)` and selector `0xf84436bd`.
-    ```solidity
-    function simulateDelegatecall(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-    ```*/
+```solidity
+function simulateDelegatecall(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct simulateDelegatecallCall {
@@ -1579,9 +1247,7 @@ pub mod GPv2AllowListAuthentication {
         pub calldataPayload: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall)
-    /// function.
+    ///Container type for the return parameters of the [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct simulateDelegatecallReturn {
@@ -1595,7 +1261,7 @@ pub mod GPv2AllowListAuthentication {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1610,7 +1276,9 @@ pub mod GPv2AllowListAuthentication {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1619,14 +1287,16 @@ pub mod GPv2AllowListAuthentication {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<simulateDelegatecallCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: simulateDelegatecallCall) -> Self {
                     (value.targetContract, value.calldataPayload)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for simulateDelegatecallCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for simulateDelegatecallCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         targetContract: tuple.0,
@@ -1643,7 +1313,9 @@ pub mod GPv2AllowListAuthentication {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1652,14 +1324,16 @@ pub mod GPv2AllowListAuthentication {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<simulateDelegatecallReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: simulateDelegatecallReturn) -> Self {
                     (value.response,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for simulateDelegatecallReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for simulateDelegatecallReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { response: tuple.0 }
                 }
@@ -1671,21 +1345,22 @@ pub mod GPv2AllowListAuthentication {
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Bytes,
             );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Bytes;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [248u8, 68u8, 54u8, 189u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "simulateDelegatecall(address,bytes)";
-
+            const SELECTOR: [u8; 4] = [248u8, 68u8, 54u8, 189u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1697,202 +1372,44 @@ pub mod GPv2AllowListAuthentication {
                     ),
                 )
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: simulateDelegatecallReturn = r.into();
                         r.response
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: simulateDelegatecallReturn = r.into();
-                    r.response
-                })
-            }
-        }
-    };
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `simulateDelegatecallInternal(address,bytes)` and selector `0x43218e19`.
-    ```solidity
-    function simulateDelegatecallInternal(address targetContract, bytes memory calldataPayload) external returns (bytes memory response);
-    ```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct simulateDelegatecallInternalCall {
-        #[allow(missing_docs)]
-        pub targetContract: alloy_sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub calldataPayload: alloy_sol_types::private::Bytes,
-    }
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`simulateDelegatecallInternal(address,
-    /// bytes)`](simulateDelegatecallInternalCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct simulateDelegatecallInternalReturn {
-        #[allow(missing_docs)]
-        pub response: alloy_sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Address,
-                alloy_sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallInternalCall> for UnderlyingRustTuple<'_> {
-                fn from(value: simulateDelegatecallInternalCall) -> Self {
-                    (value.targetContract, value.calldataPayload)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for simulateDelegatecallInternalCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        targetContract: tuple.0,
-                        calldataPayload: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Bytes,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<simulateDelegatecallInternalReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: simulateDelegatecallInternalReturn) -> Self {
-                    (value.response,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for simulateDelegatecallInternalReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { response: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for simulateDelegatecallInternalCall {
-            type Parameters<'a> = (
-                alloy_sol_types::sol_data::Address,
-                alloy_sol_types::sol_data::Bytes,
-            );
-            type Return = alloy_sol_types::private::Bytes;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type ReturnTuple<'a> = (alloy_sol_types::sol_data::Bytes,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [67u8, 33u8, 142u8, 25u8];
-            const SIGNATURE: &'static str = "simulateDelegatecallInternal(address,bytes)";
-
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.targetContract,
-                    ),
-                    <alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.calldataPayload,
-                    ),
-                )
-            }
-
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(ret),)
-            }
-
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
-                        let r: simulateDelegatecallInternalReturn = r.into();
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: simulateDelegatecallReturn = r.into();
                         r.response
-                    },
-                )
-            }
-
-            #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: simulateDelegatecallInternalReturn = r.into();
-                    r.response
-                })
+                    })
             }
         }
     };
-    ///Container for all the [`GPv2AllowListAuthentication`](self) function
-    /// calls.
+    ///Container for all the [`GPv2AllowListAuthentication`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum GPv2AllowListAuthenticationCalls {
         #[allow(missing_docs)]
         addSolver(addSolverCall),
-        #[allow(missing_docs)]
-        getStorageAt(getStorageAtCall),
         #[allow(missing_docs)]
         initializeManager(initializeManagerCall),
         #[allow(missing_docs)]
@@ -1902,56 +1419,41 @@ pub mod GPv2AllowListAuthentication {
         #[allow(missing_docs)]
         removeSolver(removeSolverCall),
         #[allow(missing_docs)]
-        setManager(setManagerCall),
-        #[allow(missing_docs)]
         simulateDelegatecall(simulateDelegatecallCall),
-        #[allow(missing_docs)]
-        simulateDelegatecallInternal(simulateDelegatecallInternalCall),
     }
     impl GPv2AllowListAuthenticationCalls {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// Note that the selectors might not be in the same order as the variants.
+        /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [2u8, 204u8, 37u8, 13u8],
-            [67u8, 33u8, 142u8, 25u8],
             [72u8, 28u8, 106u8, 117u8],
-            [86u8, 36u8, 178u8, 91u8],
             [127u8, 113u8, 32u8, 254u8],
             [143u8, 213u8, 123u8, 146u8],
-            [208u8, 235u8, 219u8, 231u8],
             [236u8, 88u8, 244u8, 184u8],
             [248u8, 68u8, 54u8, 189u8],
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <isSolverCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <managerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getStorageAtCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <initializeManagerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <removeSolverCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setManagerCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <addSolverCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <simulateDelegatecallCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(isSolver),
-            ::core::stringify!(simulateDelegatecallInternal),
             ::core::stringify!(manager),
-            ::core::stringify!(getStorageAt),
             ::core::stringify!(initializeManager),
             ::core::stringify!(removeSolver),
-            ::core::stringify!(setManager),
             ::core::stringify!(addSolver),
             ::core::stringify!(simulateDelegatecall),
         ];
-
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <isSolverCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <managerCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <initializeManagerCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <removeSolverCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <addSolverCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <simulateDelegatecallCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1964,109 +1466,81 @@ pub mod GPv2AllowListAuthentication {
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
-
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for GPv2AllowListAuthenticationCalls {
-        const COUNT: usize = 9usize;
-        const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "GPv2AllowListAuthenticationCalls";
-
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 6usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::addSolver(_) => <addSolverCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::getStorageAt(_) => <getStorageAtCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::addSolver(_) => {
+                    <addSolverCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::initializeManager(_) => {
                     <initializeManagerCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::isSolver(_) => <isSolverCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::manager(_) => <managerCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::removeSolver(_) => <removeSolverCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::setManager(_) => <setManagerCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::removeSolver(_) => {
+                    <removeSolverCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::simulateDelegatecall(_) => {
                     <simulateDelegatecallCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::simulateDelegatecallInternal(_) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::SELECTOR
-                }
             }
         }
-
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
-
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
-
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                GPv2AllowListAuthenticationCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>] = &[
                 {
                     fn isSolver(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
                         <isSolverCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GPv2AllowListAuthenticationCalls::isSolver)
                     }
                     isSolver
                 },
                 {
-                    fn simulateDelegatecallInternal(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                GPv2AllowListAuthenticationCalls::simulateDelegatecallInternal,
-                            )
-                    }
-                    simulateDelegatecallInternal
-                },
-                {
                     fn manager(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
                         <managerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GPv2AllowListAuthenticationCalls::manager)
                     }
                     manager
                 },
                 {
-                    fn getStorageAt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <getStorageAtCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GPv2AllowListAuthenticationCalls::getStorageAt)
-                    }
-                    getStorageAt
-                },
-                {
                     fn initializeManager(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <initializeManagerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
+                        <initializeManagerCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(GPv2AllowListAuthenticationCalls::initializeManager)
                     }
                     initializeManager
@@ -2074,28 +1548,18 @@ pub mod GPv2AllowListAuthentication {
                 {
                     fn removeSolver(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <removeSolverCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
+                        <removeSolverCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(GPv2AllowListAuthenticationCalls::removeSolver)
                     }
                     removeSolver
                 },
                 {
-                    fn setManager(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <setManagerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(GPv2AllowListAuthenticationCalls::setManager)
-                    }
-                    setManager
-                },
-                {
                     fn addSolver(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
                         <addSolverCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(GPv2AllowListAuthenticationCalls::addSolver)
                     }
@@ -2104,23 +1568,25 @@ pub mod GPv2AllowListAuthentication {
                 {
                     fn simulateDelegatecall(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
+                        <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(GPv2AllowListAuthenticationCalls::simulateDelegatecall)
                     }
                     simulateDelegatecall
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
-
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -2129,60 +1595,33 @@ pub mod GPv2AllowListAuthentication {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                GPv2AllowListAuthenticationCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>] = &[
                 {
                     fn isSolver(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <isSolverCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
+                        <isSolverCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(GPv2AllowListAuthenticationCalls::isSolver)
                     }
                     isSolver
                 },
                 {
-                    fn simulateDelegatecallInternal(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                GPv2AllowListAuthenticationCalls::simulateDelegatecallInternal,
-                            )
-                    }
-                    simulateDelegatecallInternal
-                },
-                {
                     fn manager(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <managerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
+                        <managerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(GPv2AllowListAuthenticationCalls::manager)
                     }
                     manager
                 },
                 {
-                    fn getStorageAt(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <getStorageAtCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(GPv2AllowListAuthenticationCalls::getStorageAt)
-                    }
-                    getStorageAt
-                },
-                {
                     fn initializeManager(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
                         <initializeManagerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2193,31 +1632,21 @@ pub mod GPv2AllowListAuthentication {
                 {
                     fn removeSolver(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
                         <removeSolverCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(GPv2AllowListAuthenticationCalls::removeSolver)
+                                data,
+                            )
+                            .map(GPv2AllowListAuthenticationCalls::removeSolver)
                     }
                     removeSolver
                 },
                 {
-                    fn setManager(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <setManagerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                            .map(GPv2AllowListAuthenticationCalls::setManager)
-                    }
-                    setManager
-                },
-                {
                     fn addSolver(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
-                        <addSolverCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
+                        <addSolverCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(GPv2AllowListAuthenticationCalls::addSolver)
                     }
                     addSolver
@@ -2225,8 +1654,7 @@ pub mod GPv2AllowListAuthentication {
                 {
                     fn simulateDelegatecall(
                         data: &[u8],
-                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls>
-                    {
+                    ) -> alloy_sol_types::Result<GPv2AllowListAuthenticationCalls> {
                         <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
@@ -2236,25 +1664,25 @@ pub mod GPv2AllowListAuthentication {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
-
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::addSolver(inner) => {
                     <addSolverCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::getStorageAt(inner) => {
-                    <getStorageAtCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
                 Self::initializeManager(inner) => {
-                    <initializeManagerCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <initializeManagerCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::isSolver(inner) => {
                     <isSolverCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -2263,61 +1691,59 @@ pub mod GPv2AllowListAuthentication {
                     <managerCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::removeSolver(inner) => {
-                    <removeSolverCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::setManager(inner) => {
-                    <setManagerCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                    <removeSolverCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::simulateDelegatecall(inner) => {
-                    <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
-                Self::simulateDelegatecallInternal(inner) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                    <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
             }
         }
-
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::addSolver(inner) => {
-                    <addSolverCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::getStorageAt(inner) => {
-                    <getStorageAtCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <addSolverCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::initializeManager(inner) => {
-                    <initializeManagerCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <initializeManagerCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::isSolver(inner) => {
-                    <isSolverCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <isSolverCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::manager(inner) => {
                     <managerCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::removeSolver(inner) => {
-                    <removeSolverCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
-                }
-                Self::setManager(inner) => {
-                    <setManagerCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <removeSolverCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::simulateDelegatecall(inner) => {
                     <simulateDelegatecallCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
-                    )
-                }
-                Self::simulateDelegatecallInternal(inner) => {
-                    <simulateDelegatecallInternalCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
             }
         }
     }
     ///Container for all the [`GPv2AllowListAuthentication`](self) events.
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum GPv2AllowListAuthenticationEvents {
         #[allow(missing_docs)]
         ManagerChanged(ManagerChanged),
@@ -2329,33 +1755,27 @@ pub mod GPv2AllowListAuthentication {
     impl GPv2AllowListAuthenticationEvents {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// Note that the selectors might not be in the same order as the variants.
+        /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                65u8, 249u8, 208u8, 157u8, 213u8, 21u8, 146u8, 81u8, 248u8, 168u8, 228u8, 130u8,
-                187u8, 224u8, 151u8, 183u8, 192u8, 26u8, 94u8, 111u8, 112u8, 197u8, 160u8, 221u8,
-                180u8, 148u8, 144u8, 100u8, 100u8, 252u8, 157u8, 215u8,
+                65u8, 249u8, 208u8, 157u8, 213u8, 21u8, 146u8, 81u8, 248u8, 168u8, 228u8,
+                130u8, 187u8, 224u8, 151u8, 183u8, 192u8, 26u8, 94u8, 111u8, 112u8,
+                197u8, 160u8, 221u8, 180u8, 148u8, 144u8, 100u8, 100u8, 252u8, 157u8,
+                215u8,
             ],
             [
-                96u8, 92u8, 45u8, 191u8, 118u8, 46u8, 95u8, 125u8, 96u8, 165u8, 70u8, 212u8, 46u8,
-                114u8, 5u8, 220u8, 177u8, 176u8, 17u8, 235u8, 198u8, 42u8, 97u8, 115u8, 106u8,
-                87u8, 201u8, 8u8, 157u8, 58u8, 67u8, 80u8,
+                96u8, 92u8, 45u8, 191u8, 118u8, 46u8, 95u8, 125u8, 96u8, 165u8, 70u8,
+                212u8, 46u8, 114u8, 5u8, 220u8, 177u8, 176u8, 17u8, 235u8, 198u8, 42u8,
+                97u8, 115u8, 106u8, 87u8, 201u8, 8u8, 157u8, 58u8, 67u8, 80u8,
             ],
             [
-                100u8, 14u8, 24u8, 162u8, 88u8, 126u8, 29u8, 131u8, 228u8, 253u8, 171u8, 247u8,
-                2u8, 87u8, 208u8, 168u8, 0u8, 202u8, 75u8, 44u8, 26u8, 170u8, 209u8, 223u8, 196u8,
-                133u8, 164u8, 173u8, 139u8, 187u8, 214u8, 198u8,
+                100u8, 14u8, 24u8, 162u8, 88u8, 126u8, 29u8, 131u8, 228u8, 253u8, 171u8,
+                247u8, 2u8, 87u8, 208u8, 168u8, 0u8, 202u8, 75u8, 44u8, 26u8, 170u8,
+                209u8, 223u8, 196u8, 133u8, 164u8, 173u8, 139u8, 187u8, 214u8, 198u8,
             ],
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <SolverAdded as alloy_sol_types::SolEvent>::SIGNATURE,
-            <ManagerChanged as alloy_sol_types::SolEvent>::SIGNATURE,
-            <SolverRemoved as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
@@ -2363,7 +1783,12 @@ pub mod GPv2AllowListAuthentication {
             ::core::stringify!(ManagerChanged),
             ::core::stringify!(SolverRemoved),
         ];
-
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <SolverAdded as alloy_sol_types::SolEvent>::SIGNATURE,
+            <ManagerChanged as alloy_sol_types::SolEvent>::SIGNATURE,
+            <SolverRemoved as alloy_sol_types::SolEvent>::SIGNATURE,
+        ];
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -2376,45 +1801,56 @@ pub mod GPv2AllowListAuthentication {
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
-
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for GPv2AllowListAuthenticationEvents {
-        const COUNT: usize = 3usize;
         const NAME: &'static str = "GPv2AllowListAuthenticationEvents";
-
+        const COUNT: usize = 3usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<ManagerChanged as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <ManagerChanged as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <ManagerChanged as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::ManagerChanged)
                 }
                 Some(<SolverAdded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <SolverAdded as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <SolverAdded as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::SolverAdded)
                 }
                 Some(<SolverRemoved as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <SolverRemoved as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <SolverRemoved as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::SolverRemoved)
                 }
-                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                    log: alloy_sol_types::private::Box::new(
-                        alloy_sol_types::private::LogData::new_unchecked(
-                            topics.to_vec(),
-                            data.to_vec().into(),
+                _ => {
+                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                        log: alloy_sol_types::private::Box::new(
+                            alloy_sol_types::private::LogData::new_unchecked(
+                                topics.to_vec(),
+                                data.to_vec().into(),
+                            ),
                         ),
-                    ),
-                }),
+                    })
+                }
             }
         }
     }
@@ -2433,7 +1869,6 @@ pub mod GPv2AllowListAuthentication {
                 }
             }
         }
-
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
                 Self::ManagerChanged(inner) => {
@@ -2448,10 +1883,10 @@ pub mod GPv2AllowListAuthentication {
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`GPv2AllowListAuthentication`](self) contract instance.
 
-    See the [wrapper's documentation](`GPv2AllowListAuthenticationInstance`) for more details.*/
+See the [wrapper's documentation](`GPv2AllowListAuthenticationInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -2464,11 +1899,14 @@ pub mod GPv2AllowListAuthentication {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+    pub fn deploy<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(
         __provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<GPv2AllowListAuthenticationInstance<P, N>>,
@@ -2476,32 +1914,33 @@ pub mod GPv2AllowListAuthentication {
         GPv2AllowListAuthenticationInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
+and constructor arguments, if any.
 
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         GPv2AllowListAuthenticationInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`GPv2AllowListAuthentication`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`GPv2AllowListAuthentication`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`GPv2AllowListAuthentication`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct GPv2AllowListAuthenticationInstance<P, N = alloy_contract::private::Ethereum> {
+    pub struct GPv2AllowListAuthenticationInstance<
+        P,
+        N = alloy_contract::private::Ethereum,
+    > {
         address: alloy_sol_types::private::Address,
         provider: P,
         _network: ::core::marker::PhantomData<N>,
@@ -2516,26 +1955,29 @@ pub mod GPv2AllowListAuthentication {
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GPv2AllowListAuthenticationInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GPv2AllowListAuthenticationInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`GPv2AllowListAuthentication`](self) contract instance.
 
-        See the [wrapper's documentation](`GPv2AllowListAuthenticationInstance`) for more details.*/
+See the [wrapper's documentation](`GPv2AllowListAuthenticationInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
-
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -2544,12 +1986,11 @@ pub mod GPv2AllowListAuthentication {
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
-
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -2557,25 +1998,21 @@ pub mod GPv2AllowListAuthentication {
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
-
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
-
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
-
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
-
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -2583,8 +2020,7 @@ pub mod GPv2AllowListAuthentication {
         }
     }
     impl<P: ::core::clone::Clone, N> GPv2AllowListAuthenticationInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned
-        /// provider.
+        /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
         pub fn with_cloned_provider(self) -> GPv2AllowListAuthenticationInstance<P, N> {
             GPv2AllowListAuthenticationInstance {
@@ -2595,22 +2031,20 @@ pub mod GPv2AllowListAuthentication {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GPv2AllowListAuthenticationInstance<P, N>
-    {
-        /// Creates a new call builder using this contract instance's provider
-        /// and address.
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GPv2AllowListAuthenticationInstance<P, N> {
+        /// Creates a new call builder using this contract instance's provider and address.
         ///
-        /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined in this
+        /// contract. Prefer using the other methods for building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-
         ///Creates a new call builder for the [`addSolver`] function.
         pub fn addSolver(
             &self,
@@ -2618,16 +2052,6 @@ pub mod GPv2AllowListAuthentication {
         ) -> alloy_contract::SolCallBuilder<&P, addSolverCall, N> {
             self.call_builder(&addSolverCall { solver })
         }
-
-        ///Creates a new call builder for the [`getStorageAt`] function.
-        pub fn getStorageAt(
-            &self,
-            offset: alloy_sol_types::private::primitives::aliases::U256,
-            length: alloy_sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, getStorageAtCall, N> {
-            self.call_builder(&getStorageAtCall { offset, length })
-        }
-
         ///Creates a new call builder for the [`initializeManager`] function.
         pub fn initializeManager(
             &self,
@@ -2635,7 +2059,6 @@ pub mod GPv2AllowListAuthentication {
         ) -> alloy_contract::SolCallBuilder<&P, initializeManagerCall, N> {
             self.call_builder(&initializeManagerCall { manager_ })
         }
-
         ///Creates a new call builder for the [`isSolver`] function.
         pub fn isSolver(
             &self,
@@ -2643,12 +2066,10 @@ pub mod GPv2AllowListAuthentication {
         ) -> alloy_contract::SolCallBuilder<&P, isSolverCall, N> {
             self.call_builder(&isSolverCall { prospectiveSolver })
         }
-
         ///Creates a new call builder for the [`manager`] function.
         pub fn manager(&self) -> alloy_contract::SolCallBuilder<&P, managerCall, N> {
             self.call_builder(&managerCall)
         }
-
         ///Creates a new call builder for the [`removeSolver`] function.
         pub fn removeSolver(
             &self,
@@ -2656,131 +2077,159 @@ pub mod GPv2AllowListAuthentication {
         ) -> alloy_contract::SolCallBuilder<&P, removeSolverCall, N> {
             self.call_builder(&removeSolverCall { solver })
         }
-
-        ///Creates a new call builder for the [`setManager`] function.
-        pub fn setManager(
-            &self,
-            manager_: alloy_sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, setManagerCall, N> {
-            self.call_builder(&setManagerCall { manager_ })
-        }
-
-        ///Creates a new call builder for the [`simulateDelegatecall`]
-        /// function.
+        ///Creates a new call builder for the [`simulateDelegatecall`] function.
         pub fn simulateDelegatecall(
             &self,
             targetContract: alloy_sol_types::private::Address,
             calldataPayload: alloy_sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, simulateDelegatecallCall, N> {
-            self.call_builder(&simulateDelegatecallCall {
-                targetContract,
-                calldataPayload,
-            })
-        }
-
-        ///Creates a new call builder for the [`simulateDelegatecallInternal`]
-        /// function.
-        pub fn simulateDelegatecallInternal(
-            &self,
-            targetContract: alloy_sol_types::private::Address,
-            calldataPayload: alloy_sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, simulateDelegatecallInternalCall, N> {
-            self.call_builder(&simulateDelegatecallInternalCall {
-                targetContract,
-                calldataPayload,
-            })
+            self.call_builder(
+                &simulateDelegatecallCall {
+                    targetContract,
+                    calldataPayload,
+                },
+            )
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GPv2AllowListAuthenticationInstance<P, N>
-    {
-        /// Creates a new event filter using this contract instance's provider
-        /// and address.
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GPv2AllowListAuthenticationInstance<P, N> {
+        /// Creates a new event filter using this contract instance's provider and address.
         ///
-        /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this contract.
+        /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
-
         ///Creates a new event filter for the [`ManagerChanged`] event.
-        pub fn ManagerChanged_filter(&self) -> alloy_contract::Event<&P, ManagerChanged, N> {
+        pub fn ManagerChanged_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, ManagerChanged, N> {
             self.event_filter::<ManagerChanged>()
         }
-
         ///Creates a new event filter for the [`SolverAdded`] event.
         pub fn SolverAdded_filter(&self) -> alloy_contract::Event<&P, SolverAdded, N> {
             self.event_filter::<SolverAdded>()
         }
-
         ///Creates a new event filter for the [`SolverRemoved`] event.
-        pub fn SolverRemoved_filter(&self) -> alloy_contract::Event<&P, SolverRemoved, N> {
+        pub fn SolverRemoved_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, SolverRemoved, N> {
             self.event_filter::<SolverRemoved>()
         }
     }
 }
-pub type Instance =
-    GPv2AllowListAuthentication::GPv2AllowListAuthenticationInstance<::alloy_provider::DynProvider>;
+pub type Instance = GPv2AllowListAuthentication::GPv2AllowListAuthenticationInstance<
+    ::alloy_provider::DynProvider,
+>;
 use {
-    alloy_primitives::{Address, address},
-    alloy_provider::{DynProvider, Provider},
-    anyhow::{Context, Result},
-    std::{collections::HashMap, sync::LazyLock},
+    std::{sync::LazyLock, collections::HashMap},
+    anyhow::{Result, Context},
+    alloy_primitives::{address, Address},
+    alloy_provider::{Provider, DynProvider},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        1u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(12593263u64),
-        )),
-        10u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(134254466u64),
-        )),
-        56u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(48173639u64),
-        )),
-        100u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(16465099u64),
-        )),
-        137u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(45854728u64),
-        )),
-        8453u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(21407137u64),
-        )),
-        9745u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(3439709u64),
-        )),
-        42161u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(204702129u64),
-        )),
-        43114u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(59891351u64),
-        )),
-        57073u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(34436840u64),
-        )),
-        59144u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(24333100u64),
-        )),
-        11155111u64 => Some((
-            ::alloy_primitives::address!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
-            Some(4717469u64),
-        )),
+        1u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(12593263u64),
+            ))
+        }
+        10u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(134254466u64),
+            ))
+        }
+        56u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(48173639u64),
+            ))
+        }
+        100u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(16465099u64),
+            ))
+        }
+        137u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(45854728u64),
+            ))
+        }
+        8453u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(21407137u64),
+            ))
+        }
+        9745u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(3439709u64),
+            ))
+        }
+        42161u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(204702129u64),
+            ))
+        }
+        43114u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(59891351u64),
+            ))
+        }
+        57073u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(34436840u64),
+            ))
+        }
+        59144u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(24333100u64),
+            ))
+        }
+        11155111u64 => {
+            Some((
+                ::alloy_primitives::address!(
+                    "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"
+                ),
+                Some(4717469u64),
+            ))
+        }
         _ => None,
     }
 }
@@ -2797,7 +2246,9 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(
+        provider: &DynProvider,
+    ) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()

@@ -79,19 +79,6 @@
     {
       "inputs": [
         {
-          "internalType": "address[]",
-          "name": "newSanctions",
-          "type": "address[]"
-        }
-      ],
-      "name": "addToSanctionsList",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
           "internalType": "address",
           "name": "addr",
           "type": "address"
@@ -106,25 +93,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "addr",
-          "type": "address"
-        }
-      ],
-      "name": "isSanctionedVerbose",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -151,6 +119,40 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "_disabled": [
+    {
+      "inputs": [
+        {
+          "internalType": "address[]",
+          "name": "newSanctions",
+          "type": "address[]"
+        }
+      ],
+      "name": "addToSanctionsList",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "addr",
+          "type": "address"
+        }
+      ],
+      "name": "isSanctionedVerbose",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {

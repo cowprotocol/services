@@ -1,10 +1,4 @@
-#![allow(
-    unused_imports,
-    unused_attributes,
-    clippy::all,
-    rustdoc::all,
-    non_snake_case
-)]
+#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -220,7 +214,8 @@ interface MockUniswapV3Pool {
     clippy::empty_structs_with_brackets
 )]
 pub mod MockUniswapV3Pool {
-    use {super::*, alloy_sol_types};
+    use super::*;
+    use alloy_sol_types as alloy_sol_types;
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -243,9 +238,9 @@ pub mod MockUniswapV3Pool {
     );
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Initialize(uint160,int24)` and selector `0x98636036cb66a9c19a37435efc1e90142190214e8abeb821bdba3f2990dd4c95`.
-    ```solidity
-    event Initialize(uint160 sqrtPriceX96, int24 tick);
-    ```*/
+```solidity
+event Initialize(uint160 sqrtPriceX96, int24 tick);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -266,25 +261,24 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Initialize {
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (
                 alloy_sol_types::sol_data::Uint<160>,
                 alloy_sol_types::sol_data::Int<24>,
             );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-
-            const ANONYMOUS: bool = false;
             const SIGNATURE: &'static str = "Initialize(uint160,int24)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    152u8, 99u8, 96u8, 54u8, 203u8, 102u8, 169u8, 193u8, 154u8, 55u8, 67u8, 94u8,
-                    252u8, 30u8, 144u8, 20u8, 33u8, 144u8, 33u8, 78u8, 138u8, 190u8, 184u8, 33u8,
-                    189u8, 186u8, 63u8, 41u8, 144u8, 221u8, 76u8, 149u8,
-                ]);
-
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                152u8, 99u8, 96u8, 54u8, 203u8, 102u8, 169u8, 193u8, 154u8, 55u8, 67u8,
+                94u8, 252u8, 30u8, 144u8, 20u8, 33u8, 144u8, 33u8, 78u8, 138u8, 190u8,
+                184u8, 33u8, 189u8, 186u8, 63u8, 41u8, 144u8, 221u8, 76u8, 149u8,
+            ]);
+            const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -296,38 +290,36 @@ pub mod MockUniswapV3Pool {
                     tick: data.1,
                 }
             }
-
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
-
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<160> as alloy_sol_types::SolType>::tokenize(
-                        &self.sqrtPriceX96,
-                    ),
-                    <alloy_sol_types::sol_data::Int<24> as alloy_sol_types::SolType>::tokenize(
-                        &self.tick,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        160,
+                    > as alloy_sol_types::SolType>::tokenize(&self.sqrtPriceX96),
+                    <alloy_sol_types::sol_data::Int<
+                        24,
+                    > as alloy_sol_types::SolType>::tokenize(&self.tick),
                 )
             }
-
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (Self::SIGNATURE_HASH.into(),)
             }
-
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -336,7 +328,9 @@ pub mod MockUniswapV3Pool {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 Ok(())
             }
         }
@@ -345,7 +339,6 @@ pub mod MockUniswapV3Pool {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
-
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -360,9 +353,9 @@ pub mod MockUniswapV3Pool {
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Mint(address,address,int24,int24,uint128,uint256,uint256)` and selector `0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde`.
-    ```solidity
-    event Mint(address sender, address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1);
-    ```*/
+```solidity
+event Mint(address sender, address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -393,33 +386,31 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for Mint {
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type DataTuple<'a> = (
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Uint<128>,
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
             );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Int<24>,
                 alloy_sol_types::sol_data::Int<24>,
             );
-
+            const SIGNATURE: &'static str = "Mint(address,address,int24,int24,uint128,uint256,uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                122u8, 83u8, 8u8, 11u8, 164u8, 20u8, 21u8, 139u8, 231u8, 236u8, 105u8,
+                185u8, 135u8, 181u8, 251u8, 125u8, 7u8, 222u8, 225u8, 1u8, 254u8, 133u8,
+                72u8, 143u8, 8u8, 83u8, 174u8, 22u8, 35u8, 157u8, 11u8, 222u8,
+            ]);
             const ANONYMOUS: bool = false;
-            const SIGNATURE: &'static str =
-                "Mint(address,address,int24,int24,uint128,uint256,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    122u8, 83u8, 8u8, 11u8, 164u8, 20u8, 21u8, 139u8, 231u8, 236u8, 105u8, 185u8,
-                    135u8, 181u8, 251u8, 125u8, 7u8, 222u8, 225u8, 1u8, 254u8, 133u8, 72u8, 143u8,
-                    8u8, 83u8, 174u8, 22u8, 35u8, 157u8, 11u8, 222u8,
-                ]);
-
             #[allow(unused_variables)]
             #[inline]
             fn new(
@@ -436,39 +427,38 @@ pub mod MockUniswapV3Pool {
                     amount1: data.3,
                 }
             }
-
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
-
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.sender,
                     ),
-                    <alloy_sol_types::sol_data::Uint<128> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount0,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount1,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(&self.amount),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.amount0),
+                    <alloy_sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.amount1),
                 )
             }
-
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
                 (
@@ -478,7 +468,6 @@ pub mod MockUniswapV3Pool {
                     self.tickUpper.clone(),
                 )
             }
-
             #[inline]
             fn encode_topics_raw(
                 &self,
@@ -487,7 +476,9 @@ pub mod MockUniswapV3Pool {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy_sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.owner,
                 );
@@ -505,7 +496,6 @@ pub mod MockUniswapV3Pool {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
-
             fn into_log_data(self) -> alloy_sol_types::private::LogData {
                 From::from(&self)
             }
@@ -519,9 +509,9 @@ pub mod MockUniswapV3Pool {
         }
     };
     /**Constructor`.
-    ```solidity
-    constructor(address _token0, address _token1, uint24 _fee);
-    ```*/
+```solidity
+constructor(address _token0, address _token1, uint24 _fee);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -533,7 +523,7 @@ pub mod MockUniswapV3Pool {
         pub _fee: alloy_sol_types::private::primitives::aliases::U24,
     }
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -550,7 +540,9 @@ pub mod MockUniswapV3Pool {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -583,15 +575,15 @@ pub mod MockUniswapV3Pool {
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Uint<24>,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -601,24 +593,23 @@ pub mod MockUniswapV3Pool {
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self._token1,
                     ),
-                    <alloy_sol_types::sol_data::Uint<24> as alloy_sol_types::SolType>::tokenize(
-                        &self._fee,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        24,
+                    > as alloy_sol_types::SolType>::tokenize(&self._fee),
                 )
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fee()` and selector `0xddca3f43`.
-    ```solidity
-    function fee() external view returns (uint24);
-    ```*/
+```solidity
+function fee() external view returns (uint24);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct feeCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`fee()`](feeCall)
-    /// function.
+    ///Container type for the return parameters of the [`fee()`](feeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct feeReturn {
@@ -632,7 +623,7 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -641,7 +632,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -668,10 +661,14 @@ pub mod MockUniswapV3Pool {
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<24>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::primitives::aliases::U24,);
+            type UnderlyingRustTuple<'a> = (
+                alloy_sol_types::private::primitives::aliases::U24,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -696,70 +693,70 @@ pub mod MockUniswapV3Pool {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for feeCall {
             type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::primitives::aliases::U24;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<24>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [221u8, 202u8, 63u8, 67u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "fee()";
-
+            const SELECTOR: [u8; 4] = [221u8, 202u8, 63u8, 67u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<24> as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        24,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
                 )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: feeReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: feeReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: feeReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `initialize(uint160)` and selector `0xf637731d`.
-    ```solidity
-    function initialize(uint160 sqrtPriceX96) external;
-    ```*/
+```solidity
+function initialize(uint160 sqrtPriceX96) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeCall {
         #[allow(missing_docs)]
         pub sqrtPriceX96: alloy_sol_types::private::primitives::aliases::U160,
     }
-    ///Container type for the return parameters of the
-    /// [`initialize(uint160)`](initializeCall) function.
+    ///Container type for the return parameters of the [`initialize(uint160)`](initializeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeReturn {}
@@ -770,16 +767,20 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<160>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::primitives::aliases::U160,);
+            type UnderlyingRustTuple<'a> = (
+                alloy_sol_types::private::primitives::aliases::U160,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -797,9 +798,7 @@ pub mod MockUniswapV3Pool {
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for initializeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        sqrtPriceX96: tuple.0,
-                    }
+                    Self { sqrtPriceX96: tuple.0 }
                 }
             }
         }
@@ -811,7 +810,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -834,68 +835,71 @@ pub mod MockUniswapV3Pool {
             }
         }
         impl initializeReturn {
-            fn _tokenize(&self) -> <initializeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <initializeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for initializeCall {
             type Parameters<'a> = (alloy_sol_types::sol_data::Uint<160>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = initializeReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [246u8, 55u8, 115u8, 29u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "initialize(uint160)";
-
+            const SELECTOR: [u8; 4] = [246u8, 55u8, 115u8, 29u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<160> as alloy_sol_types::SolType>::tokenize(
-                        &self.sqrtPriceX96,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        160,
+                    > as alloy_sol_types::SolType>::tokenize(&self.sqrtPriceX96),
                 )
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 initializeReturn::_tokenize(ret)
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `liquidity()` and selector `0x1a686502`.
-    ```solidity
-    function liquidity() external view returns (uint128);
-    ```*/
+```solidity
+function liquidity() external view returns (uint128);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct liquidityCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`liquidity()`](liquidityCall) function.
+    ///Container type for the return parameters of the [`liquidity()`](liquidityCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct liquidityReturn {
@@ -909,7 +913,7 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -918,7 +922,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -948,7 +954,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = (u128,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -973,62 +981,63 @@ pub mod MockUniswapV3Pool {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for liquidityCall {
             type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = u128;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<128>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [26u8, 104u8, 101u8, 2u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "liquidity()";
-
+            const SELECTOR: [u8; 4] = [26u8, 104u8, 101u8, 2u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<128> as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
+                    <alloy_sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
                 )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: liquidityReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: liquidityReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: liquidityReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `mockMint(address,int24,int24,uint128)` and selector `0xefe27fa3`.
-    ```solidity
-    function mockMint(address owner, int24 tickLower, int24 tickUpper, uint128 amount) external;
-    ```*/
+```solidity
+function mockMint(address owner, int24 tickLower, int24 tickUpper, uint128 amount) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct mockMintCall {
@@ -1041,8 +1050,7 @@ pub mod MockUniswapV3Pool {
         #[allow(missing_docs)]
         pub amount: u128,
     }
-    ///Container type for the return parameters of the
-    /// [`mockMint(address,int24,int24,uint128)`](mockMintCall) function.
+    ///Container type for the return parameters of the [`mockMint(address,int24,int24,uint128)`](mockMintCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct mockMintReturn {}
@@ -1053,7 +1061,7 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1072,7 +1080,9 @@ pub mod MockUniswapV3Pool {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1107,7 +1117,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1130,7 +1142,9 @@ pub mod MockUniswapV3Pool {
             }
         }
         impl mockMintReturn {
-            fn _tokenize(&self) -> <mockMintCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <mockMintCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -1142,70 +1156,71 @@ pub mod MockUniswapV3Pool {
                 alloy_sol_types::sol_data::Int<24>,
                 alloy_sol_types::sol_data::Uint<128>,
             );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = mockMintReturn;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [239u8, 226u8, 127u8, 163u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "mockMint(address,int24,int24,uint128)";
-
+            const SELECTOR: [u8; 4] = [239u8, 226u8, 127u8, 163u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.owner,
                     ),
-                    <alloy_sol_types::sol_data::Int<24> as alloy_sol_types::SolType>::tokenize(
-                        &self.tickLower,
-                    ),
-                    <alloy_sol_types::sol_data::Int<24> as alloy_sol_types::SolType>::tokenize(
-                        &self.tickUpper,
-                    ),
-                    <alloy_sol_types::sol_data::Uint<128> as alloy_sol_types::SolType>::tokenize(
-                        &self.amount,
-                    ),
+                    <alloy_sol_types::sol_data::Int<
+                        24,
+                    > as alloy_sol_types::SolType>::tokenize(&self.tickLower),
+                    <alloy_sol_types::sol_data::Int<
+                        24,
+                    > as alloy_sol_types::SolType>::tokenize(&self.tickUpper),
+                    <alloy_sol_types::sol_data::Uint<
+                        128,
+                    > as alloy_sol_types::SolType>::tokenize(&self.amount),
                 )
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 mockMintReturn::_tokenize(ret)
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `token0()` and selector `0x0dfe1681`.
-    ```solidity
-    function token0() external view returns (address);
-    ```*/
+```solidity
+function token0() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token0Call;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`token0()`](token0Call)
-    /// function.
+    ///Container type for the return parameters of the [`token0()`](token0Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token0Return {
@@ -1219,7 +1234,7 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1228,7 +1243,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1258,7 +1275,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1283,64 +1302,68 @@ pub mod MockUniswapV3Pool {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for token0Call {
             type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [13u8, 254u8, 22u8, 129u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "token0()";
-
+            const SELECTOR: [u8; 4] = [13u8, 254u8, 22u8, 129u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: token0Return = r.into();
                         r._0
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: token0Return = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: token0Return = r.into();
+                        r._0
+                    })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `token1()` and selector `0xd21220a7`.
-    ```solidity
-    function token1() external view returns (address);
-    ```*/
+```solidity
+function token1() external view returns (address);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token1Call;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`token1()`](token1Call)
-    /// function.
+    ///Container type for the return parameters of the [`token1()`](token1Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token1Return {
@@ -1354,7 +1377,7 @@ pub mod MockUniswapV3Pool {
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types;
+        use alloy_sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1363,7 +1386,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1393,7 +1418,9 @@ pub mod MockUniswapV3Pool {
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1418,55 +1445,61 @@ pub mod MockUniswapV3Pool {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for token1Call {
             type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-
-            const SELECTOR: [u8; 4] = [210u8, 18u8, 32u8, 167u8];
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "token1()";
-
+            const SELECTOR: [u8; 4] = [210u8, 18u8, 32u8, 167u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
-
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
-
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
-
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: token1Return = r.into();
                         r._0
-                    },
-                )
+                    })
             }
-
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: token1Return = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: token1Return = r.into();
+                        r._0
+                    })
             }
         }
     };
     ///Container for all the [`MockUniswapV3Pool`](self) function calls.
     #[derive(Clone)]
+    #[derive()]
     pub enum MockUniswapV3PoolCalls {
         #[allow(missing_docs)]
         fee(feeCall),
@@ -1484,9 +1517,8 @@ pub mod MockUniswapV3Pool {
     impl MockUniswapV3PoolCalls {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// Note that the selectors might not be in the same order as the variants.
+        /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
@@ -1497,15 +1529,6 @@ pub mod MockUniswapV3Pool {
             [239u8, 226u8, 127u8, 163u8],
             [246u8, 55u8, 115u8, 29u8],
         ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <token0Call as alloy_sol_types::SolCall>::SIGNATURE,
-            <liquidityCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <token1Call as alloy_sol_types::SolCall>::SIGNATURE,
-            <feeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <mockMintCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <initializeCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(token0),
@@ -1515,7 +1538,15 @@ pub mod MockUniswapV3Pool {
             ::core::stringify!(mockMint),
             ::core::stringify!(initialize),
         ];
-
+        /// The signatures in the same order as `SELECTORS`.
+        pub const SIGNATURES: &'static [&'static str] = &[
+            <token0Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <liquidityCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <token1Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <feeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <mockMintCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <initializeCall as alloy_sol_types::SolCall>::SIGNATURE,
+        ];
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1528,108 +1559,119 @@ pub mod MockUniswapV3Pool {
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
-
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 4usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for MockUniswapV3PoolCalls {
-        const COUNT: usize = 6usize;
-        const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "MockUniswapV3PoolCalls";
-
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 6usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::fee(_) => <feeCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::initialize(_) => <initializeCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::liquidity(_) => <liquidityCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::initialize(_) => {
+                    <initializeCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::liquidity(_) => {
+                    <liquidityCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::mockMint(_) => <mockMintCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::token0(_) => <token0Call as alloy_sol_types::SolCall>::SELECTOR,
                 Self::token1(_) => <token1Call as alloy_sol_types::SolCall>::SELECTOR,
             }
         }
-
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
-
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
-
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls>] =
-                &[
-                    {
-                        fn token0(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                            <token0Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(MockUniswapV3PoolCalls::token0)
-                        }
-                        token0
-                    },
-                    {
-                        fn liquidity(
-                            data: &[u8],
-                        ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls>
-                        {
-                            <liquidityCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(MockUniswapV3PoolCalls::liquidity)
-                        }
-                        liquidity
-                    },
-                    {
-                        fn token1(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                            <token1Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(MockUniswapV3PoolCalls::token1)
-                        }
-                        token1
-                    },
-                    {
-                        fn fee(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                            <feeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(MockUniswapV3PoolCalls::fee)
-                        }
-                        fee
-                    },
-                    {
-                        fn mockMint(
-                            data: &[u8],
-                        ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls>
-                        {
-                            <mockMintCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(MockUniswapV3PoolCalls::mockMint)
-                        }
-                        mockMint
-                    },
-                    {
-                        fn initialize(
-                            data: &[u8],
-                        ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls>
-                        {
-                            <initializeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                                .map(MockUniswapV3PoolCalls::initialize)
-                        }
-                        initialize
-                    },
-                ];
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls>] = &[
+                {
+                    fn token0(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <token0Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(MockUniswapV3PoolCalls::token0)
+                    }
+                    token0
+                },
+                {
+                    fn liquidity(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <liquidityCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(MockUniswapV3PoolCalls::liquidity)
+                    }
+                    liquidity
+                },
+                {
+                    fn token1(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <token1Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(MockUniswapV3PoolCalls::token1)
+                    }
+                    token1
+                },
+                {
+                    fn fee(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <feeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(MockUniswapV3PoolCalls::fee)
+                    }
+                    fee
+                },
+                {
+                    fn mockMint(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <mockMintCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(MockUniswapV3PoolCalls::mockMint)
+                    }
+                    mockMint
+                },
+                {
+                    fn initialize(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <initializeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(MockUniswapV3PoolCalls::initialize)
+                    }
+                    initialize
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
-
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -1638,65 +1680,90 @@ pub mod MockUniswapV3Pool {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                MockUniswapV3PoolCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls>] = &[
                 {
-                    fn token0(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                        <token0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn token0(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <token0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(MockUniswapV3PoolCalls::token0)
                     }
                     token0
                 },
                 {
-                    fn liquidity(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                        <liquidityCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn liquidity(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <liquidityCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(MockUniswapV3PoolCalls::liquidity)
                     }
                     liquidity
                 },
                 {
-                    fn token1(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                        <token1Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn token1(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <token1Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(MockUniswapV3PoolCalls::token1)
                     }
                     token1
                 },
                 {
-                    fn fee(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                        <feeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn fee(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <feeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(MockUniswapV3PoolCalls::fee)
                     }
                     fee
                 },
                 {
-                    fn mockMint(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                        <mockMintCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn mockMint(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <mockMintCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(MockUniswapV3PoolCalls::mockMint)
                     }
                     mockMint
                 },
                 {
-                    fn initialize(data: &[u8]) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
-                        <initializeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn initialize(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MockUniswapV3PoolCalls> {
+                        <initializeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(MockUniswapV3PoolCalls::initialize)
                     }
                     initialize
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
-
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::fee(inner) => <feeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner),
+                Self::fee(inner) => {
+                    <feeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
                 Self::initialize(inner) => {
                     <initializeCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -1714,7 +1781,6 @@ pub mod MockUniswapV3Pool {
                 }
             }
         }
-
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
@@ -1722,13 +1788,22 @@ pub mod MockUniswapV3Pool {
                     <feeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::initialize(inner) => {
-                    <initializeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <initializeCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::liquidity(inner) => {
-                    <liquidityCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <liquidityCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::mockMint(inner) => {
-                    <mockMintCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <mockMintCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::token0(inner) => {
                     <token0Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -1740,7 +1815,8 @@ pub mod MockUniswapV3Pool {
         }
     }
     ///Container for all the [`MockUniswapV3Pool`](self) events.
-    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum MockUniswapV3PoolEvents {
         #[allow(missing_docs)]
         Initialize(Initialize),
@@ -1750,32 +1826,32 @@ pub mod MockUniswapV3Pool {
     impl MockUniswapV3PoolEvents {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// Note that the selectors might not be in the same order as the variants.
+        /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                122u8, 83u8, 8u8, 11u8, 164u8, 20u8, 21u8, 139u8, 231u8, 236u8, 105u8, 185u8,
-                135u8, 181u8, 251u8, 125u8, 7u8, 222u8, 225u8, 1u8, 254u8, 133u8, 72u8, 143u8, 8u8,
-                83u8, 174u8, 22u8, 35u8, 157u8, 11u8, 222u8,
+                122u8, 83u8, 8u8, 11u8, 164u8, 20u8, 21u8, 139u8, 231u8, 236u8, 105u8,
+                185u8, 135u8, 181u8, 251u8, 125u8, 7u8, 222u8, 225u8, 1u8, 254u8, 133u8,
+                72u8, 143u8, 8u8, 83u8, 174u8, 22u8, 35u8, 157u8, 11u8, 222u8,
             ],
             [
-                152u8, 99u8, 96u8, 54u8, 203u8, 102u8, 169u8, 193u8, 154u8, 55u8, 67u8, 94u8,
-                252u8, 30u8, 144u8, 20u8, 33u8, 144u8, 33u8, 78u8, 138u8, 190u8, 184u8, 33u8,
-                189u8, 186u8, 63u8, 41u8, 144u8, 221u8, 76u8, 149u8,
+                152u8, 99u8, 96u8, 54u8, 203u8, 102u8, 169u8, 193u8, 154u8, 55u8, 67u8,
+                94u8, 252u8, 30u8, 144u8, 20u8, 33u8, 144u8, 33u8, 78u8, 138u8, 190u8,
+                184u8, 33u8, 189u8, 186u8, 63u8, 41u8, 144u8, 221u8, 76u8, 149u8,
             ],
+        ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(Mint),
+            ::core::stringify!(Initialize),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <Mint as alloy_sol_types::SolEvent>::SIGNATURE,
             <Initialize as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] =
-            &[::core::stringify!(Mint), ::core::stringify!(Initialize)];
-
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1788,41 +1864,46 @@ pub mod MockUniswapV3Pool {
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
-
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(selector: [u8; 32usize]) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(
+            selector: [u8; 32usize],
+        ) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for MockUniswapV3PoolEvents {
-        const COUNT: usize = 2usize;
         const NAME: &'static str = "MockUniswapV3PoolEvents";
-
+        const COUNT: usize = 2usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<Initialize as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Initialize as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <Initialize as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::Initialize)
                 }
                 Some(<Mint as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <Mint as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Mint)
                 }
-                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                    log: alloy_sol_types::private::Box::new(
-                        alloy_sol_types::private::LogData::new_unchecked(
-                            topics.to_vec(),
-                            data.to_vec().into(),
+                _ => {
+                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                        log: alloy_sol_types::private::Box::new(
+                            alloy_sol_types::private::LogData::new_unchecked(
+                                topics.to_vec(),
+                                data.to_vec().into(),
+                            ),
                         ),
-                    ),
-                }),
+                    })
+                }
             }
         }
     }
@@ -1833,23 +1914,26 @@ pub mod MockUniswapV3Pool {
                 Self::Initialize(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::Mint(inner) => alloy_sol_types::private::IntoLogData::to_log_data(inner),
+                Self::Mint(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
             }
         }
-
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
                 Self::Initialize(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::Mint(inner) => alloy_sol_types::private::IntoLogData::into_log_data(inner),
+                Self::Mint(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
             }
         }
     }
-    use alloy_contract;
+    use alloy_contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`MockUniswapV3Pool`](self) contract instance.
 
-    See the [wrapper's documentation](`MockUniswapV3PoolInstance`) for more details.*/
+See the [wrapper's documentation](`MockUniswapV3PoolInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1862,24 +1946,28 @@ pub mod MockUniswapV3Pool {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
+    pub fn deploy<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(
         __provider: P,
         _token0: alloy_sol_types::private::Address,
         _token1: alloy_sol_types::private::Address,
         _fee: alloy_sol_types::private::primitives::aliases::U24,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<MockUniswapV3PoolInstance<P, N>>>
-    {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<MockUniswapV3PoolInstance<P, N>>,
+    > {
         MockUniswapV3PoolInstance::<P, N>::deploy(__provider, _token0, _token1, _fee)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
+and constructor arguments, if any.
 
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
@@ -1890,19 +1978,22 @@ pub mod MockUniswapV3Pool {
         _token1: alloy_sol_types::private::Address,
         _fee: alloy_sol_types::private::primitives::aliases::U24,
     ) -> alloy_contract::RawCallBuilder<P, N> {
-        MockUniswapV3PoolInstance::<P, N>::deploy_builder(__provider, _token0, _token1, _fee)
+        MockUniswapV3PoolInstance::<
+            P,
+            N,
+        >::deploy_builder(__provider, _token0, _token1, _fee)
     }
     /**A [`MockUniswapV3Pool`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`MockUniswapV3Pool`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`MockUniswapV3Pool`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct MockUniswapV3PoolInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1913,32 +2004,33 @@ pub mod MockUniswapV3Pool {
     impl<P, N> ::core::fmt::Debug for MockUniswapV3PoolInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("MockUniswapV3PoolInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("MockUniswapV3PoolInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        MockUniswapV3PoolInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > MockUniswapV3PoolInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`MockUniswapV3Pool`](self) contract instance.
 
-        See the [wrapper's documentation](`MockUniswapV3PoolInstance`) for more details.*/
+See the [wrapper's documentation](`MockUniswapV3PoolInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            __provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
-
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -1950,12 +2042,11 @@ pub mod MockUniswapV3Pool {
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
-
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(
             __provider: P,
@@ -1967,35 +2058,33 @@ pub mod MockUniswapV3Pool {
                 __provider,
                 [
                     &BYTECODE[..],
-                    &alloy_sol_types::SolConstructor::abi_encode(&constructorCall {
-                        _token0,
-                        _token1,
-                        _fee,
-                    })[..],
+                    &alloy_sol_types::SolConstructor::abi_encode(
+                        &constructorCall {
+                            _token0,
+                            _token1,
+                            _fee,
+                        },
+                    )[..],
                 ]
-                .concat()
-                .into(),
+                    .concat()
+                    .into(),
             )
         }
-
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
-
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
-
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
-
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -2003,8 +2092,7 @@ pub mod MockUniswapV3Pool {
         }
     }
     impl<P: ::core::clone::Clone, N> MockUniswapV3PoolInstance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned
-        /// provider.
+        /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
         pub fn with_cloned_provider(self) -> MockUniswapV3PoolInstance<P, N> {
             MockUniswapV3PoolInstance {
@@ -2015,27 +2103,24 @@ pub mod MockUniswapV3Pool {
         }
     }
     /// Function calls.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        MockUniswapV3PoolInstance<P, N>
-    {
-        /// Creates a new call builder using this contract instance's provider
-        /// and address.
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > MockUniswapV3PoolInstance<P, N> {
+        /// Creates a new call builder using this contract instance's provider and address.
         ///
-        /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined in this
+        /// contract. Prefer using the other methods for building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
-
         ///Creates a new call builder for the [`fee`] function.
         pub fn fee(&self) -> alloy_contract::SolCallBuilder<&P, feeCall, N> {
             self.call_builder(&feeCall)
         }
-
         ///Creates a new call builder for the [`initialize`] function.
         pub fn initialize(
             &self,
@@ -2043,12 +2128,10 @@ pub mod MockUniswapV3Pool {
         ) -> alloy_contract::SolCallBuilder<&P, initializeCall, N> {
             self.call_builder(&initializeCall { sqrtPriceX96 })
         }
-
         ///Creates a new call builder for the [`liquidity`] function.
         pub fn liquidity(&self) -> alloy_contract::SolCallBuilder<&P, liquidityCall, N> {
             self.call_builder(&liquidityCall)
         }
-
         ///Creates a new call builder for the [`mockMint`] function.
         pub fn mockMint(
             &self,
@@ -2057,49 +2140,48 @@ pub mod MockUniswapV3Pool {
             tickUpper: alloy_sol_types::private::primitives::aliases::I24,
             amount: u128,
         ) -> alloy_contract::SolCallBuilder<&P, mockMintCall, N> {
-            self.call_builder(&mockMintCall {
-                owner,
-                tickLower,
-                tickUpper,
-                amount,
-            })
+            self.call_builder(
+                &mockMintCall {
+                    owner,
+                    tickLower,
+                    tickUpper,
+                    amount,
+                },
+            )
         }
-
         ///Creates a new call builder for the [`token0`] function.
         pub fn token0(&self) -> alloy_contract::SolCallBuilder<&P, token0Call, N> {
             self.call_builder(&token0Call)
         }
-
         ///Creates a new call builder for the [`token1`] function.
         pub fn token1(&self) -> alloy_contract::SolCallBuilder<&P, token1Call, N> {
             self.call_builder(&token1Call)
         }
     }
     /// Event filters.
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        MockUniswapV3PoolInstance<P, N>
-    {
-        /// Creates a new event filter using this contract instance's provider
-        /// and address.
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > MockUniswapV3PoolInstance<P, N> {
+        /// Creates a new event filter using this contract instance's provider and address.
         ///
-        /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this contract.
+        /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
-
         ///Creates a new event filter for the [`Initialize`] event.
         pub fn Initialize_filter(&self) -> alloy_contract::Event<&P, Initialize, N> {
             self.event_filter::<Initialize>()
         }
-
         ///Creates a new event filter for the [`Mint`] event.
         pub fn Mint_filter(&self) -> alloy_contract::Event<&P, Mint, N> {
             self.event_filter::<Mint>()
         }
     }
 }
-pub type Instance = MockUniswapV3Pool::MockUniswapV3PoolInstance<::alloy_provider::DynProvider>;
+pub type Instance = MockUniswapV3Pool::MockUniswapV3PoolInstance<
+    ::alloy_provider::DynProvider,
+>;

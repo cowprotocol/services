@@ -14,6 +14,7 @@ use {
         response::{IntoResponse, Json, Response},
         routing::{delete, get, post, put},
     },
+    ethrpc::block_stream::CurrentBlockWatcher,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     serde::{Deserialize, Serialize},
@@ -69,6 +70,18 @@ pub struct AppState {
     pub app_data: Arc<app_data::Registry>,
     pub native_price_estimator: Arc<dyn NativePriceEstimating>,
     pub quote_timeout: Duration,
+    pub current_block_stream: CurrentBlockWatcher,
+    pub hide_competition_before_deadline: bool,
+}
+
+impl AppState {
+    /// When the feature is enabled, returns the current block number so DB
+    /// queries can hide competition data whose deadline hasn't passed yet.
+    /// Returns `None` when the feature is off (no filtering).
+    pub(crate) fn hide_competition_before_block(&self) -> Option<i64> {
+        self.hide_competition_before_deadline
+            .then(|| self.current_block_stream.borrow().number.cast_signed())
+    }
 }
 
 async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Response {
@@ -138,6 +151,7 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
+#[expect(clippy::too_many_arguments)]
 pub fn handle_all_routes(
     database_write: Postgres,
     database_read: Postgres,
@@ -146,6 +160,8 @@ pub fn handle_all_routes(
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
+    current_block_stream: CurrentBlockWatcher,
+    hide_competition_before_deadline: bool,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -157,6 +173,8 @@ pub fn handle_all_routes(
         app_data,
         native_price_estimator,
         quote_timeout,
+        current_block_stream,
+        hide_competition_before_deadline,
     });
 
     let routes = [
@@ -261,19 +279,22 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        // Routes under `/restricted/api/` are not exposed publicly. WAF and
+        // infra rules restrict access to authenticated partners.
+        // New internal-only endpoints MUST use this prefix.
         (
             "GET",
-            "/api/v1/debug/order/{uid}",
+            "/restricted/api/v1/debug/order/{uid}",
             get(debug_order::debug_order_handler),
         ),
         (
             "GET",
-            "/api/v1/debug/simulation/{uid}",
+            "/restricted/api/v1/debug/simulation/{uid}",
             get(debug_simulation::debug_simulation_handler),
         ),
         (
             "POST",
-            "/api/v1/debug/simulation",
+            "/restricted/api/v1/debug/simulation",
             post(debug_simulation::debug_simulation_post_handler),
         ),
         // V2 routes
@@ -297,6 +318,11 @@ pub fn handle_all_routes(
             "GET",
             "/api/v2/trades",
             get(get_trades_v2::get_trades_handler),
+        ),
+        (
+            "GET",
+            "/restricted/api/v2/solver_competition/{auction_id}",
+            get(get_solver_competition_v2::get_solver_competition_by_id_unfiltered_handler),
         ),
     ];
 

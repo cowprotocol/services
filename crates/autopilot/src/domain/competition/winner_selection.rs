@@ -155,11 +155,6 @@ impl From<&Solution> for winsel::Solution<winsel::Unscored> {
                 .iter()
                 .map(|(uid, order)| to_winsel_order(*uid, order))
                 .collect(),
-            solution
-                .prices()
-                .iter()
-                .map(|(token, price)| (Address::from(*token), price.get().0))
-                .collect(),
         )
     }
 }

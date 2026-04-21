@@ -482,6 +482,8 @@ pub async fn run(config: Configuration) {
         },
         native_price_estimator,
         config.price_estimation.quote_timeout,
+        current_block_stream,
+        config.hide_competition_before_deadline,
     );
 
     let mut metrics_address = config.bind_address;
@@ -554,6 +556,8 @@ fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     quote_timeout: Duration,
+    current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
+    hide_competition_before_deadline: bool,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -563,6 +567,8 @@ fn serve_api(
         app_data,
         native_price_estimator,
         quote_timeout,
+        current_block_stream,
+        hide_competition_before_deadline,
     );
     tracing::info!(%address, "serving order book");
 
