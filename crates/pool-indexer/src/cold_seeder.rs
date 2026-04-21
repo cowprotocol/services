@@ -334,10 +334,7 @@ async fn reconstruct_and_persist_ticks(
         }
 
         processed += batch_size;
-        info!(
-            chain_id,
-            processed, total, tick_rows, "tick reconstruction progress"
-        );
+        info!(processed, total, tick_rows, "tick reconstruction progress");
     }
     Ok(())
 }
