@@ -1,4 +1,10 @@
-#![allow(unused_imports, unused_attributes, clippy::all, rustdoc::all, non_snake_case)]
+#![allow(
+    unused_imports,
+    unused_attributes,
+    clippy::all,
+    rustdoc::all,
+    non_snake_case
+)]
 //! Auto-generated contract bindings. Do not edit.
 /**
 
@@ -208,8 +214,7 @@ interface UniswapV2Router02 {
     clippy::empty_structs_with_brackets
 )]
 pub mod UniswapV2Router02 {
-    use super::*;
-    use alloy_sol_types as alloy_sol_types;
+    use {super::*, alloy_sol_types};
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
@@ -221,9 +226,9 @@ pub mod UniswapV2Router02 {
         b"`\xC0`@R4\x80\x15b\0\0\x11W`\0\x80\xFD[P`@Qb\0W>8\x03\x80b\0W>\x839\x81\x81\x01`@R`@\x81\x10\x15b\0\x007W`\0\x80\xFD[P\x80Q` \x90\x91\x01Q`\x01`\x01``\x1B\x03\x19``\x92\x83\x1B\x81\x16`\x80R\x91\x1B\x16`\xA0R`\x80Q``\x1C`\xA0Q``\x1CaU\xB7b\0\x01\x87`\09\x80a\x01\xACR\x80a\x0E]R\x80a\x0E\x98R\x80a\x0F\xD5R\x80a\x12\x98R\x80a\x16\xF2R\x80a\x18\xD6R\x80a\x1E\x1ER\x80a\x1F\xA2R\x80a rR\x80a!yR\x80a#,R\x80a#\xC1R\x80a&sR\x80a'\x1AR\x80a'\xEFR\x80a(\xF4R\x80a)\xDCR\x80a*]R\x80a0\xECR\x80a4\"R\x80a4xR\x80a4\xACR\x80a5-R\x80a7GR\x80a8\xF7R\x80a9\x8CRP\x80a\x10\xC7R\x80a\x11\xC5R\x80a\x13kR\x80a\x13\xA4R\x80a\x15OR\x80a\x17\xE4R\x80a\x18\xB4R\x80a\x1A\xA1R\x80a\"_R\x80a$\0R\x80a%\xA9R\x80a*\x9CR\x80a-\xDFR\x80a0qR\x80a0\x9AR\x80a0\xCAR\x80a2\xA7R\x80a4VR\x80a8-R\x80a9\xCBR\x80aDJR\x80aD\x8DR\x80aG\xEDR\x80aI\xCER\x80aOIR\x80aP*R\x80aP\xAARPaU\xB7`\0\xF3\xFE`\x80`@R`\x046\x10a\x01\x8FW`\x005`\xE0\x1C\x80c\x88\x03\xDB\xEE\x11a\0\xD6W\x80c\xC4Z\x01U\x11a\0\x7FW\x80c\xE8\xE37\0\x11a\0YW\x80c\xE8\xE37\0\x14a\x0CqW\x80c\xF3\x05\xD7\x19\x14a\x0C\xFEW\x80c\xFB;\xDBA\x14a\rQWa\x01\xD5V[\x80c\xC4Z\x01U\x14a\x0B%W\x80c\xD0l\xA6\x1F\x14a\x0B:W\x80c\xDE\xD98*\x14a\x0B\xF1Wa\x01\xD5V[\x80c\xAF)y\xEB\x11a\0\xB0W\x80c\xAF)y\xEB\x14a\t\xC8W\x80c\xB6\xF9\xDE\x95\x14a\n(W\x80c\xBA\xA2\xAB\xDE\x14a\n\xBBWa\x01\xD5V[\x80c\x88\x03\xDB\xEE\x14a\x08\xAFW\x80c\xAD\\FH\x14a\tTW\x80c\xADa]\xEC\x14a\t\x92Wa\x01\xD5V[\x80cJ%\xD9J\x11a\x018W\x80cy\x1A\xC9G\x11a\x01\x12W\x80cy\x1A\xC9G\x14a\x07AW\x80c\x7F\xF3j\xB5\x14a\x07\xE6W\x80c\x85\xF8\xC2Y\x14a\x08yWa\x01\xD5V[\x80cJ%\xD9J\x14a\x05wW\x80c[\rY\x84\x14a\x06\x1CW\x80c\\\x11\xD7\x95\x14a\x06\x9CWa\x01\xD5V[\x80c\x1F\0\xCAt\x11a\x01iW\x80c\x1F\0\xCAt\x14a\x03\x90W\x80c!\x95\x99\\\x14a\x04GW\x80c8\xED\x179\x14a\x04\xD2Wa\x01\xD5V[\x80c\x02u\x1C\xEC\x14a\x01\xDAW\x80c\x05MP\xD4\x14a\x02SW\x80c\x18\xCB\xAF\xE5\x14a\x02\x9BWa\x01\xD5V[6a\x01\xD5W3s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a\x01\xD3W\xFE[\0[`\0\x80\xFD[4\x80\x15a\x01\xE6W`\0\x80\xFD[Pa\x02:`\x04\x806\x03`\xC0\x81\x10\x15a\x01\xFDW`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x16\x90`\xA0\x015a\r\xE4V[`@\x80Q\x92\x83R` \x83\x01\x91\x90\x91R\x80Q\x91\x82\x90\x03\x01\x90\xF3[4\x80\x15a\x02_W`\0\x80\xFD[Pa\x02\x89`\x04\x806\x03``\x81\x10\x15a\x02vW`\0\x80\xFD[P\x805\x90` \x81\x015\x90`@\x015a\x0F7V[`@\x80Q\x91\x82RQ\x90\x81\x90\x03` \x01\x90\xF3[4\x80\x15a\x02\xA7W`\0\x80\xFD[Pa\x03@`\x04\x806\x03`\xA0\x81\x10\x15a\x02\xBEW`\0\x80\xFD[\x815\x91` \x81\x015\x91\x81\x01\x90``\x81\x01`@\x82\x015d\x01\0\0\0\0\x81\x11\x15a\x02\xE5W`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x02\xF7W`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x03\x19W`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a\x0FLV[`@\x80Q` \x80\x82R\x83Q\x81\x83\x01R\x83Q\x91\x92\x83\x92\x90\x83\x01\x91\x85\x81\x01\x91\x02\x80\x83\x83`\0[\x83\x81\x10\x15a\x03|W\x81\x81\x01Q\x83\x82\x01R` \x01a\x03dV[PPPP\x90P\x01\x92PPP`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03\x9CW`\0\x80\xFD[Pa\x03@`\x04\x806\x03`@\x81\x10\x15a\x03\xB3W`\0\x80\xFD[\x815\x91\x90\x81\x01\x90`@\x81\x01` \x82\x015d\x01\0\0\0\0\x81\x11\x15a\x03\xD5W`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x03\xE7W`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x04\tW`\0\x80\xFD[\x91\x90\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RP\x92\x95Pa\x13d\x94PPPPPV[4\x80\x15a\x04SW`\0\x80\xFD[Pa\x02:`\x04\x806\x03a\x01`\x81\x10\x15a\x04kW`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x82\x16\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x91`\xA0\x81\x015\x90\x91\x16\x90`\xC0\x81\x015\x90`\xE0\x81\x015\x15\x15\x90`\xFFa\x01\0\x82\x015\x16\x90a\x01 \x81\x015\x90a\x01@\x015a\x13\x9AV[4\x80\x15a\x04\xDEW`\0\x80\xFD[Pa\x03@`\x04\x806\x03`\xA0\x81\x10\x15a\x04\xF5W`\0\x80\xFD[\x815\x91` \x81\x015\x91\x81\x01\x90``\x81\x01`@\x82\x015d\x01\0\0\0\0\x81\x11\x15a\x05\x1CW`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x05.W`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x05PW`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a\x14\xD8V[4\x80\x15a\x05\x83W`\0\x80\xFD[Pa\x03@`\x04\x806\x03`\xA0\x81\x10\x15a\x05\x9AW`\0\x80\xFD[\x815\x91` \x81\x015\x91\x81\x01\x90``\x81\x01`@\x82\x015d\x01\0\0\0\0\x81\x11\x15a\x05\xC1W`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x05\xD3W`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x05\xF5W`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a\x16iV[4\x80\x15a\x06(W`\0\x80\xFD[Pa\x02\x89`\x04\x806\x03a\x01@\x81\x10\x15a\x06@W`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x16\x90`\xA0\x81\x015\x90`\xC0\x81\x015\x15\x15\x90`\xFF`\xE0\x82\x015\x16\x90a\x01\0\x81\x015\x90a\x01 \x015a\x18\xACV[4\x80\x15a\x06\xA8W`\0\x80\xFD[Pa\x01\xD3`\x04\x806\x03`\xA0\x81\x10\x15a\x06\xBFW`\0\x80\xFD[\x815\x91` \x81\x015\x91\x81\x01\x90``\x81\x01`@\x82\x015d\x01\0\0\0\0\x81\x11\x15a\x06\xE6W`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x06\xF8W`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x07\x1AW`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a\x19\xFEV[4\x80\x15a\x07MW`\0\x80\xFD[Pa\x01\xD3`\x04\x806\x03`\xA0\x81\x10\x15a\x07dW`\0\x80\xFD[\x815\x91` \x81\x015\x91\x81\x01\x90``\x81\x01`@\x82\x015d\x01\0\0\0\0\x81\x11\x15a\x07\x8BW`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x07\x9DW`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x07\xBFW`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a\x1D\x97V[a\x03@`\x04\x806\x03`\x80\x81\x10\x15a\x07\xFCW`\0\x80\xFD[\x815\x91\x90\x81\x01\x90`@\x81\x01` \x82\x015d\x01\0\0\0\0\x81\x11\x15a\x08\x1EW`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x080W`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x08RW`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a!\x05V[4\x80\x15a\x08\x85W`\0\x80\xFD[Pa\x02\x89`\x04\x806\x03``\x81\x10\x15a\x08\x9CW`\0\x80\xFD[P\x805\x90` \x81\x015\x90`@\x015a%%V[4\x80\x15a\x08\xBBW`\0\x80\xFD[Pa\x03@`\x04\x806\x03`\xA0\x81\x10\x15a\x08\xD2W`\0\x80\xFD[\x815\x91` \x81\x015\x91\x81\x01\x90``\x81\x01`@\x82\x015d\x01\0\0\0\0\x81\x11\x15a\x08\xF9W`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\t\x0BW`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\t-W`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a%2V[4\x80\x15a\t`W`\0\x80\xFD[Pa\tia&qV[`@\x80Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x90\x92\x16\x82RQ\x90\x81\x90\x03` \x01\x90\xF3[4\x80\x15a\t\x9EW`\0\x80\xFD[Pa\x02\x89`\x04\x806\x03``\x81\x10\x15a\t\xB5W`\0\x80\xFD[P\x805\x90` \x81\x015\x90`@\x015a&\x95V[4\x80\x15a\t\xD4W`\0\x80\xFD[Pa\x02\x89`\x04\x806\x03`\xC0\x81\x10\x15a\t\xEBW`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x16\x90`\xA0\x015a&\xA2V[a\x01\xD3`\x04\x806\x03`\x80\x81\x10\x15a\n>W`\0\x80\xFD[\x815\x91\x90\x81\x01\x90`@\x81\x01` \x82\x015d\x01\0\0\0\0\x81\x11\x15a\n`W`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\nrW`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\n\x94W`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a(\x82V[4\x80\x15a\n\xC7W`\0\x80\xFD[Pa\x02:`\x04\x806\x03`\xE0\x81\x10\x15a\n\xDEW`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x82\x16\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x91`\xA0\x81\x015\x90\x91\x16\x90`\xC0\x015a-eV[4\x80\x15a\x0B1W`\0\x80\xFD[Pa\tia0oV[4\x80\x15a\x0BFW`\0\x80\xFD[Pa\x03@`\x04\x806\x03`@\x81\x10\x15a\x0B]W`\0\x80\xFD[\x815\x91\x90\x81\x01\x90`@\x81\x01` \x82\x015d\x01\0\0\0\0\x81\x11\x15a\x0B\x7FW`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\x0B\x91W`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\x0B\xB3W`\0\x80\xFD[\x91\x90\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RP\x92\x95Pa0\x93\x94PPPPPV[4\x80\x15a\x0B\xFDW`\0\x80\xFD[Pa\x02:`\x04\x806\x03a\x01@\x81\x10\x15a\x0C\x15W`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x16\x90`\xA0\x81\x015\x90`\xC0\x81\x015\x15\x15\x90`\xFF`\xE0\x82\x015\x16\x90a\x01\0\x81\x015\x90a\x01 \x015a0\xC0V[4\x80\x15a\x0C}W`\0\x80\xFD[Pa\x0C\xE0`\x04\x806\x03a\x01\0\x81\x10\x15a\x0C\x95W`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x82\x16\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x91`\xA0\x81\x015\x91`\xC0\x82\x015\x16\x90`\xE0\x015a2\x18V[`@\x80Q\x93\x84R` \x84\x01\x92\x90\x92R\x82\x82\x01RQ\x90\x81\x90\x03``\x01\x90\xF3[a\x0C\xE0`\x04\x806\x03`\xC0\x81\x10\x15a\r\x14W`\0\x80\xFD[Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x81\x16\x91` \x81\x015\x91`@\x82\x015\x91``\x81\x015\x91`\x80\x82\x015\x16\x90`\xA0\x015a3\xA7V[a\x03@`\x04\x806\x03`\x80\x81\x10\x15a\rgW`\0\x80\xFD[\x815\x91\x90\x81\x01\x90`@\x81\x01` \x82\x015d\x01\0\0\0\0\x81\x11\x15a\r\x89W`\0\x80\xFD[\x82\x01\x83` \x82\x01\x11\x15a\r\x9BW`\0\x80\xFD[\x805\x90` \x01\x91\x84` \x83\x02\x84\x01\x11d\x01\0\0\0\0\x83\x11\x17\x15a\r\xBDW`\0\x80\xFD[\x91\x93P\x91Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x815\x16\x90` \x015a6\xD3V[`\0\x80\x82B\x81\x10\x15a\x0EWW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a\x0E\x86\x89\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8A\x8A\x8A0\x8Aa-eV[\x90\x93P\x91Pa\x0E\x96\x89\x86\x85a;\"V[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c.\x1A}M\x83`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82\x81R` \x01\x91PP`\0`@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a\x0F\tW`\0\x80\xFD[PZ\xF1\x15\x80\x15a\x0F\x1DW=`\0\x80>=`\0\xFD[PPPPa\x0F+\x85\x83a<\xFFV[P\x96P\x96\x94PPPPPV[`\0a\x0FD\x84\x84\x84a><V[\x94\x93PPPPV[``\x81B\x81\x10\x15a\x0F\xBEW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x86\x86\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x01\x81\x81\x10a\x10#W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x10\xC2W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1D`$\x82\x01R\x7FUniswapV2Router: INVALID_PATH\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a\x11 \x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x88\x88\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RPa?`\x92PPPV[\x91P\x86\x82`\x01\x84Q\x03\x81Q\x81\x10a\x113W\xFE[` \x02` \x01\x01Q\x10\x15a\x11\x92W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`+\x81R` \x01\x80aU\x08`+\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[a\x12W\x86\x86`\0\x81\x81\x10a\x11\xA2W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x163a\x12=\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8A\x8A`\0\x81\x81\x10a\x11\xF1W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x8B\x8B`\x01\x81\x81\x10a\x12\x1BW\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16a@\xC6V[\x85`\0\x81Q\x81\x10a\x12JW\xFE[` \x02` \x01\x01QaA\xB1V[a\x12\x96\x82\x87\x87\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RP0\x92PaC\x81\x91PPV[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c.\x1A}M\x83`\x01\x85Q\x03\x81Q\x81\x10a\x12\xE2W\xFE[` \x02` \x01\x01Q`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82\x81R` \x01\x91PP`\0`@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a\x13 W`\0\x80\xFD[PZ\xF1\x15\x80\x15a\x134W=`\0\x80>=`\0\xFD[PPPPa\x13Y\x84\x83`\x01\x85Q\x03\x81Q\x81\x10a\x13LW\xFE[` \x02` \x01\x01Qa<\xFFV[P\x96\x95PPPPPPV[``a\x13\x91\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x84\x84aF\x08V[\x90P[\x92\x91PPV[`\0\x80`\0a\x13\xCA\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8F\x8Fa@\xC6V[\x90P`\0\x87a\x13\xD9W\x8Ca\x13\xFBV[\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF[`@\x80Q\x7F\xD5\x05\xAC\xCF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R3`\x04\x82\x01R0`$\x82\x01R`D\x81\x01\x83\x90R`d\x81\x01\x8C\x90R`\xFF\x8A\x16`\x84\x82\x01R`\xA4\x81\x01\x89\x90R`\xC4\x81\x01\x88\x90R\x90Q\x91\x92Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x91c\xD5\x05\xAC\xCF\x91`\xE4\x80\x82\x01\x92`\0\x92\x90\x91\x90\x82\x90\x03\x01\x81\x83\x87\x80;\x15\x80\x15a\x14\x97W`\0\x80\xFD[PZ\xF1\x15\x80\x15a\x14\xABW=`\0\x80>=`\0\xFD[PPPPa\x14\xBE\x8F\x8F\x8F\x8F\x8F\x8F\x8Fa-eV[\x80\x94P\x81\x95PPPPP\x9BP\x9B\x99PPPPPPPPPPV[``\x81B\x81\x10\x15a\x15JW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a\x15\xA8\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x88\x88\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RPa?`\x92PPPV[\x91P\x86\x82`\x01\x84Q\x03\x81Q\x81\x10a\x15\xBBW\xFE[` \x02` \x01\x01Q\x10\x15a\x16\x1AW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`+\x81R` \x01\x80aU\x08`+\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[a\x16*\x86\x86`\0\x81\x81\x10a\x11\xA2W\xFE[a\x13Y\x82\x87\x87\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RP\x89\x92PaC\x81\x91PPV[``\x81B\x81\x10\x15a\x16\xDBW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x86\x86\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x01\x81\x81\x10a\x17@W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x17\xDFW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1D`$\x82\x01R\x7FUniswapV2Router: INVALID_PATH\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a\x18=\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x88\x88\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RPaF\x08\x92PPPV[\x91P\x86\x82`\0\x81Q\x81\x10a\x18MW\xFE[` \x02` \x01\x01Q\x11\x15a\x11\x92W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`'\x81R` \x01\x80aT\x98`'\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[`\0\x80a\x18\xFA\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8D\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0a@\xC6V[\x90P`\0\x86a\x19\tW\x8Ba\x19+V[\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF[`@\x80Q\x7F\xD5\x05\xAC\xCF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R3`\x04\x82\x01R0`$\x82\x01R`D\x81\x01\x83\x90R`d\x81\x01\x8B\x90R`\xFF\x89\x16`\x84\x82\x01R`\xA4\x81\x01\x88\x90R`\xC4\x81\x01\x87\x90R\x90Q\x91\x92Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x91c\xD5\x05\xAC\xCF\x91`\xE4\x80\x82\x01\x92`\0\x92\x90\x91\x90\x82\x90\x03\x01\x81\x83\x87\x80;\x15\x80\x15a\x19\xC7W`\0\x80\xFD[PZ\xF1\x15\x80\x15a\x19\xDBW=`\0\x80>=`\0\xFD[PPPPa\x19\xED\x8D\x8D\x8D\x8D\x8D\x8Da&\xA2V[\x9D\x9CPPPPPPPPPPPPPV[\x80B\x81\x10\x15a\x1AnW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a\x1A\xFD\x85\x85`\0\x81\x81\x10a\x1A~W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x163a\x1A\xF7\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x89`\0\x81\x81\x10a\x1A\xCDW\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x8A\x8A`\x01\x81\x81\x10a\x12\x1BW\xFE[\x8AaA\xB1V[`\0\x85\x85\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x01\x81\x81\x10a\x1B-W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cp\xA0\x821\x85`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x91PP` `@Q\x80\x83\x03\x81\x86\x80;\x15\x80\x15a\x1B\xC6W`\0\x80\xFD[PZ\xFA\x15\x80\x15a\x1B\xDAW=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a\x1B\xF0W`\0\x80\xFD[PQ`@\x80Q` \x88\x81\x02\x82\x81\x01\x82\x01\x90\x93R\x88\x82R\x92\x93Pa\x1C2\x92\x90\x91\x89\x91\x89\x91\x82\x91\x85\x01\x90\x84\x90\x80\x82\x847`\0\x92\x01\x91\x90\x91RP\x88\x92PaG\x96\x91PPV[\x86a\x1D6\x82\x88\x88\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x01\x81\x81\x10a\x1CeW\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cp\xA0\x821\x88`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x91PP` `@Q\x80\x83\x03\x81\x86\x80;\x15\x80\x15a\x1C\xFEW`\0\x80\xFD[PZ\xFA\x15\x80\x15a\x1D\x12W=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a\x1D(W`\0\x80\xFD[PQ\x90c\xFF\xFF\xFF\xFFaK)\x16V[\x10\x15a\x1D\x8DW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`+\x81R` \x01\x80aU\x08`+\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[PPPPPPPPV[\x80B\x81\x10\x15a\x1E\x07W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x85\x85\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x01\x81\x81\x10a\x1ElW\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\x1F\x0BW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1D`$\x82\x01R\x7FUniswapV2Router: INVALID_PATH\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a\x1F\x1B\x85\x85`\0\x81\x81\x10a\x1A~W\xFE[a\x1FY\x85\x85\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RP0\x92PaG\x96\x91PPV[`@\x80Q\x7Fp\xA0\x821\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R0`\x04\x82\x01R\x90Q`\0\x91s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x91cp\xA0\x821\x91`$\x80\x82\x01\x92` \x92\x90\x91\x90\x82\x90\x03\x01\x81\x86\x80;\x15\x80\x15a\x1F\xE9W`\0\x80\xFD[PZ\xFA\x15\x80\x15a\x1F\xFDW=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a \x13W`\0\x80\xFD[PQ\x90P\x86\x81\x10\x15a pW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`+\x81R` \x01\x80aU\x08`+\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c.\x1A}M\x82`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82\x81R` \x01\x91PP`\0`@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a \xE3W`\0\x80\xFD[PZ\xF1\x15\x80\x15a \xF7W=`\0\x80>=`\0\xFD[PPPPa\x1D\x8D\x84\x82a<\xFFV[``\x81B\x81\x10\x15a!wW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x86\x86`\0\x81\x81\x10a!\xBBW\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a\"ZW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1D`$\x82\x01R\x7FUniswapV2Router: INVALID_PATH\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a\"\xB8\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x004\x88\x88\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RPa?`\x92PPPV[\x91P\x86\x82`\x01\x84Q\x03\x81Q\x81\x10a\"\xCBW\xFE[` \x02` \x01\x01Q\x10\x15a#*W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`+\x81R` \x01\x80aU\x08`+\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xD0\xE3\r\xB0\x83`\0\x81Q\x81\x10a#sW\xFE[` \x02` \x01\x01Q`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01`\0`@Q\x80\x83\x03\x81\x85\x88\x80;\x15\x80\x15a#\xA6W`\0\x80\xFD[PZ\xF1\x15\x80\x15a#\xBAW=`\0\x80>=`\0\xFD[PPPPP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xA9\x05\x9C\xBBa$,\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x89`\0\x81\x81\x10a\x1A\xCDW\xFE[\x84`\0\x81Q\x81\x10a$9W\xFE[` \x02` \x01\x01Q`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x82\x81R` \x01\x92PPP` `@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a$\xAAW`\0\x80\xFD[PZ\xF1\x15\x80\x15a$\xBEW=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a$\xD4W`\0\x80\xFD[PQa$\xDCW\xFE[a%\x1B\x82\x87\x87\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RP\x89\x92PaC\x81\x91PPV[P\x95\x94PPPPPV[`\0a\x0FD\x84\x84\x84aK\x9BV[``\x81B\x81\x10\x15a%\xA4W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a&\x02\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x88\x88\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RPaF\x08\x92PPPV[\x91P\x86\x82`\0\x81Q\x81\x10a&\x12W\xFE[` \x02` \x01\x01Q\x11\x15a\x16\x1AW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`'\x81R` \x01\x80aT\x98`'\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81V[`\0a\x0FD\x84\x84\x84aL\xBFV[`\0\x81B\x81\x10\x15a'\x14W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a'C\x88\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x89\x890\x89a-eV[`@\x80Q\x7Fp\xA0\x821\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R0`\x04\x82\x01R\x90Q\x91\x94Pa'\xED\x92P\x8A\x91\x87\x91s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x91cp\xA0\x821\x91`$\x80\x82\x01\x92` \x92\x90\x91\x90\x82\x90\x03\x01\x81\x86\x80;\x15\x80\x15a'\xBCW`\0\x80\xFD[PZ\xFA\x15\x80\x15a'\xD0W=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a'\xE6W`\0\x80\xFD[PQa;\"V[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c.\x1A}M\x83`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82\x81R` \x01\x91PP`\0`@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a(`W`\0\x80\xFD[PZ\xF1\x15\x80\x15a(tW=`\0\x80>=`\0\xFD[PPPPa\x13Y\x84\x83a<\xFFV[\x80B\x81\x10\x15a(\xF2W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x85\x85`\0\x81\x81\x10a)6W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a)\xD5W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1D`$\x82\x01R\x7FUniswapV2Router: INVALID_PATH\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[`\x004\x90P\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xD0\xE3\r\xB0\x82`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01`\0`@Q\x80\x83\x03\x81\x85\x88\x80;\x15\x80\x15a*BW`\0\x80\xFD[PZ\xF1\x15\x80\x15a*VW=`\0\x80>=`\0\xFD[PPPPP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xA9\x05\x9C\xBBa*\xC8\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x89`\0\x81\x81\x10a\x1A\xCDW\xFE[\x83`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x82\x81R` \x01\x92PPP` `@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a+2W`\0\x80\xFD[PZ\xF1\x15\x80\x15a+FW=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a+\\W`\0\x80\xFD[PQa+dW\xFE[`\0\x86\x86\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x01\x81\x81\x10a+\x94W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cp\xA0\x821\x86`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x91PP` `@Q\x80\x83\x03\x81\x86\x80;\x15\x80\x15a,-W`\0\x80\xFD[PZ\xFA\x15\x80\x15a,AW=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a,WW`\0\x80\xFD[PQ`@\x80Q` \x89\x81\x02\x82\x81\x01\x82\x01\x90\x93R\x89\x82R\x92\x93Pa,\x99\x92\x90\x91\x8A\x91\x8A\x91\x82\x91\x85\x01\x90\x84\x90\x80\x82\x847`\0\x92\x01\x91\x90\x91RP\x89\x92PaG\x96\x91PPV[\x87a\x1D6\x82\x89\x89\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x01\x81\x81\x10a,\xCCW\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cp\xA0\x821\x89`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x91PP` `@Q\x80\x83\x03\x81\x86\x80;\x15\x80\x15a\x1C\xFEW`\0\x80\xFD[`\0\x80\x82B\x81\x10\x15a-\xD8W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[`\0a.\x05\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8C\x8Ca@\xC6V[`@\x80Q\x7F#\xB8r\xDD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R3`\x04\x82\x01Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16`$\x82\x01\x81\x90R`D\x82\x01\x8D\x90R\x91Q\x92\x93P\x90\x91c#\xB8r\xDD\x91`d\x80\x82\x01\x92` \x92\x90\x91\x90\x82\x90\x03\x01\x81`\0\x87\x80;\x15\x80\x15a.\x86W`\0\x80\xFD[PZ\xF1\x15\x80\x15a.\x9AW=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a.\xB0W`\0\x80\xFD[PP`@\x80Q\x7F\x89\xAF\xCBD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x88\x81\x16`\x04\x83\x01R\x82Q`\0\x93\x84\x93\x92\x86\x16\x92c\x89\xAF\xCBD\x92`$\x80\x83\x01\x93\x92\x82\x90\x03\x01\x81\x87\x87\x80;\x15\x80\x15a/#W`\0\x80\xFD[PZ\xF1\x15\x80\x15a/7W=`\0\x80>=`\0\xFD[PPPP`@Q=`@\x81\x10\x15a/MW`\0\x80\xFD[P\x80Q` \x90\x91\x01Q\x90\x92P\x90P`\0a/g\x8E\x8EaM\x9FV[P\x90P\x80s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x8Es\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a/\xA4W\x81\x83a/\xA7V[\x82\x82[\x90\x97P\x95P\x8A\x87\x10\x15a0\x05W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`&\x81R` \x01\x80aT\xBF`&\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x89\x86\x10\x15a0^W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`&\x81R` \x01\x80aT%`&\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[PPPPP\x97P\x97\x95PPPPPPV[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81V[``a\x13\x91\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x84\x84a?`V[`\0\x80`\0a1\x10\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8E\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0a@\xC6V[\x90P`\0\x87a1\x1FW\x8Ca1AV[\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF[`@\x80Q\x7F\xD5\x05\xAC\xCF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R3`\x04\x82\x01R0`$\x82\x01R`D\x81\x01\x83\x90R`d\x81\x01\x8C\x90R`\xFF\x8A\x16`\x84\x82\x01R`\xA4\x81\x01\x89\x90R`\xC4\x81\x01\x88\x90R\x90Q\x91\x92Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x91c\xD5\x05\xAC\xCF\x91`\xE4\x80\x82\x01\x92`\0\x92\x90\x91\x90\x82\x90\x03\x01\x81\x83\x87\x80;\x15\x80\x15a1\xDDW`\0\x80\xFD[PZ\xF1\x15\x80\x15a1\xF1W=`\0\x80>=`\0\xFD[PPPPa2\x03\x8E\x8E\x8E\x8E\x8E\x8Ea\r\xE4V[\x90\x9F\x90\x9EP\x9CPPPPPPPPPPPPPV[`\0\x80`\0\x83B\x81\x10\x15a2\x8DW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a2\x9B\x8C\x8C\x8C\x8C\x8C\x8CaN\xF2V[\x90\x94P\x92P`\0a2\xCD\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8E\x8Ea@\xC6V[\x90Pa2\xDB\x8D3\x83\x88aA\xB1V[a2\xE7\x8C3\x83\x87aA\xB1V[\x80s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cjbxB\x88`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x91PP` `@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a3fW`\0\x80\xFD[PZ\xF1\x15\x80\x15a3zW=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a3\x90W`\0\x80\xFD[PQ\x94\x9D\x93\x9CP\x93\x9AP\x91\x98PPPPPPPPPV[`\0\x80`\0\x83B\x81\x10\x15a4\x1CW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a4J\x8A\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8B4\x8C\x8CaN\xF2V[\x90\x94P\x92P`\0a4\x9C\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8C\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0a@\xC6V[\x90Pa4\xAA\x8B3\x83\x88aA\xB1V[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xD0\xE3\r\xB0\x85`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01`\0`@Q\x80\x83\x03\x81\x85\x88\x80;\x15\x80\x15a5\x12W`\0\x80\xFD[PZ\xF1\x15\x80\x15a5&W=`\0\x80>=`\0\xFD[PPPPP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xA9\x05\x9C\xBB\x82\x86`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x82\x81R` \x01\x92PPP` `@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a5\xD2W`\0\x80\xFD[PZ\xF1\x15\x80\x15a5\xE6W=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a5\xFCW`\0\x80\xFD[PQa6\x04W\xFE[\x80s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cjbxB\x88`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x91PP` `@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a6\x83W`\0\x80\xFD[PZ\xF1\x15\x80\x15a6\x97W=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a6\xADW`\0\x80\xFD[PQ\x92P4\x84\x10\x15a6\xC5Wa6\xC53\x854\x03a<\xFFV[PP\x96P\x96P\x96\x93PPPPV[``\x81B\x81\x10\x15a7EW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x18`$\x82\x01R\x7FUniswapV2Router: EXPIRED\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x86\x86`\0\x81\x81\x10a7\x89W\xFE[\x90P` \x02\x015s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14a8(W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1D`$\x82\x01R\x7FUniswapV2Router: INVALID_PATH\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[a8\x86\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x88\x88\x88\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RPaF\x08\x92PPPV[\x91P4\x82`\0\x81Q\x81\x10a8\x96W\xFE[` \x02` \x01\x01Q\x11\x15a8\xF5W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`'\x81R` \x01\x80aT\x98`'\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xD0\xE3\r\xB0\x83`\0\x81Q\x81\x10a9>W\xFE[` \x02` \x01\x01Q`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01`\0`@Q\x80\x83\x03\x81\x85\x88\x80;\x15\x80\x15a9qW`\0\x80\xFD[PZ\xF1\x15\x80\x15a9\x85W=`\0\x80>=`\0\xFD[PPPPP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\xA9\x05\x9C\xBBa9\xF7\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x89`\0\x81\x81\x10a\x1A\xCDW\xFE[\x84`\0\x81Q\x81\x10a:\x04W\xFE[` \x02` \x01\x01Q`@Q\x83c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x82\x81R` \x01\x92PPP` `@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15a:uW`\0\x80\xFD[PZ\xF1\x15\x80\x15a:\x89W=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15a:\x9FW`\0\x80\xFD[PQa:\xA7W\xFE[a:\xE6\x82\x87\x87\x80\x80` \x02` \x01`@Q\x90\x81\x01`@R\x80\x93\x92\x91\x90\x81\x81R` \x01\x83\x83` \x02\x80\x82\x847`\0\x92\x01\x91\x90\x91RP\x89\x92PaC\x81\x91PPV[\x81`\0\x81Q\x81\x10a:\xF3W\xFE[` \x02` \x01\x01Q4\x11\x15a%\x1BWa%\x1B3\x83`\0\x81Q\x81\x10a;\x13W\xFE[` \x02` \x01\x01Q4\x03a<\xFFV[`@\x80Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x84\x81\x16`$\x83\x01R`D\x80\x83\x01\x85\x90R\x83Q\x80\x84\x03\x90\x91\x01\x81R`d\x90\x92\x01\x83R` \x82\x01\x80Q{\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F\xA9\x05\x9C\xBB\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x17\x81R\x92Q\x82Q`\0\x94``\x94\x93\x89\x16\x93\x92\x91\x82\x91\x90\x80\x83\x83[` \x83\x10a;\xF8W\x80Q\x82R\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xE0\x90\x92\x01\x91` \x91\x82\x01\x91\x01a;\xBBV[`\x01\x83` \x03a\x01\0\n\x03\x80\x19\x82Q\x16\x81\x84Q\x16\x80\x82\x17\x85RPPPPPP\x90P\x01\x91PP`\0`@Q\x80\x83\x03\x81`\0\x86Z\xF1\x91PP=\x80`\0\x81\x14a<ZW`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=`\0` \x84\x01>a<_V[``\x91P[P\x91P\x91P\x81\x80\x15a<\x8DWP\x80Q\x15\x80a<\x8DWP\x80\x80` \x01\x90Q` \x81\x10\x15a<\x8AW`\0\x80\xFD[PQ[a<\xF8W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1F`$\x82\x01R\x7FTransferHelper: TRANSFER_FAILED\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[PPPPPV[`@\x80Q`\0\x80\x82R` \x82\x01\x90\x92Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x90\x83\x90`@Q\x80\x82\x80Q\x90` \x01\x90\x80\x83\x83[` \x83\x10a=vW\x80Q\x82R\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xE0\x90\x92\x01\x91` \x91\x82\x01\x91\x01a=9V[`\x01\x83` \x03a\x01\0\n\x03\x80\x19\x82Q\x16\x81\x84Q\x16\x80\x82\x17\x85RPPPPPP\x90P\x01\x91PP`\0`@Q\x80\x83\x03\x81\x85\x87Z\xF1\x92PPP=\x80`\0\x81\x14a=\xD8W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=`\0` \x84\x01>a=\xDDV[``\x91P[PP\x90P\x80a>7W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`#\x81R` \x01\x80aT\xE5`#\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[PPPV[`\0\x80\x84\x11a>\x96W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`+\x81R` \x01\x80aUW`+\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[`\0\x83\x11\x80\x15a>\xA6WP`\0\x82\x11[a>\xFBW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`(\x81R` \x01\x80aTK`(\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[`\0a?\x0F\x85a\x03\xE5c\xFF\xFF\xFF\xFFaQ\xF3\x16V[\x90P`\0a?#\x82\x85c\xFF\xFF\xFF\xFFaQ\xF3\x16V[\x90P`\0a?I\x83a?=\x88a\x03\xE8c\xFF\xFF\xFF\xFFaQ\xF3\x16V[\x90c\xFF\xFF\xFF\xFFaRy\x16V[\x90P\x80\x82\x81a?TW\xFE[\x04\x97\x96PPPPPPPV[```\x02\x82Q\x10\x15a?\xD3W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1E`$\x82\x01R\x7FUniswapV2Library: INVALID_PATH\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[\x81Qg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x80\x15a?\xEBW`\0\x80\xFD[P`@Q\x90\x80\x82R\x80` \x02` \x01\x82\x01`@R\x80\x15a@\x15W\x81` \x01` \x82\x02\x806\x837\x01\x90P[P\x90P\x82\x81`\0\x81Q\x81\x10a@&W\xFE[` \x02` \x01\x01\x81\x81RPP`\0[`\x01\x83Q\x03\x81\x10\x15a@\xBEW`\0\x80a@x\x87\x86\x85\x81Q\x81\x10a@TW\xFE[` \x02` \x01\x01Q\x87\x86`\x01\x01\x81Q\x81\x10a@kW\xFE[` \x02` \x01\x01QaR\xEBV[\x91P\x91Pa@\x9A\x84\x84\x81Q\x81\x10a@\x8BW\xFE[` \x02` \x01\x01Q\x83\x83a><V[\x84\x84`\x01\x01\x81Q\x81\x10a@\xA9W\xFE[` \x90\x81\x02\x91\x90\x91\x01\x01RPP`\x01\x01a@5V[P\x93\x92PPPV[`\0\x80`\0a@\xD5\x85\x85aM\x9FV[`@\x80Q\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\0\0\0\0\0``\x94\x85\x1B\x81\x16` \x80\x84\x01\x91\x90\x91R\x93\x85\x1B\x81\x16`4\x83\x01R\x82Q`(\x81\x84\x03\x01\x81R`H\x83\x01\x84R\x80Q\x90\x85\x01 \x7F\xFF\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`h\x84\x01R\x9A\x90\x94\x1B\x90\x93\x16`i\x84\x01R`}\x83\x01\x98\x90\x98R\x7F\x96\xE8\xACBw\x19\x8F\xF8\xB6\xF7\x85G\x8A\xA9\xA3\x9F@<\xB7h\xDD\x02\xCB\xEE2l>}\xA3H\x84_`\x9D\x80\x84\x01\x91\x90\x91R\x88Q\x80\x84\x03\x90\x91\x01\x81R`\xBD\x90\x92\x01\x90\x97R\x80Q\x96\x01\x95\x90\x95 \x95\x94PPPPPV[`@\x80Qs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x85\x81\x16`$\x83\x01R\x84\x81\x16`D\x83\x01R`d\x80\x83\x01\x85\x90R\x83Q\x80\x84\x03\x90\x91\x01\x81R`\x84\x90\x92\x01\x83R` \x82\x01\x80Q{\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x7F#\xB8r\xDD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x17\x81R\x92Q\x82Q`\0\x94``\x94\x93\x8A\x16\x93\x92\x91\x82\x91\x90\x80\x83\x83[` \x83\x10aB\x8FW\x80Q\x82R\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xE0\x90\x92\x01\x91` \x91\x82\x01\x91\x01aBRV[`\x01\x83` \x03a\x01\0\n\x03\x80\x19\x82Q\x16\x81\x84Q\x16\x80\x82\x17\x85RPPPPPP\x90P\x01\x91PP`\0`@Q\x80\x83\x03\x81`\0\x86Z\xF1\x91PP=\x80`\0\x81\x14aB\xF1W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=`\0` \x84\x01>aB\xF6V[``\x91P[P\x91P\x91P\x81\x80\x15aC$WP\x80Q\x15\x80aC$WP\x80\x80` \x01\x90Q` \x81\x10\x15aC!W`\0\x80\xFD[PQ[aCyW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`$\x81R` \x01\x80aU3`$\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[PPPPPPV[`\0[`\x01\x83Q\x03\x81\x10\x15aF\x02W`\0\x80\x84\x83\x81Q\x81\x10aC\x9FW\xFE[` \x02` \x01\x01Q\x85\x84`\x01\x01\x81Q\x81\x10aC\xB6W\xFE[` \x02` \x01\x01Q\x91P\x91P`\0aC\xCE\x83\x83aM\x9FV[P\x90P`\0\x87\x85`\x01\x01\x81Q\x81\x10aC\xE2W\xFE[` \x02` \x01\x01Q\x90P`\0\x80\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x86s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14aD*W\x82`\0aD.V[`\0\x83[\x91P\x91P`\0`\x02\x8AQ\x03\x88\x10aDEW\x88aD\x86V[aD\x86\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x87\x8C\x8B`\x02\x01\x81Q\x81\x10aDyW\xFE[` \x02` \x01\x01Qa@\xC6V[\x90PaD\xB3\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x88\x88a@\xC6V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\x02,\r\x9F\x84\x84\x84`\0`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15aD\xFDW` \x82\x01\x81\x806\x837\x01\x90P[P`@Q\x85c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x85\x81R` \x01\x84\x81R` \x01\x83s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x80` \x01\x82\x81\x03\x82R\x83\x81\x81Q\x81R` \x01\x91P\x80Q\x90` \x01\x90\x80\x83\x83`\0[\x83\x81\x10\x15aE\x88W\x81\x81\x01Q\x83\x82\x01R` \x01aEpV[PPPP\x90P\x90\x81\x01\x90`\x1F\x16\x80\x15aE\xB5W\x80\x82\x03\x80Q`\x01\x83` \x03a\x01\0\n\x03\x19\x16\x81R` \x01\x91P[P\x95PPPPPP`\0`@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15aE\xD7W`\0\x80\xFD[PZ\xF1\x15\x80\x15aE\xEBW=`\0\x80>=`\0\xFD[PP`\x01\x90\x99\x01\x98PaC\x84\x97PPPPPPPPV[PPPPV[```\x02\x82Q\x10\x15aF{W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1E`$\x82\x01R\x7FUniswapV2Library: INVALID_PATH\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[\x81Qg\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x81\x11\x80\x15aF\x93W`\0\x80\xFD[P`@Q\x90\x80\x82R\x80` \x02` \x01\x82\x01`@R\x80\x15aF\xBDW\x81` \x01` \x82\x02\x806\x837\x01\x90P[P\x90P\x82\x81`\x01\x83Q\x03\x81Q\x81\x10aF\xD1W\xFE[` \x90\x81\x02\x91\x90\x91\x01\x01R\x81Q\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x01[\x80\x15a@\xBEW`\0\x80aG1\x87\x86`\x01\x86\x03\x81Q\x81\x10aG\x1DW\xFE[` \x02` \x01\x01Q\x87\x86\x81Q\x81\x10a@kW\xFE[\x91P\x91PaGS\x84\x84\x81Q\x81\x10aGDW\xFE[` \x02` \x01\x01Q\x83\x83aK\x9BV[\x84`\x01\x85\x03\x81Q\x81\x10aGbW\xFE[` \x90\x81\x02\x91\x90\x91\x01\x01RPP\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x01aG\x01V[`\0[`\x01\x83Q\x03\x81\x10\x15a>7W`\0\x80\x84\x83\x81Q\x81\x10aG\xB4W\xFE[` \x02` \x01\x01Q\x85\x84`\x01\x01\x81Q\x81\x10aG\xCBW\xFE[` \x02` \x01\x01Q\x91P\x91P`\0aG\xE3\x83\x83aM\x9FV[P\x90P`\0aH\x13\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x85\x85a@\xC6V[\x90P`\0\x80`\0\x80\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\t\x02\xF1\xAC`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01```@Q\x80\x83\x03\x81\x86\x80;\x15\x80\x15aHaW`\0\x80\xFD[PZ\xFA\x15\x80\x15aHuW=`\0\x80>=`\0\xFD[PPPP`@Q=``\x81\x10\x15aH\x8BW`\0\x80\xFD[P\x80Q` \x90\x91\x01Qm\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x91\x82\x16\x93P\x16\x90P`\0\x80s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x8A\x81\x16\x90\x89\x16\x14aH\xD5W\x82\x84aH\xD8V[\x83\x83[\x91P\x91PaI]\x82\x8Bs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16cp\xA0\x821\x8A`@Q\x82c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81R` \x01\x91PP` `@Q\x80\x83\x03\x81\x86\x80;\x15\x80\x15a\x1C\xFEW`\0\x80\xFD[\x95PaIj\x86\x83\x83a><V[\x94PPPPP`\0\x80\x85s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x88s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14aI\xAEW\x82`\0aI\xB2V[`\0\x83[\x91P\x91P`\0`\x02\x8CQ\x03\x8A\x10aI\xC9W\x8AaI\xFDV[aI\xFD\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x89\x8E\x8D`\x02\x01\x81Q\x81\x10aDyW\xFE[`@\x80Q`\0\x80\x82R` \x82\x01\x92\x83\x90R\x7F\x02,\r\x9F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x83R`$\x82\x01\x87\x81R`D\x83\x01\x87\x90Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x80\x86\x16`d\x85\x01R`\x80`\x84\x85\x01\x90\x81R\x84Q`\xA4\x86\x01\x81\x90R\x96\x97P\x90\x8C\x16\x95c\x02,\r\x9F\x95\x8A\x95\x8A\x95\x8A\x95\x91\x94\x91\x93\x91\x92`\xC4\x86\x01\x92\x90\x91\x81\x90\x84\x90\x84\x90[\x83\x81\x10\x15aJ\xADW\x81\x81\x01Q\x83\x82\x01R` \x01aJ\x95V[PPPP\x90P\x90\x81\x01\x90`\x1F\x16\x80\x15aJ\xDAW\x80\x82\x03\x80Q`\x01\x83` \x03a\x01\0\n\x03\x19\x16\x81R` \x01\x91P[P\x95PPPPPP`\0`@Q\x80\x83\x03\x81`\0\x87\x80;\x15\x80\x15aJ\xFCW`\0\x80\xFD[PZ\xF1\x15\x80\x15aK\x10W=`\0\x80>=`\0\xFD[PP`\x01\x90\x9B\x01\x9APaG\x99\x99PPPPPPPPPPV[\x80\x82\x03\x82\x81\x11\x15a\x13\x94W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x15`$\x82\x01R\x7Fds-math-sub-underflow\0\0\0\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[`\0\x80\x84\x11aK\xF5W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`,\x81R` \x01\x80aS\xD4`,\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[`\0\x83\x11\x80\x15aL\x05WP`\0\x82\x11[aLZW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`(\x81R` \x01\x80aTK`(\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[`\0aL~a\x03\xE8aLr\x86\x88c\xFF\xFF\xFF\xFFaQ\xF3\x16V[\x90c\xFF\xFF\xFF\xFFaQ\xF3\x16V[\x90P`\0aL\x98a\x03\xE5aLr\x86\x89c\xFF\xFF\xFF\xFFaK)\x16V[\x90PaL\xB5`\x01\x82\x84\x81aL\xA8W\xFE[\x04\x90c\xFF\xFF\xFF\xFFaRy\x16V[\x96\x95PPPPPPV[`\0\x80\x84\x11aM\x19W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`%\x81R` \x01\x80aTs`%\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[`\0\x83\x11\x80\x15aM)WP`\0\x82\x11[aM~W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`(\x81R` \x01\x80aTK`(\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x82aM\x8F\x85\x84c\xFF\xFF\xFF\xFFaQ\xF3\x16V[\x81aM\x96W\xFE[\x04\x94\x93PPPPV[`\0\x80\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x15aN'W`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`%\x81R` \x01\x80aT\0`%\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x82s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x84s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x10aNaW\x82\x84aNdV[\x83\x83[\x90\x92P\x90Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16aN\xEBW`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x1E`$\x82\x01R\x7FUniswapV2Library: ZERO_ADDRESS\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[\x92P\x92\x90PV[`@\x80Q\x7F\xE6\xA49\x05\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x88\x81\x16`\x04\x83\x01R\x87\x81\x16`$\x83\x01R\x91Q`\0\x92\x83\x92\x83\x92\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x90\x92\x16\x91c\xE6\xA49\x05\x91`D\x80\x82\x01\x92` \x92\x90\x91\x90\x82\x90\x03\x01\x81\x86\x80;\x15\x80\x15aO\x92W`\0\x80\xFD[PZ\xFA\x15\x80\x15aO\xA6W=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15aO\xBCW`\0\x80\xFD[PQs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16\x14\x15aP\xA2W`@\x80Q\x7F\xC9\xC6S\x96\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81Rs\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x8A\x81\x16`\x04\x83\x01R\x89\x81\x16`$\x83\x01R\x91Q\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x90\x92\x16\x91c\xC9\xC6S\x96\x91`D\x80\x82\x01\x92` \x92\x90\x91\x90\x82\x90\x03\x01\x81`\0\x87\x80;\x15\x80\x15aPuW`\0\x80\xFD[PZ\xF1\x15\x80\x15aP\x89W=`\0\x80>=`\0\xFD[PPPP`@Q=` \x81\x10\x15aP\x9FW`\0\x80\xFD[PP[`\0\x80aP\xD0\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x8B\x8BaR\xEBV[\x91P\x91P\x81`\0\x14\x80\x15aP\xE2WP\x80\x15[\x15aP\xF2W\x87\x93P\x86\x92PaQ\xE6V[`\0aP\xFF\x89\x84\x84aL\xBFV[\x90P\x87\x81\x11aQlW\x85\x81\x10\x15aQaW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`&\x81R` \x01\x80aT%`&\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x88\x94P\x92P\x82aQ\xE4V[`\0aQy\x89\x84\x86aL\xBFV[\x90P\x89\x81\x11\x15aQ\x85W\xFE[\x87\x81\x10\x15aQ\xDEW`@Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R`\x04\x01\x80\x80` \x01\x82\x81\x03\x82R`&\x81R` \x01\x80aT\xBF`&\x919`@\x01\x91PP`@Q\x80\x91\x03\x90\xFD[\x94P\x87\x93P[P[PP\x96P\x96\x94PPPPPV[`\0\x81\x15\x80aR\x0EWPP\x80\x82\x02\x82\x82\x82\x81aR\x0BW\xFE[\x04\x14[a\x13\x94W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x14`$\x82\x01R\x7Fds-math-mul-overflow\0\0\0\0\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[\x80\x82\x01\x82\x81\x10\x15a\x13\x94W`@\x80Q\x7F\x08\xC3y\xA0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x81R` `\x04\x82\x01R`\x14`$\x82\x01R\x7Fds-math-add-overflow\0\0\0\0\0\0\0\0\0\0\0\0`D\x82\x01R\x90Q\x90\x81\x90\x03`d\x01\x90\xFD[`\0\x80`\0aR\xFA\x85\x85aM\x9FV[P\x90P`\0\x80aS\x0B\x88\x88\x88a@\xC6V[s\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x16c\t\x02\xF1\xAC`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01```@Q\x80\x83\x03\x81\x86\x80;\x15\x80\x15aSPW`\0\x80\xFD[PZ\xFA\x15\x80\x15aSdW=`\0\x80>=`\0\xFD[PPPP`@Q=``\x81\x10\x15aSzW`\0\x80\xFD[P\x80Q` \x90\x91\x01Qm\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x91\x82\x16\x93P\x16\x90Ps\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x87\x81\x16\x90\x84\x16\x14aS\xC1W\x80\x82aS\xC4V[\x81\x81[\x90\x99\x90\x98P\x96PPPPPPPV\xFEUniswapV2Library: INSUFFICIENT_OUTPUT_AMOUNTUniswapV2Library: IDENTICAL_ADDRESSESUniswapV2Router: INSUFFICIENT_B_AMOUNTUniswapV2Library: INSUFFICIENT_LIQUIDITYUniswapV2Library: INSUFFICIENT_AMOUNTUniswapV2Router: EXCESSIVE_INPUT_AMOUNTUniswapV2Router: INSUFFICIENT_A_AMOUNTTransferHelper: ETH_TRANSFER_FAILEDUniswapV2Router: INSUFFICIENT_OUTPUT_AMOUNTTransferHelper: TRANSFER_FROM_FAILEDUniswapV2Library: INSUFFICIENT_INPUT_AMOUNT\xA2dipfsX\"\x12 m\xD6\xE0<K,\n\x8EU!I&\"z\xE9\xE2\xD6\xF9\xFE\xC2\xCEt\xA6DmaZ\xFA5\\\x84\xF3dsolcC\0\x06\x06\x003",
     );
     /**Constructor`.
-```solidity
-constructor(address _factory, address _WETH);
-```*/
+    ```solidity
+    constructor(address _factory, address _WETH);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct constructorCall {
@@ -233,7 +238,7 @@ constructor(address _factory, address _WETH);
         pub _WETH: alloy_sol_types::private::Address,
     }
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -248,9 +253,7 @@ constructor(address _factory, address _WETH);
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -281,15 +284,15 @@ constructor(address _factory, address _WETH);
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Address,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -305,14 +308,15 @@ constructor(address _factory, address _WETH);
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `WETH()` and selector `0xad5c4648`.
-```solidity
-function WETH() external view returns (address);
-```*/
+    ```solidity
+    function WETH() external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct WETHCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`WETH()`](WETHCall) function.
+    ///Container type for the return parameters of the [`WETH()`](WETHCall)
+    /// function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct WETHReturn {
@@ -326,7 +330,7 @@ function WETH() external view returns (address);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -335,9 +339,7 @@ function WETH() external view returns (address);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -367,9 +369,7 @@ function WETH() external view returns (address);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -394,63 +394,58 @@ function WETH() external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for WETHCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "WETH()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [173u8, 92u8, 70u8, 72u8];
+            const SIGNATURE: &'static str = "WETH()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: WETHReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: WETHReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: WETHReturn = r.into();
+                    r._0
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)` and selector `0xe8e33700`.
-```solidity
-function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) external returns (uint256 amountA, uint256 amountB, uint256 liquidity);
-```*/
+    ```solidity
+    function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) external returns (uint256 amountA, uint256 amountB, uint256 liquidity);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addLiquidityCall {
@@ -472,7 +467,9 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)`](addLiquidityCall) function.
+    ///Container type for the return parameters of the
+    /// [`addLiquidity(address,address,uint256,uint256,uint256,uint256,address,
+    /// uint256)`](addLiquidityCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addLiquidityReturn {
@@ -490,7 +487,7 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -517,9 +514,7 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -575,9 +570,7 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -604,19 +597,17 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
             }
         }
         impl addLiquidityReturn {
-            fn _tokenize(
-                &self,
-            ) -> <addLiquidityCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(&self) -> <addLiquidityCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountA),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountB),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.liquidity),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountA,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountB,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.liquidity,
+                    ),
                 )
             }
         }
@@ -632,26 +623,26 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = addLiquidityReturn;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [232u8, 227u8, 55u8, 0u8];
+            const SIGNATURE: &'static str =
+                "addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -661,58 +652,58 @@ function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, ui
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.tokenB,
                     ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountADesired),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountBDesired),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountAMin),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountBMin),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountADesired,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountBDesired,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountAMin,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountBMin,
+                    ),
                     <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.to,
                     ),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.deadline,
+                    ),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 addLiquidityReturn::_tokenize(ret)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `factory()` and selector `0xc45a0155`.
-```solidity
-function factory() external view returns (address);
-```*/
+    ```solidity
+    function factory() external view returns (address);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`factory()`](factoryCall) function.
+    ///Container type for the return parameters of the
+    /// [`factory()`](factoryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryReturn {
@@ -726,7 +717,7 @@ function factory() external view returns (address);
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -735,9 +726,7 @@ function factory() external view returns (address);
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -767,9 +756,7 @@ function factory() external view returns (address);
             type UnderlyingRustTuple<'a> = (alloy_sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -794,63 +781,58 @@ function factory() external view returns (address);
         #[automatically_derived]
         impl alloy_sol_types::SolCall for factoryCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::Address;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "factory()";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [196u8, 90u8, 1u8, 85u8];
+            const SIGNATURE: &'static str = "factory()";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                (<alloy_sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: factoryReturn = r.into();
                         r._0
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: factoryReturn = r.into();
-                        r._0
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: factoryReturn = r.into();
+                    r._0
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `quote(uint256,uint256,uint256)` and selector `0xad615dec`.
-```solidity
-function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pure returns (uint256 amountB);
-```*/
+    ```solidity
+    function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pure returns (uint256 amountB);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteCall {
@@ -862,7 +844,8 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
         pub reserveB: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`quote(uint256,uint256,uint256)`](quoteCall) function.
+    ///Container type for the return parameters of the
+    /// [`quote(uint256,uint256,uint256)`](quoteCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteReturn {
@@ -876,7 +859,7 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -893,9 +876,7 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -926,14 +907,10 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::primitives::aliases::U256,
-            );
+            type UnderlyingRustTuple<'a> = (alloy_sol_types::private::primitives::aliases::U256,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -962,73 +939,72 @@ function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pur
                 alloy_sol_types::sol_data::Uint<256>,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy_sol_types::private::primitives::aliases::U256;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
             type ReturnTuple<'a> = (alloy_sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "quote(uint256,uint256,uint256)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [173u8, 97u8, 93u8, 236u8];
+            const SIGNATURE: &'static str = "quote(uint256,uint256,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.amountA),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.reserveA),
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.reserveB),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.amountA,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.reserveA,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.reserveB,
+                    ),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
-                    <alloy_sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
+                    <alloy_sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
                 )
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: quoteReturn = r.into();
                         r.amountB
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: quoteReturn = r.into();
-                        r.amountB
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: quoteReturn = r.into();
+                    r.amountB
+                })
             }
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `swapTokensForExactTokens(uint256,uint256,address[],address,uint256)` and selector `0x8803dbee`.
-```solidity
-function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] memory path, address to, uint256 deadline) external returns (uint256[] memory amounts);
-```*/
+    ```solidity
+    function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] memory path, address to, uint256 deadline) external returns (uint256[] memory amounts);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapTokensForExactTokensCall {
@@ -1044,14 +1020,15 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`swapTokensForExactTokens(uint256,uint256,address[],address,uint256)`](swapTokensForExactTokensCall) function.
+    ///Container type for the return parameters of the
+    /// [`swapTokensForExactTokens(uint256,uint256,address[],address,
+    /// uint256)`](swapTokensForExactTokensCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapTokensForExactTokensReturn {
         #[allow(missing_docs)]
-        pub amounts: alloy_sol_types::private::Vec<
-            alloy_sol_types::private::primitives::aliases::U256,
-        >,
+        pub amounts:
+            alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
     }
     #[allow(
         non_camel_case_types,
@@ -1060,7 +1037,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         clippy::style
     )]
     const _: () = {
-        use alloy_sol_types as alloy_sol_types;
+        use alloy_sol_types;
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -1081,9 +1058,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1092,8 +1067,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<swapTokensForExactTokensCall>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<swapTokensForExactTokensCall> for UnderlyingRustTuple<'_> {
                 fn from(value: swapTokensForExactTokensCall) -> Self {
                     (
                         value.amountOut,
@@ -1106,8 +1080,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for swapTokensForExactTokensCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapTokensForExactTokensCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         amountOut: tuple.0,
@@ -1122,20 +1095,15 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         {
             #[doc(hidden)]
             #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
+            type UnderlyingSolTuple<'a> =
+                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                alloy_sol_types::private::Vec<
-                    alloy_sol_types::private::primitives::aliases::U256,
-                >,
+                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1144,16 +1112,14 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<swapTokensForExactTokensReturn>
-            for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<swapTokensForExactTokensReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: swapTokensForExactTokensReturn) -> Self {
                     (value.amounts,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for swapTokensForExactTokensReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for swapTokensForExactTokensReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { amounts: tuple.0 }
                 }
@@ -1168,26 +1134,24 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 alloy_sol_types::sol_data::Address,
                 alloy_sol_types::sol_data::Uint<256>,
             );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy_sol_types::private::Vec<
-                alloy_sol_types::private::primitives::aliases::U256,
-            >;
-            type ReturnTuple<'a> = (
-                alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "swapTokensForExactTokens(uint256,uint256,address[],address,uint256)";
+            type Return =
+                alloy_sol_types::private::Vec<alloy_sol_types::private::primitives::aliases::U256>;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnTuple<'a> =
+                (alloy_sol_types::sol_data::Array<alloy_sol_types::sol_data::Uint<256>>,);
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
             const SELECTOR: [u8; 4] = [136u8, 3u8, 219u8, 238u8];
+            const SIGNATURE: &'static str =
+                "swapTokensForExactTokens(uint256,uint256,address[],address,uint256)";
+
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 tuple.into()
             }
+
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
@@ -1208,41 +1172,38 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     > as alloy_sol_types::SolType>::tokenize(&self.deadline),
                 )
             }
+
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy_sol_types::sol_data::Array<
-                        alloy_sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
+                (<alloy_sol_types::sol_data::Array<
+                    alloy_sol_types::sol_data::Uint<256>,
+                > as alloy_sol_types::SolType>::tokenize(ret),)
             }
+
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
+                    |r| {
                         let r: swapTokensForExactTokensReturn = r.into();
                         r.amounts
-                    })
+                    },
+                )
             }
+
             #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: swapTokensForExactTokensReturn = r.into();
-                        r.amounts
-                    })
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(|r| {
+                    let r: swapTokensForExactTokensReturn = r.into();
+                    r.amounts
+                })
             }
         }
     };
     ///Container for all the [`UniswapV2Router02`](self) function calls.
     #[derive(Clone)]
-    #[derive()]
     pub enum UniswapV2Router02Calls {
         #[allow(missing_docs)]
         WETH(WETHCall),
@@ -1258,8 +1219,9 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
     impl UniswapV2Router02Calls {
         /// All the selectors of this enum.
         ///
-        /// Note that the selectors might not be in the same order as the variants.
-        /// No guarantees are made about the order of the selectors.
+        /// Note that the selectors might not be in the same order as the
+        /// variants. No guarantees are made about the order of the
+        /// selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
@@ -1269,14 +1231,6 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             [196u8, 90u8, 1u8, 85u8],
             [232u8, 227u8, 55u8, 0u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(swapTokensForExactTokens),
-            ::core::stringify!(WETH),
-            ::core::stringify!(quote),
-            ::core::stringify!(factory),
-            ::core::stringify!(addLiquidity),
-        ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <swapTokensForExactTokensCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -1285,6 +1239,15 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
             <factoryCall as alloy_sol_types::SolCall>::SIGNATURE,
             <addLiquidityCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
+        /// The names of the variants in the same order as `SELECTORS`.
+        pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(swapTokensForExactTokens),
+            ::core::stringify!(WETH),
+            ::core::stringify!(quote),
+            ::core::stringify!(factory),
+            ::core::stringify!(addLiquidity),
+        ];
+
         /// Returns the signature for the given selector, if known.
         #[inline]
         pub fn signature_by_selector(
@@ -1297,27 +1260,25 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 ::core::result::Result::Err(_) => ::core::option::Option::None,
             }
         }
+
         /// Returns the enum variant name for the given selector, if known.
         #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
+        pub fn name_by_selector(selector: [u8; 4usize]) -> ::core::option::Option<&'static str> {
             let sig = Self::signature_by_selector(selector)?;
             sig.split_once('(').map(|(name, _)| name)
         }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for UniswapV2Router02Calls {
-        const NAME: &'static str = "UniswapV2Router02Calls";
-        const MIN_DATA_LENGTH: usize = 0usize;
         const COUNT: usize = 5usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const NAME: &'static str = "UniswapV2Router02Calls";
+
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::WETH(_) => <WETHCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::addLiquidity(_) => {
-                    <addLiquidityCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::addLiquidity(_) => <addLiquidityCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::factory(_) => <factoryCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::quote(_) => <quoteCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::swapTokensForExactTokens(_) => {
@@ -1325,83 +1286,75 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 }
             }
         }
+
         #[inline]
         fn selector_at(i: usize) -> ::core::option::Option<[u8; 4]> {
             Self::SELECTORS.get(i).copied()
         }
+
         #[inline]
         fn valid_selector(selector: [u8; 4]) -> bool {
             Self::SELECTORS.binary_search(&selector).is_ok()
         }
+
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<UniswapV2Router02Calls>] = &[
-                {
-                    fn swapTokensForExactTokens(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <swapTokensForExactTokensCall as alloy_sol_types::SolCall>::abi_decode_raw(
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<UniswapV2Router02Calls>] =
+                &[
+                    {
+                        fn swapTokensForExactTokens(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<UniswapV2Router02Calls>
+                        {
+                            <swapTokensForExactTokensCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
                             .map(UniswapV2Router02Calls::swapTokensForExactTokens)
-                    }
-                    swapTokensForExactTokens
-                },
-                {
-                    fn WETH(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <WETHCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(UniswapV2Router02Calls::WETH)
-                    }
-                    WETH
-                },
-                {
-                    fn quote(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(UniswapV2Router02Calls::quote)
-                    }
-                    quote
-                },
-                {
-                    fn factory(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <factoryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(UniswapV2Router02Calls::factory)
-                    }
-                    factory
-                },
-                {
-                    fn addLiquidity(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <addLiquidityCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(UniswapV2Router02Calls::addLiquidity)
-                    }
-                    addLiquidity
-                },
-            ];
+                        }
+                        swapTokensForExactTokens
+                    },
+                    {
+                        fn WETH(data: &[u8]) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
+                            <WETHCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                                .map(UniswapV2Router02Calls::WETH)
+                        }
+                        WETH
+                    },
+                    {
+                        fn quote(data: &[u8]) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
+                            <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                                .map(UniswapV2Router02Calls::quote)
+                        }
+                        quote
+                    },
+                    {
+                        fn factory(data: &[u8]) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
+                            <factoryCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                                .map(UniswapV2Router02Calls::factory)
+                        }
+                        factory
+                    },
+                    {
+                        fn addLiquidity(
+                            data: &[u8],
+                        ) -> alloy_sol_types::Result<UniswapV2Router02Calls>
+                        {
+                            <addLiquidityCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                                .map(UniswapV2Router02Calls::addLiquidity)
+                        }
+                        addLiquidity
+                    },
+                ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
+
         #[inline]
         #[allow(non_snake_case)]
         fn abi_decode_raw_validate(
@@ -1410,7 +1363,9 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<UniswapV2Router02Calls>] = &[
+            ) -> alloy_sol_types::Result<
+                UniswapV2Router02Calls,
+            >] = &[
                 {
                     fn swapTokensForExactTokens(
                         data: &[u8],
@@ -1423,34 +1378,22 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     swapTokensForExactTokens
                 },
                 {
-                    fn WETH(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <WETHCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn WETH(data: &[u8]) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
+                        <WETHCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(UniswapV2Router02Calls::WETH)
                     }
                     WETH
                 },
                 {
-                    fn quote(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn quote(data: &[u8]) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
+                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(UniswapV2Router02Calls::quote)
                     }
                     quote
                 },
                 {
-                    fn factory(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
-                        <factoryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
+                    fn factory(data: &[u8]) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
+                        <factoryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(UniswapV2Router02Calls::factory)
                     }
                     factory
@@ -1460,23 +1403,22 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                         data: &[u8],
                     ) -> alloy_sol_types::Result<UniswapV2Router02Calls> {
                         <addLiquidityCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(UniswapV2Router02Calls::addLiquidity)
+                            data,
+                        )
+                        .map(UniswapV2Router02Calls::addLiquidity)
                     }
                     addLiquidity
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
+
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
@@ -1484,9 +1426,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     <WETHCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::addLiquidity(inner) => {
-                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
@@ -1501,6 +1441,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 }
             }
         }
+
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
@@ -1508,10 +1449,7 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                     <WETHCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::addLiquidity(inner) => {
-                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <addLiquidityCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::factory(inner) => {
                     <factoryCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -1521,17 +1459,16 @@ function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, addres
                 }
                 Self::swapTokensForExactTokens(inner) => {
                     <swapTokensForExactTokensCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
         }
     }
-    use alloy_contract as alloy_contract;
+    use alloy_contract;
     /**Creates a new wrapper around an on-chain [`UniswapV2Router02`](self) contract instance.
 
-See the [wrapper's documentation](`UniswapV2Router02Instance`) for more details.*/
+    See the [wrapper's documentation](`UniswapV2Router02Instance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1544,27 +1481,23 @@ See the [wrapper's documentation](`UniswapV2Router02Instance`) for more details.
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         __provider: P,
         _factory: alloy_sol_types::private::Address,
         _WETH: alloy_sol_types::private::Address,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<UniswapV2Router02Instance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<UniswapV2Router02Instance<P, N>>>
+    {
         UniswapV2Router02Instance::<P, N>::deploy(__provider, _factory, _WETH)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
@@ -1578,15 +1511,15 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /**A [`UniswapV2Router02`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`UniswapV2Router02`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`UniswapV2Router02`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct UniswapV2Router02Instance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1597,33 +1530,32 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for UniswapV2Router02Instance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("UniswapV2Router02Instance").field(&self.address).finish()
+            f.debug_tuple("UniswapV2Router02Instance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > UniswapV2Router02Instance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        UniswapV2Router02Instance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`UniswapV2Router02`](self) contract instance.
 
-See the [wrapper's documentation](`UniswapV2Router02Instance`) for more details.*/
+        See the [wrapper's documentation](`UniswapV2Router02Instance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            __provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, __provider: P) -> Self {
             Self {
                 address,
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
+
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             __provider: P,
@@ -1634,11 +1566,12 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+        and constructor arguments, if any.
+
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(
             __provider: P,
@@ -1649,29 +1582,34 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 __provider,
                 [
                     &BYTECODE[..],
-                    &alloy_sol_types::SolConstructor::abi_encode(
-                        &constructorCall { _factory, _WETH },
-                    )[..],
+                    &alloy_sol_types::SolConstructor::abi_encode(&constructorCall {
+                        _factory,
+                        _WETH,
+                    })[..],
                 ]
-                    .concat()
-                    .into(),
+                .concat()
+                .into(),
             )
         }
+
         /// Returns a reference to the address.
         #[inline]
         pub const fn address(&self) -> &alloy_sol_types::private::Address {
             &self.address
         }
+
         /// Sets the address.
         #[inline]
         pub fn set_address(&mut self, address: alloy_sol_types::private::Address) {
             self.address = address;
         }
+
         /// Sets the address and returns `self`.
         pub fn at(mut self, address: alloy_sol_types::private::Address) -> Self {
             self.set_address(address);
             self
         }
+
         /// Returns a reference to the provider.
         #[inline]
         pub const fn provider(&self) -> &P {
@@ -1679,7 +1617,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     impl<P: ::core::clone::Clone, N> UniswapV2Router02Instance<&P, N> {
-        /// Clones the provider and returns a new instance with the cloned provider.
+        /// Clones the provider and returns a new instance with the cloned
+        /// provider.
         #[inline]
         pub fn with_cloned_provider(self) -> UniswapV2Router02Instance<P, N> {
             UniswapV2Router02Instance {
@@ -1690,24 +1629,27 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > UniswapV2Router02Instance<P, N> {
-        /// Creates a new call builder using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        UniswapV2Router02Instance<P, N>
+    {
+        /// Creates a new call builder using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the call can be any function call, not just those defined in this
-        /// contract. Prefer using the other methods for building type-safe contract calls.
+        /// Note that the call can be any function call, not just those defined
+        /// in this contract. Prefer using the other methods for
+        /// building type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
         ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
+
         ///Creates a new call builder for the [`WETH`] function.
         pub fn WETH(&self) -> alloy_contract::SolCallBuilder<&P, WETHCall, N> {
             self.call_builder(&WETHCall)
         }
+
         ///Creates a new call builder for the [`addLiquidity`] function.
         pub fn addLiquidity(
             &self,
@@ -1720,23 +1662,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             to: alloy_sol_types::private::Address,
             deadline: alloy_sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, addLiquidityCall, N> {
-            self.call_builder(
-                &addLiquidityCall {
-                    tokenA,
-                    tokenB,
-                    amountADesired,
-                    amountBDesired,
-                    amountAMin,
-                    amountBMin,
-                    to,
-                    deadline,
-                },
-            )
+            self.call_builder(&addLiquidityCall {
+                tokenA,
+                tokenB,
+                amountADesired,
+                amountBDesired,
+                amountAMin,
+                amountBMin,
+                to,
+                deadline,
+            })
         }
+
         ///Creates a new call builder for the [`factory`] function.
         pub fn factory(&self) -> alloy_contract::SolCallBuilder<&P, factoryCall, N> {
             self.call_builder(&factoryCall)
         }
+
         ///Creates a new call builder for the [`quote`] function.
         pub fn quote(
             &self,
@@ -1744,15 +1686,15 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             reserveA: alloy_sol_types::private::primitives::aliases::U256,
             reserveB: alloy_sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, quoteCall, N> {
-            self.call_builder(
-                &quoteCall {
-                    amountA,
-                    reserveA,
-                    reserveB,
-                },
-            )
+            self.call_builder(&quoteCall {
+                amountA,
+                reserveA,
+                reserveB,
+            })
         }
-        ///Creates a new call builder for the [`swapTokensForExactTokens`] function.
+
+        ///Creates a new call builder for the [`swapTokensForExactTokens`]
+        /// function.
         pub fn swapTokensForExactTokens(
             &self,
             amountOut: alloy_sol_types::private::primitives::aliases::U256,
@@ -1761,26 +1703,25 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             to: alloy_sol_types::private::Address,
             deadline: alloy_sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, swapTokensForExactTokensCall, N> {
-            self.call_builder(
-                &swapTokensForExactTokensCall {
-                    amountOut,
-                    amountInMax,
-                    path,
-                    to,
-                    deadline,
-                },
-            )
+            self.call_builder(&swapTokensForExactTokensCall {
+                amountOut,
+                amountInMax,
+                path,
+                to,
+                deadline,
+            })
         }
     }
     /// Event filters.
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > UniswapV2Router02Instance<P, N> {
-        /// Creates a new event filter using this contract instance's provider and address.
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        UniswapV2Router02Instance<P, N>
+    {
+        /// Creates a new event filter using this contract instance's provider
+        /// and address.
         ///
-        /// Note that the type can be any event, not just those defined in this contract.
-        /// Prefer using the other methods for building type-safe event filters.
+        /// Note that the type can be any event, not just those defined in this
+        /// contract. Prefer using the other methods for building
+        /// type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -1788,89 +1729,51 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
 }
-pub type Instance = UniswapV2Router02::UniswapV2Router02Instance<
-    ::alloy_provider::DynProvider,
->;
+pub type Instance = UniswapV2Router02::UniswapV2Router02Instance<::alloy_provider::DynProvider>;
 use {
-    std::{sync::LazyLock, collections::HashMap},
-    anyhow::{Result, Context},
-    alloy_primitives::{address, Address},
-    alloy_provider::{Provider, DynProvider},
+    alloy_primitives::{Address, address},
+    alloy_provider::{DynProvider, Provider},
+    anyhow::{Context, Result},
+    std::{collections::HashMap, sync::LazyLock},
 };
 pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
     match chain_id {
-        1u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
-                ),
-                None,
-            ))
-        }
-        10u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2"
-                ),
-                None,
-            ))
-        }
-        56u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"
-                ),
-                None,
-            ))
-        }
-        100u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"
-                ),
-                None,
-            ))
-        }
-        137u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xedf6066a2b290C185783862C7F4776A2C8077AD1"
-                ),
-                None,
-            ))
-        }
-        8453u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"
-                ),
-                None,
-            ))
-        }
-        42161u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"
-                ),
-                None,
-            ))
-        }
-        43114u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"
-                ),
-                None,
-            ))
-        }
-        11155111u64 => {
-            Some((
-                ::alloy_primitives::address!(
-                    "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"
-                ),
-                None,
-            ))
-        }
+        1u64 => Some((
+            ::alloy_primitives::address!("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"),
+            None,
+        )),
+        10u64 => Some((
+            ::alloy_primitives::address!("0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2"),
+            None,
+        )),
+        56u64 => Some((
+            ::alloy_primitives::address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+            None,
+        )),
+        100u64 => Some((
+            ::alloy_primitives::address!("0x1C232F01118CB8B424793ae03F870aa7D0ac7f77"),
+            None,
+        )),
+        137u64 => Some((
+            ::alloy_primitives::address!("0xedf6066a2b290C185783862C7F4776A2C8077AD1"),
+            None,
+        )),
+        8453u64 => Some((
+            ::alloy_primitives::address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+            None,
+        )),
+        42161u64 => Some((
+            ::alloy_primitives::address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+            None,
+        )),
+        43114u64 => Some((
+            ::alloy_primitives::address!("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"),
+            None,
+        )),
+        11155111u64 => Some((
+            ::alloy_primitives::address!("0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"),
+            None,
+        )),
         _ => None,
     }
 }
@@ -1887,9 +1790,7 @@ pub const fn deployment_block(chain_id: &u64) -> Option<u64> {
     }
 }
 impl Instance {
-    pub fn deployed(
-        provider: &DynProvider,
-    ) -> impl Future<Output = Result<Self>> + Send {
+    pub fn deployed(provider: &DynProvider) -> impl Future<Output = Result<Self>> + Send {
         async move {
             let chain_id = provider
                 .get_chain_id()
