@@ -198,16 +198,16 @@ fn record_simulation_outcome(
             },
         ) => tracing::warn!(
             ?order_uid,
-            signature = "pass",
-            simulation = "fail",
+            signature = signature.label(),
+            simulation = simulation.label(),
             ?reason,
             ?tenderly_url,
             "eip1271 simulation disagreement",
         ),
         (SignatureOutcome::Fail, SimulationOutcome::Pass) => tracing::warn!(
             ?order_uid,
-            signature = "fail",
-            simulation = "pass",
+            signature = signature.label(),
+            simulation = simulation.label(),
             "eip1271 simulation disagreement",
         ),
         (_, SimulationOutcome::Infra(err)) => {
