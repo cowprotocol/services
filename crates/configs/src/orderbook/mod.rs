@@ -61,20 +61,20 @@ pub struct OrderSimulationConfig {
     #[serde(default)]
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
 
-    /// Shadow/enforce mode for the EIP-1271 shadow simulation. Defaults to
+    /// Mode for the EIP-1271 order simulation. Defaults to
     /// `shadow` (observability only; never rejects). Only set to `enforce`
-    /// after shadow-mode telemetry shows low-to-zero unexpected
+    /// after Shadow-mode telemetry shows low-to-zero unexpected
     /// disagreements AND flashloan support has landed in the simulator.
     #[serde(default)]
     pub eip1271_sim_mode: Eip1271SimMode,
 
-    /// Per-call timeout for the shadow simulation. Infra errors (including
-    /// timeouts) never reject the order. Default: 2s.
+    /// Per-call timeout for the EIP-1271 order simulation. Infra errors
+    /// (including timeouts) never reject the order. Default: 2s.
     #[serde(default = "default_eip1271_sim_timeout", with = "humantime_serde")]
     pub eip1271_sim_timeout: Duration,
 }
 
-/// Mode for the EIP-1271 shadow simulation. Mirrored by
+/// Mode for the EIP-1271 order simulation. Mirrored by
 /// `shared::order_validation::Eip1271SimMode`; conversion happens at
 /// the call site in `orderbook/run.rs`.
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]

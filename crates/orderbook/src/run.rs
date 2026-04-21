@@ -408,7 +408,7 @@ pub async fn run(config: Configuration) {
                 chain.id().to_string(),
                 tenderly,
             ));
-            let shadow: Arc<dyn shared::order_validation::Eip1271Simulator> = Arc::new(
+            let sim: Arc<dyn shared::order_validation::Eip1271Simulator> = Arc::new(
                 crate::eip1271_sim::OrderSimulatorAdapter::new(order_simulator.clone()),
             );
             let mode = match sim_config.eip1271_sim_mode {
@@ -417,7 +417,7 @@ pub async fn run(config: Configuration) {
             };
             (
                 Some(order_simulator),
-                Some(shadow),
+                Some(sim),
                 mode,
                 sim_config.eip1271_sim_timeout,
             )
