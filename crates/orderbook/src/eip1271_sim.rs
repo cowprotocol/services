@@ -2,12 +2,12 @@ use {
     crate::order_simulator::{self, OrderSimulator},
     async_trait::async_trait,
     model::order::Order,
-    shared::order_validation::{Eip1271ShadowSimulator, ShadowSimError},
+    shared::order_validation::{Eip1271SimError, Eip1271Simulator},
     std::sync::Arc,
 };
 
 /// Adapter exposing `OrderSimulator` via the
-/// `shared::order_validation::Eip1271ShadowSimulator` trait.
+/// `shared::order_validation::Eip1271Simulator` trait.
 ///
 /// This is a temporary shim. Once the `simulator` crate is refactored to own
 /// `OrderSimulator`, `OrderValidator` can depend on it directly and this
@@ -23,8 +23,8 @@ impl OrderSimulatorAdapter {
 }
 
 #[async_trait]
-impl Eip1271ShadowSimulator for OrderSimulatorAdapter {
-    async fn simulate(&self, order: &Order) -> Result<(), ShadowSimError> {
+impl Eip1271Simulator for OrderSimulatorAdapter {
+    async fn simulate(&self, order: &Order) -> Result<(), Eip1271SimError> {
         let swap = self
             .inner
             .encode_order(order, Vec::new(), None)
@@ -37,7 +37,7 @@ impl Eip1271ShadowSimulator for OrderSimulatorAdapter {
             .map_err(map_simulator_err)?;
         match result.error {
             None => Ok(()),
-            Some(reason) => Err(ShadowSimError::Reverted {
+            Some(reason) => Err(Eip1271SimError::Reverted {
                 reason,
                 tenderly_url: result.tenderly_url,
             }),
@@ -45,10 +45,10 @@ impl Eip1271ShadowSimulator for OrderSimulatorAdapter {
     }
 }
 
-fn map_simulator_err(err: order_simulator::Error) -> ShadowSimError {
+fn map_simulator_err(err: order_simulator::Error) -> Eip1271SimError {
     match err {
         order_simulator::Error::Other(e) | order_simulator::Error::MalformedInput(e) => {
-            ShadowSimError::Infra(e)
+            Eip1271SimError::Infra(e)
         }
     }
 }
@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn impls_trait() {
-        fn assert_impl<T: Eip1271ShadowSimulator>() {}
+        fn assert_impl<T: Eip1271Simulator>() {}
         assert_impl::<OrderSimulatorAdapter>();
     }
 }

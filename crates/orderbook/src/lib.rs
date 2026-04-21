@@ -3,7 +3,7 @@ pub mod app_data;
 pub mod arguments;
 pub mod database;
 pub mod dto;
-pub mod eip1271_shadow_sim;
+pub mod eip1271_sim;
 mod ipfs;
 mod ipfs_app_data;
 pub mod order_simulator;

@@ -42,8 +42,8 @@ use {
     shared::{
         order_quoting::{self, OrderQuoter},
         order_validation::{
-            DEFAULT_SHADOW_SIM_TIMEOUT,
-            Eip1271ShadowSimMode,
+            DEFAULT_EIP1271_SIM_TIMEOUT,
+            Eip1271SimMode,
             OrderValidPeriodConfiguration,
             OrderValidator,
         },
@@ -381,7 +381,7 @@ pub async fn run(config: Configuration) {
         .await
         .ok();
 
-    let (order_simulator, shadow_simulator, shadow_sim_mode, shadow_sim_timeout) =
+    let (order_simulator, eip1271_simulator, eip1271_sim_mode, eip1271_sim_timeout) =
         if let Some(sim_config) = config.order_simulation {
             let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
                 sim_config.tenderly.as_ref().map(|tenderly_config| {
@@ -408,25 +408,25 @@ pub async fn run(config: Configuration) {
                 chain.id().to_string(),
                 tenderly,
             ));
-            let shadow: Arc<dyn shared::order_validation::Eip1271ShadowSimulator> = Arc::new(
-                crate::eip1271_shadow_sim::OrderSimulatorAdapter::new(order_simulator.clone()),
+            let shadow: Arc<dyn shared::order_validation::Eip1271Simulator> = Arc::new(
+                crate::eip1271_sim::OrderSimulatorAdapter::new(order_simulator.clone()),
             );
-            let mode = match sim_config.eip1271_shadow_sim_mode {
-                configs::orderbook::Eip1271ShadowSimMode::Shadow => Eip1271ShadowSimMode::Shadow,
-                configs::orderbook::Eip1271ShadowSimMode::Enforce => Eip1271ShadowSimMode::Enforce,
+            let mode = match sim_config.eip1271_sim_mode {
+                configs::orderbook::Eip1271SimMode::Shadow => Eip1271SimMode::Shadow,
+                configs::orderbook::Eip1271SimMode::Enforce => Eip1271SimMode::Enforce,
             };
             (
                 Some(order_simulator),
                 Some(shadow),
                 mode,
-                sim_config.eip1271_shadow_sim_timeout,
+                sim_config.eip1271_sim_timeout,
             )
         } else {
             (
                 None,
                 None,
-                Eip1271ShadowSimMode::Shadow,
-                DEFAULT_SHADOW_SIM_TIMEOUT,
+                Eip1271SimMode::Shadow,
+                DEFAULT_EIP1271_SIM_TIMEOUT,
             )
         };
 
@@ -444,9 +444,9 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
-        shadow_simulator,
-        shadow_sim_mode,
-        shadow_sim_timeout,
+        eip1271_simulator,
+        eip1271_sim_mode,
+        eip1271_sim_timeout,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,
