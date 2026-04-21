@@ -181,19 +181,14 @@ fn classify_sim(res: &Result<(), Eip1271SimError>) -> SimOutcome {
     }
 }
 
-fn record_sim_outcome(
-    cheap: SignatureOutcome,
-    sim: &SimOutcome,
-    order_uid: OrderUid,
-    owner: Address,
-) {
+fn record_sim_outcome(signature: SignatureOutcome, sim: &SimOutcome, order_uid: OrderUid) {
     Eip1271SimMetrics::get()
         .total
-        .with_label_values(&[cheap.label(), sim.label()])
+        .with_label_values(&[signature.label(), sim.label()])
         .inc();
 
     let disagreement = matches!(
-        (&cheap, sim),
+        (&signature, sim),
         (SignatureOutcome::Pass, SimOutcome::Fail { .. })
             | (SignatureOutcome::Fail, SimOutcome::Pass)
     );
@@ -207,22 +202,22 @@ fn record_sim_outcome(
         };
         tracing::warn!(
             %order_uid,
-            %owner,
-            cheap = cheap.label(),
+            signature = signature.label(),
             sim = sim.label(),
             reason,
             ?tenderly_url,
             "eip1271 sim disagreement",
         );
     } else if let SimOutcome::Infra(err) = sim {
-        tracing::warn!(%order_uid, %owner, err = %err, "eip1271 sim infra error");
+        tracing::warn!(%order_uid, err = %err, "eip1271 sim infra error");
     }
 }
 
 async fn run_eip1271_sim_only(config: &Eip1271Simulator, preview_order: &Order) {
-    let timer = Eip1271SimMetrics::get().simulation_time.start_timer();
-    let res = tokio::time::timeout(config.timeout, config.simulator.simulate(preview_order)).await;
-    drop(timer);
+    let res = {
+        let _timer = Eip1271SimMetrics::get().simulation_time.start_timer();
+        tokio::time::timeout(config.timeout, config.simulator.simulate(preview_order)).await
+    };
     let outcome = match res {
         Ok(Ok(())) => SimOutcome::Pass,
         Ok(Err(Eip1271SimError::Reverted {
@@ -245,14 +240,12 @@ async fn run_eip1271_sim_only(config: &Eip1271Simulator, preview_order: &Order) 
             tenderly_url,
         } => tracing::info!(
             order_uid = %preview_order.metadata.uid,
-            owner = %preview_order.metadata.owner,
             reason = %reason,
             ?tenderly_url,
             "eip1271 sim (signature check skipped)",
         ),
         SimOutcome::Infra(err) => tracing::warn!(
             order_uid = %preview_order.metadata.uid,
-            owner = %preview_order.metadata.owner,
             err = %err,
             "eip1271 sim infra error (signature check skipped)",
         ),
@@ -617,18 +610,14 @@ impl OrderValidator {
                 .unwrap_or_else(|_| Err(Eip1271SimError::Infra(anyhow!("eip1271 sim timeout"))))
         };
 
-        let timer = Eip1271SimMetrics::get().simulation_time.start_timer();
-        let (signature_res, sim_res) = tokio::join!(signature_fut, sim_fut);
-        drop(timer);
+        let (signature_res, sim_res) = {
+            let _timer = Eip1271SimMetrics::get().simulation_time.start_timer();
+            tokio::join!(signature_fut, sim_fut)
+        };
 
         let signature_outcome = classify_signature(&signature_res);
         let sim_outcome = classify_sim(&sim_res);
-        record_sim_outcome(
-            signature_outcome,
-            &sim_outcome,
-            preview_order.metadata.uid,
-            preview_order.metadata.owner,
-        );
+        record_sim_outcome(signature_outcome, &sim_outcome, preview_order.metadata.uid);
 
         match (signature_res, &sim_outcome, config.mode) {
             (Ok(_gas), SimOutcome::Fail { reason, .. }, Eip1271SimMode::Enforce) => {
