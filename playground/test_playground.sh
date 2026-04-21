@@ -34,7 +34,7 @@ receiver=$(cast wallet address $PRIVATE_KEY)
 # Calculate AppData hash
 app_data_hash=$(cast keccak $APPDATA)
 
-echo -e "\n>>> Requesting price quote for buying USDC for WETH"
+echo -e "\n>>> Requesting price quote for buying USDC for WETH..."
 quote_response=$( curl --retry 5 --fail-with-body -s --show-error -X 'POST' \
   "http://$HOST/api/v1/quote" \
   -H 'accept: application/json' \
@@ -79,9 +79,10 @@ orderUid=$(docker exec playground-chain-1 cast abi-encode \
     "$COW_ETHFLOW_CONTRACT" \
     "0xffffffff"
 )
-echo -e "- Order UID: $orderUid\n"
+echo "    Order UID: $orderUid"
+echo
 
-echo -e ">>> Creating order on-chain\n"
+echo -e ">>> Creating order on-chain...\n"
 docker exec playground-chain-1 cast send \
     --json \
     --private-key "$PRIVATE_KEY"  \
@@ -98,21 +99,25 @@ print_settlement_tx() {
 
   if [ -n "$tx_hash" ]; then
     echo -e "\n-------------------------------------------------- SUCCESS ---------------------------------------------------"
-    echo "  Settlement tx hash: $tx_hash"
-    echo "  Inspect with: \`cast receipt $tx_hash --rpc-url http://localhost:8545\`"
-    echo "  Open in Otterscan: $OTTERSCAN_URL/tx/$tx_hash"
+    echo "    Settlement tx hash: $tx_hash"
+    echo "    Inspect with: cast receipt $tx_hash --rpc-url http://localhost:8545"
+    echo "    Open in Otterscan: $OTTERSCAN_URL/tx/$tx_hash"
     echo "--------------------------------------------------------------------------------------------------------------"
   else
     echo "Settlement tx hash not available yet"
   fi
 }
 
+echo -e ">>> Polling order status..."
 for i in $(seq 1 24);
 do
-  status_response=$(curl -s \
+  status_response=$(curl -s --show-error --max-time 10 --connect-timeout 3 \
     -H 'accept: application/json' \
     -w '\n%{http_code}' \
-    "http://$HOST/api/v1/orders/$orderUid/status")
+    "http://$HOST/api/v1/orders/$orderUid/status") || {
+      echo "Polling failed while checking order status"
+      exit 1
+    }
   status_http_code=$(tail -n 1 <<< "${status_response}")
   status_body=$(sed '$d' <<< "${status_response}")
 
@@ -125,7 +130,7 @@ do
     exit 1
   fi
 
-  echo ">>> Order status: $orderStatus"
+  echo "    Order status: $orderStatus"
   if [ "$orderStatus" = "traded" ]; then
     print_settlement_tx
     exit 0
