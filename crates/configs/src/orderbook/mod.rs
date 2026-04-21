@@ -473,7 +473,7 @@ mod tests {
 gas-limit = "0x1000000"
 "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Shadow);
+        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
         assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(2));
     }
 
