@@ -107,8 +107,8 @@ struct Eip1271SimMetrics {
     /// `pass | fail | infra`.
     #[metric(labels("signature", "sim"))]
     total: prometheus::IntCounterVec,
-    /// Duration of the EIP-1271 order simulation.
-    duration_seconds: prometheus::Histogram,
+    /// Time spent in the EIP-1271 order simulation.
+    simulation_time: prometheus::Histogram,
 }
 
 impl Eip1271SimMetrics {
@@ -220,7 +220,7 @@ fn record_sim_outcome(
 }
 
 async fn run_eip1271_sim_only(config: &Eip1271Simulator, preview_order: &Order) {
-    let timer = Eip1271SimMetrics::get().duration_seconds.start_timer();
+    let timer = Eip1271SimMetrics::get().simulation_time.start_timer();
     let res = tokio::time::timeout(config.timeout, config.simulator.simulate(preview_order)).await;
     drop(timer);
     let outcome = match res {
@@ -617,7 +617,7 @@ impl OrderValidator {
                 .unwrap_or_else(|_| Err(Eip1271SimError::Infra(anyhow!("eip1271 sim timeout"))))
         };
 
-        let timer = Eip1271SimMetrics::get().duration_seconds.start_timer();
+        let timer = Eip1271SimMetrics::get().simulation_time.start_timer();
         let (signature_res, sim_res) = tokio::join!(signature_fut, sim_fut);
         drop(timer);
 
