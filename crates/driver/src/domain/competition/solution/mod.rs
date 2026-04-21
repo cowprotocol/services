@@ -15,6 +15,7 @@ use {
     },
     alloy::network::TxSigner,
     chrono::Utc,
+    contracts::ERC20::ERC20,
     eth_domain_types::{self as eth, TokenAddress},
     futures::future::try_join_all,
     itertools::Itertools,
@@ -298,24 +299,52 @@ impl Solution {
     }
 
     /// Approval interactions necessary for encoding the settlement.
+    /// To support tokens like USDT which first need to have their allowance
+    /// set to 0 before it can be set to the desired value we simulate each
+    /// `approve()` call and inject additional `approve(0)` interactions when
+    /// we encounter a revert.
+    /// Whenever the needed allowance is less the current allowance no
+    /// `approve()` interactions get encoded to save on gas.
+    /// See <https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729>
     pub async fn approvals(
         &self,
         eth: &Ethereum,
         internalization: settlement::Internalization,
     ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, Error> {
-        let settlement_contract = &eth.contracts().settlement();
+        let settlement_contract = *eth.contracts().settlement().address();
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {
-                eth.erc20(required.0.token)
-                    .allowance(*settlement_contract.address(), required.0.spender)
+                let erc20_token = ERC20::new(required.0.token.into(), &eth.web3().provider);
+
+                let current_allowance = erc20_token
+                    .allowance(settlement_contract, required.0.spender)
+                    .call()
+                    .await?;
+
+                // if the current allowance is sufficient we can skip that interaction
+                if current_allowance >= required.0.amount {
+                    return Ok::<_, blockchain::Error>(vec![]);
+                }
+
+                let regular_approval_succeeds = erc20_token
+                    .approve(required.0.spender, required.0.amount)
+                    .from(settlement_contract)
+                    .call()
                     .await
-                    .map(|existing| (required, existing))
+                    .is_ok();
+
+                let approval = eth::allowance::Approval(required.0);
+                if regular_approval_succeeds {
+                    Ok(vec![approval])
+                } else {
+                    // setting the desired approval reverts so we assume we are
+                    // dealing with a USDT-like token that needs to have the
+                    // approval reset to 0 first
+                    Ok(vec![approval.revoke(), approval])
+                }
             }))
             .await?;
-        let approvals = allowances
-            .into_iter()
-            .filter_map(|(required, existing)| required.approval(&existing));
-        Ok(approvals)
+        Ok(allowances.into_iter().flatten())
     }
 
     /// An empty solution has no trades which is allowed to capture surplus and
