@@ -18,6 +18,7 @@ path = "src/main.rs"
 alloy = { workspace = true, features = ["providers", "rpc-types", "sol-types"] }
 alloy-primitives = { workspace = true, features = ["serde", "std"] }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 clap = { workspace = true }
@@ -28,7 +29,10 @@ mimalloc = { workspace = true, optional = true }
 num = { workspace = true }
 number = { workspace = true }
 observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
+scopeguard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }

@@ -36,6 +36,13 @@ fn default_bind_address() -> SocketAddr {
     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 7777))
 }
 
+fn default_metrics_address() -> SocketAddr {
+    SocketAddr::V4(SocketAddrV4::new(
+        Ipv4Addr::UNSPECIFIED,
+        observe::metrics::DEFAULT_METRICS_PORT,
+    ))
+}
+
 /// Network identifier used in API routes (e.g. "mainnet", "arbitrum-one").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(transparent)]
@@ -97,8 +104,9 @@ pub struct NetworkConfig {
 }
 
 /// The subset of [`NetworkConfig`] that [`UniswapV3Indexer`] needs at runtime.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct IndexerConfig {
+    pub network: NetworkName,
     pub chain_id: u64,
     pub factory_address: Address,
     pub chunk_size: u64,
@@ -114,6 +122,7 @@ impl NetworkConfig {
 
     pub fn indexer_config(&self, factory: Address) -> IndexerConfig {
         IndexerConfig {
+            network: self.name.clone(),
             chain_id: self.chain_id,
             factory_address: factory,
             chunk_size: self.chunk_size,
@@ -141,12 +150,29 @@ impl Default for ApiConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct MetricsConfig {
+    #[serde(default = "default_metrics_address")]
+    pub bind_address: SocketAddr,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            bind_address: default_metrics_address(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Configuration {
     pub database: DatabaseConfig,
     #[serde(rename = "network")]
     pub networks: Vec<NetworkConfig>,
     #[serde(default)]
     pub api: ApiConfig,
+    #[serde(default)]
+    pub metrics: MetricsConfig,
 }
 
 impl Configuration {

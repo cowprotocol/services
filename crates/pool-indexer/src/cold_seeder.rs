@@ -63,6 +63,7 @@ const LOG_FETCH_CONCURRENCY: usize = 8;
 
 pub async fn cold_seed(
     db: &PgPool,
+    network: &str,
     chain_id: u64,
     provider: AlloyProvider,
     factory: Address,
@@ -81,11 +82,25 @@ pub async fn cold_seed(
         snapshot_block, "cold-seeding pool-indexer from chain"
     );
 
-    let pools = discover_pools(&provider, factory, snapshot_block).await?;
+    let metrics = crate::metrics::Metrics::get();
+
+    let pools = {
+        let labels = [network, "discovery"];
+        let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
+        discover_pools(&provider, factory, snapshot_block).await?
+    };
+    metrics
+        .cold_seed_pools_discovered
+        .with_label_values(&[network])
+        .set(i64::try_from(pools.len()).unwrap_or(0));
     info!(chain_id, pools = pools.len(), "pools discovered");
     persist_pools(db, chain_id, &pools).await?;
 
-    let states = snapshot_pool_states(&provider, &pools, snapshot_block).await?;
+    let states = {
+        let labels = [network, "state_snapshot"];
+        let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
+        snapshot_pool_states(&provider, &pools, snapshot_block).await?
+    };
     info!(chain_id, states = states.len(), "pool states snapshotted");
     persist_pool_states(db, chain_id, &states).await?;
 
@@ -94,6 +109,10 @@ pub async fn cold_seed(
         .filter(|s| s.liquidity > 0)
         .map(|s| s.pool_address)
         .collect();
+    metrics
+        .cold_seed_active_pools
+        .with_label_values(&[network])
+        .set(i64::try_from(active_pools.len()).unwrap_or(0));
     info!(
         chain_id,
         active = active_pools.len(),
@@ -101,7 +120,12 @@ pub async fn cold_seed(
         "reconstructing ticks for active pools"
     );
 
-    reconstruct_and_persist_ticks(db, chain_id, &provider, &active_pools, snapshot_block).await?;
+    {
+        let labels = [network, "tick_reconstruction"];
+        let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
+        reconstruct_and_persist_ticks(db, chain_id, &provider, &active_pools, snapshot_block)
+            .await?;
+    }
 
     info!(chain_id, snapshot_block, "cold seeding complete");
     Ok(snapshot_block)

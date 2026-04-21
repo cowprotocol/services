@@ -84,6 +84,11 @@ async fn start_pool_indexer(factory: Address) {
         api: ApiConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),
         },
+        // Port 0 → OS-assigned random port so repeated start/stop inside a
+        // single test process doesn't collide on the default metrics port.
+        metrics: pool_indexer::config::MetricsConfig {
+            bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
+        },
     };
     let handle = tokio::task::spawn(pool_indexer::run(config));
     wait_for_condition(TIMEOUT, || async {

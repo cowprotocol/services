@@ -4,6 +4,7 @@ pub mod cold_seeder;
 pub mod config;
 pub mod db;
 pub mod indexer;
+pub mod metrics;
 pub mod run;
 pub mod subgraph_seeder;
 

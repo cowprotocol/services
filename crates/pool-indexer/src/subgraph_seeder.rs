@@ -411,10 +411,14 @@ fn parse_seeded_pool_state(
 /// finalized block via `catch_up`.
 pub async fn seed(
     db: &PgPool,
+    network: &str,
     chain_id: u64,
     subgraph_url: &str,
     block: Option<u64>,
 ) -> Result<u64> {
+    let labels = [network];
+    let m = crate::metrics::Metrics::get();
+    let _timer = crate::metrics::Metrics::timer(&m.subgraph_seed_seconds, &labels);
     SubgraphSeeder::new(db, chain_id, subgraph_url, block)
         .await?
         .seed()

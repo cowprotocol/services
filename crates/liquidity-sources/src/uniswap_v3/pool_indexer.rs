@@ -54,8 +54,6 @@ impl PoolIndexerClient {
     }
 }
 
-// --- Response DTOs -------------------------------------------------------
-
 #[derive(Deserialize)]
 struct PoolsResponse {
     block_number: u64,
@@ -102,8 +100,6 @@ struct IndexerTick {
     liquidity_net: String,
 }
 
-// --- Conversion into subgraph-shaped types -------------------------------
-
 impl IndexerPool {
     fn into_pool_data(self) -> Result<PoolData> {
         Ok(PoolData {
@@ -135,8 +131,6 @@ impl IndexerTick {
         })
     }
 }
-
-// --- V3PoolDataSource implementation -------------------------------------
 
 #[async_trait]
 impl V3PoolDataSource for PoolIndexerClient {

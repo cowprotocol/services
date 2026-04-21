@@ -16,6 +16,7 @@ use {
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
     initialize_observability();
+    observe::metrics::setup_registry(Some("pool_indexer".into()), None);
     let config = load_configuration(&args);
     tracing::info!("pool-indexer starting");
     run(config).await;
@@ -27,6 +28,13 @@ pub async fn run(config: Configuration) {
     let db = connect_db(&config).await;
     let api_state = build_api_state(&db, &config.networks);
 
+    observe::metrics::serve_metrics(
+        Arc::new(AlwaysAlive),
+        config.metrics.bind_address,
+        Default::default(),
+        Default::default(),
+    );
+
     let mut set = JoinSet::new();
     spawn_api_task(&mut set, api_state, config.api.bind_address);
 
@@ -36,6 +44,17 @@ pub async fn run(config: Configuration) {
 
     if let Some(result) = set.join_next().await {
         panic!("pool-indexer task exited: {result:?}");
+    }
+}
+
+/// Minimal liveness that always reports alive. The indexer panics on
+/// unrecoverable faults, so if the process is up it's alive.
+struct AlwaysAlive;
+
+#[async_trait::async_trait]
+impl observe::metrics::LivenessChecking for AlwaysAlive {
+    async fn is_alive(&self) -> bool {
+        true
     }
 }
 
@@ -124,12 +143,19 @@ async fn run_factory_indexer(
 
     if checkpoint.is_none() {
         let seeded_block = if let Some(subgraph_url) = network.subgraph_url.as_deref() {
-            crate::subgraph_seeder::seed(&db, network.chain_id, subgraph_url, network.seed_block)
-                .await
-                .expect("subgraph seeding failed")
+            crate::subgraph_seeder::seed(
+                &db,
+                network.name.as_str(),
+                network.chain_id,
+                subgraph_url,
+                network.seed_block,
+            )
+            .await
+            .expect("subgraph seeding failed")
         } else {
             crate::cold_seeder::cold_seed(
                 &db,
+                network.name.as_str(),
                 network.chain_id,
                 provider,
                 factory,

@@ -1,5 +1,8 @@
 use {
-    crate::{config::IndexerConfig, db::uniswap_v3 as db},
+    crate::{
+        config::{IndexerConfig, NetworkName},
+        db::uniswap_v3 as db,
+    },
     alloy::{
         primitives::Address,
         providers::Provider,
@@ -97,6 +100,7 @@ struct PrefetchedChunkData {
 pub struct UniswapV3Indexer {
     provider: AlloyProvider,
     db: PgPool,
+    network: NetworkName,
     chain_id: u64,
     factory: Address,
     chunk_size: u64,
@@ -110,6 +114,7 @@ impl UniswapV3Indexer {
         Self {
             provider,
             db,
+            network: config.network.clone(),
             chain_id: config.chain_id,
             factory: config.factory_address,
             chunk_size: config.chunk_size,
@@ -127,12 +132,17 @@ impl UniswapV3Indexer {
         tokio::spawn(backfill_symbols(
             self.provider.clone(),
             self.db.clone(),
+            self.network.clone(),
             self.chain_id,
             self.prefetch_concurrency,
             poll_interval,
         ));
         loop {
             if let Err(err) = self.run_once().await {
+                crate::metrics::Metrics::get()
+                    .indexer_errors
+                    .with_label_values(&[self.network.as_str()])
+                    .inc();
                 tracing::error!(?err, "indexer error, retrying after poll interval");
             }
             tokio::time::sleep(poll_interval).await;
@@ -173,6 +183,12 @@ impl UniswapV3Indexer {
     async fn run_once(&self) -> Result<()> {
         let finalized_block = self.finalized_block().await?;
         let last_indexed_block = self.last_indexed_block().await?;
+
+        let lag = finalized_block.saturating_sub(last_indexed_block);
+        crate::metrics::Metrics::get()
+            .indexer_lag_blocks
+            .with_label_values(&[self.network.as_str()])
+            .set(i64::try_from(lag).unwrap_or(0));
 
         if last_indexed_block >= finalized_block {
             return Ok(());
@@ -256,6 +272,10 @@ impl UniswapV3Indexer {
         // opening the DB transaction. Symbols are intentionally excluded — a
         // hung `symbol()` call must never block pool inserts. They're populated
         // later by the async backfill task.
+        let metrics = crate::metrics::Metrics::get();
+        let chunk_timer_labels = [self.network.as_str()];
+        let _chunk_timer =
+            crate::metrics::Metrics::timer(&metrics.chunk_commit_seconds, &chunk_timer_labels);
         let prefetched = self.prefetch_chunk_data(&logs).await;
         let changes = collect_log_changes(
             self.factory,
@@ -275,7 +295,32 @@ impl UniswapV3Indexer {
             "processing chunk"
         );
 
-        self.persist_chunk(chunk, changes).await
+        let network = self.network.as_str();
+        metrics
+            .events_applied
+            .with_label_values(&[network, "new_pool"])
+            .inc_by(changes.new_pools.len() as u64);
+        metrics
+            .events_applied
+            .with_label_values(&[network, "pool_state"])
+            .inc_by(changes.pool_states.len() as u64);
+        metrics
+            .events_applied
+            .with_label_values(&[network, "liq_update"])
+            .inc_by(changes.liquidity_updates.len() as u64);
+        metrics
+            .events_applied
+            .with_label_values(&[network, "tick_delta"])
+            .inc_by(changes.tick_deltas.len() as u64);
+
+        self.persist_chunk(chunk, changes).await?;
+
+        metrics.chunks_committed.with_label_values(&[network]).inc();
+        metrics
+            .indexed_block
+            .with_label_values(&[network])
+            .set(i64::try_from(chunk.end).unwrap_or(0));
+        Ok(())
     }
 
     async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<()> {
@@ -381,13 +426,14 @@ async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> 
 async fn backfill_symbols(
     provider: AlloyProvider,
     db: sqlx::PgPool,
+    network: NetworkName,
     chain_id: u64,
     prefetch_concurrency: usize,
     poll_interval: std::time::Duration,
 ) -> ! {
     loop {
         if let Err(err) =
-            run_symbol_backfill_pass(&provider, &db, chain_id, prefetch_concurrency).await
+            run_symbol_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency).await
         {
             tracing::warn!(?err, "token symbol backfill pass failed");
         }
@@ -398,12 +444,18 @@ async fn backfill_symbols(
 async fn run_symbol_backfill_pass(
     provider: &AlloyProvider,
     db: &sqlx::PgPool,
+    network: &NetworkName,
     chain_id: u64,
     prefetch_concurrency: usize,
 ) -> Result<()> {
     let tokens = db::get_tokens_missing_symbols(db, chain_id)
         .await
         .context("get_tokens_missing_symbols")?;
+    let network = network.as_str();
+    crate::metrics::Metrics::get()
+        .symbols_pending
+        .with_label_values(&[network])
+        .set(i64::try_from(tokens.len()).unwrap_or(0));
     if tokens.is_empty() {
         return Ok(());
     }
@@ -425,9 +477,17 @@ async fn run_symbol_backfill_pass(
             .collect()
             .await;
 
+        let metrics = crate::metrics::Metrics::get();
         for (token, symbol) in &symbols {
             match db::set_token_symbol(db, chain_id, token, symbol).await {
-                Ok(()) => updated += 1,
+                Ok(()) => {
+                    updated += 1;
+                    let result = if symbol.is_empty() { "empty" } else { "ok" };
+                    metrics
+                        .symbols_backfilled
+                        .with_label_values(&[network, result])
+                        .inc();
+                }
                 Err(err) => tracing::warn!(%token, ?err, "failed to backfill symbol"),
             }
         }
