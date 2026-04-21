@@ -45,7 +45,7 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
          ON CONFLICT (chain_id, contract) DO UPDATE SET block_number = EXCLUDED.block_number",
     )
     .bind(factory.as_slice())
-    .bind(block as i64)
+    .bind(block.cast_signed())
     .execute(db)
     .await
     .unwrap();
@@ -500,7 +500,7 @@ async fn pagination(web3: Web3) {
             .await
             .unwrap();
     assert_eq!(
-        all_ids.len() as i64,
+        i64::try_from(all_ids.len()).unwrap(),
         db_count,
         "paginated count doesn't match DB"
     );
