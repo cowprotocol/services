@@ -187,29 +187,31 @@ fn record_sim_outcome(signature: SignatureOutcome, sim: &SimOutcome, order_uid: 
         .with_label_values(&[signature.label(), sim.label()])
         .inc();
 
-    let disagreement = matches!(
-        (&signature, sim),
-        (SignatureOutcome::Pass, SimOutcome::Fail { .. })
-            | (SignatureOutcome::Fail, SimOutcome::Pass)
-    );
-    if disagreement {
-        let (reason, tenderly_url) = match sim {
+    match (signature, sim) {
+        (
+            SignatureOutcome::Pass,
             SimOutcome::Fail {
                 reason,
                 tenderly_url,
-            } => (reason.as_str(), tenderly_url.as_deref()),
-            _ => ("", None),
-        };
-        tracing::warn!(
+            },
+        ) => tracing::warn!(
             %order_uid,
-            signature = signature.label(),
-            sim = sim.label(),
-            reason,
+            signature = "pass",
+            sim = "fail",
+            reason = %reason,
             ?tenderly_url,
             "eip1271 sim disagreement",
-        );
-    } else if let SimOutcome::Infra(err) = sim {
-        tracing::warn!(%order_uid, err = %err, "eip1271 sim infra error");
+        ),
+        (SignatureOutcome::Fail, SimOutcome::Pass) => tracing::warn!(
+            %order_uid,
+            signature = "fail",
+            sim = "pass",
+            "eip1271 sim disagreement",
+        ),
+        (_, SimOutcome::Infra(err)) => {
+            tracing::warn!(%order_uid, err = %err, "eip1271 sim infra error")
+        }
+        _ => {}
     }
 }
 
