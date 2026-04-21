@@ -91,7 +91,7 @@ services:
     depends_on:
       - db-migrations
     ports:
-      - 8080:80 # API
+      - 8080:8080 # API
       - 9586:9586 # metrics
       - 6669:6669 # tokio console
 

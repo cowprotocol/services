@@ -1,5 +1,5 @@
 app-data-fetching-enabled = true
-orderbook-url = "http://orderbook"
+orderbook-url = "http://orderbook:8080"
 tx-gas-limit = "45000000"
 
 [[solver]]

@@ -1,5 +1,9 @@
 eip1271-skip-creation-validation = true
 
+[shared]
+node-url = "http://chain:8545"
+simulation-node-url = "http://chain:8545"
+
 [order-quoting]
 price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]
 
