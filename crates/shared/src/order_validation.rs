@@ -63,15 +63,13 @@ pub enum Eip1271SimulationError {
     Infra(anyhow::Error),
 }
 
-/// Optional hook used by `OrderValidator` to run a full order simulation
-/// next to the cheap EIP-1271 signature check. A concrete implementation
-/// lives in `crates/orderbook/src/eip1271_simulation.rs`.
+/// Simulates an EIP-1271 order end-to-end (pre-hooks → swap → post-hooks).
 ///
-/// The trait exists in `shared` because `OrderValidator` lives in `shared`
-/// and cannot depend upward on `orderbook`. It is designed to be replaced
-/// by a direct `simulator::OrderSimulator` dependency once the simulator
-/// crate is refactored.
-#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+/// Defined here rather than in `crates/simulator` because `OrderValidator`
+/// cannot depend on `orderbook`, where the concrete implementation lives.
+/// To be removed once the `simulator` crate's API can be depended on
+/// directly.
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait Eip1271Simulating: Send + Sync {
     async fn simulate(&self, order: &Order) -> Result<(), Eip1271SimulationError>;
