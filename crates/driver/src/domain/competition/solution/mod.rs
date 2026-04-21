@@ -13,9 +13,10 @@ use {
             solver::{ManageNativeToken, Solver},
         },
     },
-    alloy::network::TxSigner,
+    alloy::{network::TxSigner, primitives::ruint::aliases::U256},
     chrono::Utc,
-    eth_domain_types::{self as eth, TokenAddress},
+    contracts::ERC20::ERC20,
+    eth_domain_types::{self as eth, Address, Allowance, TokenAddress},
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
@@ -298,24 +299,64 @@ impl Solution {
     }
 
     /// Approval interactions necessary for encoding the settlement.
+    /// This function handles approvals correctly for tokens like USDT which
+    /// first need to have the allowance set to 0 before it can be increased
+    /// again. See <https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729>
     pub async fn approvals(
         &self,
         eth: &Ethereum,
         internalization: settlement::Internalization,
     ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, Error> {
-        let settlement_contract = &eth.contracts().settlement();
-        let allowances =
-            try_join_all(self.allowances(internalization).map(|required| async move {
-                eth.erc20(required.0.token)
-                    .allowance(*settlement_contract.address(), required.0.spender)
+        // first reduce the approvals to only the highest values in case the solver
+        // already provided approval resets for USDT-like tokens
+        let mut requested_allowances = HashMap::<(Address, TokenAddress), U256>::default();
+        for allowance in self.allowances(internalization) {
+            let needed = requested_allowances
+                .entry((allowance.0.spender, allowance.0.token))
+                .or_default();
+            *needed = std::cmp::max(*needed, allowance.0.amount);
+        }
+
+        let settlement_contract = *eth.contracts().settlement().address();
+        let allowances = try_join_all(requested_allowances.into_iter().map(
+            |((spender, token), amount)| async move {
+                let approval = eth::allowance::Approval(Allowance {
+                    token,
+                    spender,
+                    amount,
+                });
+                let erc20_token = ERC20::new(token.into(), &eth.web3().provider);
+
+                let current_allowance = erc20_token
+                    .allowance(settlement_contract, spender)
+                    .call()
                     .await
-                    .map(|existing| (required, existing))
-            }))
-            .await?;
-        let approvals = allowances
-            .into_iter()
-            .filter_map(|(required, existing)| required.approval(&existing));
-        Ok(approvals)
+                    .map_err(blockchain::Error::ContractRpc)?;
+
+                // if the current allowance is sufficient we can skip that interaction
+                if current_allowance >= amount {
+                    return Ok::<_, blockchain::Error>(vec![approval]);
+                }
+
+                let regular_approval_succeeds = erc20_token
+                    .approve(spender, amount)
+                    .from(settlement_contract)
+                    .call()
+                    .await
+                    .is_ok();
+
+                if regular_approval_succeeds {
+                    Ok(vec![approval])
+                } else {
+                    // setting the desired approval reverts so we assume we are
+                    // dealing with a USDT-like token that needs to have the
+                    // approval reset to 0 first
+                    Ok(vec![approval.revoke(), approval])
+                }
+            },
+        ))
+        .await?;
+        Ok(allowances.into_iter().flatten())
     }
 
     /// An empty solution has no trades which is allowed to capture surplus and
