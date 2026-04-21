@@ -44,11 +44,12 @@ pub enum Strategy {
     /// amount by it (ray division), so that `balanceOf` returns the desired
     /// amount. The high 128 bits of the slot (`additionalData`) are zeroed,
     /// which is safe for fresh holders like the spardose.
+    ///
+    /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/tokenization/base/IncentivizedERC20.sol>
     AaveV3AToken {
         target_contract: Address,
         pool: Address,
         underlying: Address,
-        map_slot: U256,
     },
 }
 
@@ -85,10 +86,9 @@ impl std::fmt::Display for TokenConfiguration {
                     target_contract,
                     pool,
                     underlying,
-                    map_slot,
                 } => write!(
                     f,
-                    "AaveV3AToken({addr:?}: {target_contract:?}@{map_slot}, pool={pool:?}, \
+                    "AaveV3AToken({addr:?}: {target_contract:?}, pool={pool:?}, \
                      underlying={underlying:?})"
                 ),
             };
@@ -226,7 +226,6 @@ type = "AaveV3AToken"
 target_contract = "0x4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8"
 pool = "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
 underlying = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-map_slot = "0x34"
 "#;
         let config: TokenConfiguration = toml::from_str(input).unwrap();
         let a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
@@ -237,7 +236,6 @@ map_slot = "0x34"
                 target_contract: a_token,
                 pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
                 underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                map_slot: U256::from(52),
             }
         );
     }

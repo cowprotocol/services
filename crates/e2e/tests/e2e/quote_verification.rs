@@ -852,7 +852,6 @@ async fn aave_atoken_quote_verification(web3: Web3) {
             target_contract: a_eth_weth,
             pool: aave_v3_pool,
             underlying: weth,
-            map_slot: U256::from(52),
         },
     )]);
     let balance_overrides = BalanceOverrides {
@@ -910,7 +909,6 @@ async fn aave_atoken_detection(web3: Web3) {
             target_contract: a_eth_weth,
             pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
             underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-            map_slot: U256::from(52),
         }
     );
 }

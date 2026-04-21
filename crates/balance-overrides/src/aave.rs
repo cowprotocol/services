@@ -133,14 +133,14 @@ pub async fn probe_aave_token(web3: &Web3, token: Address) -> Option<(Address, A
 }
 
 /// Builds a state override that makes `balanceOf(holder)` on the aToken
-/// report approximately `amount`. Returns `None` if we can't reach the pool
-/// or the math overflows.
+/// report approximately `amount`. Writes into the canonical `_userState`
+/// slot (`USER_STATE_SLOT`) shared by all Aave v3 aTokens. Returns `None`
+/// if we can't reach the pool or the math overflows.
 pub async fn build_override(
     web3: &Web3,
     a_token: Address,
     pool: Address,
     underlying: Address,
-    map_slot: U256,
     holder: Address,
     amount: U256,
 ) -> Option<(Address, AccountOverride)> {
@@ -170,7 +170,7 @@ pub async fn build_override(
         );
         return None;
     };
-    let slot = mapping_slot_hash(&holder, &map_slot.to_be_bytes());
+    let slot = mapping_slot_hash(&holder, &U256::from(USER_STATE_SLOT).to_be_bytes());
     let value = pack_user_state(scaled, U256::ZERO);
 
     tracing::trace!(

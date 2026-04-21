@@ -80,7 +80,7 @@ impl StrategyExt for Strategy {
                 map_slot,
             } => (
                 *target_contract,
-                mapping_slot_hash(holder, &map_slot.to_be_bytes::<32>()),
+                mapping_slot_hash(holder, &map_slot.to_be_bytes()),
             ),
             Self::SoladyMapping { target_contract } => {
                 let mut buf = [0; 32];
@@ -96,7 +96,6 @@ impl StrategyExt for Strategy {
                 target_contract,
                 pool,
                 underlying,
-                map_slot,
             } => {
                 let Some(web3) = web3 else {
                     tracing::warn!(
@@ -110,7 +109,6 @@ impl StrategyExt for Strategy {
                     *target_contract,
                     *pool,
                     *underlying,
-                    *map_slot,
                     *holder,
                     *amount,
                 )
@@ -520,68 +518,18 @@ mod tests {
         );
     }
 
-    /// Round-half-up `rayMul` — the same formula aToken's `balanceOf` applies
-    /// to convert scaled storage into the reported display balance. Only used
-    /// by the bug-reproduction test below.
-    fn ray_mul(a: U256, b: U256) -> U256 {
-        (a * b + (RAY >> 1)) / RAY
-    }
-
-    /// Reproduction of the aEthWETH bug in pure math: without the
-    /// `AaveV3AToken` strategy we would write the raw display `amount` into
-    /// the balance slot, and aToken's `balanceOf` would then return
-    /// `rayMul(amount, index)` — which differs from `amount` as soon as the
-    /// reserve has accrued any interest (`index > RAY`). The `AaveV3AToken`
-    /// strategy writes `rayDiv(amount, index)` instead, which round-trips
-    /// back to `amount` within one wei of ray rounding.
-    #[test]
-    fn a_token_balance_override_bug_reproduction() {
-        let amount = U256::from(1_000_000_000_000_000_000u128); // 1 aEthWETH
-        // Mainnet aEthWETH normalized-income ~1.0632 RAY (observed today).
-        let index = U256::from_str_radix("1063211170513245730547525051", 10).unwrap();
-        assert!(
-            index > RAY,
-            "index must include accrued interest to reproduce"
-        );
-
-        // OLD behaviour (SolidityMapping / SoladyMapping / DirectSlot all
-        // write the raw value): balanceOf returns rayMul(amount, index), which
-        // is materially larger than `amount`. That mismatch is why the
-        // detector's `verify_strategy` fails and why, if we force it via
-        // hardcoded config, the spardose has more scaled balance than the
-        // trade needs and downstream Aave math still underflows.
-        let old_reported = ray_mul(amount, index);
-        assert!(
-            old_reported > amount + U256::from(10_000u64),
-            "bug not reproduced: old strategy only off by {} wei",
-            old_reported - amount,
-        );
-
-        // NEW behaviour (AaveV3AToken): we write rayDiv(amount, index). The
-        // round-trip through aToken's balanceOf is within one wei.
-        let scaled = ray_div(amount, index).unwrap();
-        let new_reported = ray_mul(scaled, index);
-        let diff = if new_reported >= amount {
-            new_reported - amount
-        } else {
-            amount - new_reported
-        };
-        assert!(
-            diff <= U256::from(1u64),
-            "new strategy off by {diff} wei (expected ≤ 1)",
-        );
-    }
-
     #[test]
     fn ray_div_edge_cases() {
-        // Numerical correctness on realistic values is covered by
-        // `a_token_balance_override_bug_reproduction` (round-trip through
-        // `ray_mul`). Here we only pin down the two edge cases:
+        // End-to-end numerical correctness is covered by the forked-e2e
+        // `forked_node_mainnet_aave_atoken_detection` /
+        // `forked_node_mainnet_aave_atoken_quote` tests, which apply the
+        // override against a real aEthWETH and assert `balanceOf`
+        // round-trips. Here we only pin down `ray_div` itself at the two
+        // edge cases.
 
-        // 0 / x = 0.
         let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
+        // 0 / x = 0.
         assert_eq!(ray_div(U256::ZERO, index).unwrap(), U256::ZERO);
-
         // Divide by zero returns None.
         assert_eq!(
             ray_div(U256::from(1_000_000_000_000_000_000u128), U256::ZERO),
@@ -646,7 +594,6 @@ mod tests {
                     target_contract: a_token,
                     pool,
                     underlying,
-                    map_slot: U256::from(52),
                 },
             },
             detector: None,
@@ -679,70 +626,6 @@ mod tests {
         assert_eq!(word, ray_div(amount, index).unwrap());
     }
 
-    /// End-to-end test against real mainnet: computes an `AaveV3AToken`
-    /// override for aEthWETH, then calls `balanceOf(holder)` against the real
-    /// node with that override applied and checks the result matches the
-    /// requested amount (within ray rounding). Set `NODE_URL` to a mainnet
-    /// RPC endpoint.
-    #[ignore]
-    #[tokio::test]
-    async fn aave_v3_a_token_override_mainnet_roundtrip() {
-        use contracts::ERC20;
-
-        let a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
-        let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
-        let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        // Spardose lookalike: a fresh holder with zero prior state.
-        let holder = address!("0000000000000000000000000000000000020000");
-        let amount = U256::from(5_000_000_000_000_000_000u128); // 5 aEthWETH
-
-        let web3 = ethrpc::Web3::new_from_env();
-        let balance_overrides = BalanceOverrides {
-            hardcoded: hashmap! {
-                a_token => Strategy::AaveV3AToken {
-                    target_contract: a_token,
-                    pool,
-                    underlying,
-                    map_slot: U256::from(52),
-                },
-            },
-            detector: None,
-            web3: Some(web3.clone()),
-        };
-
-        let (target, override_) = balance_overrides
-            .state_override(BalanceOverrideRequest {
-                token: a_token,
-                holder,
-                amount,
-            })
-            .await
-            .expect("override computed");
-        assert_eq!(target, a_token);
-
-        // Apply the override to a live balanceOf call and make sure the
-        // contract now reports the requested amount (± 1 wei ray rounding).
-        let overrides: alloy_rpc_types::state::StateOverride =
-            iter::once((target, override_)).collect();
-        let token_contract = ERC20::Instance::new(a_token, web3.provider.clone());
-        let reported = token_contract
-            .balanceOf(holder)
-            .state(overrides)
-            .call()
-            .await
-            .unwrap();
-
-        let diff = if reported > amount {
-            reported - amount
-        } else {
-            amount - reported
-        };
-        assert!(
-            diff <= U256::from(1u64),
-            "balanceOf returned {reported}, expected ~{amount} (diff {diff} wei)",
-        );
-    }
-
     /// When no detector is configured, there's no `Web3` handle available
     /// and the `AaveV3AToken` resolver must cleanly fail rather than panic.
     #[tokio::test]
@@ -754,7 +637,6 @@ mod tests {
                     target_contract: a_token,
                     pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
                     underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                    map_slot: U256::from(52),
                 },
             },
             detector: None,

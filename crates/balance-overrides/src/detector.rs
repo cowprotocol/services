@@ -158,7 +158,6 @@ impl Detector {
                 target_contract: token,
                 pool,
                 underlying,
-                map_slot: U256::from(aave::USER_STATE_SLOT),
             };
             if self
                 .verify_strategy(token, holder, &candidate)
@@ -400,7 +399,7 @@ impl Detector {
 /// identity by construction; every other strategy must match exactly.
 fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U256) -> bool {
     match strategy {
-        Strategy::AaveV3AToken { .. } => balance.abs_diff(test_balance) <= U256::from(1u64),
+        Strategy::AaveV3AToken { .. } => balance.abs_diff(test_balance) <= U256::ONE,
         _ => balance == test_balance,
     }
 }
