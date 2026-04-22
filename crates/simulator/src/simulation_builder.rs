@@ -68,6 +68,14 @@ pub struct FlashloanRequest {
     pub token: Address,
 }
 
+pub enum Solver {
+    /// A real allow-listed solver address. Used as-is with no state overrides.
+    Real(Address),
+    /// A fake solver for simulation. Uses the provided address or generates a
+    /// random one, then sets its ETH balance to `U256::MAX / 2`.
+    Fake(Option<Address>),
+}
+
 /// Configuration for wrapping the settlement in a flashloan or custom wrapper
 /// contract chain.
 pub enum WrapperConfig {
@@ -110,7 +118,7 @@ pub struct SimulationBuilder {
     post_interactions: Vec<Interaction>,
     wrapper: Option<WrapperConfig>,
     prices: Option<Prices>,
-    solver: Option<Address>,
+    solver: Option<Solver>,
     auction_id: Option<i64>,
     state_overrides: StateOverride,
 }
@@ -146,7 +154,7 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn from_solver(mut self, solver: Address) -> Self {
+    pub fn from_solver(mut self, solver: Solver) -> Self {
         self.solver = Some(solver);
         self
     }
@@ -265,14 +273,34 @@ impl SimulationBuilder {
             _ => (settlement_address, settle_calldata),
         };
 
+        let mut state_overrides = self.state_overrides;
+        let from = match self.solver {
+            Some(Solver::Real(addr)) => addr,
+            Some(Solver::Fake(opt)) => {
+                let addr = opt.unwrap_or_else(Address::random);
+                state_overrides.insert(
+                    addr,
+                    AccountOverride {
+                        balance: Some(U256::MAX / U256::from(2)),
+                        ..Default::default()
+                    },
+                );
+                // TODO: override the settlement's authenticator with AnyoneAuthenticator
+                // so this address is accepted as a solver. Requires knowing the
+                // authenticator contract address, which isn't available here yet.
+                addr
+            }
+            None => return Err(BuildError::NoSolver),
+        };
+
         Ok(SettlementCall {
             request: TransactionRequest {
-                from: self.solver,
+                from: Some(from),
                 to: Some(to.into()),
                 input: input.into(),
                 ..Default::default()
             },
-            state_overrides: self.state_overrides,
+            state_overrides,
         })
     }
 }
@@ -281,6 +309,8 @@ impl SimulationBuilder {
 pub enum BuildError {
     #[error("no order was added")]
     NoOrder,
+    #[error("no solver was set")]
+    NoSolver,
     #[error("sell token not found in token list")]
     MissingSellToken,
     #[error("buy token not found in token list")]
