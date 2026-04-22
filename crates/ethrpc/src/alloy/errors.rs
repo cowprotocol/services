@@ -16,6 +16,23 @@ pub trait ContractErrorExt {
 
     /// Returns whether a given error is a node error.
     fn is_node_error(&self) -> bool;
+
+    /// Less strict variant of [`is_contract_error`]: also classifies reverts
+    /// with *empty* revert data as contract errors.
+    ///
+    /// [`is_contract_error`] requires the error payload to carry decodable
+    /// revert data, which misses a real class of contract behaviour: when a
+    /// call hits a missing selector (e.g. probing `asset()` on a non-ERC-4626
+    /// token like USDC), the EVM raw-reverts and the RPC surfaces it as an
+    /// `ErrorResp` with code 3 / message "execution reverted" and no `data`.
+    /// Strict classification treats this as a transport failure, which causes
+    /// callers to retry indefinitely or cache transient-looking errors.
+    ///
+    /// Use this predicate when you want "did the call reach the chain and
+    /// the contract rejected it?" semantics — e.g. when probing whether a
+    /// token implements an optional interface. It still rejects genuine
+    /// transport issues (timeouts, connection drops, rate limits).
+    fn is_contract_revert(&self) -> bool;
 }
 
 impl ContractErrorExt for ContractError {
@@ -50,6 +67,31 @@ impl ContractErrorExt for ContractError {
             _ => false,
         }
     }
+
+    fn is_contract_revert(&self) -> bool {
+        match self {
+            ContractError::TransportError(RpcError::ErrorResp(err)) => {
+                // Accept three signals that the node executed the call and
+                // the contract reverted:
+                //  - revert data is present (the strict case)
+                //  - geth/reth/erigon's canonical code for "execution reverted"
+                //  - message mentions revert (catch-all for non-standard codes)
+                //
+                // Other `ErrorResp`s (rate limits, bad params, internal
+                // errors) fall through to `false` so they can be retried
+                // instead of being cached as a contract outcome.
+                err.as_revert_data().is_some()
+                    || err.code == 3
+                    || err.message.to_lowercase().contains("revert")
+            }
+            // Connection-level failures: not a contract revert.
+            ContractError::TransportError(_) => false,
+            // Decoding / ABI / local usage errors: the node responded and the
+            // contract executed, we just couldn't interpret the result.
+            // Treat as contract-level.
+            _ => true,
+        }
+    }
 }
 
 /// Create an arbitrary alloy error that will convert into a "contract" error.
@@ -70,11 +112,24 @@ pub fn testing_alloy_node_error() -> alloy_contract::Error {
 
 #[cfg(test)]
 mod tests {
-    use crate::alloy::errors::{
-        ContractErrorExt,
-        testing_alloy_contract_error,
-        testing_alloy_node_error,
+    use {
+        crate::alloy::errors::{
+            ContractErrorExt,
+            testing_alloy_contract_error,
+            testing_alloy_node_error,
+        },
+        alloy_contract::Error as ContractError,
+        alloy_json_rpc::ErrorPayload,
+        alloy_transport::TransportError,
     };
+
+    fn error_resp(code: i64, message: &'static str) -> ContractError {
+        ContractError::TransportError(TransportError::ErrorResp(ErrorPayload {
+            code,
+            message: message.into(),
+            data: None,
+        }))
+    }
 
     #[test]
     fn test_contract_error() {
@@ -86,5 +141,32 @@ mod tests {
     fn test_node_error() {
         assert!(!testing_alloy_contract_error().is_node_error());
         assert!(testing_alloy_node_error().is_node_error());
+    }
+
+    #[test]
+    fn contract_revert_accepts_empty_data_reverts() {
+        // Geth-family "execution reverted" with no data — the USDC case.
+        assert!(error_resp(3, "execution reverted").is_contract_revert());
+        // Non-standard code but unmistakable message.
+        assert!(error_resp(-32000, "execution reverted at pc=...").is_contract_revert());
+        assert!(error_resp(-32000, "VM Exception: revert").is_contract_revert());
+        // Case-insensitive: capitalized node messages still match.
+        assert!(error_resp(-32000, "Execution Reverted").is_contract_revert());
+    }
+
+    #[test]
+    fn contract_revert_rejects_transport_failures() {
+        // Generic internal error without revert context — likely transport.
+        assert!(!testing_alloy_node_error().is_contract_revert());
+        // Rate-limit-like codes without a revert message.
+        assert!(!error_resp(429, "too many requests").is_contract_revert());
+        assert!(!error_resp(-32005, "daily request count exceeded").is_contract_revert());
+    }
+
+    #[test]
+    fn contract_revert_accepts_non_transport_contract_errors() {
+        // Non-transport contract errors (decoding, abi) are still
+        // considered contract-level by this predicate.
+        assert!(testing_alloy_contract_error().is_contract_revert());
     }
 }
