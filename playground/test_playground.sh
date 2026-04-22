@@ -7,7 +7,7 @@ set -u
 
 # Setup parameters
 HOST=localhost:8080
-OTTERSCAN_URL=${OTTERSCAN_URL:-http://localhost:8003}
+OTTERSCAN_URL=http://localhost:8003
 WETH_ADDRESS="0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # WETH token
 SELL_TOKEN=$WETH_ADDRESS
 BUY_TOKEN="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"  # USDC token
