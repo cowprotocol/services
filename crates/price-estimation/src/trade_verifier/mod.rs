@@ -229,10 +229,13 @@ impl TradeVerifier {
         }
         let output = self.simulator.simulate_swap_with_solver(swap).await?;
 
-        if let Some(tenderly) = &self.tenderly
-            && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)
-        {
-            tracing::debug!(?err, "could not log tenderly simulation command");
+        if let Some(tenderly) = &self.tenderly {
+            let block = self.simulator.current_block.borrow().number.into();
+            if let Err(err) =
+                tenderly.log_simulation_command(output.tx, output.overrides, Some(block))
+            {
+                tracing::debug!(?err, "could not log tenderly simulation command");
+            }
         }
         let output = output
             .result

@@ -222,7 +222,9 @@ pub fn prepare_request(
         // By default, tenderly simulates on the top of the specified block, whereas regular
         // nodes simulate at the end of the specified block. This is to make
         // simulation results match in case critical state changed within the block.
-        transaction_index: Some(-1),
+        // Tenderly rejects `transaction_index` when no block is specified (pending),
+        // so only set it when we pin to a concrete block.
+        transaction_index: block.map(|_| -1),
         network_id: chain_id,
         from: tx.from.unwrap_or_default(),
         to: tx.to.and_then(TxKind::into_to).unwrap_or_default(),
