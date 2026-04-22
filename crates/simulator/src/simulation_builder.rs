@@ -34,6 +34,7 @@ pub struct Order {
     signature: Signature,
     pre_interactions: Vec<Interaction>,
     post_interactions: Vec<Interaction>,
+    executed_amount: Option<U256>,
 }
 
 impl Order {
@@ -44,6 +45,7 @@ impl Order {
             signature: Signature::default_with(SigningScheme::Eip1271),
             pre_interactions: vec![],
             post_interactions: vec![],
+            executed_amount: None,
         }
     }
 
@@ -60,6 +62,11 @@ impl Order {
 
     pub fn with_post_interactions(mut self, interactions: Vec<Interaction>) -> Self {
         self.post_interactions = interactions;
+        self
+    }
+
+    pub fn with_executed_amount(mut self, amount: U256) -> Self {
+        self.executed_amount = Some(amount);
         self
     }
 }
@@ -100,7 +107,10 @@ pub enum Prices {
     ///
     /// Sets `price[sell_token] = buy_amount` and `price[buy_token] =
     /// sell_amount`, exactly satisfying the order's limit with no surplus.
+    /// This should NOT be used when encoding solutions you actually want
+    /// to submit.
     Limit,
+    // TODO: check how this can be made nicer.
     /// Explicit token list and matching clearing prices.
     Explicit {
         tokens: Vec<Address>,
@@ -191,21 +201,25 @@ impl SimulationBuilder {
         self
     }
 
+    /// Finishes the simulation struct based on the configuration thus far.
     pub async fn build(self) -> Result<SettlementCall, BuildError> {
         self.build_with_modifications(|_| {}).await
     }
 
+    /// Same as `build()` but allows the caller to alter the simulation
+    /// before it gets finalized. This should only be used for very speicific
+    /// setups.
     pub async fn build_with_modifications(
         self,
         customize: impl FnOnce(&mut EncodedSettlement),
     ) -> Result<SettlementCall, BuildError> {
         let order = self.order.as_ref().ok_or(BuildError::NoOrder)?;
 
-        let (tokens, clearing_prices) = match &self.prices {
+        let (tokens, clearing_prices) = match self.prices {
             Some(Prices::Explicit {
                 tokens,
                 clearing_prices,
-            }) => (tokens.clone(), clearing_prices.clone()),
+            }) => (tokens, clearing_prices),
             // At limit price: price[sell_token] = buy_amount, price[buy_token] = sell_amount.
             // This makes sell_amount * price[sell] / price[buy] = buy_amount exactly.
             _ => (
@@ -223,10 +237,12 @@ impl SimulationBuilder {
             .position(|t| *t == order.data.buy_token)
             .ok_or(BuildError::MissingBuyToken)?;
 
-        let executed_amount = match order.data.kind {
-            OrderKind::Sell => order.data.sell_amount,
-            OrderKind::Buy => order.data.buy_amount,
-        };
+        let executed_amount = order
+            .executed_amount
+            .unwrap_or_else(|| match order.data.kind {
+                OrderKind::Sell => order.data.sell_amount,
+                OrderKind::Buy => order.data.buy_amount,
+            });
 
         // Compute before clearing_prices is moved into EncodedSettlement below.
         let fund_amount = self
@@ -272,20 +288,6 @@ impl SimulationBuilder {
                 bytes.extend_from_slice(&id.to_be_bytes());
             }
             bytes.into()
-        };
-
-        let fund_override = if let Some(amount) = fund_amount {
-            self.simulator
-                .0
-                .balance_overrides
-                .state_override(BalanceOverrideRequest {
-                    token: order.data.buy_token,
-                    holder: *self.simulator.0.settlement.address(),
-                    amount,
-                })
-                .await
-        } else {
-            None
         };
 
         let (to, input) = match self.wrapper {
@@ -352,10 +354,20 @@ impl SimulationBuilder {
             }
             None => return Err(BuildError::NoSolver),
         };
-
-        if let Some((addr, account_override)) = fund_override {
-            state_overrides.insert(addr, account_override);
-        }
+        if let Some(amount) = fund_amount {
+            let (address, state_override) = self
+                .simulator
+                .0
+                .balance_overrides
+                .state_override(BalanceOverrideRequest {
+                    token: order.data.buy_token,
+                    holder: *self.simulator.0.settlement.address(),
+                    amount,
+                })
+                .await
+                .ok_or(BuildError::FailedToOverrideBalances)?;
+            state_overrides.insert(address, state_override);
+        };
 
         Ok(SettlementCall {
             request: TransactionRequest {
@@ -379,6 +391,8 @@ pub enum BuildError {
     MissingSellToken,
     #[error("buy token not found in token list")]
     MissingBuyToken,
+    #[error("could not override token balances to fund settlement contract")]
+    FailedToOverrideBalances,
 }
 
 struct Inner {
