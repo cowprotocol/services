@@ -17,4 +17,3 @@ estimators = [[{ type = "Driver", name = "baseline", url = "http://driver/baseli
 
 [order-quoting]
 price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]
-
