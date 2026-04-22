@@ -1,17 +1,14 @@
 use {
-    crate::{
-        encoding::{
-            EncodedSettlement,
-            Interaction,
-            Interactions,
-            WrapperCall,
-            encode_interactions,
-            encode_trade,
-            encode_wrapper_settlement,
-        },
-        state_override_helpers::AnyoneAuthenticator,
+    crate::encoding::{
+        EncodedSettlement,
+        Interaction,
+        Interactions,
+        WrapperCall,
+        encode_interactions,
+        encode_trade,
+        encode_wrapper_settlement,
     },
-    alloy_primitives::{Address, U256},
+    alloy_primitives::{Address, B256, U256, keccak256},
     alloy_rpc_types::{
         TransactionRequest,
         state::{AccountOverride, StateOverride},
@@ -115,7 +112,6 @@ pub struct SettlementCall {
 /// Assembles a GPv2 settlement call for simulation purposes.
 ///
 /// Call [`SimulationBuilder::build`] when done to produce a [`SettlementCall`].
-#[derive(Default)]
 pub struct SimulationBuilder {
     order: Option<Order>,
     pre_interactions: Vec<Interaction>,
@@ -126,7 +122,7 @@ pub struct SimulationBuilder {
     solver: Option<Solver>,
     auction_id: Option<i64>,
     state_overrides: StateOverride,
-    simulator: Option<SettlementSimulator>,
+    simulator: SettlementSimulator,
 }
 
 impl SimulationBuilder {
@@ -188,10 +184,6 @@ impl SimulationBuilder {
         self,
         customize: impl FnOnce(&mut EncodedSettlement),
     ) -> Result<SettlementCall, BuildError> {
-        let simulator = self
-            .simulator
-            .as_ref()
-            .ok_or(BuildError::NoSettlementAddress)?;
         let order = self.order.as_ref().ok_or(BuildError::NoOrder)?;
 
         let (tokens, clearing_prices) = match &self.prices {
@@ -279,7 +271,7 @@ impl SimulationBuilder {
                     .into();
                 (router, calldata)
             }
-            _ => (*simulator.0.settlement.address(), settle_calldata),
+            _ => (*self.simulator.0.settlement.address(), settle_calldata),
         };
 
         let mut state_overrides = self.state_overrides;
@@ -287,6 +279,7 @@ impl SimulationBuilder {
             Some(Solver::Real(addr)) => addr,
             Some(Solver::Fake(opt)) => {
                 let addr = opt.unwrap_or_else(Address::random);
+                // give solver address enough ETH
                 state_overrides.insert(
                     addr,
                     AccountOverride {
@@ -294,7 +287,27 @@ impl SimulationBuilder {
                         ..Default::default()
                     },
                 );
-                state_overrides.insert(simulator.0.authenticator, AnyoneAuthenticator.into());
+
+                // add address to solver allow-list
+                let target_slot = {
+                    // authenticator stores a `mapping(address=>bool)` in storage
+                    // slot 1 so we can compute precisely which storage slot we
+                    // have to override
+                    let mut buf = [0; 64];
+                    buf[12..32].copy_from_slice(addr.as_slice());
+                    buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
+                    keccak256(buf)
+                };
+                state_overrides.insert(
+                    self.simulator.0.authenticator,
+                    AccountOverride {
+                        state_diff: Some(
+                            // true is encoded as value with the last bit being 1
+                            std::iter::once((target_slot, B256::with_last_byte(1))).collect(),
+                        ),
+                        ..Default::default()
+                    },
+                );
                 addr
             }
             None => return Err(BuildError::NoSolver),
@@ -314,8 +327,6 @@ impl SimulationBuilder {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
-    #[error("no settlement address was set")]
-    NoSettlementAddress,
     #[error("no order was added")]
     NoOrder,
     #[error("no solver was set")]
@@ -348,8 +359,16 @@ impl SettlementSimulator {
 
     pub fn new_simulation_builder(&self) -> SimulationBuilder {
         SimulationBuilder {
-            simulator: Some(self.clone()),
-            ..Default::default()
+            simulator: self.clone(),
+            order: None,
+            pre_interactions: vec![],
+            main_interactions: vec![],
+            post_interactions: vec![],
+            wrapper: None,
+            prices: None,
+            solver: None,
+            auction_id: None,
+            state_overrides: StateOverride::default(),
         }
     }
 }
