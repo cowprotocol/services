@@ -637,19 +637,16 @@ impl OrderValidator {
             let _timer = Eip1271SimulationMetrics::get()
                 .simulation_time
                 .start_timer();
-            tokio::time::timeout(simulation_timeout, sim.simulate(&order))
-                .await
-                .unwrap_or_else(|_| {
-                    Err(Eip1271SimulationError::Infra(anyhow!(
-                        "eip1271 simulation timeout"
-                    )))
-                })
+            tokio::time::timeout(simulation_timeout, sim.simulate(&order)).await
         };
 
         let (signature_res, simulation_res) = tokio::join!(signature_fut, simulation_fut);
 
         let signature_outcome = classify_signature(&signature_res);
-        let simulation_outcome = classify_simulation(&simulation_res);
+        let simulation_outcome = match simulation_res {
+            Ok(inner) => classify_simulation(&inner),
+            Err(_) => SimulationOutcome::Infra(anyhow!("eip1271 simulation timeout")),
+        };
         record_simulation_outcome(
             signature_outcome,
             &simulation_outcome,
