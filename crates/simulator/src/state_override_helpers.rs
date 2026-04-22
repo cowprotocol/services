@@ -8,34 +8,22 @@ pub use {
 /// verification succeeds unconditionally. Pass to
 /// [`crate::simulation_builder::SimulationBuilder::state_override`] with the
 /// order owner's address.
-pub struct FakeUser {
-    pub code: Bytes,
-}
-
-impl Default for FakeUser {
-    fn default() -> Self {
-        // Returns bytes4(0x1626ba7e) — the ERC-1271 magic value — for any call.
-        // Opcodes: PUSH4 1626ba7e | PUSH1 e0 | SHL | PUSH1 00 | MSTORE | PUSH1 20 |
-        // PUSH1 00 | RETURN
-        Self {
-            code: Bytes::from_static(&[
-                0x63, 0x16, 0x26, 0xba, 0x7e, // PUSH4 0x1626ba7e
-                0x60, 0xe0, // PUSH1 224
-                0x1b, // SHL → 0x1626ba7e left-aligned in 32-byte word
-                0x60, 0x00, // PUSH1 0x00
-                0x52, // MSTORE
-                0x60, 0x20, // PUSH1 0x20 (return 32 bytes)
-                0x60, 0x00, // PUSH1 0x00 (from offset 0)
-                0xf3, // RETURN
-            ]),
-        }
-    }
-}
+pub struct FakeUser;
 
 impl From<FakeUser> for AccountOverride {
-    fn from(fake_user: FakeUser) -> Self {
+    fn from(_fake_user: FakeUser) -> Self {
+        let code = Bytes::from_static(&[
+            0x63, 0x16, 0x26, 0xba, 0x7e, // PUSH4 0x1626ba7e
+            0x60, 0xe0, // PUSH1 224
+            0x1b, // SHL → 0x1626ba7e left-aligned in 32-byte word
+            0x60, 0x00, // PUSH1 0x00
+            0x52, // MSTORE
+            0x60, 0x20, // PUSH1 0x20 (return 32 bytes)
+            0x60, 0x00, // PUSH1 0x00 (from offset 0)
+            0xf3, // RETURN
+        ]);
         Self {
-            code: Some(fake_user.code),
+            code: Some(code),
             ..Default::default()
         }
     }
