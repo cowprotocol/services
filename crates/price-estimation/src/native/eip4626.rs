@@ -135,12 +135,9 @@ impl Eip4626 {
                 })?;
                 Ok(Some((asset, vault_decimals)))
             }
-            // Classify as non-vault only when `asset()` produced a genuine
-            // contract-level revert (including empty-data reverts from tokens
-            // like USDC that don't implement the selector) AND `decimals()`
-            // succeeded. Transient transport errors (rate limits, timeouts)
-            // must still propagate so we retry instead of pinning the token
-            // as non-vault for the life of the process.
+            // Contract-level revert on `asset()` + working `decimals()` =
+            // plain ERC-20. Transient transport failures propagate so they
+            // retry instead of pinning the token as non-vault.
             Err(err) if err.is_contract_revert() && decimals_result.is_ok() => Ok(None),
             Err(err) => Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                 "failed to call asset() on {token}: {err}"
@@ -227,6 +224,12 @@ mod tests {
     use {
         super::*,
         crate::{HEALTHY_PRICE_ESTIMATION_TIME, native::MockNativePriceEstimating},
+        alloy::{
+            providers::{Provider, ProviderBuilder},
+            sol_types::SolCall,
+            transports::mock::Asserter,
+        },
+        contracts::{ERC20, IERC4626},
     };
 
     #[test]
@@ -288,15 +291,6 @@ mod tests {
     /// failure that aborts the unwrap chain.
     #[tokio::test]
     async fn terminal_token_reverting_without_data_classified_as_non_vault() {
-        use {
-            alloy::{
-                providers::{Provider, ProviderBuilder},
-                sol_types::SolCall,
-                transports::mock::Asserter,
-            },
-            contracts::{ERC20, IERC4626},
-        };
-
         let vault = Address::repeat_byte(0x11);
         let usdc = Address::repeat_byte(0x22);
 

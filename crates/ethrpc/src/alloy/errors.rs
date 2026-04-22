@@ -17,21 +17,10 @@ pub trait ContractErrorExt {
     /// Returns whether a given error is a node error.
     fn is_node_error(&self) -> bool;
 
-    /// Less strict variant of [`is_contract_error`]: also classifies reverts
-    /// with *empty* revert data as contract errors.
-    ///
-    /// [`is_contract_error`] requires the error payload to carry decodable
-    /// revert data, which misses a real class of contract behaviour: when a
-    /// call hits a missing selector (e.g. probing `asset()` on a non-ERC-4626
-    /// token like USDC), the EVM raw-reverts and the RPC surfaces it as an
-    /// `ErrorResp` with code 3 / message "execution reverted" and no `data`.
-    /// Strict classification treats this as a transport failure, which causes
-    /// callers to retry indefinitely or cache transient-looking errors.
-    ///
-    /// Use this predicate when you want "did the call reach the chain and
-    /// the contract rejected it?" semantics — e.g. when probing whether a
-    /// token implements an optional interface. It still rejects genuine
-    /// transport issues (timeouts, connection drops, rate limits).
+    /// Contract-level rejection of the call: an explicit revert (including
+    /// empty-data reverts from missing selectors, which [`is_contract_error`]
+    /// misses) or a `0x` response. Transport failures and caller-side bugs
+    /// return `false` so they keep bubbling up for retry.
     fn is_contract_revert(&self) -> bool;
 }
 
@@ -70,26 +59,16 @@ impl ContractErrorExt for ContractError {
 
     fn is_contract_revert(&self) -> bool {
         match self {
+            // Revert data, geth code 3, or a "revert" message — any is a
+            // contract-level rejection. Other ErrorResps (rate limits,
+            // bad params) are transport and must retry.
             ContractError::TransportError(RpcError::ErrorResp(err)) => {
-                // Accept three signals that the node executed the call and
-                // the contract reverted:
-                //  - revert data is present (the strict case)
-                //  - geth/reth/erigon's canonical code for "execution reverted"
-                //  - message mentions revert (catch-all for non-standard codes)
-                //
-                // Other `ErrorResp`s (rate limits, bad params, internal
-                // errors) fall through to `false` so they can be retried
-                // instead of being cached as a contract outcome.
                 err.as_revert_data().is_some()
                     || err.code == 3
                     || err.message.to_lowercase().contains("revert")
             }
-            // Connection-level failures: not a contract revert.
-            ContractError::TransportError(_) => false,
-            // Decoding / ABI / local usage errors: the node responded and the
-            // contract executed, we just couldn't interpret the result.
-            // Treat as contract-level.
-            _ => true,
+            ContractError::ZeroData(..) => true,
+            _ => false,
         }
     }
 }
@@ -164,9 +143,9 @@ mod tests {
     }
 
     #[test]
-    fn contract_revert_accepts_non_transport_contract_errors() {
-        // Non-transport contract errors (decoding, abi) are still
-        // considered contract-level by this predicate.
-        assert!(testing_alloy_contract_error().is_contract_revert());
+    fn contract_revert_rejects_caller_usage_bugs() {
+        // `NotADeploymentTransaction` and siblings are local-usage errors,
+        // not contract behaviour — must not be classified as reverts.
+        assert!(!testing_alloy_contract_error().is_contract_revert());
     }
 }
