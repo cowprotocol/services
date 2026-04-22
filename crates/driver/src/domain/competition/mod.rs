@@ -33,7 +33,7 @@ use {
         time::Instant,
     },
     tokio::{sync::mpsc, task},
-    tracing::{Instrument},
+    tracing::Instrument,
 };
 
 pub mod auction;
@@ -336,7 +336,9 @@ impl Competition {
         // Clone orders so unsupported detection can run in parallel while
         // preserving the existing auction ownership model.
         let orders_for_filtering = auction.orders.clone();
-        let unsupported_uids_future = self.risk_detector.unsupported_order_uids(&orders_for_filtering);
+        let unsupported_uids_future = self
+            .risk_detector
+            .unsupported_order_uids(&orders_for_filtering);
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
@@ -347,7 +349,10 @@ impl Competition {
         // We can sort the orders, fetch auction data, and detect unsupported
         // orders in parallel.
         let (auction, balances, app_data, unsupported_uids) = tokio::join!(
-            sort_orders_future,tasks.balances,tasks.app_data,unsupported_uids_future
+            sort_orders_future,
+            tasks.balances,
+            tasks.app_data,
+            unsupported_uids_future
         );
 
         let mut auction = Self::run_blocking_with_timer("update_orders", move || {
