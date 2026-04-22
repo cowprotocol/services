@@ -25,16 +25,8 @@ impl OrderSimulatorAdapter {
 #[async_trait]
 impl Eip1271Simulating for OrderSimulatorAdapter {
     async fn simulate(&self, order: &Order) -> Result<(), Eip1271SimulationError> {
-        let swap = self
-            .inner
-            .encode_order(order, Vec::new(), None)
-            .await
-            .map_err(map_simulator_err)?;
-        let result = self
-            .inner
-            .simulate_swap(swap, None)
-            .await
-            .map_err(map_simulator_err)?;
+        let swap = self.inner.encode_order(order, Vec::new(), None).await?;
+        let result = self.inner.simulate_swap(swap, None).await?;
         match result.error {
             None => Ok(()),
             Some(reason) => Err(Eip1271SimulationError::Reverted {
@@ -45,10 +37,12 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
     }
 }
 
-fn map_simulator_err(err: order_simulator::Error) -> Eip1271SimulationError {
-    match err {
-        order_simulator::Error::Other(e) | order_simulator::Error::MalformedInput(e) => {
-            Eip1271SimulationError::Infra(e)
+impl From<order_simulator::Error> for Eip1271SimulationError {
+    fn from(err: order_simulator::Error) -> Self {
+        match err {
+            order_simulator::Error::Other(e) | order_simulator::Error::MalformedInput(e) => {
+                Self::Infra(e)
+            }
         }
     }
 }
