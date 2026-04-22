@@ -15,6 +15,7 @@ use {
     },
     alloy_sol_types::SolCall,
     anyhow::Result,
+    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     model::{
         order::{OrderData, OrderKind},
         signature::{Signature, SigningScheme},
@@ -71,10 +72,15 @@ pub struct FlashloanRequest {
 }
 
 pub enum Solver {
-    /// A real allow-listed solver address. Used as-is with no state overrides.
+    /// Simulation assumes this is an actual solver so no state overrides will
+    /// be applied to allow list it explicitly.
+    /// If you need a very specific solver setup for your simulation consider
+    /// using this and explicitly add the necessary state overrides yourself
+    /// with `Simulation::build_with_modifications()`.
     Real(Address),
     /// A fake solver for simulation. Uses the provided address or generates a
-    /// random one, then sets its ETH balance to `U256::MAX / 2`.
+    /// random one. The simulation builder will automatically set the required
+    /// state overrides to give it enough ETH and allow list it as a solver.
     Fake(Option<Address>),
 }
 
@@ -123,6 +129,7 @@ pub struct SimulationBuilder {
     auction_id: Option<i64>,
     state_overrides: StateOverride,
     simulator: SettlementSimulator,
+    fund_settlement_contract: bool,
 }
 
 impl SimulationBuilder {
@@ -176,11 +183,19 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn build(self) -> Result<SettlementCall, BuildError> {
-        self.build_with_modifications(|_| {})
+    /// Override the settlement contract's buy token balance so it can pay out
+    /// the order without any external liquidity. The required amount is derived
+    /// from the order's executed amount and clearing prices at `build()` time.
+    pub fn fund_settlement_contract(mut self) -> Self {
+        self.fund_settlement_contract = true;
+        self
     }
 
-    pub fn build_with_modifications(
+    pub async fn build(self) -> Result<SettlementCall, BuildError> {
+        self.build_with_modifications(|_| {}).await
+    }
+
+    pub async fn build_with_modifications(
         self,
         customize: impl FnOnce(&mut EncodedSettlement),
     ) -> Result<SettlementCall, BuildError> {
@@ -212,6 +227,17 @@ impl SimulationBuilder {
             OrderKind::Sell => order.data.sell_amount,
             OrderKind::Buy => order.data.buy_amount,
         };
+
+        // Compute before clearing_prices is moved into EncodedSettlement below.
+        let fund_amount = self
+            .fund_settlement_contract
+            .then(|| match order.data.kind {
+                OrderKind::Sell => clearing_prices[sell_token_index]
+                    .saturating_mul(executed_amount)
+                    .checked_div(clearing_prices[buy_token_index])
+                    .unwrap_or(U256::MAX),
+                OrderKind::Buy => executed_amount,
+            });
 
         let trade = encode_trade(
             &order.data,
@@ -246,6 +272,20 @@ impl SimulationBuilder {
                 bytes.extend_from_slice(&id.to_be_bytes());
             }
             bytes.into()
+        };
+
+        let fund_override = if let Some(amount) = fund_amount {
+            self.simulator
+                .0
+                .balance_overrides
+                .state_override(BalanceOverrideRequest {
+                    token: order.data.buy_token,
+                    holder: *self.simulator.0.settlement.address(),
+                    amount,
+                })
+                .await
+        } else {
+            None
         };
 
         let (to, input) = match self.wrapper {
@@ -313,6 +353,10 @@ impl SimulationBuilder {
             None => return Err(BuildError::NoSolver),
         };
 
+        if let Some((addr, account_override)) = fund_override {
+            state_overrides.insert(addr, account_override);
+        }
+
         Ok(SettlementCall {
             request: TransactionRequest {
                 from: Some(from),
@@ -340,6 +384,7 @@ pub enum BuildError {
 struct Inner {
     settlement: contracts::GPv2Settlement::Instance,
     authenticator: Address,
+    balance_overrides: Arc<dyn BalanceOverriding>,
 }
 
 /// Holds the settlement contract and its authenticator address, and acts as a
@@ -349,11 +394,15 @@ struct Inner {
 pub struct SettlementSimulator(Arc<Inner>);
 
 impl SettlementSimulator {
-    pub async fn new(settlement: contracts::GPv2Settlement::Instance) -> Result<Self> {
+    pub async fn new(
+        settlement: contracts::GPv2Settlement::Instance,
+        balance_overrides: Arc<dyn BalanceOverriding>,
+    ) -> Result<Self> {
         let authenticator = Address(settlement.authenticator().call().await?.0);
         Ok(Self(Arc::new(Inner {
             settlement,
             authenticator,
+            balance_overrides,
         })))
     }
 
@@ -369,6 +418,7 @@ impl SettlementSimulator {
             solver: None,
             auction_id: None,
             state_overrides: StateOverride::default(),
+            fund_settlement_contract: false,
         }
     }
 }
