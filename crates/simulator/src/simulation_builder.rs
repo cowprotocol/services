@@ -1,14 +1,17 @@
 use {
-    crate::encoding::{
-        EncodedSettlement,
-        Interaction,
-        Interactions,
-        WrapperCall,
-        encode_interactions,
-        encode_trade,
-        encode_wrapper_settlement,
+    crate::{
+        encoding::{
+            EncodedSettlement,
+            Interaction,
+            Interactions,
+            WrapperCall,
+            encode_interactions,
+            encode_trade,
+            encode_wrapper_settlement,
+        },
+        state_override_helpers::{EthBalanceOverride, SolverAllowlisting},
     },
-    alloy_primitives::{Address, B256, U256, keccak256},
+    alloy_primitives::{Address, U256},
     alloy_rpc_types::{
         TransactionRequest,
         state::{AccountOverride, StateOverride},
@@ -94,10 +97,7 @@ pub enum Solver {
 /// Configuration for wrapping the settlement in a flashloan or custom wrapper
 /// contract chain.
 pub enum WrapperConfig {
-    Flashloan {
-        router: Address,
-        loans: Vec<FlashloanRequest>,
-    },
+    Flashloan { loans: Vec<FlashloanRequest> },
     Custom(Vec<WrapperCall>),
 }
 
@@ -295,7 +295,7 @@ impl SimulationBuilder {
                 encode_wrapper_settlement(&wrappers, settle_calldata)
                     .expect("wrappers is non-empty")
             }
-            Some(WrapperConfig::Flashloan { router, loans }) => {
+            Some(WrapperConfig::Flashloan { loans }) => {
                 let calldata =
                     contracts::FlashLoanRouter::FlashLoanRouter::flashLoanAndSettleCall {
                         loans: loans
@@ -311,7 +311,7 @@ impl SimulationBuilder {
                     }
                     .abi_encode()
                     .into();
-                (router, calldata)
+                (self.simulator.0.flash_loan_router, calldata)
             }
             _ => (*self.simulator.0.settlement.address(), settle_calldata),
         };
@@ -321,34 +321,11 @@ impl SimulationBuilder {
             Some(Solver::Real(addr)) => addr,
             Some(Solver::Fake(opt)) => {
                 let addr = opt.unwrap_or_else(Address::random);
-                // give solver address enough ETH
-                state_overrides.insert(
-                    addr,
-                    AccountOverride {
-                        balance: Some(U256::MAX / U256::from(2)),
-                        ..Default::default()
-                    },
-                );
+                state_overrides.insert(addr, EthBalanceOverride(U256::MAX / U256::from(2)).into());
 
-                // add address to solver allow-list
-                let target_slot = {
-                    // authenticator stores a `mapping(address=>bool)` in storage
-                    // slot 1 so we can compute precisely which storage slot we
-                    // have to override
-                    let mut buf = [0; 64];
-                    buf[12..32].copy_from_slice(addr.as_slice());
-                    buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
-                    keccak256(buf)
-                };
                 state_overrides.insert(
                     self.simulator.0.authenticator,
-                    AccountOverride {
-                        state_diff: Some(
-                            // true is encoded as value with the last bit being 1
-                            std::iter::once((target_slot, B256::with_last_byte(1))).collect(),
-                        ),
-                        ..Default::default()
-                    },
+                    SolverAllowlisting(addr).into(),
                 );
                 addr
             }
@@ -398,6 +375,7 @@ pub enum BuildError {
 struct Inner {
     settlement: contracts::GPv2Settlement::Instance,
     authenticator: Address,
+    flash_loan_router: Address,
     balance_overrides: Arc<dyn BalanceOverriding>,
 }
 
@@ -410,12 +388,14 @@ pub struct SettlementSimulator(Arc<Inner>);
 impl SettlementSimulator {
     pub async fn new(
         settlement: contracts::GPv2Settlement::Instance,
+        flash_loan_router: Address,
         balance_overrides: Arc<dyn BalanceOverriding>,
     ) -> Result<Self> {
         let authenticator = Address(settlement.authenticator().call().await?.0);
         Ok(Self(Arc::new(Inner {
             settlement,
             authenticator,
+            flash_loan_router,
             balance_overrides,
         })))
     }

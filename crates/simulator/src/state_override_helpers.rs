@@ -1,4 +1,8 @@
-use {alloy_primitives::Bytes, alloy_rpc_types::state::AccountOverride};
+use {
+    alloy_primitives::{Address, B256, Bytes, U256, keccak256},
+    alloy_rpc_types::state::AccountOverride,
+    std::iter,
+};
 pub use {
     balance_overrides::{BalanceOverrideRequest, BalanceOverrides, BalanceOverriding},
     configs::balance_overrides::Strategy,
@@ -29,19 +33,35 @@ impl From<FakeUser> for AccountOverride {
     }
 }
 
-/// Deploys the `AnyoneAuthenticator` contract at a given address, causing it
-/// to approve any solver. Pass to
+/// Sets the ETH balance of an address to the given value.
+pub struct EthBalanceOverride(pub U256);
+
+impl From<EthBalanceOverride> for AccountOverride {
+    fn from(EthBalanceOverride(balance): EthBalanceOverride) -> Self {
+        Self {
+            balance: Some(balance),
+            ..Default::default()
+        }
+    }
+}
+
+/// Overrides the authenticator contract's storage to allowlist a single solver
+/// address. Pass to
 /// [`crate::simulation_builder::SimulationBuilder::state_override`]
 /// with the authenticator contract's address.
-pub struct AnyoneAuthenticator;
+pub struct SolverAllowlisting(pub Address);
 
-impl From<AnyoneAuthenticator> for AccountOverride {
-    fn from(_: AnyoneAuthenticator) -> Self {
+impl From<SolverAllowlisting> for AccountOverride {
+    fn from(SolverAllowlisting(solver): SolverAllowlisting) -> Self {
+        // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
+        // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
+        // slot_padded).
+        let mut buf = [0u8; 64];
+        buf[12..32].copy_from_slice(solver.as_slice());
+        buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
+        let slot = keccak256(buf);
         Self {
-            code: Some(
-                contracts::support::AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE
-                    .clone(),
-            ),
+            state_diff: Some(iter::once((slot, B256::with_last_byte(1))).collect()),
             ..Default::default()
         }
     }
