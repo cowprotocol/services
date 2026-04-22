@@ -72,7 +72,7 @@ async fn start_pool_indexer(factory: Address) {
 
     let config = Configuration {
         database: DatabaseConfig {
-            url: LOCAL_DB_URL.to_owned(),
+            url: LOCAL_DB_URL.parse().unwrap(),
             max_connections: NonZeroU32::new(5).unwrap(),
         },
         networks: vec![NetworkConfig {

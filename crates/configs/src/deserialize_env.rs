@@ -33,7 +33,7 @@ fn invalid_value_unable_to_parse_url<E: serde::de::Error>(err: ParseError) -> E 
 
 /// Deserializes an URL from *either* an environment variable — with the format
 /// `%<ENV_VAR_NAME>` — or interpreting a String as a URL.
-pub(crate) fn deserialize_url_from_env<'de, D>(deserializer: D) -> Result<Url, D::Error>
+pub fn deserialize_url_from_env<'de, D>(deserializer: D) -> Result<Url, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -70,7 +70,7 @@ where
 
 /// Deserializes an optional URL from *either* an environment variable — with
 /// the format `%<ENV_VAR_NAME>` — or interpreting a String as a URL.
-pub(crate) fn deserialize_optional_url_from_env<'de, D>(
+pub fn deserialize_optional_url_from_env<'de, D>(
     deserializer: D,
 ) -> Result<Option<Url>, D::Error>
 where

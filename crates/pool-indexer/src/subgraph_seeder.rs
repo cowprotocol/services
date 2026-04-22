@@ -26,6 +26,7 @@ use {
     sqlx::PgPool,
     std::time::Duration,
     tracing::{info, instrument},
+    url::Url,
 };
 
 /// Number of pools (or ticks) returned per GraphQL page.
@@ -101,11 +102,11 @@ struct MetaBlock {
 #[derive(Clone)]
 struct SubgraphClient {
     http: Client,
-    url: String,
+    url: Url,
 }
 
 impl SubgraphClient {
-    fn new(url: &str) -> Result<Self> {
+    fn new(url: &Url) -> Result<Self> {
         let http = Client::builder()
             .timeout(SUBGRAPH_REQUEST_TIMEOUT)
             .build()
@@ -113,7 +114,7 @@ impl SubgraphClient {
 
         Ok(Self {
             http,
-            url: url.to_owned(),
+            url: url.clone(),
         })
     }
 
@@ -122,7 +123,7 @@ impl SubgraphClient {
     async fn query<T: for<'de> Deserialize<'de>>(&self, query: &str, vars: Value) -> Result<T> {
         let response = self
             .http
-            .post(&self.url)
+            .post(self.url.as_str())
             .json(&json!({ "query": query, "variables": vars }))
             .send()
             .await
@@ -229,7 +230,7 @@ impl<'a> SubgraphSeeder<'a> {
     async fn new(
         db: &'a PgPool,
         chain_id: u64,
-        subgraph_url: &str,
+        subgraph_url: &Url,
         block: Option<u64>,
     ) -> Result<Self> {
         let subgraph = SubgraphClient::new(subgraph_url)?;
@@ -413,7 +414,7 @@ pub async fn seed(
     db: &PgPool,
     network: &str,
     chain_id: u64,
-    subgraph_url: &str,
+    subgraph_url: &Url,
     block: Option<u64>,
 ) -> Result<u64> {
     let labels = [network];

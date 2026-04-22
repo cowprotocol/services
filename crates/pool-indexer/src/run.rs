@@ -146,7 +146,7 @@ async fn run_factory_indexer(
         .expect("failed to read checkpoint");
 
     if checkpoint.is_none() {
-        let seeded_block = if let Some(subgraph_url) = network.subgraph_url.as_deref() {
+        let seeded_block = if let Some(subgraph_url) = network.subgraph_url.as_ref() {
             crate::subgraph_seeder::seed(
                 &db,
                 network.name.as_str(),
@@ -235,7 +235,7 @@ fn validate_networks(networks: &[NetworkConfig]) {
 async fn connect_db(config: &Configuration) -> sqlx::PgPool {
     PgPoolOptions::new()
         .max_connections(config.database.max_connections.get())
-        .connect(&config.database.url)
+        .connect(config.database.url.as_str())
         .await
         .expect("failed to connect to database")
 }

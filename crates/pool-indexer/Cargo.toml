@@ -22,6 +22,7 @@ async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
 clap = { workspace = true }
+configs = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }

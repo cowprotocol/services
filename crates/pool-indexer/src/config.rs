@@ -67,7 +67,10 @@ impl fmt::Display for NetworkName {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct DatabaseConfig {
-    pub url: String,
+    /// Postgres connection URL. Accepts `%ENV_VAR` to pull from the
+    /// environment.
+    #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
+    pub url: Url,
     #[serde(default = "default_max_connections")]
     pub max_connections: NonZeroU32,
 }
@@ -77,6 +80,7 @@ pub struct DatabaseConfig {
 pub struct NetworkConfig {
     pub name: NetworkName,
     pub chain_id: u64,
+    #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub rpc_url: Url,
     /// One or more Uniswap V3 factories to index. Each factory runs its own
     /// seed + live-indexing loop; pools from all factories share the per-chain
@@ -93,7 +97,11 @@ pub struct NetworkConfig {
     pub use_latest: bool,
     /// Subgraph GraphQL endpoint for seeding initial state. If absent, the
     /// indexer starts from genesis event indexing.
-    pub subgraph_url: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "configs::deserialize_env::deserialize_optional_url_from_env"
+    )]
+    pub subgraph_url: Option<Url>,
     /// Block number to seed at. Defaults to the subgraph's current block when
     /// `subgraph_url` is set.
     pub seed_block: Option<u64>,
