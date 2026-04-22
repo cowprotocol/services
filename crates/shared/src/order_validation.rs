@@ -3142,8 +3142,7 @@ mod tests {
     async fn skip_flag_runs_simulation_only_and_never_rejects() {
         let mut signature_validator = MockSignatureValidating::new();
         // With `eip1271_skip_creation_validation = true`, the signature
-        // validator must not be called. `.times(0)` makes mockall panic the
-        // test if it is.
+        // validator must not be called.
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
