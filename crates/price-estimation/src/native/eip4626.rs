@@ -86,12 +86,14 @@ impl Eip4626 {
         token: Address,
     ) -> Result<Option<(Address, f64)>, PriceEstimationError> {
         if self.non_vault_tokens.contains(&token) {
+            tracing::debug!(%token, "eip4626: cached non-vault, stop unwrapping");
             return Ok(None);
         }
 
         let Some((asset, vault_decimals)) = self.fetch_vault_info(token).await? else {
             self.non_vault_tokens.insert(token);
             metrics::non_vault_cache_size(self.non_vault_tokens.len());
+            tracing::debug!(%token, "eip4626: classified as non-vault");
             return Ok(None);
         };
         let (assets, asset_decimals) = self
@@ -100,6 +102,7 @@ impl Eip4626 {
         let rate = conversion_rate(assets, asset_decimals)
             .context("conversion rate is not representable as f64")
             .map_err(PriceEstimationError::EstimatorInternal)?;
+        tracing::debug!(%token, %asset, rate, "eip4626: unwrapped vault layer");
         Ok(Some((asset, rate)))
     }
 
