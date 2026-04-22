@@ -7,7 +7,14 @@ use {
     contracts::test::{MockUniswapV3Factory, MockUniswapV3Pool},
     e2e::setup::{TIMEOUT, run_test, wait_for_condition},
     ethrpc::Web3,
-    pool_indexer::config::{ApiConfig, Configuration, DatabaseConfig, NetworkConfig, NetworkName},
+    pool_indexer::config::{
+        ApiConfig,
+        Configuration,
+        DatabaseConfig,
+        FactoryConfig,
+        NetworkConfig,
+        NetworkName,
+    },
     sqlx::{PgPool, Row},
     std::{
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -72,7 +79,10 @@ async fn start_pool_indexer(factory: Address) {
             name: NetworkName::new("mainnet"),
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
-            factories: vec![factory],
+            factories: vec![FactoryConfig {
+                address: factory,
+                deployment_block: 0,
+            }],
             chunk_size: 1000,
             poll_interval_secs: 1,
             use_latest: true,

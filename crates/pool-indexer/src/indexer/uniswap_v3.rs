@@ -153,12 +153,21 @@ impl UniswapV3Indexer {
     /// current finalized block and returns. Loops until no further blocks
     /// remain (handles new blocks finalizing during a long catch-up).
     ///
-    /// If no checkpoint exists yet (fresh DB after seeding), the checkpoint is
-    /// initialized to `from_block - 1` so that `run_once` starts at
-    /// `from_block`. This means the caller (seeder) does not need to write the
-    /// checkpoint itself — it advances naturally per-chunk as blocks are
-    /// indexed.
+    /// Intended for the post-seed bootstrap only: initializes the checkpoint to
+    /// `from_block - 1` if absent so that `run_once` starts at `from_block`.
+    /// Errors if a checkpoint already exists — overwriting would silently
+    /// regress progress and re-index history.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
+        if db::get_checkpoint(&self.db, self.chain_id, &self.factory)
+            .await?
+            .is_some()
+        {
+            anyhow::bail!(
+                "catch_up called but checkpoint already exists for chain {} factory {}",
+                self.chain_id,
+                self.factory,
+            );
+        }
         db::set_checkpoint(
             &self.db,
             self.chain_id,

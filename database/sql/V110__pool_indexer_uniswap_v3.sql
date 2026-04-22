@@ -12,7 +12,7 @@ CREATE TABLE uniswap_v3_pools (
     address          BYTEA    NOT NULL,  -- pool address
     token0           BYTEA    NOT NULL,
     token1           BYTEA    NOT NULL,
-    fee              INT      NOT NULL,  -- fee tier in bps (500, 3000, 10000)
+    fee              INT      NOT NULL,  -- hundredths of a basis point (500 = 0.05%, 3000 = 0.3%, 10000 = 1%)
     token0_decimals  SMALLINT,
     token1_decimals  SMALLINT,
     token0_symbol    TEXT,

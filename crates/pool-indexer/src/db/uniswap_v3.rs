@@ -568,8 +568,11 @@ pub struct TickRow {
     pub liquidity_net: BigDecimal,
 }
 
-/// Maximum number of ticks returned per pool query (safety bound).
-pub const MAX_TICKS_PER_POOL: i64 = 10_000;
+/// Upper bound on ticks returned per pool query. Sized ~3× the largest known
+/// mainnet pool: USDC/WETH 0.05% (0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640)
+/// had 1533 active ticks on 2026-04-22. Callers that hit this limit get a
+/// `warn_truncated` log; bump if that starts firing on real pools.
+pub const MAX_TICKS_PER_POOL: u32 = 5_000;
 
 /// A tick tagged with its owning pool, used by bulk-tick queries that span
 /// multiple pools.
@@ -625,7 +628,7 @@ pub async fn get_ticks_for_pools(
     if addresses.is_empty() {
         return Ok(Vec::new());
     }
-    sqlx::query(
+    let rows = sqlx::query(
         "SELECT t.pool_address, t.tick_idx, t.liquidity_net
          FROM UNNEST($2::BYTEA[]) AS p(addr)
          JOIN LATERAL (
@@ -639,19 +642,23 @@ pub async fn get_ticks_for_pools(
     )
     .bind(sql_chain_id(chain_id))
     .bind(address_bytes_list(addresses))
-    .bind(MAX_TICKS_PER_POOL)
+    .bind(i64::from(MAX_TICKS_PER_POOL))
     .fetch_all(pool)
     .await
-    .context("get_ticks_for_pools")?
-    .into_iter()
-    .map(|r| {
-        Ok(PoolTickRow {
-            pool_address: bytes_to_addr(r.get("pool_address"))?,
-            tick_idx: r.get("tick_idx"),
-            liquidity_net: r.get("liquidity_net"),
+    .context("get_ticks_for_pools")?;
+
+    let out: Vec<PoolTickRow> = rows
+        .into_iter()
+        .map(|r| {
+            Ok::<_, anyhow::Error>(PoolTickRow {
+                pool_address: bytes_to_addr(r.get("pool_address"))?,
+                tick_idx: r.get("tick_idx"),
+                liquidity_net: r.get("liquidity_net"),
+            })
         })
-    })
-    .collect()
+        .collect::<Result<_>>()?;
+    warn_on_truncated_pools(&out);
+    Ok(out)
 }
 
 pub async fn get_ticks(
@@ -659,7 +666,7 @@ pub async fn get_ticks(
     chain_id: u64,
     pool_address: &Address,
 ) -> Result<Vec<TickRow>> {
-    sqlx::query(
+    let ticks: Vec<TickRow> = sqlx::query(
         "SELECT tick_idx, liquidity_net
          FROM uniswap_v3_ticks
          WHERE chain_id = $1
@@ -669,82 +676,42 @@ pub async fn get_ticks(
     )
     .bind(sql_chain_id(chain_id))
     .bind(address_bytes(pool_address))
-    .bind(MAX_TICKS_PER_POOL)
+    .bind(i64::from(MAX_TICKS_PER_POOL))
     .fetch_all(pool)
     .await
-    .context("get_ticks")
-    .map(|rows| {
-        rows.into_iter()
-            .map(|r| TickRow {
-                tick_idx: r.get("tick_idx"),
-                liquidity_net: r.get("liquidity_net"),
-            })
-            .collect()
+    .context("get_ticks")?
+    .into_iter()
+    .map(|r| TickRow {
+        tick_idx: r.get("tick_idx"),
+        liquidity_net: r.get("liquidity_net"),
     })
+    .collect();
+
+    if ticks.len() >= MAX_TICKS_PER_POOL as usize {
+        warn_truncated(pool_address);
+    }
+    Ok(ticks)
 }
 
-/// Searches pools by a single token symbol (partial, case-insensitive), ordered
-/// by liquidity descending.
-pub async fn search_pools_by_token(
-    pool: &PgPool,
-    chain_id: u64,
-    token: &str,
-) -> Result<Vec<PoolRow>> {
-    let pattern = format!("%{}%", token.to_lowercase());
-    let rows = sqlx::query(
-        "SELECT p.address, p.token0, p.token1, p.fee,
-                p.token0_decimals, p.token1_decimals,
-                p.token0_symbol, p.token1_symbol,
-                s.sqrt_price_x96, s.liquidity, s.tick
-         FROM uniswap_v3_pools p
-         JOIN uniswap_v3_pool_states s
-             ON s.chain_id = p.chain_id AND s.pool_address = p.address
-         WHERE p.chain_id = $1
-           AND (LOWER(p.token0_symbol) LIKE $2 OR LOWER(p.token1_symbol) LIKE $2)
-         ORDER BY s.liquidity DESC",
-    )
-    .bind(sql_chain_id(chain_id))
-    .bind(&pattern)
-    .fetch_all(pool)
-    .await
-    .context("search_pools_by_token")?;
-
-    decode_pool_rows(rows)
+fn warn_on_truncated_pools(rows: &[PoolTickRow]) {
+    let mut tick_count: std::collections::HashMap<&Address, usize> =
+        std::collections::HashMap::new();
+    for row in rows {
+        *tick_count.entry(&row.pool_address).or_default() += 1;
+    }
+    for (addr, count) in tick_count {
+        if count >= MAX_TICKS_PER_POOL as usize {
+            warn_truncated(addr);
+        }
+    }
 }
 
-/// Searches pools matching a pair of token symbols (partial, case-insensitive,
-/// order-independent), ordered by liquidity descending.
-pub async fn search_pools_by_pair(
-    pool: &PgPool,
-    chain_id: u64,
-    token0: &str,
-    token1: &str,
-) -> Result<Vec<PoolRow>> {
-    let t0 = format!("%{}%", token0.to_lowercase());
-    let t1 = format!("%{}%", token1.to_lowercase());
-    let rows = sqlx::query(
-        "SELECT p.address, p.token0, p.token1, p.fee,
-                p.token0_decimals, p.token1_decimals,
-                p.token0_symbol, p.token1_symbol,
-                s.sqrt_price_x96, s.liquidity, s.tick
-         FROM uniswap_v3_pools p
-         JOIN uniswap_v3_pool_states s
-             ON s.chain_id = p.chain_id AND s.pool_address = p.address
-         WHERE p.chain_id = $1
-           AND (
-               (LOWER(p.token0_symbol) LIKE $2 AND LOWER(p.token1_symbol) LIKE $3)
-               OR (LOWER(p.token1_symbol) LIKE $2 AND LOWER(p.token0_symbol) LIKE $3)
-           )
-         ORDER BY s.liquidity DESC",
-    )
-    .bind(sql_chain_id(chain_id))
-    .bind(&t0)
-    .bind(&t1)
-    .fetch_all(pool)
-    .await
-    .context("search_pools_by_pair")?;
-
-    decode_pool_rows(rows)
+fn warn_truncated(pool: &Address) {
+    tracing::warn!(
+        %pool,
+        limit = MAX_TICKS_PER_POOL,
+        "tick query hit MAX_TICKS_PER_POOL limit; results may be truncated",
+    );
 }
 
 /// Returns all distinct token addresses that have no symbol recorded yet.
@@ -775,31 +742,25 @@ pub async fn set_token_symbol(
     token: &Address,
     symbol: &str,
 ) -> Result<()> {
-    let mut tx = pool.begin().await.context("set_token_symbol begin")?;
-
     sqlx::query(
-        "UPDATE uniswap_v3_pools SET token0_symbol = $3
-         WHERE chain_id = $1 AND token0 = $2 AND token0_symbol IS NULL",
+        "UPDATE uniswap_v3_pools
+         SET token0_symbol = CASE
+                 WHEN token0 = $2 AND token0_symbol IS NULL THEN $3
+                 ELSE token0_symbol
+             END,
+             token1_symbol = CASE
+                 WHEN token1 = $2 AND token1_symbol IS NULL THEN $3
+                 ELSE token1_symbol
+             END
+         WHERE chain_id = $1 AND (token0 = $2 OR token1 = $2)",
     )
     .bind(sql_chain_id(chain_id))
     .bind(address_bytes(token))
     .bind(symbol)
-    .execute(&mut *tx)
+    .execute(pool)
     .await
-    .context("set_token_symbol token0")?;
+    .context("set_token_symbol")?;
 
-    sqlx::query(
-        "UPDATE uniswap_v3_pools SET token1_symbol = $3
-         WHERE chain_id = $1 AND token1 = $2 AND token1_symbol IS NULL",
-    )
-    .bind(sql_chain_id(chain_id))
-    .bind(address_bytes(token))
-    .bind(symbol)
-    .execute(&mut *tx)
-    .await
-    .context("set_token_symbol token1")?;
-
-    tx.commit().await.context("set_token_symbol commit")?;
     Ok(())
 }
 

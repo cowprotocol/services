@@ -67,6 +67,7 @@ pub async fn cold_seed(
     chain_id: u64,
     provider: AlloyProvider,
     factory: Address,
+    factory_deployment_block: u64,
     snapshot_block: Option<u64>,
 ) -> Result<u64> {
     let snapshot_block = match snapshot_block {
@@ -79,7 +80,7 @@ pub async fn cold_seed(
 
     info!(
         chain_id,
-        snapshot_block, "cold-seeding pool-indexer from chain"
+        factory_deployment_block, snapshot_block, "cold-seeding pool-indexer from chain"
     );
 
     let metrics = crate::metrics::Metrics::get();
@@ -87,7 +88,7 @@ pub async fn cold_seed(
     let pools = {
         let labels = [network, "discovery"];
         let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
-        discover_pools(&provider, factory, snapshot_block).await?
+        discover_pools(&provider, factory, factory_deployment_block, snapshot_block).await?
     };
     metrics
         .cold_seed_pools_discovered
@@ -123,8 +124,15 @@ pub async fn cold_seed(
     {
         let labels = [network, "tick_reconstruction"];
         let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
-        reconstruct_and_persist_ticks(db, chain_id, &provider, &active_pools, snapshot_block)
-            .await?;
+        reconstruct_and_persist_ticks(
+            db,
+            chain_id,
+            &provider,
+            &active_pools,
+            factory_deployment_block,
+            snapshot_block,
+        )
+        .await?;
     }
 
     info!(chain_id, snapshot_block, "cold seeding complete");
@@ -135,10 +143,11 @@ pub async fn cold_seed(
 async fn discover_pools(
     provider: &AlloyProvider,
     factory: Address,
+    from_block: u64,
     to_block: u64,
 ) -> Result<Vec<NewPoolData>> {
     // Chunk the full block range, fetch in parallel, decode PoolCreated events.
-    let ranges: Vec<(u64, u64)> = (0..=to_block)
+    let ranges: Vec<(u64, u64)> = (from_block..=to_block)
         .step_by(DISCOVERY_BLOCK_CHUNK as usize)
         .map(|start| (start, (start + DISCOVERY_BLOCK_CHUNK - 1).min(to_block)))
         .collect();
@@ -296,6 +305,7 @@ async fn reconstruct_and_persist_ticks(
     chain_id: u64,
     provider: &AlloyProvider,
     active_pools: &[Address],
+    from_block: u64,
     to_block: u64,
 ) -> Result<()> {
     let total = active_pools.len();
@@ -306,7 +316,7 @@ async fn reconstruct_and_persist_ticks(
         let pool_batch = pool_batch.to_vec();
         let batch_size = pool_batch.len();
 
-        let block_ranges: Vec<(u64, u64)> = (0..=to_block)
+        let block_ranges: Vec<(u64, u64)> = (from_block..=to_block)
             .step_by(HISTORY_BLOCK_CHUNK as usize)
             .map(|start| (start, (start + HISTORY_BLOCK_CHUNK - 1).min(to_block)))
             .collect();

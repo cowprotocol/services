@@ -78,10 +78,10 @@ pub struct NetworkConfig {
     pub name: NetworkName,
     pub chain_id: u64,
     pub rpc_url: Url,
-    /// One or more Uniswap V3 factory addresses to index. Each factory runs
-    /// its own seed + live-indexing loop; pools from all factories share the
-    /// per-chain namespace in the DB and API.
-    pub factories: Vec<Address>,
+    /// One or more Uniswap V3 factories to index. Each factory runs its own
+    /// seed + live-indexing loop; pools from all factories share the per-chain
+    /// namespace in the DB and API.
+    pub factories: Vec<FactoryConfig>,
     #[serde(default = "default_chunk_size")]
     pub chunk_size: u64,
     #[serde(default = "default_poll_interval_secs")]
@@ -101,6 +101,19 @@ pub struct NetworkConfig {
     pub fetch_concurrency: usize,
     #[serde(default = "default_prefetch_concurrency")]
     pub prefetch_concurrency: usize,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FactoryConfig {
+    pub address: Address,
+    /// Block the factory was deployed at. Cold-seed log discovery starts here
+    /// instead of block 0 — saves thousands of empty `eth_getLogs` requests on
+    /// chains where the factory was deployed long after genesis (e.g.
+    /// Arbitrum). Leave unset (0) on chains where the factory is near
+    /// genesis.
+    #[serde(default)]
+    pub deployment_block: u64,
 }
 
 /// The subset of [`NetworkConfig`] that [`UniswapV3Indexer`] needs at runtime.

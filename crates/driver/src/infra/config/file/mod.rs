@@ -573,7 +573,7 @@ enum UniswapV3Config {
         #[serde(default)]
         graph_url: Option<Url>,
 
-        /// Optional URL of a CoW pool-indexer service. hen set, it replaces
+        /// Optional URL of a CoW pool-indexer service. When set, it replaces
         /// the subgraph as the pool metadata source.
         #[serde(default)]
         pool_indexer_url: Option<Url>,

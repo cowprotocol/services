@@ -5,7 +5,6 @@ use {
         config::{Configuration, NetworkConfig},
         indexer::uniswap_v3::UniswapV3Indexer,
     },
-    alloy::primitives::Address,
     clap::Parser,
     ethrpc::{AlloyProvider, Config as EthRpcConfig, web3},
     sqlx::{PgPool, postgres::PgPoolOptions},
@@ -110,7 +109,7 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
         let indexer = UniswapV3Indexer::new(
             provider.clone(),
             db.clone(),
-            &network.indexer_config(factory),
+            &network.indexer_config(factory.address),
         );
         factory_set.spawn(run_factory_indexer(
             db.clone(),
@@ -131,13 +130,18 @@ async fn run_factory_indexer(
     provider: AlloyProvider,
     indexer: UniswapV3Indexer,
     network: Arc<NetworkConfig>,
-    factory: Address,
+    factory: crate::config::FactoryConfig,
 ) {
-    tracing::info!(network = %network.name, chain_id = network.chain_id, %factory, "starting factory indexer");
+    tracing::info!(
+        network = %network.name,
+        chain_id = network.chain_id,
+        factory = %factory.address,
+        "starting factory indexer",
+    );
 
     // A checkpoint already means this (chain, factory) has been bootstrapped —
     // e.g. a prior run seeded it. Skip the seed and resume live indexing.
-    let checkpoint = crate::db::uniswap_v3::get_checkpoint(&db, network.chain_id, &factory)
+    let checkpoint = crate::db::uniswap_v3::get_checkpoint(&db, network.chain_id, &factory.address)
         .await
         .expect("failed to read checkpoint");
 
@@ -158,7 +162,8 @@ async fn run_factory_indexer(
                 network.name.as_str(),
                 network.chain_id,
                 provider,
-                factory,
+                factory.address,
+                factory.deployment_block,
                 network.seed_block,
             )
             .await
@@ -208,7 +213,12 @@ fn validate_networks(networks: &[NetworkConfig]) {
         );
         let mut seen = HashSet::new();
         for f in &n.factories {
-            assert!(seen.insert(*f), "network {}: duplicate factory {f}", n.name,);
+            assert!(
+                seen.insert(f.address),
+                "network {}: duplicate factory {}",
+                n.name,
+                f.address,
+            );
         }
         // A subgraph indexes one specific factory — applying one URL to many
         // factories would double-seed the wrong data. Multi-factory networks

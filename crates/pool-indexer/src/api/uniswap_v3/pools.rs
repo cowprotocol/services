@@ -20,9 +20,7 @@ use {
 /// 1. `pool_ids` — bulk lookup by pool address, returns only the requested
 ///    pools (no pagination). Intended for clients that already know the pool
 ///    addresses they care about, e.g. resolving pools referenced by an auction.
-/// 2. `token0` (+ optional `token1`) — symbol search. Returns all matching
-///    pools, ordered by liquidity descending. No pagination.
-/// 3. Neither — cursor-paginated list of all pools.
+/// 2. Neither — cursor-paginated list of all pools.
 #[derive(Deserialize)]
 pub struct PoolsQuery {
     /// Comma-separated list of pool addresses (`0x…,0x…`). Capped at
@@ -30,19 +28,11 @@ pub struct PoolsQuery {
     /// addresses should chunk their requests.
     pub pool_ids: Option<String>,
     /// Opaque cursor returned by the previous page; omit to start from the
-    /// beginning. Ignored when `pool_ids` or `token0` is set.
+    /// beginning. Ignored when `pool_ids` is set.
     pub after: Option<String>,
     /// Maximum number of pools to return. Clamped to [1, 5000]; defaults to
-    /// 1000. Ignored when `pool_ids` or `token0` is set.
+    /// 1000. Ignored when `pool_ids` is set.
     pub limit: Option<u64>,
-    /// Filter by token symbol (partial, case-insensitive). Acts as the "base"
-    /// token when `token1` is also supplied. Matched via SQL `LIKE` against
-    /// the stored symbol — use a symbol fragment (e.g. `"WETH"`, `"USD"`),
-    /// not a contract address.
-    pub token0: Option<String>,
-    /// Paired with `token0` to filter by an exact token pair (both symbols
-    /// must match, order-independent).
-    pub token1: Option<String>,
 }
 
 /// ERC-20 token metadata embedded in pool responses.
@@ -88,10 +78,6 @@ pub struct PoolsResponse {
 
 enum PoolsRequest<'a> {
     ByIds(&'a str),
-    Search {
-        token0: &'a str,
-        token1: Option<&'a str>,
-    },
     PaginatedList,
 }
 
@@ -99,11 +85,6 @@ impl PoolsQuery {
     fn request(&self) -> PoolsRequest<'_> {
         if let Some(pool_ids) = self.pool_ids.as_deref() {
             PoolsRequest::ByIds(pool_ids)
-        } else if let Some(token0) = self.token0.as_deref() {
-            PoolsRequest::Search {
-                token0,
-                token1: self.token1.as_deref(),
-            }
         } else {
             PoolsRequest::PaginatedList
         }
@@ -167,25 +148,6 @@ fn pools_response(
     .into_response()
 }
 
-/// Returns all pools whose token symbols match the given filter(s).
-/// When only `token0` is supplied, matches any pool containing that symbol.
-/// When both are supplied, both symbols must match (order-independent).
-/// Results are ordered by liquidity descending; no pagination is applied.
-async fn search_pools(
-    state: &AppState,
-    chain_id: u64,
-    block_number: u64,
-    token0: &str,
-    token1: Option<&str>,
-) -> Result<Response, ApiError> {
-    let rows = if let Some(token1) = token1 {
-        db::search_pools_by_pair(&state.db, chain_id, token0, token1).await?
-    } else {
-        db::search_pools_by_token(&state.db, chain_id, token0).await?
-    };
-    Ok(pools_response(block_number, &rows, None))
-}
-
 /// Returns a cursor-paginated list of all indexed pools, ordered by address.
 /// Fetches `limit + 1` rows to detect whether a next page exists; the extra
 /// row is stripped from the response and its address is returned as
@@ -243,10 +205,6 @@ pub async fn get_pools(
 
     match query.request() {
         PoolsRequest::ByIds(pool_ids) => lookup_pools_by_ids(&state, chain_id, pool_ids).await,
-        PoolsRequest::Search { token0, token1 } => {
-            let block_number = latest_indexed_block(&state, chain_id).await?;
-            search_pools(&state, chain_id, block_number, token0, token1).await
-        }
         PoolsRequest::PaginatedList => {
             let block_number = latest_indexed_block(&state, chain_id).await?;
             list_pools(&state, chain_id, block_number, &query).await
