@@ -57,7 +57,9 @@ impl Eip4626 {
             .inner
             .estimate_native_price(underlying, remaining)
             .await?;
-        Ok(asset_price * cumulative_rate)
+        let estimate = asset_price * cumulative_rate;
+        tracing::debug!(%token, estimate, "eip4626: estimated native price");
+        Ok(estimate)
     }
 
     /// Follows the vault chain (e.g. vault → vault → asset) until reaching a
