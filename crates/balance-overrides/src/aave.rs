@@ -251,12 +251,6 @@ mod tests {
         asserter
     }
 
-    // The happy path (probe accepts a valid aToken) is covered by the
-    // forked-e2e `forked_node_mainnet_aave_atoken_detection` test, which runs
-    // against a real mainnet fork. The tests below cover the rejection
-    // branches, which would require deploying scaffold contracts on a fork
-    // to reproduce — cheaper to simulate with the mock `Asserter`.
-
     /// A contract that doesn't expose the aToken selectors — `balanceOf`
     /// throws when the probe calls `UNDERLYING_ASSET_ADDRESS()` — is
     /// cleanly rejected so non-aToken ERC-20s don't accidentally pick up

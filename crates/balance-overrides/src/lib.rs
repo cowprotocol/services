@@ -520,13 +520,6 @@ mod tests {
 
     #[test]
     fn ray_div_edge_cases() {
-        // End-to-end numerical correctness is covered by the forked-e2e
-        // `forked_node_mainnet_aave_atoken_detection` /
-        // `forked_node_mainnet_aave_atoken_quote` tests, which apply the
-        // override against a real aEthWETH and assert `balanceOf`
-        // round-trips. Here we only pin down `ray_div` itself at the two
-        // edge cases.
-
         let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
         // 0 / x = 0.
         assert_eq!(ray_div(U256::ZERO, index).unwrap(), U256::ZERO);
