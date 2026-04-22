@@ -70,9 +70,7 @@ where
 
 /// Deserializes an optional URL from *either* an environment variable — with
 /// the format `%<ENV_VAR_NAME>` — or interpreting a String as a URL.
-pub fn deserialize_optional_url_from_env<'de, D>(
-    deserializer: D,
-) -> Result<Option<Url>, D::Error>
+pub fn deserialize_optional_url_from_env<'de, D>(deserializer: D) -> Result<Option<Url>, D::Error>
 where
     D: Deserializer<'de>,
 {
