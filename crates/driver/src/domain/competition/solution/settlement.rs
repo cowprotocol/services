@@ -1,5 +1,10 @@
 use {
-    super::{Error, Solution, encoding, trade::ClearingPrices},
+    super::{
+        Error,
+        Solution,
+        encoding,
+        trade::{self, ClearingPrices},
+    },
     crate::{
         domain::{
             self,
@@ -149,36 +154,23 @@ impl Settlement {
         // moving 1 wei into every smart contract to get a partial access list, and then
         // use that partial access list to calculate the final access list.
         //
-        // The same predicate also tells us whether an access list is strictly
-        // required for this settlement: the gas-limit workaround only matters
-        // when at least one trade sends ETH to a smart contract. For any other
-        // settlement the access list is purely a gas optimization, so a fetch
-        // failure should not abort submission.
-        let per_trade_access_lists = try_join_all(solution.user_trades().map(|trade| async {
-            if !trade.order().buys_eth() || !trade.order().pays_to_contract(eth).await? {
-                return Result::<_, Error>::Ok((false, eth::AccessList::default()));
-            }
-            let tx = eth::Tx {
-                from: solution.solver().address(),
-                to: trade.order().receiver(),
-                value: 1.into(),
-                input: Default::default(),
-                access_list: Default::default(),
-            };
-            Ok((true, simulator.access_list(&tx).await?))
-        }))
-        .await?;
-        let access_list_required = per_trade_access_lists.iter().any(|(r, _)| *r);
-        let partial_access_list = per_trade_access_lists
-            .into_iter()
-            .map(|(_, list)| list)
-            .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
+        // A non-empty partial access list also signals that at least one trade
+        // strictly requires an access list. Conversely, an empty partial list
+        // means the access list is only a gas optimization for this settlement,
+        // so a fetch failure below can be tolerated.
+        let partial_access_list = try_join_all(
+            solution
+                .user_trades()
+                .map(|trade| partial_access_list_for(trade, &solution, eth, simulator)),
+        )
+        .await?
+        .into_iter()
+        .fold(eth::AccessList::default(), |acc, list| acc.merge(list));
 
         // Simulate the settlement and get the access list and gas.
         let (access_list, gas) = Self::simulate(
             transaction.internalized.clone(),
             &partial_access_list,
-            access_list_required,
             eth,
             simulator,
         )
@@ -212,7 +204,6 @@ impl Settlement {
             Self::simulate(
                 transaction.uninternalized.clone(),
                 &partial_access_list,
-                access_list_required,
                 eth,
                 simulator,
             )
@@ -234,7 +225,6 @@ impl Settlement {
     async fn simulate(
         tx: eth::Tx,
         partial_access_list: &eth::AccessList,
-        access_list_required: bool,
         eth: &Ethereum,
         simulator: &Simulator,
     ) -> Result<(eth::AccessList, eth::Gas), Error> {
@@ -242,13 +232,13 @@ impl Settlement {
         let tx = tx.set_access_list(partial_access_list.to_owned());
 
         // Simulate the full access list, passing the partial access
-        // list into the simulation. When no trade strictly requires an access
-        // list (no ETH -> contract transfer), treat the fetch as best-effort:
-        // a failing RPC would otherwise abort the whole settlement even though
-        // the on-chain tx would succeed without it.
+        // list into the simulation. If the partial list is empty, no trade
+        // strictly requires the access-list workaround, so treat the fetch as
+        // best-effort: a failing RPC would otherwise abort the whole settlement
+        // even though the on-chain tx would succeed without it.
         let access_list = match simulator.access_list(&tx).await {
             Ok(list) => list,
-            Err(err) if !access_list_required => {
+            Err(err) if partial_access_list.is_empty() => {
                 tracing::warn!(
                     ?err,
                     "access list estimation failed; continuing without it (no ETH->contract \
@@ -376,6 +366,28 @@ impl Settlement {
     pub fn has_haircut(&self) -> bool {
         self.solution.has_haircut()
     }
+}
+
+/// Return the partial access list entries needed to forward 1 wei of ETH to a
+/// smart-contract receiver. Returns an empty access list when the trade does
+/// not trigger the gas-limit workaround (non-ETH buy or EOA receiver).
+async fn partial_access_list_for(
+    trade: &trade::Fulfillment,
+    solution: &Solution,
+    eth: &Ethereum,
+    simulator: &Simulator,
+) -> Result<eth::AccessList, Error> {
+    if !trade.order().buys_eth() || !trade.order().pays_to_contract(eth).await? {
+        return Ok(eth::AccessList::default());
+    }
+    let tx = eth::Tx {
+        from: solution.solver().address(),
+        to: trade.order().receiver(),
+        value: 1.into(),
+        input: Default::default(),
+        access_list: Default::default(),
+    };
+    Ok(simulator.access_list(&tx).await?)
 }
 
 /// Should the interactions be internalized?

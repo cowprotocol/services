@@ -15,9 +15,9 @@ use {
     serde::de::DeserializeOwned,
 };
 
-pub struct Json<T>(pub T);
+pub struct LoggingJson<T>(pub T);
 
-impl<S, T> FromRequest<S> for Json<T>
+impl<S, T> FromRequest<S> for LoggingJson<T>
 where
     S: Send + Sync,
     T: DeserializeOwned,
@@ -39,9 +39,9 @@ where
     }
 }
 
-pub struct Query<T>(pub T);
+pub struct LoggingQuery<T>(pub T);
 
-impl<S, T> FromRequestParts<S> for Query<T>
+impl<S, T> FromRequestParts<S> for LoggingQuery<T>
 where
     S: Send + Sync,
     T: DeserializeOwned,
