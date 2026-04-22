@@ -1,6 +1,6 @@
 use {
     crate::infra::{
-        api::{Error, State, extract::LoggingQuery},
+        api::{Error, State},
         observe,
     },
     tracing::Instrument,
@@ -16,10 +16,10 @@ pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<
 
 async fn route(
     state: axum::extract::State<State>,
-    LoggingQuery(order): LoggingQuery<dto::Order>,
+    order: axum::extract::Query<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (axum::http::StatusCode, axum::Json<Error>)> {
     let handle_request = async {
-        let order = order.into_domain();
+        let order = order.0.into_domain();
         observe::quoting(&order);
         let quote = order
             .quote(

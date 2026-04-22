@@ -28,7 +28,6 @@ use {
 };
 
 mod error;
-mod extract;
 pub mod routes;
 
 pub struct Api {
