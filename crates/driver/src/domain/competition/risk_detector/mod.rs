@@ -16,12 +16,15 @@
 //! we were not able to predict issues with orders and pre-emptively
 //! filter them out of the auction.
 use {
-    crate::domain::competition::{order::Uid},
+    crate::domain::competition::{Order, order::Uid},
     eth_domain_types as eth,
     futures::{StreamExt, stream::FuturesUnordered},
-    std::{collections::{HashMap, HashSet}, fmt, time::Instant},
+    std::{
+        collections::{HashMap, HashSet},
+        fmt,
+        time::Instant,
+    },
 };
-use crate::domain::competition::Order;
 
 pub mod bad_orders;
 pub mod bad_tokens;
@@ -138,9 +141,9 @@ impl Detector {
 
         if !removed_uids.is_empty() {
             tracing::debug!(
-            orders = ?removed_uids,
-            "ignored orders with unsupported tokens"
-        );
+                orders = ?removed_uids,
+                "ignored orders with unsupported tokens"
+            );
         }
 
         if let Some(detector) = &self.simulation_detector {
@@ -187,21 +190,27 @@ impl fmt::Debug for Detector {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-    use eth_domain_types::TokenAmount;
-    use super::*;
-    use crate::{infra::solver,
-                util,
-                domain::competition::{Order,
-                                      order::{signature,
-                                              BuyTokenBalance,
-                                              Kind,
-                                              Partial,
-                                              SellTokenBalance,
-                                              Side,
-                                              Signature,
-                                              Uid}
-                }
+    use {
+        super::*,
+        crate::{
+            domain::competition::{
+                Order,
+                order::{
+                    BuyTokenBalance,
+                    Kind,
+                    Partial,
+                    SellTokenBalance,
+                    Side,
+                    Signature,
+                    Uid,
+                    signature,
+                },
+            },
+            infra::solver,
+            util,
+        },
+        eth_domain_types::TokenAmount,
+        std::time::Duration,
     };
 
     // Helper to create a mock order purely for test
@@ -265,7 +274,13 @@ mod tests {
         let detector = Detector::new(Default::default());
 
         let removed = detector
-            .unsupported_order_uids(&[order(uid(1, signer, u32::MAX), signer, sell_token, buy_token, u32::MAX)])
+            .unsupported_order_uids(&[order(
+                uid(1, signer, u32::MAX),
+                signer,
+                sell_token,
+                buy_token,
+                u32::MAX,
+            )])
             .await;
 
         assert!(removed.is_empty());
@@ -280,11 +295,41 @@ mod tests {
         let valid_to = u32::MAX;
 
         let orders = vec![
-            order(uid(1, addr(6), valid_to), addr(6), addr(1).into(), addr(2).into(), valid_to), // metrics bad
-            order(uid(2, addr(7), valid_to), addr(7), addr(3).into(), addr(2).into(), valid_to), // token bad
-            order(uid(3, addr(8), valid_to), addr(8), addr(1).into(), addr(2).into(), valid_to), // token supported
-            order(uid(4, addr(9), valid_to), addr(9), addr(4).into(), addr(2).into(), valid_to), // unknown sell
-            order(uid(5, addr(10), valid_to), addr(10), addr(1).into(), addr(5).into(), valid_to), // unknown buy
+            order(
+                uid(1, addr(6), valid_to),
+                addr(6),
+                addr(1).into(),
+                addr(2).into(),
+                valid_to,
+            ), // metrics bad
+            order(
+                uid(2, addr(7), valid_to),
+                addr(7),
+                addr(3).into(),
+                addr(2).into(),
+                valid_to,
+            ), // token bad
+            order(
+                uid(3, addr(8), valid_to),
+                addr(8),
+                addr(1).into(),
+                addr(2).into(),
+                valid_to,
+            ), // token supported
+            order(
+                uid(4, addr(9), valid_to),
+                addr(9),
+                addr(4).into(),
+                addr(2).into(),
+                valid_to,
+            ), // unknown sell
+            order(
+                uid(5, addr(10), valid_to),
+                addr(10),
+                addr(1).into(),
+                addr(5).into(),
+                valid_to,
+            ), // unknown buy
         ];
 
         let metrics_uid = orders[0].uid;

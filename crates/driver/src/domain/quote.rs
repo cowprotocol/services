@@ -146,7 +146,9 @@ impl Order {
             .await?;
         let unsupported_uids = risk_detector.unsupported_order_uids(&auction.orders).await;
         if !unsupported_uids.is_empty() {
-            auction.orders.retain(|order| !unsupported_uids.contains(&order.uid));
+            auction
+                .orders
+                .retain(|order| !unsupported_uids.contains(&order.uid));
         }
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());
