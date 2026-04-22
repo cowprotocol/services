@@ -45,7 +45,7 @@ pub trait Api: Send + Sync + 'static {
         &self,
         tx: TransactionRequest,
         overrides: StateOverride,
-        block: Option<BlockNo>,
+        block: BlockNo,
     ) -> Result<()>;
 
     async fn simulate(&self, request: dto::Request) -> Result<dto::Response>;
@@ -85,7 +85,7 @@ impl Tenderly {
                 self.eth.chain().id().to_string(),
                 &tx,
                 Default::default(),
-                Some(block),
+                block,
             )?
         };
 
@@ -162,7 +162,7 @@ impl Api for TenderlyApi {
         &self,
         tx: TransactionRequest,
         overrides: StateOverride,
-        block: Option<BlockNo>,
+        block: BlockNo,
     ) -> Result<()> {
         let request = dto::Request {
             save: Some(true),
@@ -215,16 +215,14 @@ pub fn prepare_request(
     chain_id: String,
     tx: &TransactionRequest,
     overrides: StateOverride,
-    block: Option<BlockNo>,
+    block: BlockNo,
 ) -> Result<dto::Request, Error> {
     Ok(dto::Request {
-        block_number: block.map(|block| block.0),
+        block_number: Some(block.0),
         // By default, tenderly simulates on the top of the specified block, whereas regular
         // nodes simulate at the end of the specified block. This is to make
         // simulation results match in case critical state changed within the block.
-        // Tenderly rejects `transaction_index` when no block is specified (pending),
-        // so only set it when we pin to a concrete block.
-        transaction_index: block.map(|_| -1),
+        transaction_index: Some(-1),
         network_id: chain_id,
         from: tx.from.unwrap_or_default(),
         to: tx.to.and_then(TxKind::into_to).unwrap_or_default(),
@@ -321,7 +319,7 @@ impl Api for Instrumented {
         &self,
         tx: TransactionRequest,
         overrides: StateOverride,
-        block: Option<BlockNo>,
+        block: BlockNo,
     ) -> Result<()> {
         self.inner.log_simulation_command(tx, overrides, block)
     }

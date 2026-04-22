@@ -234,11 +234,8 @@ impl TradeVerifier {
             .await?;
 
         if let Some(tenderly) = &self.tenderly
-            && let Err(err) = tenderly.log_simulation_command(
-                output.tx,
-                output.overrides,
-                Some(block.number.into()),
-            )
+            && let Err(err) =
+                tenderly.log_simulation_command(output.tx, output.overrides, block.number.into())
         {
             tracing::debug!(?err, "could not log tenderly simulation command");
         }
