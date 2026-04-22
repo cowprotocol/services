@@ -20,7 +20,7 @@ use {
     alloy::primitives::U256,
     eth_domain_types as eth,
     futures::future::try_join_all,
-    simulator::Simulator,
+    simulator::{self, Simulator},
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
 };
@@ -233,12 +233,15 @@ impl Settlement {
 
         // Simulate the full access list, passing the partial access
         // list into the simulation. If the partial list is empty, no trade
-        // strictly requires the access-list workaround, so treat the fetch as
-        // best-effort: a failing RPC would otherwise abort the whole settlement
-        // even though the on-chain tx would succeed without it.
+        // strictly requires the access-list workaround, so a non-revert
+        // failure (transport, deserialization, ...) shouldn't abort the
+        // settlement: we can't reason about the outcome, but the on-chain
+        // tx would still succeed without the access list. Revert errors are
+        // propagated either way since they signal a real problem with the
+        // settlement.
         let access_list = match simulator.access_list(&tx).await {
             Ok(list) => list,
-            Err(err) if partial_access_list.is_empty() => {
+            Err(simulator::Error::Other(err)) if partial_access_list.is_empty() => {
                 tracing::warn!(
                     ?err,
                     "access list estimation failed; continuing without it (no ETH->contract \
