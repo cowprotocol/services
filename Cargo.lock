@@ -1863,6 +1863,7 @@ dependencies = [
 name = "balance-overrides"
 version = "0.1.0"
 dependencies = [
+ "alloy-contract",
  "alloy-eips",
  "alloy-primitives",
  "alloy-provider",
