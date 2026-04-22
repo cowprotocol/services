@@ -1,12 +1,15 @@
 use {
-    crate::encoding::{
-        EncodedSettlement,
-        Interaction,
-        Interactions,
-        WrapperCall,
-        encode_interactions,
-        encode_trade,
-        encode_wrapper_settlement,
+    crate::{
+        encoding::{
+            EncodedSettlement,
+            Interaction,
+            Interactions,
+            WrapperCall,
+            encode_interactions,
+            encode_trade,
+            encode_wrapper_settlement,
+        },
+        state_override_helpers::AnyoneAuthenticator,
     },
     alloy_primitives::{Address, U256},
     alloy_rpc_types::{
@@ -14,10 +17,12 @@ use {
         state::{AccountOverride, StateOverride},
     },
     alloy_sol_types::SolCall,
+    anyhow::Result,
     model::{
         order::{OrderData, OrderKind},
         signature::{Signature, SigningScheme},
     },
+    std::sync::Arc,
 };
 
 /// A simulator-specific order that bundles the data needed to encode a trade.
@@ -121,6 +126,7 @@ pub struct SimulationBuilder {
     solver: Option<Solver>,
     auction_id: Option<i64>,
     state_overrides: StateOverride,
+    simulator: Option<SettlementSimulator>,
 }
 
 impl SimulationBuilder {
@@ -174,15 +180,18 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn build(self, settlement_address: Address) -> Result<SettlementCall, BuildError> {
-        self.build_with_modifications(settlement_address, |_| {})
+    pub fn build(self) -> Result<SettlementCall, BuildError> {
+        self.build_with_modifications(|_| {})
     }
 
     pub fn build_with_modifications(
         self,
-        settlement_address: Address,
         customize: impl FnOnce(&mut EncodedSettlement),
     ) -> Result<SettlementCall, BuildError> {
+        let simulator = self
+            .simulator
+            .as_ref()
+            .ok_or(BuildError::NoSettlementAddress)?;
         let order = self.order.as_ref().ok_or(BuildError::NoOrder)?;
 
         let (tokens, clearing_prices) = match &self.prices {
@@ -270,7 +279,7 @@ impl SimulationBuilder {
                     .into();
                 (router, calldata)
             }
-            _ => (settlement_address, settle_calldata),
+            _ => (*simulator.0.settlement.address(), settle_calldata),
         };
 
         let mut state_overrides = self.state_overrides;
@@ -285,9 +294,7 @@ impl SimulationBuilder {
                         ..Default::default()
                     },
                 );
-                // TODO: override the settlement's authenticator with AnyoneAuthenticator
-                // so this address is accepted as a solver. Requires knowing the
-                // authenticator contract address, which isn't available here yet.
+                state_overrides.insert(simulator.0.authenticator, AnyoneAuthenticator.into());
                 addr
             }
             None => return Err(BuildError::NoSolver),
@@ -307,6 +314,8 @@ impl SimulationBuilder {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
+    #[error("no settlement address was set")]
+    NoSettlementAddress,
     #[error("no order was added")]
     NoOrder,
     #[error("no solver was set")]
@@ -315,4 +324,32 @@ pub enum BuildError {
     MissingSellToken,
     #[error("buy token not found in token list")]
     MissingBuyToken,
+}
+
+struct Inner {
+    settlement: contracts::GPv2Settlement::Instance,
+    authenticator: Address,
+}
+
+/// Holds the settlement contract and its authenticator address, and acts as a
+/// factory for [`SimulationBuilder`] instances that are pre-configured with
+/// these values.
+#[derive(Clone)]
+pub struct SettlementSimulator(Arc<Inner>);
+
+impl SettlementSimulator {
+    pub async fn new(settlement: contracts::GPv2Settlement::Instance) -> Result<Self> {
+        let authenticator = Address(settlement.authenticator().call().await?.0);
+        Ok(Self(Arc::new(Inner {
+            settlement,
+            authenticator,
+        })))
+    }
+
+    pub fn new_simulation_builder(&self) -> SimulationBuilder {
+        SimulationBuilder {
+            simulator: Some(self.clone()),
+            ..Default::default()
+        }
+    }
 }
