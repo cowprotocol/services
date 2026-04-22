@@ -963,33 +963,35 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, owner);
 
-        let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
-            let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
-            let check = SignatureCheck {
-                signer: owner,
-                hash: hash.0,
-                signature: signature.to_owned(),
-                interactions: app_data.interactions.pre.clone(),
-                balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
-                    BalanceOverrideRequest {
-                        token: loan.token,
-                        holder: loan.receiver,
-                        amount: loan.amount,
-                    }
-                }),
+        let verification_gas_limit =
+            if let Signature::Eip1271(signature) = &order.signature {
+                let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
+                let check =
+                    SignatureCheck::new(
+                        owner,
+                        hash.0,
+                        signature.to_owned(),
+                        app_data.interactions.pre.clone(),
+                        app_data.inner.protocol.flashloan.as_ref().map(|loan| {
+                            BalanceOverrideRequest {
+                                token: loan.token,
+                                holder: loan.receiver,
+                                amount: loan.amount,
+                            }
+                        }),
+                    );
+                let preview_order = build_preview_order_for_sim(
+                    &data,
+                    &app_data.interactions,
+                    owner,
+                    uid,
+                    order.signature.clone(),
+                );
+                self.run_eip1271_checks(check, &preview_order, hash).await?
+            } else {
+                // in any other case, just apply 0
+                0u64
             };
-            let preview_order = build_preview_order_for_sim(
-                &data,
-                &app_data.interactions,
-                owner,
-                uid,
-                order.signature.clone(),
-            );
-            self.run_eip1271_checks(check, &preview_order, hash).await?
-        } else {
-            // in any other case, just apply 0
-            0u64
-        };
 
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
@@ -1815,13 +1817,13 @@ mod tests {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
-            .with(eq(SignatureCheck {
-                signer: creation.from.unwrap(),
-                hash: order_hash.0,
-                signature: vec![1, 2, 3],
-                interactions: pre_interactions.clone(),
-                balance_override: None,
-            }))
+            .with(eq(SignatureCheck::new(
+                creation.from.unwrap(),
+                order_hash.0,
+                vec![1, 2, 3],
+                pre_interactions.clone(),
+                None,
+            )))
             .returning(|_| Ok(0u64));
 
         let validator = OrderValidator {
@@ -1844,13 +1846,13 @@ mod tests {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
-            .with(eq(SignatureCheck {
-                signer: creation.from.unwrap(),
-                hash: order_hash.0,
-                signature: vec![1, 2, 3],
-                interactions: pre_interactions.clone(),
-                balance_override: None,
-            }))
+            .with(eq(SignatureCheck::new(
+                creation.from.unwrap(),
+                order_hash.0,
+                vec![1, 2, 3],
+                pre_interactions.clone(),
+                None,
+            )))
             .returning(|_| Err(SignatureValidationError::Invalid));
 
         let validator = OrderValidator {
