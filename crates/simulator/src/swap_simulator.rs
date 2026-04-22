@@ -224,6 +224,7 @@ impl SwapSimulator {
         let result = swap
             .call()
             .overrides(overrides.clone())
+            .block(block.number.into())
             .await
             .map_err(|err| anyhow!(err))
             .context("failed to simulate swap");
