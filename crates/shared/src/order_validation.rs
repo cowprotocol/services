@@ -227,15 +227,7 @@ async fn run_eip1271_simulation_only(config: &Eip1271Simulator, preview_order: &
         tokio::time::timeout(config.timeout, config.simulator.simulate(preview_order)).await
     };
     let outcome = match res {
-        Ok(Ok(())) => SimulationOutcome::Pass,
-        Ok(Err(Eip1271SimulationError::Reverted {
-            reason,
-            tenderly_url,
-        })) => SimulationOutcome::Fail {
-            reason,
-            tenderly_url,
-        },
-        Ok(Err(Eip1271SimulationError::Infra(err))) => SimulationOutcome::Infra(err),
+        Ok(inner) => classify_simulation(&inner),
         Err(_) => SimulationOutcome::Infra(anyhow!("eip1271 simulation timeout")),
     };
     Eip1271SimulationMetrics::get()
@@ -584,6 +576,16 @@ impl OrderValidator {
         }
     }
 
+    /// Entry point for the EIP-1271 block of `validate_and_construct_order`.
+    ///
+    /// Two paths, depending on the `eip1271_skip_creation_validation` flag:
+    ///
+    /// - **Skipped**: the cheap `isValidSignature` check is bypassed by the
+    ///   operator, and we return a `verification_gas_limit` of `0` (no gas was
+    ///   spent on-chain verifying the signature). If the optional
+    ///   `Eip1271Simulator` is configured, the full simulation still runs for
+    ///   observability only and can never reject.
+    /// - **Not skipped**: delegates to `run_eip1271_with_signature_check`.
     async fn run_eip1271_checks(
         &self,
         check: SignatureCheck,
@@ -596,7 +598,27 @@ impl OrderValidator {
             }
             return Ok(0u64);
         }
+        self.run_eip1271_with_signature_check(check, preview_order, hash)
+            .await
+    }
 
+    /// Runs the cheap `isValidSignature` check and, when a simulator is
+    /// configured, the full order simulation concurrently. Decides the
+    /// outcome:
+    ///
+    /// - signature `Invalid` → `InvalidEip1271Signature` (today's behaviour).
+    /// - signature `Other`   → `ValidationError::Other` (infra error).
+    /// - signature `Ok(gas)` + simulation `Reverted` + **Enforce** mode →
+    ///   `SimulationFailed(reason)` (the new rejection added by this PR).
+    /// - signature `Ok(gas)` in every other combination → `Ok(gas)`.
+    ///
+    /// Simulation infra errors (RPC / Tenderly / timeout) never reject.
+    async fn run_eip1271_with_signature_check(
+        &self,
+        check: SignatureCheck,
+        preview_order: &Order,
+        hash: B256,
+    ) -> Result<u64, ValidationError> {
         let signature_fut = self
             .signature_validator
             .validate_signature_and_get_additional_gas(check);
@@ -1351,7 +1373,7 @@ mod tests {
         crate::order_quoting::{FindQuoteError, MockOrderQuoting},
         account_balances::MockBalanceFetching,
         alloy::{
-            primitives::{Address, U160, address, b256},
+            primitives::{Address, U160, U256, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
             signers::local::PrivateKeySigner,
         },
@@ -2915,9 +2937,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: Address::with_last_byte(1),
             buy_token: Address::with_last_byte(2),
-            buy_amount: alloy::primitives::U256::from(1),
-            sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::ZERO,
+            buy_amount: U256::ONE,
+            sell_amount: U256::ONE,
+            fee_amount: U256::ZERO,
             from: Some(Address::repeat_byte(1)),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
@@ -2943,6 +2965,9 @@ mod tests {
         eip1271_simulator: Option<Eip1271Simulator>,
         eip1271_skip_creation_validation: bool,
     ) -> OrderValidator {
+        // The quote lookup, balance fetch, and limit-order count are off the
+        // path under test here — stub them to always succeed so every test
+        // reaches the EIP-1271 block without tripping earlier validation.
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
@@ -2953,7 +2978,8 @@ mod tests {
             .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let native_token =
+            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
@@ -3115,6 +3141,9 @@ mod tests {
     #[tokio::test]
     async fn skip_flag_runs_simulation_only_and_never_rejects() {
         let mut signature_validator = MockSignatureValidating::new();
+        // With `eip1271_skip_creation_validation = true`, the signature
+        // validator must not be called. `.times(0)` makes mockall panic the
+        // test if it is.
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .times(0);

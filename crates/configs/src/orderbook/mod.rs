@@ -469,9 +469,7 @@ mod tests {
 
     #[test]
     fn parses_simulation_mode_default() {
-        let toml = r#"
-gas-limit = "0x1000000"
-"#;
+        let toml = r#"gas-limit = "0x1000000""#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
         assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(2));
@@ -480,10 +478,10 @@ gas-limit = "0x1000000"
     #[test]
     fn parses_simulation_mode_enforce() {
         let toml = r#"
-gas-limit = "0x1000000"
-eip1271-simulation-mode = "enforce"
-eip1271-simulation-timeout = "5s"
-"#;
+            gas-limit = "0x1000000"
+            eip1271-simulation-mode = "enforce"
+            eip1271-simulation-timeout = "5s"
+        "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Enforce);
         assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(5));
@@ -492,9 +490,9 @@ eip1271-simulation-timeout = "5s"
     #[test]
     fn parses_simulation_mode_shadow() {
         let toml = r#"
-gas-limit = "0x1000000"
-eip1271-simulation-mode = "shadow"
-"#;
+            gas-limit = "0x1000000"
+            eip1271-simulation-mode = "shadow"
+        "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Shadow);
     }
@@ -502,9 +500,9 @@ eip1271-simulation-mode = "shadow"
     #[test]
     fn parses_simulation_mode_disabled() {
         let toml = r#"
-gas-limit = "0x1000000"
-eip1271-simulation-mode = "disabled"
-"#;
+            gas-limit = "0x1000000"
+            eip1271-simulation-mode = "disabled"
+        "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
     }

@@ -28,11 +28,11 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
         let swap = self.inner.encode_order(order, Vec::new(), None).await?;
         let result = self.inner.simulate_swap(swap, None).await?;
         match result.error {
-            None => Ok(()),
             Some(reason) => Err(Eip1271SimulationError::Reverted {
                 reason,
                 tenderly_url: result.tenderly_url,
             }),
+            None => Ok(()),
         }
     }
 }
