@@ -184,3 +184,135 @@ impl fmt::Debug for Detector {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+    use eth_domain_types::TokenAmount;
+    use super::*;
+    use crate::{infra::solver,
+                util,
+                domain::competition::{Order,
+                                      order::{signature,
+                                              BuyTokenBalance,
+                                              Kind,
+                                              Partial,
+                                              SellTokenBalance,
+                                              Side,
+                                              Signature,
+                                              Uid}
+                }
+    };
+
+    // Helper to create a mock order purely for test
+    fn order(
+        uid: Uid,
+        signer: eth::Address,
+        sell_token: eth::TokenAddress,
+        buy_token: eth::TokenAddress,
+        valid_to: u32,
+    ) -> Order {
+        Order {
+            uid,
+            receiver: Some(signer),
+            created: util::Timestamp(0),
+            valid_to: util::Timestamp(valid_to),
+            buy: eth::Asset {
+                token: buy_token,
+                amount: TokenAmount::from(1),
+            },
+            sell: eth::Asset {
+                token: sell_token,
+                amount: TokenAmount::from(1),
+            },
+            side: Side::Sell,
+            kind: Kind::Limit,
+            app_data: Default::default(),
+            partial: Partial::No,
+            pre_interactions: vec![],
+            post_interactions: vec![],
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: signature::Scheme::PreSign,
+                data: Default::default(),
+                signer,
+            },
+            protocol_fees: Default::default(),
+            quote: Default::default(),
+        }
+    }
+
+    // Helper to create a mock UID purely for test
+    fn uid(n: u8, signer: eth::Address, valid_to: u32) -> Uid {
+        let order_hash = eth::B256::from([n; 32]);
+        Uid::from_parts(order_hash, signer, valid_to)
+    }
+
+    #[tokio::test]
+    async fn unsupported_order_uids_empty_returns_empty() {
+        let detector = Detector::new(Default::default());
+        let removed = detector.unsupported_order_uids(&[]).await;
+        assert!(removed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn all_supported_orders_are_kept() {
+        let signer = eth::Address::from_slice(&[1; 20]);
+        let sell_token = eth::Address::from_slice(&[2; 20]).into();
+        let buy_token = eth::Address::from_slice(&[3; 20]).into();
+
+        let detector = Detector::new(Default::default());
+
+        let removed = detector
+            .unsupported_order_uids(&[order(uid(1, signer, u32::MAX), signer, sell_token, buy_token, u32::MAX)])
+            .await;
+
+        assert!(removed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn unsupported_order_uids_returns_only_unsupported_orders() {
+        fn addr(n: u8) -> eth::Address {
+            eth::Address::from_slice(&[n; 20])
+        }
+
+        let valid_to = u32::MAX;
+
+        let orders = vec![
+            order(uid(1, addr(6), valid_to), addr(6), addr(1).into(), addr(2).into(), valid_to), // metrics bad
+            order(uid(2, addr(7), valid_to), addr(7), addr(3).into(), addr(2).into(), valid_to), // token bad
+            order(uid(3, addr(8), valid_to), addr(8), addr(1).into(), addr(2).into(), valid_to), // token supported
+            order(uid(4, addr(9), valid_to), addr(9), addr(4).into(), addr(2).into(), valid_to), // unknown sell
+            order(uid(5, addr(10), valid_to), addr(10), addr(1).into(), addr(5).into(), valid_to), // unknown buy
+        ];
+
+        let metrics_uid = orders[0].uid;
+        let token_uid = orders[1].uid;
+
+        let metrics_detector = bad_orders::metrics::Detector::new(
+            0.5,
+            2,
+            false,
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            solver::Name("test_solver".into()),
+        );
+
+        let mut detector_config = HashMap::new();
+        detector_config.insert(addr(3).into(), Quality::Unsupported);
+
+        let mut detector = Detector::new(detector_config);
+        detector.with_metrics_detector(metrics_detector);
+
+        // Simulate repeated metrics failure for order with metrics_uid
+        detector.encoding_failed(&[metrics_uid]);
+        detector.encoding_failed(&[metrics_uid]);
+        detector.encoding_failed(&[metrics_uid]);
+
+        let removed = detector.unsupported_order_uids(&orders).await;
+
+        assert_eq!(removed, HashSet::from([metrics_uid, token_uid]));
+    }
+}
