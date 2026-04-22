@@ -8,11 +8,12 @@ use {
         encode_trade,
         encode_wrapper_settlement,
     },
-    alloy_primitives::{Address, Bytes, U256},
+    alloy_primitives::{Address, U256},
     alloy_rpc_types::{
         TransactionRequest,
         state::{AccountOverride, StateOverride},
     },
+    alloy_sol_types::SolCall,
     model::{
         order::{OrderData, OrderKind},
         signature::{Signature, SigningScheme},
@@ -60,10 +61,20 @@ impl Order {
     }
 }
 
+pub struct FlashloanRequest {
+    pub amount: U256,
+    pub borrower: Address,
+    pub lender: Address,
+    pub token: Address,
+}
+
 /// Configuration for wrapping the settlement in a flashloan or custom wrapper
 /// contract chain.
 pub enum WrapperConfig {
-    Flashloan { router: Address, data: Bytes },
+    Flashloan {
+        router: Address,
+        loans: Vec<FlashloanRequest>,
+    },
     Custom(Vec<WrapperCall>),
 }
 
@@ -100,6 +111,7 @@ pub struct SimulationBuilder {
     wrapper: Option<WrapperConfig>,
     prices: Option<Prices>,
     solver: Option<Address>,
+    auction_id: Option<i64>,
     state_overrides: StateOverride,
 }
 
@@ -109,24 +121,18 @@ impl SimulationBuilder {
         self
     }
 
-    /// Mutate the pre-interactions list via a closure. The order's own
-    /// pre-hooks are prepended automatically in [`build`]; these interactions
-    /// follow them.
-    pub fn with_pre_interactions_mut(mut self, f: impl FnOnce(&mut Vec<Interaction>)) -> Self {
-        f(&mut self.pre_interactions);
+    pub fn with_pre_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+        self.pre_interactions = interactions;
         self
     }
 
-    pub fn with_main_interactions_mut(mut self, f: impl FnOnce(&mut Vec<Interaction>)) -> Self {
-        f(&mut self.main_interactions);
+    pub fn with_main_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+        self.main_interactions = interactions;
         self
     }
 
-    /// Mutate the post-interactions list via a closure. The order's own
-    /// post-hooks are appended automatically in [`build`]; these interactions
-    /// precede them.
-    pub fn with_post_interactions_mut(mut self, f: impl FnOnce(&mut Vec<Interaction>)) -> Self {
-        f(&mut self.post_interactions);
+    pub fn with_post_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+        self.post_interactions = interactions;
         self
     }
 
@@ -142,6 +148,11 @@ impl SimulationBuilder {
 
     pub fn from_solver(mut self, solver: Address) -> Self {
         self.solver = Some(solver);
+        self
+    }
+
+    pub fn with_auction_id(mut self, id: i64) -> Self {
+        self.auction_id = Some(id);
         self
     }
 
@@ -220,21 +231,37 @@ impl SimulationBuilder {
 
         customize(&mut settlement);
 
-        let settle_calldata = settlement.into_settle_call();
+        let settle_calldata = {
+            let mut bytes = settlement.into_settle_call().to_vec();
+            if let Some(id) = self.auction_id {
+                bytes.extend_from_slice(&id.to_be_bytes());
+            }
+            bytes.into()
+        };
 
         let (to, input) = match self.wrapper {
             Some(WrapperConfig::Custom(wrappers)) if !wrappers.is_empty() => {
                 encode_wrapper_settlement(&wrappers, settle_calldata)
                     .expect("wrappers is non-empty")
             }
-            Some(WrapperConfig::Flashloan { router, data }) => encode_wrapper_settlement(
-                &[WrapperCall {
-                    address: router,
-                    data,
-                }],
-                settle_calldata,
-            )
-            .expect("wrappers is non-empty"),
+            Some(WrapperConfig::Flashloan { router, loans }) => {
+                let calldata =
+                    contracts::FlashLoanRouter::FlashLoanRouter::flashLoanAndSettleCall {
+                        loans: loans
+                            .into_iter()
+                            .map(|l| contracts::FlashLoanRouter::LoanRequest::Data {
+                                amount: l.amount,
+                                borrower: l.borrower,
+                                lender: l.lender,
+                                token: l.token,
+                            })
+                            .collect(),
+                        settlement: settle_calldata,
+                    }
+                    .abi_encode()
+                    .into();
+                (router, calldata)
+            }
             _ => (settlement_address, settle_calldata),
         };
 
