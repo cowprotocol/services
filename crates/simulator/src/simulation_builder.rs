@@ -97,7 +97,7 @@ pub enum Solver {
 /// Configuration for wrapping the settlement in a flashloan or custom wrapper
 /// contract chain.
 pub enum WrapperConfig {
-    Flashloan { loans: Vec<FlashloanRequest> },
+    Flashloan(Vec<FlashloanRequest>),
     Custom(Vec<WrapperCall>),
 }
 
@@ -237,12 +237,10 @@ impl SimulationBuilder {
             .position(|t| *t == order.data.buy_token)
             .ok_or(BuildError::MissingBuyToken)?;
 
-        let executed_amount = order
-            .executed_amount
-            .unwrap_or_else(|| match order.data.kind {
-                OrderKind::Sell => order.data.sell_amount,
-                OrderKind::Buy => order.data.buy_amount,
-            });
+        let executed_amount = order.executed_amount.unwrap_or(match order.data.kind {
+            OrderKind::Sell => order.data.sell_amount,
+            OrderKind::Buy => order.data.buy_amount,
+        });
 
         // Compute before clearing_prices is moved into EncodedSettlement below.
         let fund_amount = self
@@ -295,7 +293,7 @@ impl SimulationBuilder {
                 encode_wrapper_settlement(&wrappers, settle_calldata)
                     .expect("wrappers is non-empty")
             }
-            Some(WrapperConfig::Flashloan { loans }) => {
+            Some(WrapperConfig::Flashloan(loans)) => {
                 let calldata =
                     contracts::FlashLoanRouter::FlashLoanRouter::flashLoanAndSettleCall {
                         loans: loans
