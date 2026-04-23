@@ -1,7 +1,11 @@
 pub mod pools;
 pub mod ticks;
 
-use {crate::api::ApiError, alloy_primitives::Address};
+use {
+    crate::api::ApiError,
+    alloy_primitives::Address,
+    bigdecimal::{BigDecimal, num_bigint::ToBigInt},
+};
 pub use {
     pools::get_pools,
     ticks::{get_ticks, get_ticks_bulk},
@@ -17,6 +21,28 @@ pub(super) fn serialize_display<T: std::fmt::Display, S: serde::Serializer>(
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(&value.to_string())
+}
+
+/// Serializes a [`BigDecimal`] holding an integer value as a plain decimal
+/// string — never scientific notation. `BigDecimal`'s own `Display` emits
+/// `"Ne±M"` for some magnitudes, which breaks downstream parsers expecting
+/// `uint` strings (alloy's `U256::from_str`). The stored columns
+/// (`sqrt_price_x96`, `liquidity`, `liquidity_net`) are always integers, so
+/// converting via `BigInt` is lossless.
+pub(super) fn serialize_integer<S: serde::Serializer>(
+    value: &BigDecimal,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    // `to_bigint` truncates fractional values (1.5 → 1), so also verify the
+    // round-trip matches — otherwise we'd silently drop precision.
+    match value.to_bigint() {
+        Some(bi) if BigDecimal::from(bi.clone()) == *value => {
+            serializer.serialize_str(&bi.to_string())
+        }
+        _ => Err(serde::ser::Error::custom(format!(
+            "expected integer, got {value}"
+        ))),
+    }
 }
 
 pub(super) fn parse_hex_address(s: &str) -> Result<Address, ApiError> {
@@ -42,4 +68,43 @@ pub(super) fn parse_pool_ids(raw: &str) -> Result<Vec<Address>, ApiError> {
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        bigdecimal::{BigDecimal, num_bigint::BigInt},
+        serde::Serialize,
+        std::str::FromStr,
+    };
+
+    /// Postgres' NUMERIC wire encoding compresses trailing zeros into a
+    /// negative `BigDecimal` scale (`mantissa × 10^|scale|`). The default
+    /// `Display` stringifies this as scientific notation (`1E30`), which
+    /// `alloy::U256::from_str` rejects — `serialize_integer` must emit
+    /// plain digits instead.
+    #[test]
+    fn serialize_integer_handles_negative_scale_bigdecimal() {
+        // negative-scale compression large enough to push `BigDecimal`'s `Display` into
+        // `Ne+M` notation.
+        let mantissa = BigInt::from_str("79228162514264337593543950336").unwrap();
+        let v = BigDecimal::new(mantissa, -30);
+
+        // Confirm the bug shape: default `Display` produces scientific
+        // notation that `U256::from_str` can't parse.
+        assert_eq!(v.to_string(), "79228162514264337593543950336e+30");
+
+        // Our serializer normalizes to pure digits that the driver parses.
+        #[derive(Serialize)]
+        struct Wrapper {
+            #[serde(serialize_with = "serialize_integer")]
+            v: BigDecimal,
+        }
+        let json = serde_json::to_string(&Wrapper { v }).unwrap();
+        assert_eq!(
+            json,
+            "{\"v\":\"79228162514264337593543950336000000000000000000000000000000\"}"
+        );
+    }
 }

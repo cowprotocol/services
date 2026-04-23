@@ -1,5 +1,5 @@
 use {
-    super::{parse_hex_address, parse_pool_ids, serialize_display},
+    super::{parse_hex_address, parse_pool_ids, serialize_integer},
     crate::{
         api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
         db::uniswap_v3 as db,
@@ -18,7 +18,7 @@ use {
 #[derive(Serialize)]
 pub struct TickEntry {
     pub tick_idx: i32,
-    #[serde(serialize_with = "serialize_display")]
+    #[serde(serialize_with = "serialize_integer")]
     pub liquidity_net: BigDecimal,
 }
 

@@ -1,5 +1,5 @@
 use {
-    super::{parse_pool_ids, serialize_display},
+    super::{parse_pool_ids, serialize_display, serialize_integer},
     crate::{
         api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
         db::uniswap_v3 as db,
@@ -56,9 +56,9 @@ pub struct PoolResponse {
     /// Fee tier in hundredths of a basis point (e.g. 3000 = 0.3%).
     #[serde(serialize_with = "serialize_display")]
     pub fee_tier: u32,
-    #[serde(serialize_with = "serialize_display")]
+    #[serde(serialize_with = "serialize_integer")]
     pub liquidity: BigDecimal,
-    #[serde(serialize_with = "serialize_display")]
+    #[serde(serialize_with = "serialize_integer")]
     pub sqrt_price: BigDecimal,
     pub tick: i32,
     /// Populated only when tick data is explicitly requested.
