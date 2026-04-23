@@ -244,10 +244,7 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .json()
         .await
         .context("pools-by-ids body")?;
-    resp.pools
-        .into_iter()
-        .map(PoolData::try_from)
-        .collect()
+    resp.pools.into_iter().map(PoolData::try_from).collect()
 }
 
 async fn fetch_ticks_by_pool_ids(
