@@ -873,8 +873,13 @@ async fn aave_atoken_quote_verification(web3: Web3) {
     assert_eq!(target, a_eth_weth);
 
     // Apply the override to a live `balanceOf` call via the forked node and
-    // make sure the contract now reports the requested amount (± 1 wei of
-    // ray rounding).
+    // make sure the contract now reports at least the requested amount.
+    // The override is built against the stored `liquidityIndex`, so
+    // `balanceOf` overshoots `amount` by the linear accrual that Aave
+    // applies between `lastUpdateTimestamp` and the call's
+    // `block.timestamp`. A 1% relative cap still catches a slot that
+    // isn't actually controlling the balance while accepting any
+    // realistic accrual window.
     let overrides: StateOverride = [(target, override_)].into_iter().collect();
     let a_token_contract = ERC20::Instance::new(a_eth_weth, web3.provider.clone());
     let reported = a_token_contract
@@ -884,10 +889,12 @@ async fn aave_atoken_quote_verification(web3: Web3) {
         .await
         .unwrap();
 
-    let diff = reported.abs_diff(amount);
+    let overshoot = reported.saturating_sub(amount);
+    let tolerance = amount / U256::from(100u64);
     assert!(
-        diff <= U256::from(1u64),
-        "balanceOf after override returned {reported}, expected ~{amount} (diff {diff} wei)",
+        reported >= amount && overshoot <= tolerance,
+        "balanceOf after override returned {reported}, expected >= {amount} with overshoot <= \
+         {tolerance} wei (got overshoot {overshoot} wei)",
     );
 }
 
