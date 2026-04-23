@@ -176,7 +176,7 @@ impl OrderSimulator {
                 self.chain_id.clone(),
                 &result.tx,
                 result.overrides,
-                Some(BlockNo(block_number)),
+                BlockNo(block_number),
             )
             .map_err(|err| Error::Other(anyhow!(err)))?
         };
