@@ -530,6 +530,50 @@ mod tests {
         );
     }
 
+    /// Regression test for the `trader does not have enough sell token`
+    /// revert seen on prod aEthWETH quotes. The override used to scale
+    /// `amount` against `getReserveNormalizedIncome` (stored × linear
+    /// accrual to `block.timestamp`), which calibrated `balanceOf` on the
+    /// 1-wei boundary: when the sim was pinned to a block whose timestamp
+    /// was older than the one the RPC serving our read saw, `rayMul(scaled,
+    /// sim_index)` rounded down to `amount - 1` wei and Aave's internal
+    /// scaled-balance subtraction inside the donor's `transfer` underflowed.
+    ///
+    /// Scaling against the stored `liquidityIndex` instead makes the sim's
+    /// effective index a monotone upper bound (`>= stored`), so
+    /// `rayMul(scaled, sim_index) >= amount` holds across the entire range
+    /// of blocks the sim might end up pinned to.
+    #[test]
+    fn aave_v3_a_token_override_round_trips_against_accrued_index() {
+        use crate::aave::RAY;
+        fn ray_mul(a: U256, b: U256) -> U256 {
+            (a * b + (RAY >> 1)) / RAY
+        }
+
+        // Realistic aEthWETH stored liquidity index (around block 24944163).
+        let stored_idx = U256::from_str_radix("1063627933131483960000000000", 10).unwrap();
+        let amount = U256::from(100_000_000_000_000_000u128); // 0.1 aEthWETH
+
+        let scaled = ray_div(amount, stored_idx).unwrap();
+
+        // Sample the sim-time index across zero accrual (sim pins to the
+        // exact block the stored value was set) through several blocks
+        // forward. Aave's index is monotone non-decreasing, so every one
+        // of these is a valid sim-time value.
+        //
+        // 1 ppb ≈ 1 second of WETH accrual at current rates; stepping up
+        // to 10 ppm (~= 10 minutes) covers realistic Tenderly fork lag.
+        for accrual_ppb in [0u64, 1, 10, 100, 10_000, 10_000_000] {
+            let sim_idx =
+                stored_idx + stored_idx / U256::from(1_000_000_000u64) * U256::from(accrual_ppb);
+            let balance = ray_mul(scaled, sim_idx);
+            assert!(
+                balance >= amount,
+                "balance {balance} < amount {amount} at accrual {accrual_ppb} ppb"
+            );
+        }
+    }
+
     #[test]
     fn pack_user_state_leaves_additional_data_intact() {
         let balance = U256::from(0x1234_5678u64);
@@ -566,7 +610,11 @@ mod tests {
 
     #[tokio::test]
     async fn aave_v3_a_token_override_scales_amount_and_writes_low_128() {
-        use alloy_provider::mock::Asserter;
+        use {
+            crate::aave::{ReserveConfigurationMap, ReserveData},
+            alloy_provider::mock::Asserter,
+            alloy_sol_types::SolValue,
+        };
 
         // aEthWETH mainnet triple.
         let a_token = address!("4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8");
@@ -576,10 +624,30 @@ mod tests {
         let amount = U256::from(1_000_000_000_000_000_000u128); // 1 aEthWETH
 
         let asserter = Asserter::new();
-        // The mock responds to our `eth_call` with the encoded `uint256`
-        // normalized income — a ray value just above 1.063.
-        let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
-        asserter.push_success(&format!("0x{:064x}", index));
+        // The mock responds to our `eth_call` with a ReserveData struct
+        // whose `liquidityIndex` is a ray value just above 1.063.
+        let index_u128 = 1_063_000_000_000_000_000_000_000_000u128;
+        let reserve = ReserveData {
+            configuration: ReserveConfigurationMap { data: U256::ZERO },
+            liquidityIndex: index_u128,
+            currentLiquidityRate: 0,
+            variableBorrowIndex: 0,
+            currentVariableBorrowRate: 0,
+            currentStableBorrowRate: 0,
+            lastUpdateTimestamp: alloy_primitives::Uint::ZERO,
+            id: 0,
+            aTokenAddress: a_token,
+            stableDebtTokenAddress: Address::ZERO,
+            variableDebtTokenAddress: Address::ZERO,
+            interestRateStrategyAddress: Address::ZERO,
+            accruedToTreasury: 0,
+            unbacked: 0,
+            isolationModeTotalDebt: 0,
+        };
+        asserter.push_success(&alloy_primitives::hex::encode_prefixed(
+            reserve.abi_encode(),
+        ));
+        let index = U256::from(index_u128);
 
         let balance_overrides = BalanceOverrides {
             hardcoded: hashmap! {
