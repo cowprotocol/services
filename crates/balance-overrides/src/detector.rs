@@ -398,7 +398,7 @@ impl Detector {
 fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U256) -> bool {
     match strategy {
         Strategy::AaveV3AToken { .. } => {
-            balance.abs_diff(test_balance) <= test_balance / U256::from(100u64)
+            balance.abs_diff(test_balance) * U256::from(100u64) <= test_balance
         }
         _ => balance == test_balance,
     }

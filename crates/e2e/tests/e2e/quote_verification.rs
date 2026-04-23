@@ -884,11 +884,10 @@ async fn aave_atoken_quote_verification(web3: Web3) {
         .unwrap();
 
     let overshoot = reported.saturating_sub(amount);
-    let tolerance = amount / U256::from(100u64);
     assert!(
-        reported >= amount && overshoot <= tolerance,
-        "balanceOf after override returned {reported}, expected >= {amount} with overshoot <= \
-         {tolerance} wei (got overshoot {overshoot} wei)",
+        reported >= amount && overshoot * U256::from(100u64) <= amount,
+        "balanceOf after override returned {reported}, expected >= {amount} with overshoot within \
+         1% (got overshoot {overshoot} wei)",
     );
 }
 
