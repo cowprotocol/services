@@ -174,17 +174,14 @@ impl V3PoolDataSource for PoolIndexerClient {
             if fetched_block_number == 0 {
                 fetched_block_number = page.block_number;
             }
-            for p in page.pools {
-                let data = p.into_pool_data()?;
-                // Mirror the subgraph path (graph_api.rs): skip pools with no
-                // active in-range liquidity. Keeps `PoolsCheckpointHandler`'s
-                // top-N-by-liquidity selection from being dominated by scam
-                // pools whose only LP is concentrated at MIN/MAX ticks and
-                // report astronomical virtual `liquidity` values.
-                if !data.liquidity.is_zero() {
-                    pools.push(data);
-                }
-            }
+            // Skip zero-liquidity pools (fully-burned LP, never-minted, etc.)
+            let filtered = page
+                .pools
+                .into_iter()
+                .filter(|p| p.liquidity != "0")
+                .map(IndexerPool::into_pool_data)
+                .collect::<Result<Vec<_>>>()?;
+            pools.extend(filtered);
             match page.next_cursor {
                 Some(c) => cursor = Some(c),
                 None => break,
