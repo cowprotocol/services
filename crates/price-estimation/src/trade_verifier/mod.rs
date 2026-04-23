@@ -227,10 +227,15 @@ impl TradeVerifier {
                 &self.simulator.domain_separator,
             )?);
         }
-        let output = self.simulator.simulate_swap_with_solver(swap).await?;
+        let block = *self.simulator.current_block.borrow();
+        let output = self
+            .simulator
+            .simulate_swap_with_solver(swap, block)
+            .await?;
 
         if let Some(tenderly) = &self.tenderly
-            && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)
+            && let Err(err) =
+                tenderly.log_simulation_command(output.tx, output.overrides, block.number.into())
         {
             tracing::debug!(?err, "could not log tenderly simulation command");
         }
@@ -408,6 +413,11 @@ impl TradeVerifier {
                 }
             }
             _ => {
+                tracing::warn!(
+                    sell_token = ?query.sell_token,
+                    "could not set spardose balance override for sell token; trade \
+                     verification will rely on the trader's real balance"
+                );
                 if verification.from.is_zero() {
                     anyhow::bail!("trader is zero address and balances can not be faked");
                 }
