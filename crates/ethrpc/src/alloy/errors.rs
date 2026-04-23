@@ -64,10 +64,14 @@ impl ContractErrorExt for ContractError {
             // bad params) are transport and must retry.
             ContractError::TransportError(RpcError::ErrorResp(err)) => {
                 err.as_revert_data().is_some()
+                    // https://github.com/ethereum/go-ethereum/blob/8e2107dc39dc9dab132150ec915e7ac299f9eb48/internal/ethapi/errors.go#L42-L46
+                    // https://github.com/alloy-rs/alloy/blob/b6753088241a50730c092bdba7036f52887c4c57/crates/rpc-types-eth/src/error.rs#L32
                     || err.code == 3
                     || err.message.to_lowercase().contains("revert")
             }
-            ContractError::ZeroData(..) => true,
+            ContractError::ZeroData(..)
+            | ContractError::UnknownFunction(..)
+            | ContractError::UnknownSelector(..) => true,
             _ => false,
         }
     }
@@ -93,9 +97,7 @@ pub fn testing_alloy_node_error() -> alloy_contract::Error {
 mod tests {
     use {
         crate::alloy::errors::{
-            ContractErrorExt,
-            testing_alloy_contract_error,
-            testing_alloy_node_error,
+            ContractErrorExt, testing_alloy_contract_error, testing_alloy_node_error,
         },
         alloy_contract::Error as ContractError,
         alloy_json_rpc::ErrorPayload,

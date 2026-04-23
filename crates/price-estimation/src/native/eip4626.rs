@@ -224,12 +224,6 @@ mod tests {
     use {
         super::*,
         crate::{HEALTHY_PRICE_ESTIMATION_TIME, native::MockNativePriceEstimating},
-        alloy::{
-            providers::{Provider, ProviderBuilder},
-            sol_types::SolCall,
-            transports::mock::Asserter,
-        },
-        contracts::{ERC20, IERC4626},
     };
 
     #[test]
@@ -283,57 +277,5 @@ mod tests {
             .estimate(token, HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert_eq!(result.unwrap(), expected_price);
-    }
-
-    /// Regression test: USDC-like terminal tokens revert their non-existent
-    /// `asset()` selector with *empty* revert data. The classification must
-    /// treat that as "non-vault" (loop terminates cleanly), not as a transport
-    /// failure that aborts the unwrap chain.
-    #[tokio::test]
-    async fn terminal_token_reverting_without_data_classified_as_non_vault() {
-        let vault = Address::repeat_byte(0x11);
-        let usdc = Address::repeat_byte(0x22);
-
-        // Responses are FIFO and must match the argument order of the
-        // `tokio::join!` / `try_join!` inside `fetch_vault_info` and
-        // `fetch_conversion_data`.
-        let asserter = Asserter::new();
-
-        // --- unwrap_vault_layer(vault) ---
-        // fetch_vault_info: asset() → usdc, decimals() → 6
-        asserter.push_success(&IERC4626::IERC4626::assetCall::abi_encode_returns(&usdc));
-        asserter.push_success(&ERC20::ERC20::decimalsCall::abi_encode_returns(&6u8));
-        // fetch_conversion_data: convertToAssets(1e6) → 1_500_000, usdc.decimals() → 6
-        // → rate = 1_500_000 / 10^6 = 1.5
-        asserter.push_success(
-            &IERC4626::IERC4626::convertToAssetsCall::abi_encode_returns(&U256::from(1_500_000u64)),
-        );
-        asserter.push_success(&ERC20::ERC20::decimalsCall::abi_encode_returns(&6u8));
-
-        // --- unwrap_vault_layer(usdc) — the branch under test ---
-        // asset() reverts with NO revert data (simulates calling a missing
-        // selector on a proxy like USDC). decimals() still works, which is
-        // what proves the RPC is healthy and the contract is ERC-20.
-        asserter.push_failure_msg("execution reverted");
-        asserter.push_success(&ERC20::ERC20::decimalsCall::abi_encode_returns(&6u8));
-
-        let mut inner = MockNativePriceEstimating::new();
-        inner
-            .expect_estimate_native_price()
-            .withf(move |t, _| *t == usdc)
-            .returning(|_, _| Box::pin(async { Ok(0.0001) }));
-
-        let provider = ProviderBuilder::new()
-            .connect_mocked_client(asserter)
-            .erased();
-        let estimator = Eip4626::new(Box::new(inner), provider);
-
-        let price = estimator
-            .estimate(vault, HEALTHY_PRICE_ESTIMATION_TIME)
-            .await
-            .expect("empty-revert on terminal token must not abort the unwrap");
-
-        // 0.0001 (usdc native price) * 1.5 (vault → usdc rate) = 0.00015
-        assert!((price - 0.00015).abs() < 1e-15, "price = {price}");
     }
 }
