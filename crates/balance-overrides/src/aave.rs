@@ -133,24 +133,10 @@ pub async fn probe_aave_token(web3: &Web3, token: Address) -> Option<(Address, A
 }
 
 /// Builds a state override that makes `balanceOf(holder)` on the aToken
-/// report at least `amount`. Writes into the canonical `_userState` slot
-/// (`USER_STATE_SLOT`) shared by all Aave v3 aTokens. Returns `None` if we
-/// can't reach the pool or the math overflows.
-///
-/// Uses `getReserveData(underlying).liquidityIndex` (the stored index)
-/// rather than `getReserveNormalizedIncome(underlying)` (stored × linear
-/// accrual to `block.timestamp`) on purpose: the stored index is a
-/// monotone lower bound for whatever Aave will compute at simulation time.
-/// With the accrued value, the override was calibrated on the 1-wei
-/// boundary and any block-of-drift between the RPC that returned the
-/// index and the block Tenderly pins the sim to left `balanceOf` exactly
-/// `amount - 1`, which made Aave's internal `UserState.balance -=
-/// rayDiv(amount, sim_index)` underflow inside the donor's transfer to
-/// the trader, surfacing to the verifier as
-/// `execution reverted: trader does not have enough sell token`.
-/// With the stored index the sim's index is always `>=` our compute
-/// index, so `rayMul(scaled, sim_index) >= amount` and the transfer goes
-/// through.
+/// report at least `amount`. Scales against the stored `liquidityIndex`
+/// so that Aave's accrued index at sim time (stored plus linear accrual)
+/// is always a monotone upper bound, guaranteeing `rayMul(scaled, idx)
+/// >= amount` regardless of which block the sim lands on.
 pub async fn build_override(
     web3: &Web3,
     a_token: Address,

@@ -393,20 +393,8 @@ impl Detector {
     }
 }
 
-/// Is the `balance` returned by `balanceOf` after applying the override
-/// consistent with the `test_balance` we wrote? Every strategy except
-/// `AaveV3AToken` must match exactly.
-///
-/// For `AaveV3AToken` the override is calibrated against the stored
-/// `liquidityIndex` so that Aave's `rayMul(scaled, accrued_idx) >=
-/// test_balance` always holds at call time. The call-time accrued index
-/// equals `stored + linear_accrual_to_block.timestamp`, which overshoots
-/// the stored value by `rate * elapsed_since_lastUpdateTimestamp`. That
-/// gives a realistic overshoot on the order of a few ppm per hour of pool
-/// inactivity. Accept anything within 1% either way: wide enough to cover
-/// realistic accrual drift and the 1-wei `rayDiv` round-trip at the
-/// stored-index boundary, still tight enough that an unrelated slot
-/// returning garbage is rejected.
+/// `AaveV3AToken` allows 1% of drift because the override is calibrated
+/// against the stored `liquidityIndex` and `balanceOf` accrues on top.
 fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U256) -> bool {
     match strategy {
         Strategy::AaveV3AToken { .. } => {
