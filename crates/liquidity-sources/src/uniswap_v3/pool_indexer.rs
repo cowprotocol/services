@@ -109,22 +109,24 @@ struct IndexerTick {
     liquidity_net: String,
 }
 
-impl IndexerPool {
-    fn into_pool_data(self) -> Result<PoolData> {
-        Ok(PoolData {
-            id: self.id,
+impl TryFrom<IndexerPool> for PoolData {
+    type Error = anyhow::Error;
+
+    fn try_from(pool: IndexerPool) -> Result<Self> {
+        Ok(Self {
+            id: pool.id,
             token0: Token {
-                id: self.token0.id,
-                decimals: self.token0.decimals.unwrap_or(0),
+                id: pool.token0.id,
+                decimals: pool.token0.decimals.unwrap_or(0),
             },
             token1: Token {
-                id: self.token1.id,
-                decimals: self.token1.decimals.unwrap_or(0),
+                id: pool.token1.id,
+                decimals: pool.token1.decimals.unwrap_or(0),
             },
-            fee_tier: U256::from_str(&self.fee_tier).context("parse fee_tier")?,
-            liquidity: U256::from_str(&self.liquidity).context("parse liquidity")?,
-            sqrt_price: U256::from_str(&self.sqrt_price).context("parse sqrt_price")?,
-            tick: BigInt::from(self.tick),
+            fee_tier: U256::from_str(&pool.fee_tier).context("parse fee_tier")?,
+            liquidity: U256::from_str(&pool.liquidity).context("parse liquidity")?,
+            sqrt_price: U256::from_str(&pool.sqrt_price).context("parse sqrt_price")?,
+            tick: BigInt::from(pool.tick),
             ticks: None,
         })
     }
@@ -179,7 +181,7 @@ impl V3PoolDataSource for PoolIndexerClient {
                 .pools
                 .into_iter()
                 .filter(|p| p.liquidity != "0")
-                .map(IndexerPool::into_pool_data)
+                .map(PoolData::try_from)
                 .collect::<Result<Vec<_>>>()?;
             pools.extend(filtered);
             match page.next_cursor {
@@ -244,7 +246,7 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .context("pools-by-ids body")?;
     resp.pools
         .into_iter()
-        .map(IndexerPool::into_pool_data)
+        .map(PoolData::try_from)
         .collect()
 }
 
