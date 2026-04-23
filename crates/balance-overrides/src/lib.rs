@@ -266,8 +266,10 @@ impl BalanceOverriding for DummyOverrider {
 mod tests {
     use {
         super::*,
-        crate::aave::{pack_user_state, ray_div},
+        crate::aave::{RAY, ReserveConfigurationMap, ReserveData, pack_user_state, ray_div},
         alloy_primitives::{address, b256},
+        alloy_provider::mock::Asserter,
+        alloy_sol_types::SolValue,
         ethrpc::mock,
         maplit::hashmap,
     };
@@ -535,7 +537,6 @@ mod tests {
     /// used to bite at the boundary).
     #[test]
     fn aave_v3_a_token_override_round_trips_against_accrued_index() {
-        use crate::aave::RAY;
         fn ray_mul(a: U256, b: U256) -> U256 {
             (a * b + (RAY >> 1)) / RAY
         }
@@ -588,12 +589,6 @@ mod tests {
 
     #[tokio::test]
     async fn aave_v3_a_token_override_scales_amount_and_writes_low_128() {
-        use {
-            crate::aave::{ReserveConfigurationMap, ReserveData},
-            alloy_provider::mock::Asserter,
-            alloy_sol_types::SolValue,
-        };
-
         // aEthWETH mainnet triple.
         let a_token = address!("4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8");
         let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
