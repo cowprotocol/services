@@ -97,7 +97,9 @@ pub fn testing_alloy_node_error() -> alloy_contract::Error {
 mod tests {
     use {
         crate::alloy::errors::{
-            ContractErrorExt, testing_alloy_contract_error, testing_alloy_node_error,
+            ContractErrorExt,
+            testing_alloy_contract_error,
+            testing_alloy_node_error,
         },
         alloy_contract::Error as ContractError,
         alloy_json_rpc::ErrorPayload,
