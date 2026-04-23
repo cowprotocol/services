@@ -123,7 +123,10 @@ async fn init_liquidity(
 
     let source: Arc<dyn V3PoolDataSource> = if let Some(url) = &config.pool_indexer_url {
         tracing::info!(%url, "uniswap v3: using pool-indexer as data source");
-        Arc::new(PoolIndexerClient::new(url.clone(), http))
+        Arc::new(
+            PoolIndexerClient::new(url.clone(), eth.chain(), http)
+                .context("failed to construct pool-indexer client")?,
+        )
     } else {
         let graph_url = config
             .graph_url

@@ -16,6 +16,7 @@ use {
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
     async_trait::async_trait,
+    chain::Chain,
     num::BigInt,
     reqwest::{Client, Url},
     serde::Deserialize,
@@ -30,21 +31,29 @@ const POOL_IDS_PER_REQUEST: usize = 500;
 const LIST_PAGE_SIZE: u64 = 5000;
 
 pub struct PoolIndexerClient {
-    /// Base URL including the `/api/v1/{network}/uniswap/v3` prefix. Trailing
-    /// slash normalization is done at construction.
+    /// Service root (e.g. `http://pool-indexer/`).
     base_url: Url,
     http: Client,
 }
 
 impl PoolIndexerClient {
-    pub fn new(mut base_url: Url, http: Client) -> Self {
+    pub fn new(base_url: Url, chain: Chain, http: Client) -> Result<Self> {
         // `Url::join` replaces the last path segment unless the base ends in
-        // a `/`. Normalize once so every `path()` call behaves like "append".
-        if !base_url.path().ends_with('/') {
-            let p = format!("{}/", base_url.path());
-            base_url.set_path(&p);
-        }
-        Self { base_url, http }
+        // a `/`. Build `<service-root>/api/v1/<network>/uniswap/v3/` once so
+        // every `path()` call behaves like "append".
+        let prefix = format!("api/v1/{}/uniswap/v3/", chain.slug());
+        let with_trailing_slash = if base_url.path().ends_with('/') {
+            base_url
+        } else {
+            let mut u = base_url;
+            let p = format!("{}/", u.path());
+            u.set_path(&p);
+            u
+        };
+        let base_url = with_trailing_slash
+            .join(&prefix)
+            .with_context(|| format!("joining {prefix} onto {with_trailing_slash}"))?;
+        Ok(Self { base_url, http })
     }
 
     fn path(&self, suffix: &str) -> Result<Url> {
