@@ -175,7 +175,15 @@ impl V3PoolDataSource for PoolIndexerClient {
                 fetched_block_number = page.block_number;
             }
             for p in page.pools {
-                pools.push(p.into_pool_data()?);
+                let data = p.into_pool_data()?;
+                // Mirror the subgraph path (graph_api.rs): skip pools with no
+                // active in-range liquidity. Keeps `PoolsCheckpointHandler`'s
+                // top-N-by-liquidity selection from being dominated by scam
+                // pools whose only LP is concentrated at MIN/MAX ticks and
+                // report astronomical virtual `liquidity` values.
+                if !data.liquidity.is_zero() {
+                    pools.push(data);
+                }
             }
             match page.next_cursor {
                 Some(c) => cursor = Some(c),
