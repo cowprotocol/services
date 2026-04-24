@@ -11,7 +11,7 @@ use {
     },
     bigdecimal::BigDecimal,
     serde::{Deserialize, Serialize},
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
 /// A single tick entry with its net liquidity.
@@ -109,22 +109,15 @@ pub async fn get_ticks_bulk(
 }
 
 fn group_ticks_by_pool(rows: Vec<db::PoolTickRow>) -> Vec<PoolTicks> {
-    let mut pools: Vec<PoolTicks> = Vec::new();
-
+    let mut groups: HashMap<Address, Vec<TickEntry>> = HashMap::new();
     for row in rows {
-        let tick = TickEntry {
+        groups.entry(row.pool_address).or_default().push(TickEntry {
             tick_idx: row.tick_idx,
             liquidity_net: row.liquidity_net,
-        };
-
-        match pools.last_mut() {
-            Some(last) if last.pool == row.pool_address => last.ticks.push(tick),
-            _ => pools.push(PoolTicks {
-                pool: row.pool_address,
-                ticks: vec![tick],
-            }),
-        }
+        });
     }
-
-    pools
+    groups
+        .into_iter()
+        .map(|(pool, ticks)| PoolTicks { pool, ticks })
+        .collect()
 }
