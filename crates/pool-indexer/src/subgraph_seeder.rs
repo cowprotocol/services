@@ -281,12 +281,11 @@ impl<'a> SubgraphSeeder<'a> {
                 .subgraph
                 .fetch_pools_page(self.snapshot_block, &cursor)
                 .await?;
-            let page_len = page.len();
 
             all_pool_ids.extend(self.persist_pool_page(&page).await?);
             info!(total = all_pool_ids.len(), "pools seeded");
 
-            if page_len < PAGE_SIZE {
+            if page.len() < PAGE_SIZE {
                 break;
             }
 
