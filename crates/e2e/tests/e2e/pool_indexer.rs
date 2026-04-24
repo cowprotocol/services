@@ -5,8 +5,9 @@ use {
         sol_types::SolEvent,
     },
     contracts::test::{MockUniswapV3Factory, MockUniswapV3Pool},
-    e2e::setup::{TIMEOUT, run_test, wait_for_condition},
+    e2e::setup::{OnchainComponents, TIMEOUT, colocation, run_test, wait_for_condition},
     ethrpc::Web3,
+    number::units::EthUnit,
     pool_indexer::config::{
         ApiConfig,
         Configuration,
@@ -30,6 +31,7 @@ static CURRENT_HANDLE: Mutex<Option<tokio::task::JoinHandle<()>>> = Mutex::new(N
 
 const POOL_INDEXER_PORT: u16 = 7778;
 const POOL_INDEXER_HOST: &str = "http://127.0.0.1:7778";
+const POOL_INDEXER_METRICS_PORT: u16 = 7779;
 const LOCAL_DB_URL: &str = "postgresql://";
 
 // sqrt(1) * 2^96 — valid starting price
@@ -60,8 +62,13 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
 
 /// Start the pool-indexer. Aborts any previously-running instance first
 /// (handles leftover from a prior test that panicked before calling
-/// `stop_pool_indexer`).
+/// `stop_pool_indexer`). `metrics_port = 0` asks the OS to pick a random
+/// port; tests that need to scrape metrics should pass a fixed port.
 async fn start_pool_indexer(factory: Address) {
+    start_pool_indexer_at(factory, 0).await;
+}
+
+async fn start_pool_indexer_at(factory: Address, metrics_port: u16) {
     // Abort any handle left over from a previous test that panicked.
     if let Some(old) = CURRENT_HANDLE.lock().unwrap().take() {
         old.abort();
@@ -94,10 +101,8 @@ async fn start_pool_indexer(factory: Address) {
         api: ApiConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),
         },
-        // Port 0 → OS-assigned random port so repeated start/stop inside a
-        // single test process doesn't collide on the default metrics port.
         metrics: pool_indexer::config::MetricsConfig {
-            bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
+            bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, metrics_port)),
         },
     };
     let handle = tokio::task::spawn(pool_indexer::run(config));
@@ -525,5 +530,114 @@ async fn pagination(web3: Web3) {
         "pagination returned duplicates"
     );
 
+    stop_pool_indexer();
+}
+
+/// Reads the prometheus `/metrics` endpoint and extracts the request count
+/// for `GET /api/v1/{network}/uniswap/v3/pools` with status 200. The metric
+/// family name is `pool_indexer_api_requests` (optionally prefixed by the
+/// process registry's namespace — e.g. `driver_pool_indexer_api_requests`
+/// when the driver was the first to call `setup_registry_reentrant`), so we
+/// substring-match on the route+status suffix rather than assume a prefix.
+async fn pools_requests_counter(metrics_port: u16) -> u64 {
+    let text = reqwest::get(format!("http://127.0.0.1:{metrics_port}/metrics"))
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let needle =
+        r#"pool_indexer_api_requests{route="/api/v1/{network}/uniswap/v3/pools",status="200"}"#;
+    for line in text.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        if let Some(idx) = line.find(needle) {
+            let after = line[idx + needle.len()..].trim();
+            return after.parse().unwrap_or(0);
+        }
+    }
+    0
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_pool_indexer_driver_integration() {
+    run_test(driver_integration).await;
+}
+
+/// End-to-end: pool-indexer indexes a mock V3 factory, driver starts with
+/// `pool-indexer-url` pointing at the service, and we assert (via the
+/// indexer's own request counter) that the driver actually hit `GET /pools`
+/// during `UniswapV3PoolFetcher::new`. A baseline solver is spun up only
+/// because the driver's TOML config requires at least one `[[solver]]`; the
+/// solver itself isn't exercised here.
+async fn driver_integration(web3: Web3) {
+    let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
+    clear_pool_indexer_tables(&db).await;
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+
+    let (factory, _pool_addr) = deploy_univ3(&web3).await;
+    let factory_addr = *factory.address();
+    let head = web3.provider.get_block_number().await.unwrap();
+    seed_checkpoint(&db, factory_addr, 0).await;
+
+    start_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT).await;
+
+    wait_for_condition(TIMEOUT, || async {
+        let resp = reqwest::get(format!(
+            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+        ))
+        .await
+        .ok()?;
+        let body: serde_json::Value = resp.json().await.ok()?;
+        Some(body["block_number"].as_u64()? >= head)
+    })
+    .await
+    .expect("indexer did not reach head");
+
+    // Capture baseline after all test-side warm-up requests so the final
+    // assertion proves a bump came from the driver, not from the polling
+    // above.
+    let baseline = pools_requests_counter(POOL_INDEXER_METRICS_PORT).await;
+
+    let baseline_solver = colocation::start_baseline_solver(
+        "test_solver".into(),
+        solver.clone(),
+        *onchain.contracts().weth.address(),
+        vec![],
+        1,
+        true,
+    )
+    .await;
+
+    // The router address is required by the `manual` variant of the
+    // uniswap-v3 config but only used at settlement time — any 20-byte value
+    // is fine for a pool-fetch-only integration test.
+    let config_override = format!(
+        r#"
+[[liquidity.uniswap-v3]]
+router = "0x000000000000000000000000000000000000dEaD"
+pool-indexer-url = "{POOL_INDEXER_HOST}"
+max-pools-to-initialize = 10
+"#
+    );
+    let driver_handle = colocation::start_driver_with_config_override(
+        onchain.contracts(),
+        vec![baseline_solver],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+        Some(&config_override),
+    );
+
+    wait_for_condition(TIMEOUT, || async {
+        pools_requests_counter(POOL_INDEXER_METRICS_PORT).await > baseline
+    })
+    .await
+    .expect("driver did not query pool-indexer /pools within timeout");
+
+    driver_handle.abort();
     stop_pool_indexer();
 }
