@@ -11,7 +11,9 @@ use {
         },
         state_override_helpers::{EthBalanceOverride, SolverAllowlisting},
     },
-    alloy_primitives::{Address, U256},
+    alloy_network::Ethereum,
+    alloy_primitives::{Address, Bytes, U256},
+    alloy_provider::{DynProvider, EthCall, Provider},
     alloy_rpc_types::{
         TransactionRequest,
         state::{AccountOverride, StateOverride},
@@ -20,6 +22,7 @@ use {
     anyhow::Result,
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     model::{
+        DomainSeparator,
         order::{OrderData, OrderKind},
         signature::{Signature, SigningScheme},
     },
@@ -120,9 +123,21 @@ pub enum Prices {
 
 /// The output of [`SimulationBuilder::build`]: a transaction request and state
 /// overrides ready to be passed to an alloy provider for simulation.
-pub struct SettlementCall {
+pub struct EthCallInputs {
     pub request: TransactionRequest,
     pub state_overrides: StateOverride,
+    pub provider: DynProvider,
+}
+
+impl EthCallInputs {
+    /// Prepares an `eth_call` with the transaction request and state overrides
+    /// already applied. The call is not sent — callers can chain additional
+    /// builder methods (e.g. `.block(...)`) before awaiting.
+    pub fn simulate(self) -> EthCall<Ethereum, Bytes> {
+        self.provider
+            .call(self.request)
+            .overrides(self.state_overrides)
+    }
 }
 
 /// Assembles a GPv2 settlement call for simulation purposes.
@@ -202,7 +217,7 @@ impl SimulationBuilder {
     }
 
     /// Finishes the simulation struct based on the configuration thus far.
-    pub async fn build(self) -> Result<SettlementCall, BuildError> {
+    pub async fn build(self) -> Result<EthCallInputs, BuildError> {
         self.build_with_modifications(|_| {}).await
     }
 
@@ -212,8 +227,10 @@ impl SimulationBuilder {
     pub async fn build_with_modifications(
         self,
         customize: impl FnOnce(&mut EncodedSettlement),
-    ) -> Result<SettlementCall, BuildError> {
+    ) -> Result<EthCallInputs, BuildError> {
         let order = self.order.as_ref().ok_or(BuildError::NoOrder)?;
+
+        let executed_amount = self.executed_amount(order).await;
 
         let (tokens, clearing_prices) = match self.prices {
             Some(Prices::Explicit {
@@ -236,11 +253,6 @@ impl SimulationBuilder {
             .iter()
             .position(|t| *t == order.data.buy_token)
             .ok_or(BuildError::MissingBuyToken)?;
-
-        let executed_amount = order.executed_amount.unwrap_or(match order.data.kind {
-            OrderKind::Sell => order.data.sell_amount,
-            OrderKind::Buy => order.data.buy_amount,
-        });
 
         // Compute before clearing_prices is moved into EncodedSettlement below.
         let fund_amount = self
@@ -344,7 +356,7 @@ impl SimulationBuilder {
             state_overrides.insert(address, state_override);
         };
 
-        Ok(SettlementCall {
+        Ok(EthCallInputs {
             request: TransactionRequest {
                 from: Some(from),
                 to: Some(to.into()),
@@ -352,7 +364,47 @@ impl SimulationBuilder {
                 ..Default::default()
             },
             state_overrides,
+            provider: self.simulator.0.provider.clone(),
         })
+    }
+
+    /// Determines the amount the order is supposed to be filled with.
+    /// If user did not configure a value the order's remaining fillable
+    /// amount will be chosen (determined by call to settlement contract).
+    async fn executed_amount(&self, order: &Order) -> U256 {
+        if let Some(executed_amount) = order.executed_amount {
+            return executed_amount;
+        }
+
+        let full = match order.data.kind {
+            OrderKind::Sell => order.data.sell_amount,
+            OrderKind::Buy => order.data.buy_amount,
+        };
+
+        let uid = order
+            .data
+            .uid(&self.simulator.0.domain_separator, order.owner);
+        let filled_res = self
+            .simulator
+            .0
+            .settlement
+            .filledAmount(Bytes::from(uid.0))
+            .call()
+            .await;
+
+        match filled_res {
+            Err(err) => {
+                // doesn't make sense to pre-emptively fail the simulation
+                // in this case. Most orders are not filled at all so it's
+                // reasonable to use the full order amount as a fallback here.
+                tracing::debug!(
+                    ?err,
+                    "failed to query executed amount - assume full order amount"
+                );
+                full
+            }
+            Ok(filled_amount) => full.saturating_sub(filled_amount),
+        }
     }
 }
 
@@ -375,6 +427,8 @@ struct Inner {
     authenticator: Address,
     flash_loan_router: Address,
     balance_overrides: Arc<dyn BalanceOverriding>,
+    provider: DynProvider,
+    domain_separator: DomainSeparator,
 }
 
 /// Holds the settlement contract and its authenticator address, and acts as a
@@ -390,11 +444,15 @@ impl SettlementSimulator {
         balance_overrides: Arc<dyn BalanceOverriding>,
     ) -> Result<Self> {
         let authenticator = Address(settlement.authenticator().call().await?.0);
+        let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
+        let provider = settlement.provider().clone();
         Ok(Self(Arc::new(Inner {
             settlement,
             authenticator,
             flash_loan_router,
             balance_overrides,
+            provider,
+            domain_separator,
         })))
     }
 

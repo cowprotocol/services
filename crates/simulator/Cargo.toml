@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 alloy-contract = { workspace = true }
 alloy-eips = { workspace = true }
+alloy-network = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 alloy-rpc-types = { workspace = true }
