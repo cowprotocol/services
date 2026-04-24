@@ -539,20 +539,26 @@ async fn pagination(web3: Web3) {
 /// process registry's namespace — e.g. `driver_pool_indexer_api_requests`
 /// when the driver was the first to call `setup_registry_reentrant`), so we
 /// substring-match on the route+status suffix rather than assume a prefix.
-async fn pools_requests_counter(metrics_port: u16) -> u64 {
+/// Reads the prometheus counter `api_requests{route, status="200"}` for the
+/// given route template (e.g. `/api/v1/{network}/uniswap/v3/pools`). The
+/// metric family name is `pool_indexer_api_requests`, optionally prefixed by
+/// the process registry's namespace (e.g. `driver_pool_indexer_api_requests`
+/// when the driver was the first to call `setup_registry_reentrant`), so we
+/// substring-match on the family-name-plus-labels rather than assume a
+/// prefix.
+async fn api_requests_counter(metrics_port: u16, route: &str) -> u64 {
     let text = reqwest::get(format!("http://127.0.0.1:{metrics_port}/metrics"))
         .await
         .unwrap()
         .text()
         .await
         .unwrap();
-    let needle =
-        r#"pool_indexer_api_requests{route="/api/v1/{network}/uniswap/v3/pools",status="200"}"#;
+    let needle = format!(r#"pool_indexer_api_requests{{route="{route}",status="200"}}"#);
     for line in text.lines() {
         if line.starts_with('#') {
             continue;
         }
-        if let Some(idx) = line.find(needle) {
+        if let Some(idx) = line.find(&needle) {
             let after = line[idx + needle.len()..].trim();
             return after.parse().unwrap_or(0);
         }
@@ -568,11 +574,15 @@ async fn local_node_pool_indexer_driver_integration() {
 
 /// End-to-end: pool-indexer indexes a mock V3 factory, driver starts with
 /// `pool-indexer-url` pointing at the service, and we assert (via the
-/// indexer's own request counter) that the driver actually hit `GET /pools`
-/// during `UniswapV3PoolFetcher::new`. A baseline solver is spun up only
-/// because the driver's TOML config requires at least one `[[solver]]`; the
-/// solver itself isn't exercised here.
+/// indexer's own request counters) that the driver actually fetched pools
+/// AND their ticks. The ticks endpoint is the stronger signal — it only
+/// fires after `UniswapV3PoolFetcher::new` has a non-empty registered-pool
+/// set to pick a top-N from. A baseline solver is spun up only because the
+/// driver's TOML config requires at least one `[[solver]]`.
 async fn driver_integration(web3: Web3) {
+    const POOLS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools";
+    const TICKS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/ticks";
+
     let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
     clear_pool_indexer_tables(&db).await;
 
@@ -586,6 +596,10 @@ async fn driver_integration(web3: Web3) {
 
     start_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT).await;
 
+    // Wait until the indexer has both caught up to head AND surfaced the
+    // seeded pool. If we only check the block number the driver could race
+    // in and see an empty registered-pool set, which would never trigger a
+    // ticks fetch and silently degrade the test.
     wait_for_condition(TIMEOUT, || async {
         let resp = reqwest::get(format!(
             "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
@@ -593,15 +607,18 @@ async fn driver_integration(web3: Web3) {
         .await
         .ok()?;
         let body: serde_json::Value = resp.json().await.ok()?;
-        Some(body["block_number"].as_u64()? >= head)
+        let at_head = body["block_number"].as_u64()? >= head;
+        let has_pool = !body["pools"].as_array()?.is_empty();
+        Some(at_head && has_pool)
     })
     .await
-    .expect("indexer did not reach head");
+    .expect("indexer did not reach head with pool visible");
 
-    // Capture baseline after all test-side warm-up requests so the final
-    // assertion proves a bump came from the driver, not from the polling
+    // Capture baselines after all test-side warm-up requests so the final
+    // assertions prove the bumps came from the driver, not from the polling
     // above.
-    let baseline = pools_requests_counter(POOL_INDEXER_METRICS_PORT).await;
+    let baseline_pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
+    let baseline_ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
 
     let baseline_solver = colocation::start_baseline_solver(
         "test_solver".into(),
@@ -633,10 +650,12 @@ max-pools-to-initialize = 10
     );
 
     wait_for_condition(TIMEOUT, || async {
-        pools_requests_counter(POOL_INDEXER_METRICS_PORT).await > baseline
+        let pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
+        let ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
+        pools > baseline_pools && ticks > baseline_ticks
     })
     .await
-    .expect("driver did not query pool-indexer /pools within timeout");
+    .expect("driver did not complete pool + tick fetch from pool-indexer within timeout");
 
     driver_handle.abort();
     stop_pool_indexer();
