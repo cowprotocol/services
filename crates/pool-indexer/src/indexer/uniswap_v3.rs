@@ -403,10 +403,6 @@ pub(crate) fn signed24_to_i32(v: alloy::primitives::aliases::I24) -> i32 {
     (raw << 8).cast_signed() >> 8
 }
 
-fn log_block_number(log: &Log) -> u64 {
-    log.block_number.unwrap_or_default()
-}
-
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
     contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
         .liquidity()
@@ -618,7 +614,7 @@ impl LogAccumulator {
         let pool: Address = e.pool;
         let token0: Address = e.token0;
         let token1: Address = e.token1;
-        let created_block = log_block_number(log);
+        let created_block = log.block_number.unwrap_or_default();
         tracing::debug!(%pool, %token0, %token1, fee = e.fee.to::<u32>(), "discovered pool");
         self.new_pools.insert(
             pool,
@@ -644,7 +640,7 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log_block_number(log);
+        let block = log.block_number.unwrap_or_default();
         let liquidity = self
             .full_states
             .get(&pool)
@@ -670,7 +666,7 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log_block_number(log);
+        let block = log.block_number.unwrap_or_default();
         self.full_states.insert(
             pool,
             PoolStateData {
@@ -692,7 +688,7 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log_block_number(log);
+        let block = log.block_number.unwrap_or_default();
         let amount = e.amount.cast_signed();
         self.record_tick_range_delta(
             pool,
@@ -711,7 +707,7 @@ impl LogAccumulator {
         };
         let e = &decoded.data;
         let pool = log.address();
-        let block = log_block_number(log);
+        let block = log.block_number.unwrap_or_default();
         let amount = e.amount.cast_signed();
         self.record_tick_range_delta(
             pool,

@@ -5,7 +5,7 @@
 //! more than one network is active in the same process. Call `Metrics::get()`
 //! to reach the shared registry-backed instance.
 
-use {prometheus::HistogramVec, prometheus_metric_storage::MetricStorage, std::time::Duration};
+use {prometheus::HistogramVec, prometheus_metric_storage::MetricStorage};
 
 #[derive(MetricStorage)]
 #[metric(subsystem = "pool_indexer")]
@@ -90,20 +90,16 @@ impl Metrics {
             .expect("unexpected pool_indexer metrics duplicate registration")
     }
 
-    /// Convenience — record a histogram observation from a `Duration`.
-    fn observe_seconds(hist: &HistogramVec, labels: &[&str], d: Duration) {
-        hist.with_label_values(labels).observe(d.as_secs_f64());
-    }
-
     /// Returns a guard that records the elapsed time on a histogram when it's
     /// dropped. Use with `let _timer = Metrics::timer(&hist, &[..]);` at the
     /// top of a function / block. Cleaner than manual `Instant::now()` +
-    /// `observe_seconds` pairs, and records even on early return.
+    /// observe pairs, and records even on early return.
     #[must_use]
     pub fn timer<'a>(hist: &'a HistogramVec, labels: &'a [&'a str]) -> impl Drop + use<'a> {
         let start = std::time::Instant::now();
         scopeguard::guard(start, move |start| {
-            Self::observe_seconds(hist, labels, start.elapsed());
+            hist.with_label_values(labels)
+                .observe(start.elapsed().as_secs_f64());
         })
     }
 }

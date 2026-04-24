@@ -16,7 +16,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
     initialize_observability();
     observe::metrics::setup_registry(Some("pool_indexer".into()), None);
-    let config = load_configuration(&args);
+    let config = Configuration::from_path(&args.config).expect("failed to load configuration");
     tracing::info!("pool-indexer starting");
     run(config).await;
 }
@@ -61,10 +61,6 @@ fn initialize_observability() {
     let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into());
     observe::tracing::init::initialize(&observe::Config::new(&log_filter, None, false, None));
     observe::panic_hook::install();
-}
-
-fn load_configuration(args: &Arguments) -> Configuration {
-    Configuration::from_path(&args.config).expect("failed to load configuration")
 }
 
 fn build_api_state(db: &PgPool, networks: &[NetworkConfig]) -> Arc<AppState> {
