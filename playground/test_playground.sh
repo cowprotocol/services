@@ -22,13 +22,13 @@ APPDATA='{"version":"1.3.0","metadata":{}}'
 PRIVATE_KEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 
 # Wait for 2 minutes for all services are read
-echo "Waiting until all services are ready..."
+echo -e "\n    Waiting until all services are ready..."
 curl --retry 24 --retry-delay 5 --retry-all-errors --fail-with-body -s --show-error \
   -H 'accept:application/json' \
   http://$HOST/api/v1/token/$BUY_TOKEN/native_price > /dev/null
 
 # Run test flow
-echo -e "\n- Private key: $PRIVATE_KEY"
+echo -e "\n    Private key: $PRIVATE_KEY"
 receiver=$(cast wallet address $PRIVATE_KEY)
 
 # Calculate AppData hash
@@ -98,11 +98,11 @@ print_settlement_tx() {
   tx_hash=$(jq -r '.[0].txHash // empty' <<< "${trade_response}")
 
   if [ -n "$tx_hash" ]; then
-    echo -e "\n-------------------------------------------------- SUCCESS ---------------------------------------------------"
+    echo -e "\n--------------------------------------------------------------- SUCCESS ----------------------------------------------------------------"
     echo "    Settlement tx hash: $tx_hash"
     echo "    Inspect with: cast receipt $tx_hash --rpc-url http://localhost:8545"
     echo "    Open in Otterscan: $OTTERSCAN_URL/tx/$tx_hash"
-    echo "--------------------------------------------------------------------------------------------------------------"
+    echo "----------------------------------------------------------------------------------------------------------------------------------------"
   else
     echo "Settlement tx hash not available yet"
   fi
