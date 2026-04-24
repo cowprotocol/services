@@ -162,10 +162,7 @@ async fn list_pools(
     let cursor = query.cursor()?;
 
     // Fetch one extra row to determine if there is a next page.
-    let mut rows = match cursor {
-        Some(cursor) => db::get_pools_after(&state.db, chain_id, cursor, limit + 1).await?,
-        None => db::get_pools(&state.db, chain_id, limit + 1).await?,
-    };
+    let mut rows = db::get_pools(&state.db, chain_id, cursor, limit + 1).await?;
 
     let has_next = rows.len() > limit as usize;
     rows.truncate(limit as usize);

@@ -22,9 +22,7 @@ use {
     tracing::instrument,
 };
 
-/// Cached liquidity value keyed by (pool_address, block_number).
 type LiquidityCache = HashMap<(Address, u64), u128>;
-/// Cached ERC-20 decimal value keyed by token address.
 type DecimalsCache = HashMap<Address, u8>;
 
 const SYMBOL_BACKFILL_BATCH_SIZE: usize = 500;
@@ -305,22 +303,17 @@ impl UniswapV3Indexer {
         );
 
         let network = self.network.as_str();
-        metrics
-            .events_applied
-            .with_label_values(&[network, "new_pool"])
-            .inc_by(changes.new_pools.len() as u64);
-        metrics
-            .events_applied
-            .with_label_values(&[network, "pool_state"])
-            .inc_by(changes.pool_states.len() as u64);
-        metrics
-            .events_applied
-            .with_label_values(&[network, "liq_update"])
-            .inc_by(changes.liquidity_updates.len() as u64);
-        metrics
-            .events_applied
-            .with_label_values(&[network, "tick_delta"])
-            .inc_by(changes.tick_deltas.len() as u64);
+        for (kind, count) in [
+            ("new_pool", changes.new_pools.len()),
+            ("pool_state", changes.pool_states.len()),
+            ("liq_update", changes.liquidity_updates.len()),
+            ("tick_delta", changes.tick_deltas.len()),
+        ] {
+            metrics
+                .events_applied
+                .with_label_values(&[network, kind])
+                .inc_by(count as u64);
+        }
 
         self.persist_chunk(chunk, changes).await?;
 
@@ -395,12 +388,6 @@ impl UniswapV3Indexer {
             .collect()
             .await
     }
-}
-
-/// Sign-extends a 24-bit signed integer (alloy I24) to i32.
-pub(crate) fn signed24_to_i32(v: alloy::primitives::aliases::I24) -> i32 {
-    let raw = v.into_raw().as_limbs()[0] as u32;
-    (raw << 8).cast_signed() >> 8
 }
 
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
@@ -653,7 +640,7 @@ impl LogAccumulator {
                 block_number: block,
                 sqrt_price_x96: e.sqrtPriceX96,
                 liquidity,
-                tick: signed24_to_i32(e.tick),
+                tick: e.tick.as_i32(),
             },
         );
         self.liq_only.remove(&pool);
@@ -674,7 +661,7 @@ impl LogAccumulator {
                 block_number: block,
                 sqrt_price_x96: e.sqrtPriceX96,
                 liquidity: e.liquidity,
-                tick: signed24_to_i32(e.tick),
+                tick: e.tick.as_i32(),
             },
         );
         self.liq_only.remove(&pool);
@@ -692,8 +679,8 @@ impl LogAccumulator {
         let amount = e.amount.cast_signed();
         self.record_tick_range_delta(
             pool,
-            signed24_to_i32(e.tickLower),
-            signed24_to_i32(e.tickUpper),
+            e.tickLower.as_i32(),
+            e.tickUpper.as_i32(),
             amount,
         );
         self.update_liquidity_from_cache(pool, block, liq_cache);
@@ -711,8 +698,8 @@ impl LogAccumulator {
         let amount = e.amount.cast_signed();
         self.record_tick_range_delta(
             pool,
-            signed24_to_i32(e.tickLower),
-            signed24_to_i32(e.tickUpper),
+            e.tickLower.as_i32(),
+            e.tickUpper.as_i32(),
             -amount,
         );
         self.update_liquidity_from_cache(pool, block, liq_cache);

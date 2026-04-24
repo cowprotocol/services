@@ -15,13 +15,7 @@
 use {
     crate::{
         db::uniswap_v3 as db,
-        indexer::uniswap_v3::{
-            NewPoolData,
-            PoolStateData,
-            TickDeltaData,
-            bisecting_get_logs,
-            signed24_to_i32,
-        },
+        indexer::uniswap_v3::{NewPoolData, PoolStateData, TickDeltaData, bisecting_get_logs},
     },
     alloy::{primitives::Address, providers::Provider, rpc::types::Log, sol_types::SolEvent},
     anyhow::{Context, Result},
@@ -284,7 +278,7 @@ async fn fetch_pool_state(
         block_number: at_block,
         sqrt_price_x96: slot0.sqrtPriceX96,
         liquidity,
-        tick: signed24_to_i32(slot0.tick),
+        tick: slot0.tick.as_i32(),
     })
 }
 
@@ -340,15 +334,15 @@ async fn reconstruct_and_persist_ticks(
             {
                 let e = &decoded.data;
                 let amount = e.amount.cast_signed();
-                *acc.entry((pool, signed24_to_i32(e.tickLower))).or_default() += amount;
-                *acc.entry((pool, signed24_to_i32(e.tickUpper))).or_default() -= amount;
+                *acc.entry((pool, e.tickLower.as_i32())).or_default() += amount;
+                *acc.entry((pool, e.tickUpper.as_i32())).or_default() -= amount;
             } else if *t == Burn::SIGNATURE_HASH
                 && let Ok(decoded) = Burn::decode_log(&log.inner)
             {
                 let e = &decoded.data;
                 let amount = e.amount.cast_signed();
-                *acc.entry((pool, signed24_to_i32(e.tickLower))).or_default() -= amount;
-                *acc.entry((pool, signed24_to_i32(e.tickUpper))).or_default() += amount;
+                *acc.entry((pool, e.tickLower.as_i32())).or_default() -= amount;
+                *acc.entry((pool, e.tickUpper.as_i32())).or_default() += amount;
             }
         }
 

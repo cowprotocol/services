@@ -1,11 +1,11 @@
-pub mod api;
-pub mod arguments;
-pub mod cold_seeder;
 pub mod config;
-pub mod db;
-pub mod indexer;
-pub mod metrics;
-pub mod run;
-pub mod subgraph_seeder;
-
 pub use run::{run, start};
+
+mod api;
+mod arguments;
+mod cold_seeder;
+mod db;
+mod indexer;
+mod metrics;
+mod run;
+mod subgraph_seeder;

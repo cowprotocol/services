@@ -65,131 +65,6 @@ pub async fn set_checkpoint(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn insert_pool(
-    tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
-    address: &Address,
-    token0: &Address,
-    token1: &Address,
-    fee: u32,
-    token0_decimals: Option<u8>,
-    token1_decimals: Option<u8>,
-    created_block: u64,
-) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO uniswap_v3_pools
-             (chain_id, address, token0, token1, fee, token0_decimals, token1_decimals, \
-         created_block)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (chain_id, address) DO NOTHING",
-    )
-    .bind(chain_id.cast_signed())
-    .bind(address.as_slice())
-    .bind(token0.as_slice())
-    .bind(token1.as_slice())
-    .bind(fee.cast_signed())
-    .bind(token0_decimals.map(i16::from))
-    .bind(token1_decimals.map(i16::from))
-    .bind(created_block.cast_signed())
-    .execute(&mut **tx)
-    .await
-    .context("insert_pool")?;
-    Ok(())
-}
-
-pub async fn upsert_pool_state(
-    tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
-    pool_address: &Address,
-    block_number: u64,
-    sqrt_price_x96: alloy_primitives::aliases::U160,
-    liquidity: u128,
-    tick: i32,
-) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO uniswap_v3_pool_states
-             (chain_id, pool_address, block_number, sqrt_price_x96, liquidity, tick)
-         SELECT $1, $2, $3, $4, $5, $6
-         WHERE EXISTS (SELECT 1 FROM uniswap_v3_pools WHERE chain_id = $1 AND address = $2)
-         ON CONFLICT (chain_id, pool_address) DO UPDATE
-             SET block_number   = EXCLUDED.block_number,
-                 sqrt_price_x96 = EXCLUDED.sqrt_price_x96,
-                 liquidity      = EXCLUDED.liquidity,
-                 tick           = EXCLUDED.tick",
-    )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
-    .bind(block_number.cast_signed())
-    .bind(u160_to_big_decimal(&sqrt_price_x96))
-    .bind(sql_u128(liquidity))
-    .bind(tick)
-    .execute(&mut **tx)
-    .await
-    .context("upsert_pool_state")?;
-    Ok(())
-}
-
-pub async fn update_pool_liquidity(
-    tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
-    pool_address: &Address,
-    block_number: u64,
-    liquidity: u128,
-) -> Result<()> {
-    sqlx::query(
-        "UPDATE uniswap_v3_pool_states
-         SET liquidity = $3, block_number = $4
-         WHERE chain_id = $1 AND pool_address = $2",
-    )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
-    .bind(sql_u128(liquidity))
-    .bind(block_number.cast_signed())
-    .execute(&mut **tx)
-    .await
-    .context("update_pool_liquidity")?;
-    Ok(())
-}
-
-/// Applies a signed delta to a tick's `liquidity_net`. Rows that reach zero
-/// are pruned (Uniswap V3 convention).
-pub async fn update_tick_liquidity_net(
-    tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
-    pool_address: &Address,
-    tick_idx: i32,
-    delta: i128,
-) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO uniswap_v3_ticks (chain_id, pool_address, tick_idx, liquidity_net)
-         SELECT $1, $2, $3, $4
-         WHERE EXISTS (SELECT 1 FROM uniswap_v3_pools WHERE chain_id = $1 AND address = $2)
-         ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
-             SET liquidity_net = uniswap_v3_ticks.liquidity_net + EXCLUDED.liquidity_net",
-    )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
-    .bind(tick_idx)
-    .bind(sql_i128(delta))
-    .execute(&mut **tx)
-    .await
-    .context("update_tick_liquidity_net upsert")?;
-
-    sqlx::query(
-        "DELETE FROM uniswap_v3_ticks
-         WHERE chain_id = $1 AND pool_address = $2 AND tick_idx = $3 AND liquidity_net = 0",
-    )
-    .bind(chain_id.cast_signed())
-    .bind(pool_address.as_slice())
-    .bind(tick_idx)
-    .execute(&mut **tx)
-    .await
-    .context("update_tick_liquidity_net prune")?;
-
-    Ok(())
-}
-
 pub async fn batch_insert_pools(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: u64,
@@ -490,34 +365,13 @@ impl TryFrom<PgRow> for PoolRow {
     }
 }
 
-/// Fetches a page of pools ordered by address with their current state.
-pub async fn get_pools(pool: &PgPool, chain_id: u64, limit: u64) -> Result<Vec<PoolRow>> {
-    let rows = sqlx::query(
-        "SELECT p.address, p.token0, p.token1, p.fee,
-                p.token0_decimals, p.token1_decimals,
-                p.token0_symbol, p.token1_symbol,
-                s.sqrt_price_x96, s.liquidity, s.tick
-         FROM uniswap_v3_pools p
-         JOIN uniswap_v3_pool_states s
-             ON s.chain_id = p.chain_id AND s.pool_address = p.address
-         WHERE p.chain_id = $1
-         ORDER BY p.address
-         LIMIT $2",
-    )
-    .bind(chain_id.cast_signed())
-    .bind(limit.cast_signed())
-    .fetch_all(pool)
-    .await
-    .context("get_pools")?;
-
-    decode_pool_rows(rows)
-}
-
-/// Fetches the next page of pools after `cursor` address (keyset pagination).
-pub async fn get_pools_after(
+/// Fetches a page of pools ordered by address with their current state. Pass
+/// `cursor = None` for the first page, or the previous page's last address for
+/// keyset pagination.
+pub async fn get_pools(
     pool: &PgPool,
     chain_id: u64,
-    cursor: Vec<u8>,
+    cursor: Option<Vec<u8>>,
     limit: u64,
 ) -> Result<Vec<PoolRow>> {
     let rows = sqlx::query(
@@ -529,7 +383,7 @@ pub async fn get_pools_after(
          JOIN uniswap_v3_pool_states s
              ON s.chain_id = p.chain_id AND s.pool_address = p.address
          WHERE p.chain_id = $1
-           AND p.address > $2
+           AND ($2::BYTEA IS NULL OR p.address > $2)
          ORDER BY p.address
          LIMIT $3",
     )
@@ -538,7 +392,7 @@ pub async fn get_pools_after(
     .bind(limit.cast_signed())
     .fetch_all(pool)
     .await
-    .context("get_pools_after")?;
+    .context("get_pools")?;
 
     decode_pool_rows(rows)
 }
