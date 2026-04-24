@@ -585,7 +585,7 @@ impl Competition {
         while let Some(block) = stream.next().await {
             let voided_ids: HashSet<u64> =
                 futures::future::join_all(scored.iter().map(|(solved, settlement)| {
-                    self.voided_on_block(block, solved, settlement, auction)
+                    self.reverts_on_block(block, solved, settlement, auction)
                 }))
                 .await
                 .into_iter()
@@ -611,7 +611,7 @@ impl Competition {
     /// Re-simulate a single solution and return its id if it started
     /// reverting on this block. Reports metrics and solver notifications as
     /// a side effect.
-    async fn voided_on_block(
+    async fn reverts_on_block(
         &self,
         block: BlockInfo,
         solved: &Solved,
