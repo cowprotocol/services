@@ -147,6 +147,7 @@ async fn run_factory_indexer(
                 &db,
                 network.name.as_str(),
                 network.chain_id,
+                factory.address,
                 subgraph_url,
                 network.seed_block,
             )

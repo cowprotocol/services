@@ -327,10 +327,16 @@ impl UniswapV3Indexer {
 
     async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<()> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
-        db::insert_pools(&mut tx, self.chain_id, &changes.new_pools).await?;
-        db::upsert_pool_states(&mut tx, self.chain_id, &changes.pool_states).await?;
-        db::batch_update_pool_liquidity(&mut tx, self.chain_id, &changes.liquidity_updates).await?;
-        db::batch_update_ticks(&mut tx, self.chain_id, &changes.tick_deltas).await?;
+        db::insert_pools(&mut tx, self.chain_id, &self.factory, &changes.new_pools).await?;
+        db::upsert_pool_states(&mut tx, self.chain_id, &self.factory, &changes.pool_states).await?;
+        db::batch_update_pool_liquidity(
+            &mut tx,
+            self.chain_id,
+            &self.factory,
+            &changes.liquidity_updates,
+        )
+        .await?;
+        db::batch_update_ticks(&mut tx, self.chain_id, &self.factory, &changes.tick_deltas).await?;
         db::set_checkpoint(&mut *tx, self.chain_id, &self.factory, chunk.end).await?;
         tx.commit().await.context("commit transaction")?;
 
@@ -906,7 +912,12 @@ mod tests {
         };
         let liq_cache: LiquidityCache = HashMap::from([((POOL, 100u64), amount)]);
         let log = make_log(POOL, 100, event);
-        let c = collect_log_changes(FACTORY, &[log], &liq_cache, &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &[log],
+            &liq_cache,
+            &Default::default(),
+        );
 
         assert_eq!(c.tick_deltas.len(), 2);
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
@@ -945,7 +956,12 @@ mod tests {
         };
         let liq_cache: LiquidityCache = HashMap::from([((POOL, 201u64), after_mint_liq)]);
         let logs = vec![make_log(POOL, 200, swap), make_log(POOL, 201, mint)];
-        let c = collect_log_changes(FACTORY, &logs, &liq_cache, &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &liq_cache,
+            &Default::default(),
+        );
 
         assert_eq!(c.pool_states.len(), 1);
         // Swap established full_state; Mint updated its liquidity from the cache.
@@ -975,7 +991,12 @@ mod tests {
             amount1: alloy::primitives::U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
-        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &Default::default(),
+            &Default::default(),
+        );
         assert!(c.tick_deltas.is_empty(), "zero-net ticks must be pruned");
     }
 
@@ -1001,7 +1022,12 @@ mod tests {
             amount1: alloy::primitives::U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
-        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &Default::default(),
+            &Default::default(),
+        );
 
         let expected = (mint_amount - burn_amount).cast_signed();
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
@@ -1024,7 +1050,12 @@ mod tests {
             tick: t(0),
         };
         let logs = vec![make_log(FACTORY, 100, created), make_log(POOL, 100, init)];
-        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &Default::default(),
+            &Default::default(),
+        );
         assert_eq!(c.new_pools.len(), 1);
         assert_eq!(c.pool_states.len(), 1);
         assert_eq!(c.pool_states[0].pool_address, POOL);

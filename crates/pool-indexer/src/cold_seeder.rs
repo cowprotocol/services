@@ -89,7 +89,7 @@ pub async fn cold_seed(
         .with_label_values(&[network])
         .set(i64::try_from(pools.len()).unwrap_or(0));
     info!(chain_id, pools = pools.len(), "pools discovered");
-    persist_pools(db, chain_id, &pools).await?;
+    persist_pools(db, chain_id, &factory, &pools).await?;
 
     let states = {
         let labels = [network, "state_snapshot"];
@@ -97,7 +97,7 @@ pub async fn cold_seed(
         snapshot_pool_states(&provider, &pools, snapshot_block).await?
     };
     info!(chain_id, states = states.len(), "pool states snapshotted");
-    persist_pool_states(db, chain_id, &states).await?;
+    persist_pool_states(db, chain_id, &factory, &states).await?;
 
     let active_pools: Vec<Address> = states
         .iter()
@@ -121,6 +121,7 @@ pub async fn cold_seed(
         reconstruct_and_persist_ticks(
             db,
             chain_id,
+            &factory,
             &provider,
             &active_pools,
             factory_deployment_block,
@@ -224,9 +225,14 @@ async fn fetch_decimals_concurrent(
         .await
 }
 
-async fn persist_pools(db: &PgPool, chain_id: u64, pools: &[NewPoolData]) -> Result<()> {
+async fn persist_pools(
+    db: &PgPool,
+    chain_id: u64,
+    factory: &Address,
+    pools: &[NewPoolData],
+) -> Result<()> {
     let mut tx = db.begin().await.context("begin pools tx")?;
-    db::insert_pools(&mut tx, chain_id, pools).await?;
+    db::insert_pools(&mut tx, chain_id, factory, pools).await?;
     tx.commit().await.context("commit pools tx")?;
     Ok(())
 }
@@ -282,9 +288,14 @@ async fn fetch_pool_state(
     })
 }
 
-async fn persist_pool_states(db: &PgPool, chain_id: u64, states: &[PoolStateData]) -> Result<()> {
+async fn persist_pool_states(
+    db: &PgPool,
+    chain_id: u64,
+    factory: &Address,
+    states: &[PoolStateData],
+) -> Result<()> {
     let mut tx = db.begin().await.context("begin states tx")?;
-    db::upsert_pool_states(&mut tx, chain_id, states).await?;
+    db::upsert_pool_states(&mut tx, chain_id, factory, states).await?;
     tx.commit().await.context("commit states tx")?;
     Ok(())
 }
@@ -297,6 +308,7 @@ async fn persist_pool_states(db: &PgPool, chain_id: u64, states: &[PoolStateData
 async fn reconstruct_and_persist_ticks(
     db: &PgPool,
     chain_id: u64,
+    factory: &Address,
     provider: &AlloyProvider,
     active_pools: &[Address],
     from_block: u64,
@@ -357,7 +369,7 @@ async fn reconstruct_and_persist_ticks(
             .collect();
 
         if !deltas.is_empty() {
-            db::batch_seed_ticks(db, chain_id, &deltas).await?;
+            db::batch_seed_ticks(db, chain_id, factory, &deltas).await?;
             tick_rows += deltas.len();
         }
 

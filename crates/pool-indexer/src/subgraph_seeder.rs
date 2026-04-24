@@ -225,6 +225,7 @@ impl SubgraphClient {
 struct SubgraphSeeder<'a> {
     db: &'a PgPool,
     chain_id: u64,
+    factory: Address,
     subgraph: SubgraphClient,
     snapshot_block: u64,
 }
@@ -233,6 +234,7 @@ impl<'a> SubgraphSeeder<'a> {
     async fn new(
         db: &'a PgPool,
         chain_id: u64,
+        factory: Address,
         subgraph_url: &Url,
         block: Option<u64>,
     ) -> Result<Self> {
@@ -248,6 +250,7 @@ impl<'a> SubgraphSeeder<'a> {
         Ok(Self {
             db,
             chain_id,
+            factory,
             subgraph,
             snapshot_block,
         })
@@ -315,25 +318,27 @@ impl<'a> SubgraphSeeder<'a> {
         }
 
         let mut tx = self.db.begin().await.context("begin pool tx")?;
-        db::insert_pools(&mut tx, self.chain_id, &new_pools).await?;
-        db::upsert_pool_states(&mut tx, self.chain_id, &pool_states).await?;
+        db::insert_pools(&mut tx, self.chain_id, &self.factory, &new_pools).await?;
+        db::upsert_pool_states(&mut tx, self.chain_id, &self.factory, &pool_states).await?;
         tx.commit().await.context("commit pool tx")?;
 
         Ok(pool_ids)
     }
 
     async fn seed_ticks(&self, pool_ids: &[String]) -> Result<usize> {
-        // Clear all existing tick data so seeded values are authoritative.
-        // This prevents stale rows (e.g. ticks burned to 0 before the seed block)
-        // from persisting if the seeder is re-run on a non-empty database.
-        db::delete_ticks_for_chain(self.db, self.chain_id).await?;
+        // Clear this factory's existing tick data so seeded values are
+        // authoritative — prevents stale rows (e.g. ticks burned to 0 before
+        // the seed block) from persisting if the seeder is re-run on a
+        // non-empty database. Scoped to `self.factory` so a reseed doesn't
+        // wipe another factory's ticks on the same chain.
+        db::delete_ticks_for_factory(self.db, self.chain_id, &self.factory).await?;
 
         let mut total_ticks = 0usize;
         for pool_batch in pool_ids.chunks(TICK_CONCURRENCY) {
             let ticks = self.fetch_tick_batch(pool_batch).await?;
 
             if !ticks.is_empty() {
-                db::batch_seed_ticks(self.db, self.chain_id, &ticks).await?;
+                db::batch_seed_ticks(self.db, self.chain_id, &self.factory, &ticks).await?;
             }
 
             total_ticks += ticks.len();
@@ -416,13 +421,14 @@ pub async fn seed(
     db: &PgPool,
     network: &str,
     chain_id: u64,
+    factory: Address,
     subgraph_url: &Url,
     block: Option<u64>,
 ) -> Result<u64> {
     let labels = [network];
     let m = crate::metrics::Metrics::get();
     let _timer = crate::metrics::Metrics::timer(&m.subgraph_seed_seconds, &labels);
-    SubgraphSeeder::new(db, chain_id, subgraph_url, block)
+    SubgraphSeeder::new(db, chain_id, factory, subgraph_url, block)
         .await?
         .seed()
         .await

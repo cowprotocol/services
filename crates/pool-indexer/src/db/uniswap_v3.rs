@@ -68,6 +68,7 @@ pub async fn set_checkpoint(
 pub async fn insert_pools(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: u64,
+    factory: &Address,
     pools: &[NewPoolData],
 ) -> Result<()> {
     if pools.is_empty() {
@@ -94,15 +95,16 @@ pub async fn insert_pools(
 
     sqlx::query(
         "INSERT INTO uniswap_v3_pools
-             (chain_id, address, token0, token1, fee, token0_decimals, token1_decimals,
+             (chain_id, address, factory, token0, token1, fee, token0_decimals, token1_decimals,
               token0_symbol, token1_symbol, created_block)
-         SELECT $1, t.addr, t.t0, t.t1, t.fee, t.t0d, t.t1d, t.t0s, t.t1s, t.cblk
-         FROM UNNEST($2::BYTEA[], $3::BYTEA[], $4::BYTEA[], $5::INT4[], $6::INT2[], $7::INT2[],
-                     $8::TEXT[], $9::TEXT[], $10::INT8[])
+         SELECT $1, t.addr, $2, t.t0, t.t1, t.fee, t.t0d, t.t1d, t.t0s, t.t1s, t.cblk
+         FROM UNNEST($3::BYTEA[], $4::BYTEA[], $5::BYTEA[], $6::INT4[], $7::INT2[], $8::INT2[],
+                     $9::TEXT[], $10::TEXT[], $11::INT8[])
               AS t(addr, t0, t1, fee, t0d, t1d, t0s, t1s, cblk)
          ON CONFLICT (chain_id, address) DO NOTHING",
     )
     .bind(chain_id.cast_signed())
+    .bind(factory.as_slice())
     .bind(addresses)
     .bind(token0s)
     .bind(token1s)
@@ -114,13 +116,14 @@ pub async fn insert_pools(
     .bind(created_blocks)
     .execute(&mut **tx)
     .await
-    .context("batch_insert_pools")?;
+    .context("insert_pools")?;
     Ok(())
 }
 
 pub async fn upsert_pool_states(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: u64,
+    factory: &Address,
     states: &[PoolStateData],
 ) -> Result<()> {
     if states.is_empty() {
@@ -147,7 +150,7 @@ pub async fn upsert_pool_states(
     sqlx::query(
         "WITH latest AS (
              SELECT DISTINCT ON (addr) addr, blk, sqrt, liq, tick
-             FROM UNNEST($2::BYTEA[], $3::INT8[], $4::NUMERIC[], $5::NUMERIC[], $6::INT4[])
+             FROM UNNEST($3::BYTEA[], $4::INT8[], $5::NUMERIC[], $6::NUMERIC[], $7::INT4[])
                   AS t(addr, blk, sqrt, liq, tick)
              ORDER BY addr, blk DESC
          )
@@ -155,7 +158,10 @@ pub async fn upsert_pool_states(
              (chain_id, pool_address, block_number, sqrt_price_x96, liquidity, tick)
          SELECT $1, l.addr, l.blk, l.sqrt, l.liq, l.tick
          FROM latest l
-         WHERE EXISTS (SELECT 1 FROM uniswap_v3_pools WHERE chain_id = $1 AND address = l.addr)
+         WHERE EXISTS (
+             SELECT 1 FROM uniswap_v3_pools
+             WHERE chain_id = $1 AND address = l.addr AND factory = $2
+         )
          ON CONFLICT (chain_id, pool_address) DO UPDATE
              SET block_number   = EXCLUDED.block_number,
                  sqrt_price_x96 = EXCLUDED.sqrt_price_x96,
@@ -163,6 +169,7 @@ pub async fn upsert_pool_states(
                  tick           = EXCLUDED.tick",
     )
     .bind(chain_id.cast_signed())
+    .bind(factory.as_slice())
     .bind(addresses)
     .bind(block_numbers)
     .bind(sqrt_prices)
@@ -170,13 +177,14 @@ pub async fn upsert_pool_states(
     .bind(ticks)
     .execute(&mut **tx)
     .await
-    .context("batch_upsert_pool_states")?;
+    .context("upsert_pool_states")?;
     Ok(())
 }
 
 pub async fn batch_update_pool_liquidity(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: u64,
+    factory: &Address,
     updates: &[LiquidityUpdateData],
 ) -> Result<()> {
     if updates.is_empty() {
@@ -198,15 +206,20 @@ pub async fn batch_update_pool_liquidity(
     sqlx::query(
         "WITH latest AS (
              SELECT DISTINCT ON (addr) addr, liq, blk
-             FROM UNNEST($2::BYTEA[], $3::NUMERIC[], $4::INT8[]) AS t(addr, liq, blk)
+             FROM UNNEST($3::BYTEA[], $4::NUMERIC[], $5::INT8[]) AS t(addr, liq, blk)
              ORDER BY addr, blk DESC
          )
          UPDATE uniswap_v3_pool_states s
          SET liquidity = l.liq, block_number = l.blk
          FROM latest l
-         WHERE s.chain_id = $1 AND s.pool_address = l.addr",
+         WHERE s.chain_id = $1 AND s.pool_address = l.addr
+           AND EXISTS (
+               SELECT 1 FROM uniswap_v3_pools p
+               WHERE p.chain_id = $1 AND p.address = l.addr AND p.factory = $2
+           )",
     )
     .bind(chain_id.cast_signed())
+    .bind(factory.as_slice())
     .bind(addresses)
     .bind(liquidities)
     .bind(block_numbers)
@@ -219,6 +232,7 @@ pub async fn batch_update_pool_liquidity(
 pub async fn batch_update_ticks(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: u64,
+    factory: &Address,
     deltas: &[TickDeltaData],
 ) -> Result<()> {
     if deltas.is_empty() {
@@ -234,14 +248,17 @@ pub async fn batch_update_ticks(
     sqlx::query(
         "WITH input AS (
              SELECT t.addr, t.tick_idx, SUM(t.delta) AS total_delta
-             FROM UNNEST($2::BYTEA[], $3::INT4[], $4::NUMERIC[]) AS t(addr, tick_idx, delta)
+             FROM UNNEST($3::BYTEA[], $4::INT4[], $5::NUMERIC[]) AS t(addr, tick_idx, delta)
              GROUP BY t.addr, t.tick_idx
          ),
          upserted AS (
              INSERT INTO uniswap_v3_ticks (chain_id, pool_address, tick_idx, liquidity_net)
              SELECT $1, i.addr, i.tick_idx, i.total_delta
              FROM input i
-             WHERE EXISTS (SELECT 1 FROM uniswap_v3_pools WHERE chain_id = $1 AND address = i.addr)
+             WHERE EXISTS (
+                 SELECT 1 FROM uniswap_v3_pools
+                 WHERE chain_id = $1 AND address = i.addr AND factory = $2
+             )
              ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
                  SET liquidity_net = uniswap_v3_ticks.liquidity_net + EXCLUDED.liquidity_net
              RETURNING chain_id, pool_address, tick_idx, liquidity_net
@@ -254,6 +271,7 @@ pub async fn batch_update_ticks(
            AND upserted.liquidity_net = 0",
     )
     .bind(chain_id.cast_signed())
+    .bind(factory.as_slice())
     .bind(addresses)
     .bind(tick_idxs)
     .bind(delta_values)
@@ -269,6 +287,7 @@ pub async fn batch_update_ticks(
 pub async fn batch_seed_ticks(
     executor: impl sqlx::PgExecutor<'_>,
     chain_id: u64,
+    factory: &Address,
     ticks: &[TickDeltaData],
 ) -> Result<()> {
     if ticks.is_empty() {
@@ -284,18 +303,22 @@ pub async fn batch_seed_ticks(
     sqlx::query(
         "WITH input AS (
              SELECT t.addr, t.tick_idx, SUM(t.val) AS net
-             FROM UNNEST($2::BYTEA[], $3::INT4[], $4::NUMERIC[]) AS t(addr, tick_idx, val)
+             FROM UNNEST($3::BYTEA[], $4::INT4[], $5::NUMERIC[]) AS t(addr, tick_idx, val)
              GROUP BY t.addr, t.tick_idx
          )
          INSERT INTO uniswap_v3_ticks (chain_id, pool_address, tick_idx, liquidity_net)
          SELECT $1, i.addr, i.tick_idx, i.net
          FROM input i
-         WHERE EXISTS (SELECT 1 FROM uniswap_v3_pools WHERE chain_id = $1 AND address = i.addr)
+         WHERE EXISTS (
+             SELECT 1 FROM uniswap_v3_pools
+             WHERE chain_id = $1 AND address = i.addr AND factory = $2
+         )
            AND i.net <> 0
          ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
              SET liquidity_net = EXCLUDED.liquidity_net",
     )
     .bind(chain_id.cast_signed())
+    .bind(factory.as_slice())
     .bind(addresses)
     .bind(tick_idxs)
     .bind(values)
@@ -305,15 +328,27 @@ pub async fn batch_seed_ticks(
     Ok(())
 }
 
-pub async fn delete_ticks_for_chain(
+/// Deletes ticks for all pools owned by `factory` on `chain_id`. Used by the
+/// subgraph seeder to clear stale state before reseeding. Scoped to this
+/// factory so a reseed on one factory doesn't wipe another's ticks.
+pub async fn delete_ticks_for_factory(
     executor: impl sqlx::PgExecutor<'_>,
     chain_id: u64,
+    factory: &Address,
 ) -> Result<()> {
-    sqlx::query("DELETE FROM uniswap_v3_ticks WHERE chain_id = $1")
-        .bind(chain_id.cast_signed())
-        .execute(executor)
-        .await
-        .context("delete_ticks_for_chain")?;
+    sqlx::query(
+        "DELETE FROM uniswap_v3_ticks t
+         USING uniswap_v3_pools p
+         WHERE t.chain_id     = $1
+           AND p.chain_id     = $1
+           AND p.address      = t.pool_address
+           AND p.factory      = $2",
+    )
+    .bind(chain_id.cast_signed())
+    .bind(factory.as_slice())
+    .execute(executor)
+    .await
+    .context("delete_ticks_for_factory")?;
     Ok(())
 }
 

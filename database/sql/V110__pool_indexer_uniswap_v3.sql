@@ -6,10 +6,14 @@ CREATE TABLE pool_indexer_checkpoints (
     PRIMARY KEY (chain_id, contract)
 );
 
--- One row per discovered pool (from PoolCreated events on the factory)
+-- One row per discovered pool (from PoolCreated events on the factory).
+-- `factory` is the emitting factory's address; it partitions the table so each
+-- indexer writes only to its own rows on chains where multiple V3-compatible
+-- factories are configured (same chain's logs are fetched chain-wide).
 CREATE TABLE uniswap_v3_pools (
     chain_id         BIGINT   NOT NULL,
     address          BYTEA    NOT NULL,  -- pool address
+    factory          BYTEA    NOT NULL,
     token0           BYTEA    NOT NULL,
     token1           BYTEA    NOT NULL,
     fee              INT      NOT NULL,  -- hundredths of a basis point (500 = 0.05%, 3000 = 0.3%, 10000 = 1%)
