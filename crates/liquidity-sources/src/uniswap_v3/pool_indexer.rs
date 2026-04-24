@@ -91,9 +91,6 @@ struct IndexerToken {
 
 #[derive(Deserialize)]
 struct BulkTicksResponse {
-    #[serde(default)]
-    #[allow(dead_code)]
-    block_number: u64,
     pools: Vec<IndexerPoolTicks>,
 }
 

@@ -327,8 +327,8 @@ impl UniswapV3Indexer {
 
     async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<()> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
-        db::batch_insert_pools(&mut tx, self.chain_id, &changes.new_pools).await?;
-        db::batch_upsert_pool_states(&mut tx, self.chain_id, &changes.pool_states).await?;
+        db::insert_pools(&mut tx, self.chain_id, &changes.new_pools).await?;
+        db::upsert_pool_states(&mut tx, self.chain_id, &changes.pool_states).await?;
         db::batch_update_pool_liquidity(&mut tx, self.chain_id, &changes.liquidity_updates).await?;
         db::batch_update_ticks(&mut tx, self.chain_id, &changes.tick_deltas).await?;
         db::set_checkpoint(&mut *tx, self.chain_id, &self.factory, chunk.end).await?;

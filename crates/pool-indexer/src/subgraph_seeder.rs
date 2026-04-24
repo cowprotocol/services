@@ -315,8 +315,8 @@ impl<'a> SubgraphSeeder<'a> {
         }
 
         let mut tx = self.db.begin().await.context("begin pool tx")?;
-        db::batch_insert_pools(&mut tx, self.chain_id, &new_pools).await?;
-        db::batch_upsert_pool_states(&mut tx, self.chain_id, &pool_states).await?;
+        db::insert_pools(&mut tx, self.chain_id, &new_pools).await?;
+        db::upsert_pool_states(&mut tx, self.chain_id, &pool_states).await?;
         tx.commit().await.context("commit pool tx")?;
 
         Ok(pool_ids)

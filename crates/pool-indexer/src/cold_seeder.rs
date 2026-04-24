@@ -226,7 +226,7 @@ async fn fetch_decimals_concurrent(
 
 async fn persist_pools(db: &PgPool, chain_id: u64, pools: &[NewPoolData]) -> Result<()> {
     let mut tx = db.begin().await.context("begin pools tx")?;
-    db::batch_insert_pools(&mut tx, chain_id, pools).await?;
+    db::insert_pools(&mut tx, chain_id, pools).await?;
     tx.commit().await.context("commit pools tx")?;
     Ok(())
 }
@@ -284,7 +284,7 @@ async fn fetch_pool_state(
 
 async fn persist_pool_states(db: &PgPool, chain_id: u64, states: &[PoolStateData]) -> Result<()> {
     let mut tx = db.begin().await.context("begin states tx")?;
-    db::batch_upsert_pool_states(&mut tx, chain_id, states).await?;
+    db::upsert_pool_states(&mut tx, chain_id, states).await?;
     tx.commit().await.context("commit states tx")?;
     Ok(())
 }

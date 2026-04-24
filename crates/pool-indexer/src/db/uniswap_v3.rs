@@ -65,7 +65,7 @@ pub async fn set_checkpoint(
     Ok(())
 }
 
-pub async fn batch_insert_pools(
+pub async fn insert_pools(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: u64,
     pools: &[NewPoolData],
@@ -127,7 +127,7 @@ pub async fn batch_insert_pools(
     Ok(())
 }
 
-pub async fn batch_upsert_pool_states(
+pub async fn upsert_pool_states(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: u64,
     states: &[PoolStateData],
