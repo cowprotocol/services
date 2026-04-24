@@ -145,9 +145,9 @@ impl V3PoolDataSource for PoolIndexerClient {
     async fn get_registered_pools(&self) -> Result<RegisteredPools> {
         // Paginate through the full pool set. The block_number returned from
         // the first page is what we pin the snapshot to — subsequent pages
-        // may report a higher block, which we tolerate as bounded drift
-        // (see block-coherence discussion; driver's event replay takes it
-        // from there).
+        // may report a higher block, which we tolerate as bounded drift: the
+        // driver's event replay picks up anything committed after this
+        // snapshot.
         let mut cursor: Option<String> = None;
         let mut pools: Vec<PoolData> = Vec::new();
         let mut fetched_block_number: u64 = 0;

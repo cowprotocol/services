@@ -1,5 +1,5 @@
 use {
-    super::{parse_hex_address, parse_pool_ids, serialize_integer},
+    super::{PoolIds, serialize_integer},
     crate::{
         api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
         db::uniswap_v3 as db,
@@ -41,9 +41,9 @@ pub struct TicksResponse {
 /// Query parameters for the bulk ticks endpoint.
 #[derive(Deserialize)]
 pub struct BulkTicksQuery {
-    /// Comma-separated list of pool addresses (`0x…,0x…`). Capped at
-    /// [`super::MAX_POOL_IDS_PER_REQUEST`] entries.
-    pub pool_ids: String,
+    /// Comma-separated list of pool addresses (`0x…,0x…`) parsed eagerly.
+    /// Capped at [`super::MAX_POOL_IDS_PER_REQUEST`] entries.
+    pub pool_ids: PoolIds,
 }
 
 /// One pool's worth of ticks in a bulk response.
@@ -64,10 +64,9 @@ pub struct BulkTicksResponse {
 
 pub async fn get_ticks(
     State(state): State<Arc<AppState>>,
-    Path((network, pool_address)): Path<(String, String)>,
+    Path((network, pool)): Path<(String, Address)>,
 ) -> Result<Response, ApiError> {
     let chain_id = resolve_chain_id(&state, &network)?;
-    let pool = parse_hex_address(&pool_address)?;
 
     let (block, ticks) = tokio::join!(
         latest_indexed_block(&state, chain_id),
@@ -91,14 +90,13 @@ pub async fn get_ticks(
 pub async fn get_ticks_bulk(
     State(state): State<Arc<AppState>>,
     Path(network): Path<String>,
-    Query(query): Query<BulkTicksQuery>,
+    Query(BulkTicksQuery { pool_ids }): Query<BulkTicksQuery>,
 ) -> Result<Response, ApiError> {
     let chain_id = resolve_chain_id(&state, &network)?;
-    let pool_ids = parse_pool_ids(&query.pool_ids)?;
 
     let (block, ticks) = tokio::join!(
         latest_indexed_block(&state, chain_id),
-        db::get_ticks_for_pools(&state.db, chain_id, &pool_ids),
+        db::get_ticks_for_pools(&state.db, chain_id, &pool_ids.0),
     );
 
     Ok(Json(BulkTicksResponse {
@@ -109,7 +107,7 @@ pub async fn get_ticks_bulk(
 }
 
 fn group_ticks_by_pool(rows: Vec<db::PoolTickRow>) -> Vec<PoolTicks> {
-    let mut groups: HashMap<Address, Vec<TickEntry>> = HashMap::new();
+    let mut groups: HashMap<Address, Vec<TickEntry>> = HashMap::with_capacity(rows.len());
     for row in rows {
         groups.entry(row.pool_address).or_default().push(TickEntry {
             tick_idx: row.tick_idx,

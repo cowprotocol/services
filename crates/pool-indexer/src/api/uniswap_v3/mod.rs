@@ -2,9 +2,9 @@ pub mod pools;
 pub mod ticks;
 
 use {
-    crate::api::ApiError,
     alloy_primitives::Address,
     bigdecimal::{BigDecimal, num_bigint::ToBigInt},
+    serde::{Deserialize, Deserializer},
 };
 pub use {
     pools::get_pools,
@@ -14,6 +14,32 @@ pub use {
 /// Upper bound on pool addresses accepted in a single bulk lookup. Keeps the
 /// URL under typical proxy limits and bounds DB query size.
 pub(super) const MAX_POOL_IDS_PER_REQUEST: usize = 500;
+
+/// Newtype over `Vec<Address>` that deserializes from a comma-separated list
+/// of 20-byte hex addresses in URL query strings (`0x…,0x…`). Parsing +
+/// capping happen at the extractor boundary so handlers work with typed
+/// addresses instead of raw strings.
+pub(crate) struct PoolIds(pub Vec<Address>);
+
+impl<'de> Deserialize<'de> for PoolIds {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let raw = <&str>::deserialize(de)?;
+        let mut out = Vec::new();
+        for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            out.push(
+                entry
+                    .parse::<Address>()
+                    .map_err(|_| serde::de::Error::custom("invalid pool id"))?,
+            );
+        }
+        if out.len() > MAX_POOL_IDS_PER_REQUEST {
+            return Err(serde::de::Error::custom(format!(
+                "too many pool ids; max {MAX_POOL_IDS_PER_REQUEST}"
+            )));
+        }
+        Ok(PoolIds(out))
+    }
+}
 
 /// Serializes any [`Display`](std::fmt::Display) value as a JSON string.
 pub(super) fn serialize_display<T: std::fmt::Display, S: serde::Serializer>(
@@ -43,31 +69,6 @@ pub(super) fn serialize_integer<S: serde::Serializer>(
             "expected integer, got {value}"
         ))),
     }
-}
-
-pub(super) fn parse_hex_address(s: &str) -> Result<Address, ApiError> {
-    s.parse::<Address>()
-        .map_err(|_| ApiError::InvalidPoolAddress)
-}
-
-/// Parses a comma-separated list of pool addresses (`0x…,0x…`). Empty entries
-/// are skipped.
-pub(super) fn parse_pool_ids(raw: &str) -> Result<Vec<Address>, ApiError> {
-    let mut out = Vec::new();
-    for entry in raw.split(',').filter(|s| !s.is_empty()) {
-        out.push(
-            entry
-                .trim()
-                .parse::<Address>()
-                .map_err(|_| ApiError::InvalidPoolId)?,
-        );
-    }
-    if out.len() > MAX_POOL_IDS_PER_REQUEST {
-        return Err(ApiError::TooManyPoolIds {
-            max: MAX_POOL_IDS_PER_REQUEST,
-        });
-    }
-    Ok(out)
 }
 
 #[cfg(test)]

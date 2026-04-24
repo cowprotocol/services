@@ -1,11 +1,12 @@
 use {
-    alloy_primitives::{U256, aliases::I512},
+    alloy_primitives::{
+        U256,
+        aliases::{I512, U160},
+    },
     anyhow::{Result, ensure},
     bigdecimal::{BigDecimal, num_bigint::ToBigInt},
     num::{BigInt, BigRational, BigUint, Zero, bigint::Sign, rational::Ratio},
 };
-
-type U160 = alloy_primitives::aliases::U160;
 
 pub fn big_decimal_to_big_uint(big_decimal: &BigDecimal) -> Option<BigUint> {
     // TODO(vkgnosis): It would be nice to avoid copying the underlying BigInt when

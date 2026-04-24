@@ -1,5 +1,5 @@
 use {
-    super::{parse_pool_ids, serialize_display, serialize_integer},
+    super::{PoolIds, serialize_display, serialize_integer},
     crate::{
         api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
         db::uniswap_v3 as db,
@@ -23,10 +23,10 @@ use {
 /// 2. Neither — cursor-paginated list of all pools.
 #[derive(Deserialize)]
 pub struct PoolsQuery {
-    /// Comma-separated list of pool addresses (`0x…,0x…`). Capped at
-    /// [`super::MAX_POOL_IDS_PER_REQUEST`] entries; callers with more
-    /// addresses should chunk their requests.
-    pub pool_ids: Option<String>,
+    /// Comma-separated list of pool addresses (`0x…,0x…`) parsed eagerly.
+    /// Capped at [`super::MAX_POOL_IDS_PER_REQUEST`] entries; callers with
+    /// more addresses should chunk their requests.
+    pub pool_ids: Option<PoolIds>,
     /// Opaque cursor returned by the previous page; omit to start from the
     /// beginning. Ignored when `pool_ids` is set.
     pub after: Option<String>,
@@ -76,24 +76,46 @@ pub struct PoolsResponse {
     pub next_cursor: Option<String>,
 }
 
+/// Normalised view of a [`PoolsQuery`]: which of the two request shapes the
+/// client is asking for.
 enum PoolsRequest<'a> {
-    ByIds(&'a str),
+    /// Bulk lookup by address list.
+    ByIds(&'a [Address]),
+    /// Cursor-paginated full listing.
     PaginatedList,
 }
 
+/// Default number of pools to return per page when the client doesn't
+/// specify a `limit`. Sized so a full mainnet pool set can be drained in
+/// a few pages.
+const DEFAULT_PAGE_LIMIT: u64 = 1_000;
+
+/// Hard cap on `limit` to bound both query time and response size. Server
+/// applies this even if the client asks for more.
+const MAX_PAGE_LIMIT: u64 = 5_000;
+
 impl PoolsQuery {
+    /// Dispatch the incoming query to the right handler shape — see
+    /// [`PoolsRequest`]. `pool_ids` wins over pagination when present.
     fn request(&self) -> PoolsRequest<'_> {
-        if let Some(pool_ids) = self.pool_ids.as_deref() {
-            PoolsRequest::ByIds(pool_ids)
+        if let Some(PoolIds(ids)) = &self.pool_ids {
+            PoolsRequest::ByIds(ids)
         } else {
             PoolsRequest::PaginatedList
         }
     }
 
+    /// Resolve the effective page size: the client-supplied `limit` clamped
+    /// to `[1, MAX_PAGE_LIMIT]`, defaulting to `DEFAULT_PAGE_LIMIT`.
     fn page_limit(&self) -> u64 {
-        self.limit.unwrap_or(1000).clamp(1, 5000)
+        self.limit
+            .unwrap_or(DEFAULT_PAGE_LIMIT)
+            .clamp(1, MAX_PAGE_LIMIT)
     }
 
+    /// Parse the opaque `after` cursor back to the 20-byte address key used
+    /// by the DB's keyset pagination. Returns `InvalidCursor` on malformed
+    /// input so callers see a 400 rather than an empty page.
     fn cursor(&self) -> Result<Option<Vec<u8>>, ApiError> {
         self.after
             .as_deref()
@@ -135,6 +157,9 @@ fn non_empty(s: &Option<String>) -> Option<String> {
     s.as_ref().filter(|s| !s.is_empty()).cloned()
 }
 
+/// Converts a slice of DB rows into the on-the-wire [`PoolsResponse`]
+/// envelope, attaching the indexed-block tag and optional pagination
+/// cursor. Centralised here so every route emits the same JSON shape.
 fn pools_response(
     block_number: u64,
     rows: &[db::PoolRow],
@@ -149,9 +174,14 @@ fn pools_response(
 }
 
 /// Returns a cursor-paginated list of all indexed pools, ordered by address.
-/// Fetches `limit + 1` rows to detect whether a next page exists; the extra
-/// row is stripped from the response and its address is returned as
-/// `next_cursor`.
+///
+/// Pagination is last-value-seen: the DB query returns `limit + 1` rows to
+/// detect whether a next page exists, the extra row is dropped, and the
+/// address of the last row in the returned page becomes the `next_cursor`.
+/// The next request passes that back as `after=…`, and the DB uses
+/// `WHERE address > $cursor` to pick up from the row immediately after it —
+/// so the cursor points at the *last row served*, not the next one to
+/// serve.
 async fn list_pools(
     state: &AppState,
     chain_id: u64,
@@ -161,7 +191,6 @@ async fn list_pools(
     let limit = query.page_limit();
     let cursor = query.cursor()?;
 
-    // Fetch one extra row to determine if there is a next page.
     let mut rows = db::get_pools(&state.db, chain_id, cursor, limit + 1).await?;
 
     let has_next = rows.len() > limit as usize;
@@ -180,12 +209,11 @@ async fn list_pools(
 async fn lookup_pools_by_ids(
     state: &AppState,
     chain_id: u64,
-    raw_ids: &str,
+    addresses: &[Address],
 ) -> Result<Response, ApiError> {
-    let addresses = parse_pool_ids(raw_ids)?;
     let (block, pools) = tokio::join!(
         latest_indexed_block(state, chain_id),
-        db::get_pools_by_ids(&state.db, chain_id, &addresses),
+        db::get_pools_by_ids(&state.db, chain_id, addresses),
     );
     Ok(pools_response(block?, &pools?, None))
 }

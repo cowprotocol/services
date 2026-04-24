@@ -4,8 +4,10 @@
 //!
 //! 1. **Pools** — all pools and their current state are fetched with keyset
 //!    pagination and written to the DB in page-sized transactions.
-//! 2. **Ticks** — existing tick rows are cleared, then each pool's ticks are
-//!    fetched concurrently (up to [`TICK_CONCURRENCY`] at a time) and written.
+//! 2. **Ticks** — each pool's ticks are fetched concurrently (up to
+//!    [`TICK_CONCURRENCY`] at a time) and buffered; the existing tick rows are
+//!    then deleted and the buffered set inserted in a single transaction so the
+//!    API never observes an empty tick set mid-reseed.
 //!
 //! Both phases query the subgraph at the same fixed block number so the
 //! snapshot is consistent. After seeding, the caller should invoke
@@ -326,25 +328,31 @@ impl<'a> SubgraphSeeder<'a> {
     }
 
     async fn seed_ticks(&self, pool_ids: &[String]) -> Result<usize> {
-        // Clear this factory's existing tick data so seeded values are
-        // authoritative — prevents stale rows (e.g. ticks burned to 0 before
-        // the seed block) from persisting if the seeder is re-run on a
-        // non-empty database. Scoped to `self.factory` so a reseed doesn't
-        // wipe another factory's ticks on the same chain.
-        db::delete_ticks_for_factory(self.db, self.chain_id, &self.factory).await?;
-
-        let mut total_ticks = 0usize;
+        // All delete + insert work happens inside one transaction so the
+        // API never observes an empty tick set mid-reseed. Scoped to
+        // `self.factory` so a reseed doesn't wipe another factory's ticks
+        // on the same chain.
+        //
+        // Subgraph fetches run outside the transaction — the result is
+        // buffered and only the final DB writes are transactional, which
+        // keeps the tx short and avoids holding a DB connection during
+        // slow HTTP I/O.
+        let mut all_ticks: Vec<TickDeltaData> = Vec::new();
         for pool_batch in pool_ids.chunks(TICK_CONCURRENCY) {
             let ticks = self.fetch_tick_batch(pool_batch).await?;
-
-            if !ticks.is_empty() {
-                db::batch_seed_ticks(self.db, self.chain_id, &self.factory, &ticks).await?;
-            }
-
-            total_ticks += ticks.len();
-            info!(total = total_ticks, "ticks seeded");
+            all_ticks.extend(ticks);
+            info!(total = all_ticks.len(), "ticks fetched");
         }
 
+        let total_ticks = all_ticks.len();
+        let mut tx = self.db.begin().await.context("begin tick reseed tx")?;
+        db::delete_ticks_for_factory(&mut *tx, self.chain_id, &self.factory).await?;
+        if !all_ticks.is_empty() {
+            db::batch_seed_ticks(&mut *tx, self.chain_id, &self.factory, &all_ticks).await?;
+        }
+        tx.commit().await.context("commit tick reseed tx")?;
+
+        info!(total = total_ticks, "ticks seeded");
         Ok(total_ticks)
     }
 
