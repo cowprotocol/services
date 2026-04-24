@@ -383,20 +383,21 @@ impl TradeVerifier {
         // not alter solver balances which may be used during settlement. We use
         // a similar strategy for determining whether or not to set approvals on
         // behalf of the trader.
+        let needed = match query.kind {
+            OrderKind::Sell => query.in_amount.get(),
+            OrderKind::Buy => trade.out_amount(
+                &query.buy_token,
+                &query.sell_token,
+                &query.in_amount.get(),
+                &query.kind,
+            )?,
+        };
         match self
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.sell_token,
                 holder: Self::SPARDOSE,
-                amount: match query.kind {
-                    OrderKind::Sell => query.in_amount.get(),
-                    OrderKind::Buy => trade.out_amount(
-                        &query.buy_token,
-                        &query.sell_token,
-                        &query.in_amount.get(),
-                        &query.kind,
-                    )?,
-                },
+                amount: spardose_amount_with_buffer(needed),
             })
             .await
         {
@@ -852,9 +853,35 @@ enum Error {
     SimulationFailed(#[from] anyhow::Error),
 }
 
+/// Spardose gets `needed` plus a 1% headroom. The buffer is absorbed by
+/// tokens with boundary-rounding or per-block accrual (aToken, rebasing,
+/// tiny fee-on-transfer) so the sim at a slightly different block than
+/// our state_override read still has enough funds. Spardose is a
+/// throwaway donor, so overshoot has no cost.
+fn spardose_amount_with_buffer(needed: U256) -> U256 {
+    needed.saturating_add(needed / U256::from(100u64))
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, U256, maplit::hashmap, std::str::FromStr};
+
+    #[test]
+    fn spardose_amount_applies_1pct_overshoot() {
+        assert_eq!(
+            spardose_amount_with_buffer(U256::from(1_000_000_000_000_000_000u128)),
+            U256::from(1_010_000_000_000_000_000u128)
+        );
+        // Tiny amounts floor to 0% headroom (1 / 100 == 0 in integer math),
+        // which is fine for these magnitudes no real order sits this low.
+        assert_eq!(
+            spardose_amount_with_buffer(U256::from(50u64)),
+            U256::from(50u64)
+        );
+        assert_eq!(spardose_amount_with_buffer(U256::ZERO), U256::ZERO);
+        // Saturates at U256::MAX instead of overflowing.
+        assert_eq!(spardose_amount_with_buffer(U256::MAX), U256::MAX);
+    }
 
     #[test]
     fn discards_inaccurate_quotes() {
