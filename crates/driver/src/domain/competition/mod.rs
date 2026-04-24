@@ -564,7 +564,7 @@ impl Competition {
         if let Ok(remaining) = deadline.remaining() {
             let _ = tokio::time::timeout(
                 remaining,
-                self.resimulate_until_deadline(&mut scored, auction),
+                self.resimulate_until_revert(&mut scored, auction),
             )
             .await;
         }
@@ -573,10 +573,10 @@ impl Competition {
     }
 
     /// Re-simulate all proposed solutions on every new block and drop any
-    /// that start reverting. Runs until either every solution has been
-    /// voided or the caller's timeout fires. Mutates `scored` and the
-    /// cached settlements in place.
-    async fn resimulate_until_deadline(
+    /// that start reverting. Returns once every solution has reverted;
+    /// otherwise runs forever and the caller must impose a deadline.
+    /// Mutates `scored` and the cached settlements in place.
+    async fn resimulate_until_revert(
         &self,
         scored: &mut Vec<(Solved, Settlement)>,
         auction: &Auction,
