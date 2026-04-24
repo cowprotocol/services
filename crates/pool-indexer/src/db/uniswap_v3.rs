@@ -73,18 +73,9 @@ pub async fn insert_pools(
     if pools.is_empty() {
         return Ok(());
     }
-    let addresses: Vec<&[u8]> = pools
-        .iter()
-        .map(|pool| pool.address.as_slice())
-        .collect();
-    let token0s: Vec<&[u8]> = pools
-        .iter()
-        .map(|pool| pool.token0.as_slice())
-        .collect();
-    let token1s: Vec<&[u8]> = pools
-        .iter()
-        .map(|pool| pool.token1.as_slice())
-        .collect();
+    let addresses: Vec<&[u8]> = pools.iter().map(|pool| pool.address.as_slice()).collect();
+    let token0s: Vec<&[u8]> = pools.iter().map(|pool| pool.token0.as_slice()).collect();
+    let token1s: Vec<&[u8]> = pools.iter().map(|pool| pool.token1.as_slice()).collect();
     let fees: Vec<i32> = pools.iter().map(|pool| pool.fee.cast_signed()).collect();
     let t0_decimals: Vec<Option<i16>> = pools
         .iter()

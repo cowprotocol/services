@@ -677,12 +677,7 @@ impl LogAccumulator {
         let pool = log.address();
         let block = log.block_number.unwrap_or_default();
         let amount = e.amount.cast_signed();
-        self.record_tick_range_delta(
-            pool,
-            e.tickLower.as_i32(),
-            e.tickUpper.as_i32(),
-            amount,
-        );
+        self.record_tick_range_delta(pool, e.tickLower.as_i32(), e.tickUpper.as_i32(), amount);
         self.update_liquidity_from_cache(pool, block, liq_cache);
     }
 
@@ -696,12 +691,7 @@ impl LogAccumulator {
         let pool = log.address();
         let block = log.block_number.unwrap_or_default();
         let amount = e.amount.cast_signed();
-        self.record_tick_range_delta(
-            pool,
-            e.tickLower.as_i32(),
-            e.tickUpper.as_i32(),
-            -amount,
-        );
+        self.record_tick_range_delta(pool, e.tickLower.as_i32(), e.tickUpper.as_i32(), -amount);
         self.update_liquidity_from_cache(pool, block, liq_cache);
     }
 
