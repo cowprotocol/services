@@ -212,8 +212,12 @@ impl BalanceOverrides {
                     .unwrap()
                     .cache_set(cache_key, Some(strategy.clone()));
             } else {
-                // strategy is Err(DetectionError::NotFound)
-                cache.lock().unwrap().cache_set((token, Some(holder)), None);
+                // Cache `NotFound` as holder-agnostic. Re-probing a failed
+                // token on every new holder re-issues `debug_traceCall`,
+                // whose response can reach multi-MB for complex `balanceOf`
+                // implementations, and enough concurrent quotes have OOM'd
+                // the driver.
+                cache.lock().unwrap().cache_set((token, None), None);
             }
         } else {
             tracing::warn!(

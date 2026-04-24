@@ -5,9 +5,11 @@ use {
     alloy_primitives::{Address, B256, TxKind, U256, keccak256},
     alloy_provider::ext::DebugApi,
     alloy_rpc_types::{
-        TransactionInput,
-        TransactionRequest,
-        trace::geth::{GethDebugTracingCallOptions, GethTrace},
+        TransactionInput, TransactionRequest,
+        trace::geth::{
+            GethDebugTracingCallOptions, GethDebugTracingOptions, GethDefaultTracingOptions,
+            GethTrace,
+        },
     },
     alloy_sol_types::SolCall,
     alloy_transport::{RpcError, TransportErrorKind},
@@ -182,14 +184,26 @@ impl Detector {
             ..Default::default()
         };
 
+        // We only look at the stack (for SLOAD/CALL/STATICCALL/DELEGATECALL
+        // operands); memory, storage and return-data dumps are pure overhead
+        // and can push the response into the multi-MB range for tokens with
+        // complex `balanceOf` implementations (e.g. stETH), which has OOM'd
+        // the driver under bursts of concurrent quotes.
+        let tracing_options = GethDebugTracingCallOptions {
+            tracing_options: GethDebugTracingOptions {
+                config: GethDefaultTracingOptions::default()
+                    .disable_memory()
+                    .disable_storage()
+                    .disable_return_data(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
         let trace = self
             .web3
             .provider
-            .debug_trace_call(
-                call_request,
-                BlockId::latest(),
-                GethDebugTracingCallOptions::default(),
-            )
+            .debug_trace_call(call_request, BlockId::latest(), tracing_options)
             .await
             .map_err(|err| {
                 tracing::debug!(?token, ?err, "debug_traceCall not supported for token");
@@ -295,7 +309,7 @@ impl Detector {
             .unwrap_or_default()
             .struct_logs
         {
-            let stack = log.stack.clone().unwrap_or_default();
+            let stack = log.stack.as_deref().unwrap_or(&[]);
             match log.op.as_ref() {
                 // CALL or STATICCALL calls another contract, possibly reading data
                 // we need to keep track of this contract being called so we know to update the
