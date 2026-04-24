@@ -227,10 +227,15 @@ impl TradeVerifier {
                 &self.simulator.domain_separator,
             )?);
         }
-        let output = self.simulator.simulate_swap_with_solver(swap).await?;
+        let block = *self.simulator.current_block.borrow();
+        let output = self
+            .simulator
+            .simulate_swap_with_solver(swap, block)
+            .await?;
 
         if let Some(tenderly) = &self.tenderly
-            && let Err(err) = tenderly.log_simulation_command(output.tx, output.overrides, None)
+            && let Err(err) =
+                tenderly.log_simulation_command(output.tx, output.overrides, block.number.into())
         {
             tracing::debug!(?err, "could not log tenderly simulation command");
         }
@@ -378,20 +383,21 @@ impl TradeVerifier {
         // not alter solver balances which may be used during settlement. We use
         // a similar strategy for determining whether or not to set approvals on
         // behalf of the trader.
+        let needed = match query.kind {
+            OrderKind::Sell => query.in_amount.get(),
+            OrderKind::Buy => trade.out_amount(
+                &query.buy_token,
+                &query.sell_token,
+                &query.in_amount.get(),
+                &query.kind,
+            )?,
+        };
         match self
             .balance_overrides
             .state_override(BalanceOverrideRequest {
                 token: query.sell_token,
                 holder: Self::SPARDOSE,
-                amount: match query.kind {
-                    OrderKind::Sell => query.in_amount.get(),
-                    OrderKind::Buy => trade.out_amount(
-                        &query.buy_token,
-                        &query.sell_token,
-                        &query.in_amount.get(),
-                        &query.kind,
-                    )?,
-                },
+                amount: spardose_amount_with_buffer(needed),
             })
             .await
         {
@@ -408,6 +414,11 @@ impl TradeVerifier {
                 }
             }
             _ => {
+                tracing::warn!(
+                    sell_token = ?query.sell_token,
+                    "could not set spardose balance override for sell token; trade \
+                     verification will rely on the trader's real balance"
+                );
                 if verification.from.is_zero() {
                     anyhow::bail!("trader is zero address and balances can not be faked");
                 }
@@ -842,9 +853,39 @@ enum Error {
     SimulationFailed(#[from] anyhow::Error),
 }
 
+/// Spardose gets `needed` plus a 1% headroom, floored at 1 wei so the
+/// 1-wei boundary is still covered for small amounts where `needed / 100`
+/// truncates to 0. The buffer absorbs rounding or per-block accrual
+/// (aToken, rebasing, tiny fee-on-transfer) between our state_override
+/// read and the sim's execution. Spardose is a throwaway donor, so
+/// overshoot has no cost.
+fn spardose_amount_with_buffer(needed: U256) -> U256 {
+    let buffer = std::cmp::max(U256::ONE, needed / U256::from(100u64));
+    needed.saturating_add(buffer)
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, U256, maplit::hashmap, std::str::FromStr};
+
+    #[test]
+    fn spardose_amount_applies_1pct_overshoot() {
+        assert_eq!(
+            spardose_amount_with_buffer(U256::from(1_000_000_000_000_000_000u128)),
+            U256::from(1_010_000_000_000_000_000u128)
+        );
+        // Amounts below 100 still get at least 1 wei of headroom, so the
+        // boundary stays covered when integer division would otherwise
+        // round the 1% buffer to 0.
+        assert_eq!(
+            spardose_amount_with_buffer(U256::from(99u64)),
+            U256::from(100u64)
+        );
+        assert_eq!(spardose_amount_with_buffer(U256::ONE), U256::from(2u64));
+        assert_eq!(spardose_amount_with_buffer(U256::ZERO), U256::ONE);
+        // Saturates at U256::MAX instead of overflowing.
+        assert_eq!(spardose_amount_with_buffer(U256::MAX), U256::MAX);
+    }
 
     #[test]
     fn discards_inaccurate_quotes() {

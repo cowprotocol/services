@@ -30,6 +30,7 @@ impl SolverCompetitionStoring for Postgres {
     async fn load_competition(
         &self,
         id: Identifier,
+        after_block: Option<i64>,
     ) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -38,20 +39,10 @@ impl SolverCompetitionStoring for Postgres {
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
         match id {
-            Identifier::Id(id) => database::solver_competition::load_by_id(&mut ex, id)
-                .await
-                .context("solver_competition::load_by_id")?
-                .map(|row| {
-                    deserialize_solver_competition(
-                        row.json,
-                        row.id,
-                        row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
-                    )
-                }),
-            Identifier::Transaction(hash) => {
-                database::solver_competition::load_by_tx_hash(&mut ex, &ByteArray(hash.0))
+            Identifier::Id(id) => {
+                database::solver_competition::load_by_id(&mut ex, id, after_block)
                     .await
-                    .context("solver_competition::load_by_tx_hash")?
+                    .context("solver_competition::load_by_id")?
                     .map(|row| {
                         deserialize_solver_competition(
                             row.json,
@@ -60,12 +51,27 @@ impl SolverCompetitionStoring for Postgres {
                         )
                     })
             }
+            Identifier::Transaction(hash) => database::solver_competition::load_by_tx_hash(
+                &mut ex,
+                &ByteArray(hash.0),
+                after_block,
+            )
+            .await
+            .context("solver_competition::load_by_tx_hash")?
+            .map(|row| {
+                deserialize_solver_competition(
+                    row.json,
+                    row.id,
+                    row.tx_hashes.iter().map(|hash| B256::new(hash.0)).collect(),
+                )
+            }),
         }
         .ok_or(LoadSolverCompetitionError::NotFound)?
     }
 
     async fn load_latest_competition(
         &self,
+        after_block: Option<i64>,
     ) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -73,7 +79,7 @@ impl SolverCompetitionStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        database::solver_competition::load_latest_competition(&mut ex)
+        database::solver_competition::load_latest_competition(&mut ex, after_block)
             .await
             .context("solver_competition::load_latest_competition")?
             .map(|row| {
@@ -100,6 +106,7 @@ impl SolverCompetitionStoring for Postgres {
         let latest_competitions = database::solver_competition::load_latest_competitions(
             &mut ex,
             latest_competitions_count,
+            None,
         )
         .await
         .context("solver_competition::load_latest_competitions")?
@@ -128,7 +135,7 @@ mod tests {
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let result = db
-            .load_competition(Identifier::Transaction(Default::default()))
+            .load_competition(Identifier::Transaction(Default::default()), None)
             .await
             .unwrap_err();
         assert!(matches!(result, LoadSolverCompetitionError::NotFound));

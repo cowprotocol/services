@@ -516,6 +516,7 @@ pub fn setup() -> Setup {
         allow_multiple_solve_requests: false,
         auction_id: 1,
         settle_submission_deadline: 3,
+        flashloans_enabled: true,
         ..Default::default()
     }
 }
@@ -557,6 +558,8 @@ pub struct Setup {
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
     settle_submission_deadline: u64,
+    /// Should flashloan-hint orders be accepted by the driver? True by default.
+    flashloans_enabled: bool,
 }
 
 /// The validity of a solution.
@@ -906,6 +909,12 @@ impl Setup {
         self
     }
 
+    /// Toggle acceptance of flashloan-hint orders at the driver level.
+    pub fn flashloans_enabled(mut self, flashloans_enabled: bool) -> Self {
+        self.flashloans_enabled = flashloans_enabled;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -1013,6 +1022,7 @@ impl Setup {
                 mempools: self.mempools,
                 order_priority_strategies: self.order_priority_strategies,
                 orderbook,
+                flashloans_enabled: self.flashloans_enabled,
             },
             &solvers_with_address,
             &blockchain,

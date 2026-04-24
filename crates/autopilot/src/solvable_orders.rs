@@ -28,14 +28,11 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    price_estimation::{
-        native::{NativePriceEstimating, to_normalized_price},
-        native_price_cache::NativePriceUpdater,
-    },
+    price_estimation::{native::to_normalized_price, native_price_cache::NativePriceUpdater},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::remaining_amounts,
     std::{
-        collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
+        collections::{BTreeMap, HashMap, HashSet},
         future::Future,
         sync::Arc,
         time::{Duration, Instant},
@@ -292,21 +289,11 @@ impl SolvableOrdersCache {
             )
             .await;
         tracing::trace!("fetched native prices for solvable orders");
-        // Add WETH price if it's not already there to support ETH wrap when required.
-        if let Entry::Vacant(entry) = prices.entry(self.weth) {
-            let weth_price = self
-                .timed_future(
-                    "weth_price_fetch",
-                    self.native_price_estimator
-                        .estimate_native_price(self.weth, Default::default()),
-                )
-                .await
-                .expect("weth price fetching can never fail");
-            let weth_price = to_normalized_price(weth_price)
-                .expect("weth price can never be outside of U256 range");
-
-            entry.insert(weth_price);
-        }
+        // WETH's native price is 1 by definition — insert it directly to
+        // support ETH wrap when required.
+        prices
+            .entry(self.weth)
+            .or_insert_with(|| to_normalized_price(1.0).unwrap());
         Metrics::track_filtered_orders(MissingNativePrice, &removed);
         filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
 
