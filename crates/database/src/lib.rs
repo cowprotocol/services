@@ -62,6 +62,7 @@ pub const TABLES: &[&str] = &[
     "last_indexed_blocks",
     "onchain_order_invalidations",
     "onchain_placed_orders",
+    "pool_indexer_checkpoints",
     "presignature_events",
     "proposed_jit_orders",
     "quotes",
@@ -71,6 +72,8 @@ pub const TABLES: &[&str] = &[
     "solver_competitions",
     "surplus_capturing_jit_order_owners",
     "trades",
+    "uniswap_v3_pool_states",
+    "uniswap_v3_pools",
 ];
 
 /// The names of potentially big volume tables we use in the db.
@@ -85,6 +88,7 @@ pub const LARGE_TABLES: &[&str] = &[
     "order_quotes",
     "proposed_solutions",
     "proposed_trade_executions",
+    "uniswap_v3_ticks",
 ];
 
 pub fn all_tables() -> impl Iterator<Item = &'static str> {
@@ -92,11 +96,15 @@ pub fn all_tables() -> impl Iterator<Item = &'static str> {
 }
 
 /// Delete all data in the database. Only used by tests.
+///
+/// Truncates all tables in a single statement so Postgres accepts foreign-key
+/// cycles between listed tables (e.g. `uniswap_v3_pool_states` →
+/// `uniswap_v3_pools`). Individual per-table `TRUNCATE`s error out when any
+/// other listed table references the one being truncated.
 #[expect(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in all_tables() {
-        ex.execute(format!("TRUNCATE {table};").as_str()).await?;
-    }
+    let tables = all_tables().collect::<Vec<_>>().join(", ");
+    ex.execute(format!("TRUNCATE {tables};").as_str()).await?;
     Ok(())
 }
 

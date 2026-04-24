@@ -13,7 +13,12 @@ use {
     anyhow::Context,
     eth_domain_types as eth,
     event_indexing::{block_retriever::BlockRetrieving, maintenance::ServiceMaintenance},
-    liquidity_sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
+    liquidity_sources::uniswap_v3::{
+        V3PoolDataSource,
+        graph_api::UniV3SubgraphClient,
+        pool_fetching::UniswapV3PoolFetcher,
+        pool_indexer::PoolIndexerClient,
+    },
     shared::{http_solver::model::TokenAmount, interaction::Interaction},
     solver::{
         liquidity::{
@@ -114,15 +119,14 @@ async fn init_liquidity(
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
+    let source = build_pool_data_source(eth, config).await?;
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
-            &config.graph_url,
+            source,
             web3.clone(),
-            boundary::liquidity::http_client(),
             block_retriever,
             config.max_pools_to_initialize,
-            config.max_pools_per_tick_query,
         )
         .await
         .context("failed to initialise UniswapV3 liquidity")?,
@@ -136,5 +140,32 @@ async fn init_liquidity(
         *config.router,
         *eth.contracts().settlement().address(),
         pool_fetcher,
+    ))
+}
+
+/// Picks the V3 pool data source based on config precedence.
+async fn build_pool_data_source(
+    eth: &Ethereum,
+    config: &infra::liquidity::config::UniswapV3,
+) -> anyhow::Result<Arc<dyn V3PoolDataSource>> {
+    let http = boundary::liquidity::http_client();
+
+    if let Some(url) = &config.pool_indexer_url {
+        tracing::info!(%url, "uniswap v3: using pool-indexer as data source");
+        return Ok(Arc::new(
+            PoolIndexerClient::new(url.clone(), eth.chain(), http)
+                .context("failed to construct pool-indexer client")?,
+        ));
+    }
+
+    let graph_url = config
+        .graph_url
+        .as_ref()
+        .context("uniswap v3: graph_url required when pool_indexer_url is unset")?;
+    tracing::info!(url = %graph_url, "uniswap v3: using subgraph as data source");
+    Ok(Arc::new(
+        UniV3SubgraphClient::from_subgraph_url(graph_url, http, config.max_pools_per_tick_query)
+            .await
+            .context("failed to construct UniV3 subgraph client")?,
     ))
 }

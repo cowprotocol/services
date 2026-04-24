@@ -35,6 +35,7 @@ interface UniswapV3Pool {
     function observe(uint32[] memory secondsAgos) external view returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s);
     function positions(bytes32) external view returns (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1);
     function protocolFees() external view returns (uint128 token0, uint128 token1);
+    function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked);
     function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160 sqrtPriceLimitX96, bytes memory data) external returns (int256 amount0, int256 amount1);
     function ticks(int24) external view returns (uint128 liquidityGross, int128 liquidityNet, uint256 feeGrowthOutside0X128, uint256 feeGrowthOutside1X128, int56 tickCumulativeOutside, uint160 secondsPerLiquidityOutsideX128, uint32 secondsOutside, bool initialized);
     function token0() external view returns (address);
@@ -363,6 +364,49 @@ interface UniswapV3Pool {
         "name": "token1",
         "type": "uint128",
         "internalType": "uint128"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "slot0",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "sqrtPriceX96",
+        "type": "uint160",
+        "internalType": "uint160"
+      },
+      {
+        "name": "tick",
+        "type": "int24",
+        "internalType": "int24"
+      },
+      {
+        "name": "observationIndex",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "observationCardinality",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "observationCardinalityNext",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "feeProtocol",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "unlocked",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -4189,6 +4233,213 @@ pub mod UniswapV3Pool {
         }
     };
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `slot0()` and selector `0x3850c7bd`.
+    ```solidity
+    function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct slot0Call;
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`slot0()`](slot0Call)
+    /// function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct slot0Return {
+        #[allow(missing_docs)]
+        pub sqrtPriceX96: alloy_sol_types::private::primitives::aliases::U160,
+        #[allow(missing_docs)]
+        pub tick: alloy_sol_types::private::primitives::aliases::I24,
+        #[allow(missing_docs)]
+        pub observationIndex: u16,
+        #[allow(missing_docs)]
+        pub observationCardinality: u16,
+        #[allow(missing_docs)]
+        pub observationCardinalityNext: u16,
+        #[allow(missing_docs)]
+        pub feeProtocol: u8,
+        #[allow(missing_docs)]
+        pub unlocked: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<slot0Call> for UnderlyingRustTuple<'_> {
+                fn from(value: slot0Call) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for slot0Call {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy_sol_types::sol_data::Uint<160>,
+                alloy_sol_types::sol_data::Int<24>,
+                alloy_sol_types::sol_data::Uint<16>,
+                alloy_sol_types::sol_data::Uint<16>,
+                alloy_sol_types::sol_data::Uint<16>,
+                alloy_sol_types::sol_data::Uint<8>,
+                alloy_sol_types::sol_data::Bool,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy_sol_types::private::primitives::aliases::U160,
+                alloy_sol_types::private::primitives::aliases::I24,
+                u16,
+                u16,
+                u16,
+                u8,
+                bool,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<slot0Return> for UnderlyingRustTuple<'_> {
+                fn from(value: slot0Return) -> Self {
+                    (
+                        value.sqrtPriceX96,
+                        value.tick,
+                        value.observationIndex,
+                        value.observationCardinality,
+                        value.observationCardinalityNext,
+                        value.feeProtocol,
+                        value.unlocked,
+                    )
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for slot0Return {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        sqrtPriceX96: tuple.0,
+                        tick: tuple.1,
+                        observationIndex: tuple.2,
+                        observationCardinality: tuple.3,
+                        observationCardinalityNext: tuple.4,
+                        feeProtocol: tuple.5,
+                        unlocked: tuple.6,
+                    }
+                }
+            }
+        }
+        impl slot0Return {
+            fn _tokenize(&self) -> <slot0Call as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                (
+                    <alloy_sol_types::sol_data::Uint<160> as alloy_sol_types::SolType>::tokenize(
+                        &self.sqrtPriceX96,
+                    ),
+                    <alloy_sol_types::sol_data::Int<24> as alloy_sol_types::SolType>::tokenize(
+                        &self.tick,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<16> as alloy_sol_types::SolType>::tokenize(
+                        &self.observationIndex,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<16> as alloy_sol_types::SolType>::tokenize(
+                        &self.observationCardinality,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<16> as alloy_sol_types::SolType>::tokenize(
+                        &self.observationCardinalityNext,
+                    ),
+                    <alloy_sol_types::sol_data::Uint<8> as alloy_sol_types::SolType>::tokenize(
+                        &self.feeProtocol,
+                    ),
+                    <alloy_sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        &self.unlocked,
+                    ),
+                )
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for slot0Call {
+            type Parameters<'a> = ();
+            type Return = slot0Return;
+            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnTuple<'a> = (
+                alloy_sol_types::sol_data::Uint<160>,
+                alloy_sol_types::sol_data::Int<24>,
+                alloy_sol_types::sol_data::Uint<16>,
+                alloy_sol_types::sol_data::Uint<16>,
+                alloy_sol_types::sol_data::Uint<16>,
+                alloy_sol_types::sol_data::Uint<8>,
+                alloy_sol_types::sol_data::Bool,
+            );
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+
+            const SELECTOR: [u8; 4] = [56u8, 80u8, 199u8, 189u8];
+            const SIGNATURE: &'static str = "slot0()";
+
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                slot0Return::_tokenize(ret)
+            }
+
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+
+            #[inline]
+            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Into::into)
+            }
+        }
+    };
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `swap(address,bool,int256,uint160,bytes)` and selector `0x128acb08`.
     ```solidity
     function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160 sqrtPriceLimitX96, bytes memory data) external returns (int256 amount0, int256 amount1);
@@ -4918,6 +5169,8 @@ pub mod UniswapV3Pool {
         #[allow(missing_docs)]
         protocolFees(protocolFeesCall),
         #[allow(missing_docs)]
+        slot0(slot0Call),
+        #[allow(missing_docs)]
         swap(swapCall),
         #[allow(missing_docs)]
         ticks(ticksCall),
@@ -4940,6 +5193,7 @@ pub mod UniswapV3Pool {
             [26u8, 104u8, 101u8, 2u8],
             [26u8, 216u8, 176u8, 59u8],
             [37u8, 44u8, 9u8, 215u8],
+            [56u8, 80u8, 199u8, 189u8],
             [60u8, 138u8, 125u8, 141u8],
             [73u8, 14u8, 108u8, 188u8],
             [79u8, 30u8, 179u8, 216u8],
@@ -4959,6 +5213,7 @@ pub mod UniswapV3Pool {
             <liquidityCall as alloy_sol_types::SolCall>::SIGNATURE,
             <protocolFeesCall as alloy_sol_types::SolCall>::SIGNATURE,
             <observationsCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <slot0Call as alloy_sol_types::SolCall>::SIGNATURE,
             <mintCall as alloy_sol_types::SolCall>::SIGNATURE,
             <flashCall as alloy_sol_types::SolCall>::SIGNATURE,
             <collectCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -4978,6 +5233,7 @@ pub mod UniswapV3Pool {
             ::core::stringify!(liquidity),
             ::core::stringify!(protocolFees),
             ::core::stringify!(observations),
+            ::core::stringify!(slot0),
             ::core::stringify!(mint),
             ::core::stringify!(flash),
             ::core::stringify!(collect),
@@ -5013,7 +5269,7 @@ pub mod UniswapV3Pool {
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for UniswapV3PoolCalls {
-        const COUNT: usize = 16usize;
+        const COUNT: usize = 17usize;
         const MIN_DATA_LENGTH: usize = 0usize;
         const NAME: &'static str = "UniswapV3PoolCalls";
 
@@ -5032,6 +5288,7 @@ pub mod UniswapV3Pool {
                 Self::observe(_) => <observeCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::positions(_) => <positionsCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::protocolFees(_) => <protocolFeesCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::slot0(_) => <slot0Call as alloy_sol_types::SolCall>::SELECTOR,
                 Self::swap(_) => <swapCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::ticks(_) => <ticksCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::token0(_) => <token0Call as alloy_sol_types::SolCall>::SELECTOR,
@@ -5087,6 +5344,13 @@ pub mod UniswapV3Pool {
                             .map(UniswapV3PoolCalls::observations)
                     }
                     observations
+                },
+                {
+                    fn slot0(data: &[u8]) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
+                        <slot0Call as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(UniswapV3PoolCalls::slot0)
+                    }
+                    slot0
                 },
                 {
                     fn mint(data: &[u8]) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
@@ -5225,6 +5489,13 @@ pub mod UniswapV3Pool {
                     observations
                 },
                 {
+                    fn slot0(data: &[u8]) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
+                        <slot0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                            .map(UniswapV3PoolCalls::slot0)
+                    }
+                    slot0
+                },
+                {
                     fn mint(data: &[u8]) -> alloy_sol_types::Result<UniswapV3PoolCalls> {
                         <mintCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
                             .map(UniswapV3PoolCalls::mint)
@@ -5348,6 +5619,9 @@ pub mod UniswapV3Pool {
                 Self::protocolFees(inner) => {
                     <protocolFeesCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
+                Self::slot0(inner) => {
+                    <slot0Call as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
                 Self::swap(inner) => {
                     <swapCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -5401,6 +5675,9 @@ pub mod UniswapV3Pool {
                 }
                 Self::protocolFees(inner) => {
                     <protocolFeesCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                }
+                Self::slot0(inner) => {
+                    <slot0Call as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::swap(inner) => {
                     <swapCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
@@ -5884,6 +6161,11 @@ pub mod UniswapV3Pool {
         ///Creates a new call builder for the [`protocolFees`] function.
         pub fn protocolFees(&self) -> alloy_contract::SolCallBuilder<&P, protocolFeesCall, N> {
             self.call_builder(&protocolFeesCall)
+        }
+
+        ///Creates a new call builder for the [`slot0`] function.
+        pub fn slot0(&self) -> alloy_contract::SolCallBuilder<&P, slot0Call, N> {
+            self.call_builder(&slot0Call)
         }
 
         ///Creates a new call builder for the [`swap`] function.

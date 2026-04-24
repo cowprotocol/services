@@ -1,7 +1,8 @@
 use {
     super::{
+        V3PoolDataSource,
         event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher},
-        graph_api::{PoolData, Token, UniV3SubgraphClient},
+        graph_api::{PoolData, Token},
     },
     crate::{recent_block_cache::Block, uniswap_v3::event_fetching::WithAddress},
     alloy::{
@@ -22,7 +23,6 @@ use {
     model::TokenPair,
     num::{BigInt, Zero, rational::Ratio},
     number::serialization::HexOrDecimalU256,
-    reqwest::{Client, Url},
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
     std::{
@@ -124,7 +124,7 @@ struct PoolsCheckpoint {
 }
 
 struct PoolsCheckpointHandler {
-    graph_api: UniV3SubgraphClient,
+    source: Arc<dyn V3PoolDataSource>,
     /// Address is pool id while TokenPair is a pair or tokens for each pool.
     pools_by_token_pair: HashMap<TokenPair, HashSet<Address>>,
     /// Pools state on a specific block number in history considered reorg safe
@@ -136,15 +136,10 @@ impl PoolsCheckpointHandler {
     /// state/ticks). Then fetches state/ticks for the most deepest pools
     /// (subset of all existing pools)
     pub async fn new(
-        subgraph_url: &Url,
-        client: Client,
+        source: Arc<dyn V3PoolDataSource>,
         max_pools_to_initialize_cache: usize,
-        max_pools_per_tick_query: usize,
     ) -> Result<Self> {
-        let graph_api =
-            UniV3SubgraphClient::from_subgraph_url(subgraph_url, client, max_pools_per_tick_query)
-                .await?;
-        let mut registered_pools = graph_api.get_registered_pools().await?;
+        let mut registered_pools = source.get_registered_pools().await?;
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
             "initialized registered pools",
@@ -171,7 +166,7 @@ impl PoolsCheckpointHandler {
             .rev()
             .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
-        let pools = graph_api
+        let pools = source
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
             .await?
             .into_iter()
@@ -184,7 +179,7 @@ impl PoolsCheckpointHandler {
         });
 
         Ok(Self {
-            graph_api,
+            source,
             pools_by_token_pair,
             pools_checkpoint,
         })
@@ -243,7 +238,7 @@ impl PoolsCheckpointHandler {
         let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
         let start = std::time::Instant::now();
         let pools = self
-            .graph_api
+            .source
             .get_pools_with_ticks_by_ids(&pool_ids, block_number)
             .await;
         tracing::debug!(
@@ -282,21 +277,13 @@ pub struct UniswapV3PoolFetcher {
 
 impl UniswapV3PoolFetcher {
     pub async fn new(
-        subgraph_url: &Url,
+        source: Arc<dyn V3PoolDataSource>,
         web3: Web3,
-        client: Client,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: usize,
-        max_pools_per_tick_query: usize,
     ) -> Result<Self> {
         let web3 = web3.labeled("uniswapV3");
-        let checkpoint = PoolsCheckpointHandler::new(
-            subgraph_url,
-            client,
-            max_pools_to_initialize,
-            max_pools_per_tick_query,
-        )
-        .await?;
+        let checkpoint = PoolsCheckpointHandler::new(source, max_pools_to_initialize).await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = block_retriever.block(init_block).await?;

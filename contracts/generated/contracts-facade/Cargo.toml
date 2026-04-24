@@ -67,6 +67,8 @@ cow-contract-iuniswapv3factory = { path = "../contracts-generated/iuniswapv3fact
 cow-contract-izeroex = { path = "../contracts-generated/izeroex" }
 cow-contract-liquoricesettlement = { path = "../contracts-generated/liquoricesettlement" }
 cow-contract-mockerc4626wrapper = { path = "../contracts-generated/mockerc4626wrapper" }
+cow-contract-mockuniswapv3factory = { path = "../contracts-generated/mockuniswapv3factory" }
+cow-contract-mockuniswapv3pool = { path = "../contracts-generated/mockuniswapv3pool" }
 cow-contract-nonstandarderc20balances = { path = "../contracts-generated/nonstandarderc20balances" }
 cow-contract-pancakerouter = { path = "../contracts-generated/pancakerouter" }
 cow-contract-permit2 = { path = "../contracts-generated/permit2" }
