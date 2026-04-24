@@ -860,10 +860,7 @@ enum Error {
 /// read and the sim's execution. Spardose is a throwaway donor, so
 /// overshoot has no cost.
 fn spardose_amount_with_buffer(needed: U256) -> U256 {
-    if needed.is_zero() {
-        return U256::ZERO;
-    }
-    let buffer = std::cmp::max(U256::from(1u64), needed / U256::from(100u64));
+    let buffer = std::cmp::max(U256::ONE, needed / U256::from(100u64));
     needed.saturating_add(buffer)
 }
 
@@ -884,12 +881,8 @@ mod tests {
             spardose_amount_with_buffer(U256::from(99u64)),
             U256::from(100u64)
         );
-        assert_eq!(
-            spardose_amount_with_buffer(U256::from(1u64)),
-            U256::from(2u64)
-        );
-        // Zero needed means no trade, no donor funds needed.
-        assert_eq!(spardose_amount_with_buffer(U256::ZERO), U256::ZERO);
+        assert_eq!(spardose_amount_with_buffer(U256::ONE), U256::from(2u64));
+        assert_eq!(spardose_amount_with_buffer(U256::ZERO), U256::ONE);
         // Saturates at U256::MAX instead of overflowing.
         assert_eq!(spardose_amount_with_buffer(U256::MAX), U256::MAX);
     }
