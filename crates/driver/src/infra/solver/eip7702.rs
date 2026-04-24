@@ -23,6 +23,16 @@ const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
 
 /// Ensure EIP-7702 delegation and caller approval are set up for all solvers
 /// with parallel submission accounts. Called once at driver startup.
+///
+/// # Errors
+/// - `max-solutions-to-propose > 1` without any `submission-accounts`
+///   configured (parallel submission is required for multi-solution mode).
+/// - `submission-accounts` configured without a `forwarder-contract` address.
+/// - `submission-accounts` configured but the main solver account is read-only,
+///   so it cannot sign the EIP-7702 authorization.
+/// - The EIP-7702 delegation tx lands but the on-chain code does not reflect
+///   the expected designator (e.g. a concurrent tx shifted the nonce).
+/// - Any underlying RPC error (code fetch, chain id, tx send, receipt).
 #[instrument(name = "setup_eip7702", skip_all)]
 pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     for solver in solvers {

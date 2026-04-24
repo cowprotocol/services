@@ -1301,8 +1301,8 @@ impl SolveOk<'_> {
             .to_owned()
     }
 
-    /// Extracts the first solution from the response. Panics if more than one
-    /// solution was returned (i.e. `propose-all-solutions` is disabled).
+    /// Extracts the only solution from the response. Panics if the response
+    /// contains more than one solution (i.e. `max-solutions-to-propose > 1`).
     pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);

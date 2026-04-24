@@ -94,7 +94,7 @@ async fn capped() {
 /// discarded and only valid ones are returned.
 #[tokio::test]
 #[ignore]
-async fn all_proposed_with_invalid() {
+async fn only_proposes_valid_solutions() {
     let order = ab_order();
     let test = setup()
         .solvers(vec![
