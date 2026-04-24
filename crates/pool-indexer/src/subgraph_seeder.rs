@@ -31,10 +31,13 @@ use {
 
 /// Number of pools (or ticks) returned per GraphQL page.
 const PAGE_SIZE: usize = 1000;
+
 /// Maximum number of pools whose ticks are fetched concurrently.
 const TICK_CONCURRENCY: usize = 50;
+
 /// Timeout for individual subgraph HTTP requests.
 const SUBGRAPH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Cursor value below the minimum Uniswap V3 tick index (-887272), ensuring the
 /// first GraphQL page includes the lowest possible tick.
 const TICK_IDX_CURSOR_START: i64 = -887_273;
