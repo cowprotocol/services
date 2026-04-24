@@ -20,6 +20,7 @@ use {
     std::{
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         path::Path,
+        time::Duration,
     },
 };
 
@@ -59,6 +60,31 @@ pub struct OrderSimulationConfig {
     /// URL.
     #[serde(default)]
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
+
+    /// Mode for the EIP-1271 order simulation.
+    #[serde(default)]
+    pub eip1271_simulation_mode: Eip1271SimulationMode,
+
+    /// Per-call timeout for the EIP-1271 order simulation.
+    #[serde(
+        default = "default_eip1271_simulation_timeout",
+        with = "humantime_serde"
+    )]
+    pub eip1271_simulation_timeout: Duration,
+}
+
+/// Mode for the EIP-1271 order simulation at order creation.
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Eip1271SimulationMode {
+    Shadow,
+    Enforce,
+    #[default]
+    Disabled,
+}
+
+fn default_eip1271_simulation_timeout() -> Duration {
+    Duration::from_secs(2)
 }
 
 /// Top-level orderbook service configuration.
@@ -228,6 +254,8 @@ pub mod test_util {
                 order_simulation: Some(OrderSimulationConfig {
                     gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
                     tenderly: None,
+                    eip1271_simulation_mode: Default::default(),
+                    eip1271_simulation_timeout: std::time::Duration::from_secs(2),
                 }),
                 hide_competition_before_deadline: false,
             }
@@ -437,5 +465,45 @@ mod tests {
             deserialized.hide_competition_before_deadline
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
+    }
+
+    #[test]
+    fn parses_simulation_mode_default() {
+        let toml = r#"gas-limit = "0x1000000""#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
+        assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn parses_simulation_mode_enforce() {
+        let toml = r#"
+            gas-limit = "0x1000000"
+            eip1271-simulation-mode = "enforce"
+            eip1271-simulation-timeout = "5s"
+        "#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Enforce);
+        assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn parses_simulation_mode_shadow() {
+        let toml = r#"
+            gas-limit = "0x1000000"
+            eip1271-simulation-mode = "shadow"
+        "#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Shadow);
+    }
+
+    #[test]
+    fn parses_simulation_mode_disabled() {
+        let toml = r#"
+            gas-limit = "0x1000000"
+            eip1271-simulation-mode = "disabled"
+        "#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
     }
 }

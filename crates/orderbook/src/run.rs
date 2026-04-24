@@ -41,7 +41,12 @@ use {
     },
     shared::{
         order_quoting::{self, OrderQuoter},
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator},
+        order_validation::{
+            Eip1271SimulationMode,
+            Eip1271Simulator,
+            OrderValidPeriodConfiguration,
+            OrderValidator,
+        },
     },
     simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
@@ -375,6 +380,58 @@ pub async fn run(config: Configuration) {
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
         .await
         .ok();
+
+    let (order_simulator, eip1271_simulator) = match config.order_simulation {
+        Some(sim_config) => {
+            let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+                sim_config.tenderly.as_ref().map(|tenderly_config| {
+                    Box::new(simulator::tenderly::TenderlyApi::new(
+                        tenderly_config,
+                        &http_factory,
+                        chain.id().to_string(),
+                    )) as _
+                });
+            let order_simulator = Arc::new(OrderSimulator::new(
+                SwapSimulator::new(
+                    balance_overrider.clone(),
+                    *settlement_contract.address(),
+                    *native_token.address(),
+                    current_block_stream.clone(),
+                    web3,
+                    sim_config
+                        .gas_limit
+                        .try_into()
+                        .expect("gas_limit must fit in u64"),
+                )
+                .await
+                .expect("failed to create SwapSimulator"),
+                chain.id().to_string(),
+                tenderly,
+            ));
+            let mode = match sim_config.eip1271_simulation_mode {
+                configs::orderbook::Eip1271SimulationMode::Shadow => {
+                    Some(Eip1271SimulationMode::Shadow)
+                }
+                configs::orderbook::Eip1271SimulationMode::Enforce => {
+                    Some(Eip1271SimulationMode::Enforce)
+                }
+                configs::orderbook::Eip1271SimulationMode::Disabled => None,
+            };
+            let eip1271_simulator = mode.map(|mode| {
+                let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
+                    crate::eip1271_simulation::OrderSimulatorAdapter::new(order_simulator.clone()),
+                );
+                Eip1271Simulator {
+                    simulator,
+                    mode,
+                    timeout: sim_config.eip1271_simulation_timeout,
+                }
+            });
+            (Some(order_simulator), eip1271_simulator)
+        }
+        None => (None, None),
+    };
+
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -389,6 +446,7 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
+        eip1271_simulator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,
@@ -410,36 +468,6 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
-
-    let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Box::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(Arc::new(OrderSimulator::new(
-            SwapSimulator::new(
-                balance_overrider.clone(),
-                *settlement_contract.address(),
-                *native_token.address(),
-                current_block_stream.clone(),
-                web3,
-                config
-                    .gas_limit
-                    .try_into()
-                    .expect("gas_limit must fit in u64"),
-            )
-            .await
-            .expect("failed to create SwapSimulator"),
-            chain.id().to_string(),
-            tenderly,
-        )))
-    } else {
-        None
-    };
 
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
