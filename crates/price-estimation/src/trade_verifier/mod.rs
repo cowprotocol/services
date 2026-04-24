@@ -853,13 +853,18 @@ enum Error {
     SimulationFailed(#[from] anyhow::Error),
 }
 
-/// Spardose gets `needed` plus a 1% headroom. The buffer is absorbed by
-/// tokens with boundary-rounding or per-block accrual (aToken, rebasing,
-/// tiny fee-on-transfer) so the sim at a slightly different block than
-/// our state_override read still has enough funds. Spardose is a
-/// throwaway donor, so overshoot has no cost.
+/// Spardose gets `needed` plus a 1% headroom, floored at 1 wei so the
+/// 1-wei boundary is still covered for small amounts where `needed / 100`
+/// truncates to 0. The buffer absorbs rounding or per-block accrual
+/// (aToken, rebasing, tiny fee-on-transfer) between our state_override
+/// read and the sim's execution. Spardose is a throwaway donor, so
+/// overshoot has no cost.
 fn spardose_amount_with_buffer(needed: U256) -> U256 {
-    needed.saturating_add(needed / U256::from(100u64))
+    if needed.is_zero() {
+        return U256::ZERO;
+    }
+    let buffer = std::cmp::max(U256::from(1u64), needed / U256::from(100u64));
+    needed.saturating_add(buffer)
 }
 
 #[cfg(test)]
@@ -872,12 +877,18 @@ mod tests {
             spardose_amount_with_buffer(U256::from(1_000_000_000_000_000_000u128)),
             U256::from(1_010_000_000_000_000_000u128)
         );
-        // Tiny amounts floor to 0% headroom (1 / 100 == 0 in integer math),
-        // which is fine for these magnitudes no real order sits this low.
+        // Amounts below 100 still get at least 1 wei of headroom, so the
+        // boundary stays covered when integer division would otherwise
+        // round the 1% buffer to 0.
         assert_eq!(
-            spardose_amount_with_buffer(U256::from(50u64)),
-            U256::from(50u64)
+            spardose_amount_with_buffer(U256::from(99u64)),
+            U256::from(100u64)
         );
+        assert_eq!(
+            spardose_amount_with_buffer(U256::from(1u64)),
+            U256::from(2u64)
+        );
+        // Zero needed means no trade, no donor funds needed.
         assert_eq!(spardose_amount_with_buffer(U256::ZERO), U256::ZERO);
         // Saturates at U256::MAX instead of overflowing.
         assert_eq!(spardose_amount_with_buffer(U256::MAX), U256::MAX);
