@@ -580,7 +580,7 @@ impl Competition {
         &self,
         scored: &mut Vec<(Solved, Settlement)>,
         auction: &Auction,
-    ) {
+    ) -> anyhow::Result<()> {
         let mut stream = ethrpc::block_stream::into_stream(self.eth.current_block().clone());
         while let Some(block) = stream.next().await {
             let voided_ids: HashSet<u64> =
@@ -597,15 +597,17 @@ impl Competition {
             }
 
             scored.retain(|(solved, _)| !voided_ids.contains(&solved.id.get()));
-            self.settlements
+            let mut lock = self
+                .settlements
                 .lock()
-                .unwrap()
-                .retain(|s| !voided_ids.contains(&s.solution().get()));
+                .map_err(|_| anyhow::anyhow!("settlements mutex poisoned"))?;
+            lock.retain(|s| !voided_ids.contains(&s.solution().get()));
 
             if scored.is_empty() {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     /// Re-simulate a single solution and return its id if it started
