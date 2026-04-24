@@ -327,6 +327,7 @@ fn build_module() -> Module {
         .add_contract(Contract::new("UniswapV3Pool"))
         .add_contract(Contract::new("UniswapV3QuoterV2").with_networks(networks![
             MAINNET => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+            GNOSIS => "0x7E9cB3499A6cee3baBe5c8a3D328EA7FD36578f4",
             ARBITRUM_ONE => "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
             BASE => "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
             AVALANCHE => "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F",
@@ -341,6 +342,7 @@ fn build_module() -> Module {
             Contract::new("UniswapV3SwapRouterV2").with_networks(networks![
                 ARBITRUM_ONE => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
                 MAINNET => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+                GNOSIS => "0xc6D25285D5C5b62b7ca26D6092751A145D50e9Be",
                 POLYGON => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
                 OPTIMISM => "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
                 BASE => "0x2626664c2603336E57B271c5C0b26F421741e481",
@@ -353,6 +355,7 @@ fn build_module() -> Module {
         )
         .add_contract(Contract::new("IUniswapV3Factory").with_networks(networks![
             MAINNET => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            GNOSIS => "0xe32F7dD7e3f098D518ff19A22d5f028e076489B1",
             SEPOLIA => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             ARBITRUM_ONE => "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             BASE => "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
