@@ -71,6 +71,6 @@ impl Remaining for chrono::DateTime<chrono::Utc> {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 #[error("the deadline has been exceeded")]
 pub struct DeadlineExceeded;

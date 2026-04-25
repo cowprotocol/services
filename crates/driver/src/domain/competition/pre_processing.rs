@@ -2,11 +2,22 @@ use {
     super::{Auction, Order, order},
     crate::{
         domain::{
-            competition::order::{SellTokenBalance, app_data::AppData},
+            competition::{
+                MAX_CONCURRENT_AUCTIONS,
+                deadline_cancellation::DeadlineCancellation,
+                order::{SellTokenBalance, app_data::AppData},
+            },
             cow_amm,
             liquidity,
+            time::DeadlineExceeded,
         },
-        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
+        infra::{
+            self,
+            api::routes::solve::dto::SolveRequest,
+            observe::metrics,
+            solver::Timeouts,
+            tokens,
+        },
     },
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Bytes, FixedBytes},
@@ -27,7 +38,7 @@ use {
     },
     signature_validator::SignatureValidating,
     std::{
-        collections::HashMap,
+        collections::{HashMap, VecDeque},
         future::Future,
         sync::Arc,
         time::{Duration, Instant},
@@ -36,8 +47,7 @@ use {
     tracing::{Instrument, instrument},
 };
 
-type Shared<T> = futures::future::Shared<BoxFuture<'static, T>>;
-
+type Shared<T> = futures::future::Shared<BoxFuture<'static, Result<T, DeadlineExceeded>>>;
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
@@ -77,12 +87,16 @@ impl std::fmt::Debug for Utilities {
 
 /// All the data used to ensure that we only run 1 instance of
 /// [`DataFetchingTasks`] per auction shared by all the connected solvers.
-#[derive(Debug)]
+///
+/// Multiple auctions can overlap, so this stores preprocessing by auction
+/// id instead of keeping only the latest auction.
+#[derive(Debug, Default)]
 struct ControlBlock {
-    /// Auction for which the data aggregation task was spawned.
-    auction_id: i64,
-    /// Data aggregation task.
-    tasks: DataFetchingTasks,
+    /// Per-auction preprocessing tasks.
+    tasks: HashMap<i64, DataFetchingTasks>,
+
+    /// Access order used to evict old preprocessing handles.
+    order: VecDeque<i64>,
 }
 
 #[derive(Debug)]
@@ -93,15 +107,13 @@ pub struct DataAggregator {
 
 impl DataAggregator {
     /// Aggregates all the data that is needed to pre-process the given auction.
-    /// Uses a shared futures internally to make sure that the works happens
-    /// only once for all connected solvers to share.
+    /// Uses shared futures internally to make sure that the work happens only
+    /// once per auction for all connected solvers to share.
     pub async fn start_or_get_tasks_for_auction(
         &self,
         request: Request<Body>,
+        timeouts: Timeouts,
     ) -> Result<DataFetchingTasks> {
-        let mut lock = self.control.lock().await;
-        let current_auction = &lock.auction_id;
-
         // Figure out for which auction this `/solve` request was issued
         // by looking at the `X-Auction-Id` header.
         let request_auction_id: i64 = request
@@ -113,19 +125,44 @@ impl DataAggregator {
             .parse()
             .context("could not parse X-Auction-Id header as i64")?;
 
+        let mut lock = self.control.lock().await;
+
         // Some other driver is already doing the pre-processing for this
         // auction. Stop processing here and just await the existing task.
-        if request_auction_id == *current_auction {
+        if let Some(tasks) = lock.tasks.get(&request_auction_id).cloned() {
             init_auction_id_in_span(Some(request_auction_id));
             tracing::debug!("await running data aggregation task");
-            return Ok(lock.tasks.clone());
+
+            lock.order.retain(|id| *id != request_auction_id);
+            lock.order.push_back(request_auction_id);
+
+            return Ok(tasks);
         }
 
-        let tasks = self.assemble_tasks(request).await?;
+        let tasks = self.assemble_tasks(request, timeouts).await?;
 
         tracing::debug!("started new data aggregation task");
-        lock.auction_id = request_auction_id;
-        lock.tasks = tasks.clone();
+
+        lock.tasks.insert(request_auction_id, tasks.clone());
+        lock.order.push_back(request_auction_id);
+
+        while lock.tasks.len() > MAX_CONCURRENT_AUCTIONS {
+            let Some(evicted_auction_id) = lock.order.pop_front() else {
+                break;
+            };
+
+            if evicted_auction_id == request_auction_id {
+                lock.order.push_back(evicted_auction_id);
+                continue;
+            }
+
+            if lock.tasks.remove(&evicted_auction_id).is_some() {
+                tracing::debug!(
+                    auction_id = evicted_auction_id,
+                    "evicted preprocessing handle"
+                );
+            }
+        }
 
         Ok(tasks)
     }
@@ -166,37 +203,41 @@ impl DataAggregator {
                 balance_fetcher,
                 cow_amm_cache,
             }),
-            control: Mutex::new(ControlBlock {
-                auction_id: Default::default(),
-                tasks: DataFetchingTasks {
-                    auction: futures::future::pending().boxed().shared(),
-                    balances: futures::future::pending().boxed().shared(),
-                    app_data: futures::future::pending().boxed().shared(),
-                    cow_amm_orders: futures::future::pending().boxed().shared(),
-                    liquidity: futures::future::pending().boxed().shared(),
-                },
-            }),
+            control: Mutex::new(Default::default()),
         }
     }
 
-    async fn assemble_tasks(&self, request: Request<Body>) -> Result<DataFetchingTasks> {
+    async fn assemble_tasks(
+        &self,
+        request: Request<Body>,
+        timeouts: Timeouts,
+    ) -> Result<DataFetchingTasks> {
         let auction = self.utilities.parse_request(request).await?;
+        let deadline = auction.deadline(timeouts).driver();
+        let deadline_cancellation = Arc::new(DeadlineCancellation::new(deadline));
 
-        let balances =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_balances(Arc::clone(&auction)));
+        let balances = Self::spawn_shared(
+            deadline_cancellation.clone(),
+            Arc::clone(&self.utilities).fetch_balances(Arc::clone(&auction)),
+        );
 
         let app_data = Self::spawn_shared(
+            deadline_cancellation.clone(),
             Arc::clone(&self.utilities).collect_orders_app_data(Arc::clone(&auction)),
         );
 
-        let cow_amm_orders =
-            Self::spawn_shared(Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)));
+        let cow_amm_orders = Self::spawn_shared(
+            deadline_cancellation.clone(),
+            Arc::clone(&self.utilities).cow_amm_orders(Arc::clone(&auction)),
+        );
 
-        let liquidity =
-            Self::spawn_shared(Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)));
+        let liquidity = Self::spawn_shared(
+            deadline_cancellation,
+            Arc::clone(&self.utilities).fetch_liquidity(Arc::clone(&auction)),
+        );
 
         Ok(DataFetchingTasks {
-            auction: futures::future::ready(auction).boxed().shared(),
+            auction: futures::future::ready(Ok(auction)).boxed().shared(),
             balances,
             app_data,
             cow_amm_orders,
@@ -208,14 +249,28 @@ impl DataAggregator {
     /// Errors are not handled as we are deferring all error handling to where
     /// the shared future is awaited.
     /// The future is being started immediately and polled in the background so
-    /// the caller doen't have to manage data dependencies directly.
-    fn spawn_shared<T>(fut: impl Future<Output = T> + Send + 'static) -> Shared<T>
+    /// the caller doesn't have to manage data dependencies directly.
+    fn spawn_shared<T>(
+        deadline: Arc<DeadlineCancellation>,
+        fut: impl Future<Output = T> + Send + 'static,
+    ) -> Shared<T>
     where
         T: Send + Sync + Clone + 'static,
     {
-        let shared = fut.instrument(tracing::Span::current()).boxed().shared();
+        let cancel = deadline.token();
 
-        // Start the computation in the background
+        let shared = async move {
+            let _deadline = deadline;
+
+            tokio::select! {
+                result = fut => Ok(result),
+                _ = cancel.cancelled() => Err(DeadlineExceeded),
+            }
+        }
+        .instrument(tracing::Span::current())
+        .boxed()
+        .shared();
+
         tokio::spawn(shared.clone());
 
         shared
@@ -574,4 +629,111 @@ async fn collect_request_body(request: Request<Body>) -> Result<body::Bytes> {
     let duration = start.elapsed();
     tracing::debug!(?duration, "finished streaming request body");
     Ok(body_bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::time::Duration;
+    use std::sync::Arc;
+
+    /// fake DataFetchingTasks for tests
+    fn dummy_tasks() -> DataFetchingTasks {
+        DataFetchingTasks {
+            auction: futures::future::pending::<Result<Arc<Auction>, DeadlineExceeded>>()
+                .boxed()
+                .shared(),
+            balances: futures::future::pending::<Result<Arc<Balances>, DeadlineExceeded>>()
+                .boxed()
+                .shared(),
+            app_data:  futures::future::pending::<Result<Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>, DeadlineExceeded>>()
+                .boxed()
+                .shared(),
+            cow_amm_orders: futures::future::pending::<Result<Arc<Vec<Order>>, DeadlineExceeded>>()
+                .boxed()
+                .shared(),
+            liquidity:  futures::future::pending::<Result<Arc<Vec<liquidity::Liquidity>>, DeadlineExceeded>>()
+                .boxed()
+                .shared(),
+        }
+    }
+
+    #[tokio::test]
+    async fn reuses_existing_tasks_for_same_auction() {
+        let mut control = ControlBlock::default();
+
+        let tasks = dummy_tasks();
+
+        control.tasks.insert(1, tasks.clone());
+        control.order.push_back(1);
+
+        // Simulate lookup
+        let reused = control.tasks.get(&1).cloned();
+
+        assert!(reused.is_some());
+    }
+
+    #[tokio::test]
+    async fn stores_multiple_auctions() {
+        let mut control = ControlBlock::default();
+
+        control.tasks.insert(1, dummy_tasks());
+        control.tasks.insert(2, dummy_tasks());
+
+        assert_eq!(control.tasks.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn evicts_oldest_when_capacity_exceeded() {
+        let mut control = ControlBlock::default();
+
+        // Fill up to capacity
+        for i in 0..MAX_CONCURRENT_AUCTIONS {
+            control.tasks.insert(i as i64, dummy_tasks());
+            control.order.push_back(i as i64);
+        }
+
+        // should evict oldest
+        control.tasks.insert(999, dummy_tasks());
+        control.order.push_back(999);
+
+        while control.tasks.len() > MAX_CONCURRENT_AUCTIONS {
+            if let Some(old) = control.order.pop_front() {
+                control.tasks.remove(&old);
+            }
+        }
+
+        assert_eq!(control.tasks.len(), MAX_CONCURRENT_AUCTIONS);
+        assert!(!control.tasks.contains_key(&0));
+    }
+
+    #[tokio::test]
+    async fn cache_eviction_removes_handle_only() {
+        let mut control = ControlBlock::default();
+
+        control.tasks.insert(1, dummy_tasks());
+        control.order.push_back(1);
+
+        let evicted = control.tasks.remove(&1);
+
+        assert!(evicted.is_some());
+        assert!(!control.tasks.contains_key(&1));
+    }
+
+    #[tokio::test]
+    async fn deadline_cancels_shared_future() {
+        let deadline = Utc::now() + chrono::Duration::milliseconds(20);
+        let deadline = Arc::new(DeadlineCancellation::new(deadline));
+
+        let shared = DataAggregator::spawn_shared(deadline, async {
+            futures::future::pending::<Arc<()>>().await
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(1), shared)
+            .await
+            .expect("future resolved");
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+    }
 }

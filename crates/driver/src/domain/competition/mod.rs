@@ -319,19 +319,23 @@ impl Competition {
 
         let tasks = self
             .fetcher
-            .start_or_get_tasks_for_auction(request)
+            .start_or_get_tasks_for_auction(request, self.solver.timeouts())
             .await
             .map_err(|err| {
                 tracing::error!(?err, "pre-processing auction failed");
                 Error::MalformedRequest
             })?;
-        let mut auction = Arc::unwrap_or_clone(tasks.auction.await);
+
+        let mut auction = match tasks.auction.await {
+            Ok(auction) => Arc::unwrap_or_clone(auction),
+            Err(err) => return Err(err.into()),
+        };
 
         let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
         // Add the CoW AMM orders to the auction
-        let cow_amm_orders = tasks.cow_amm_orders.await;
+        let cow_amm_orders = tasks.cow_amm_orders.await?;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
@@ -344,20 +348,19 @@ impl Competition {
         let (auction, balances, app_data) =
             tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
 
+        let balances = balances?;
+        let app_data = app_data?;
+
         let auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime.
             Self::update_orders(auction, balances, app_data, cow_amm_orders)
-        })
-        .await;
+        }).await;
 
         // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::join!(
             async {
                 match self.solver.liquidity() {
                     solver::Liquidity::Fetch => tasks.liquidity.await,
-                    solver::Liquidity::Skip => Arc::new(Vec::new()),
+                    solver::Liquidity::Skip => Ok(Arc::new(Vec::new())),
                 }
             },
             self.without_unsupported_orders(auction)
@@ -377,6 +380,7 @@ impl Competition {
         }
 
         let auction = &auction;
+        let liquidity = liquidity?;
 
         // Fetch the solutions from the solver.
         let solutions = self
