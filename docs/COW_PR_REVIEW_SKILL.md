@@ -1,306 +1,256 @@
 # CoW Services PR Review Skill
 
-This document instructs Claude how to produce a local PR review report. It is invoked by `.claude/commands/review-pr.md` after the prologue (arg parsing, prereq check, clean-tree check, main update, PR checkout).
+This document instructs Claude how to produce a PR review for cowprotocol/services. It is invoked by `.claude/commands/review-pr.md` (locally) or by `.github/workflows/claude-code-review.yml` (in CI). One skill, three operating modes.
 
-At this point you have:
+At the point this document is read, the entry-point has already determined:
 
-- A parsed `<PR_NUMBER>`, `<owner>`, `<repo>`.
-- A `mode` flag: `full checkout` (default) or `degraded static-diff` (fork fallback).
-- A `loaded_context` list of installed prereq skills.
-- A `prior_branch` variable holding the branch name to return to.
+- **`mode`** — one of:
+  - `diff` — local, no PR yet. Source is `git diff $(git merge-base HEAD main)..HEAD` (the whole feature-branch worth of work). No PR metadata, no `gh` calls. Output to terminal.
+  - `pr-local` — local, PR exists. Source is `gh pr diff <N>` plus PR metadata. Output to terminal.
+  - `pr-ci` — running inside `.github/workflows/claude-code-review.yml`. Source is `gh pr diff <N>` plus PR metadata. Output is a single review comment posted to the PR.
+- **`<PR_NUMBER>`, `<owner>`, `<repo>`** (only in `pr-local` / `pr-ci`).
+- **`prior_branch`** (only in `pr-local` — the branch to print at the end).
+
+The mode shapes which steps run and how the report is delivered, but the *content* of the review is the same in all three.
+
+---
 
 ## Core Principles (read before executing)
 
-- **CRITICAL: Signal over noise.** Report genuine concerns only. LGTM is a perfectly valid verdict and is the correct one whenever the PR is clean. The goal is not to maximise finding count — the goal is to be worth a senior reviewer's attention.
-- **CRITICAL: Never post to GitHub.** Output is strictly for the user's terminal. No `gh pr review`, no `gh pr comment`, no `gh pr close`. The user decides what to say on GitHub.
-- **CRITICAL: Code is the primary source of truth.** `CLAUDE.md`, existing design docs, and this skill's own sibling docs can go stale. When a finding turns on *"X is called from Y"* or *"this field is read by Z"*, verify by grepping the codebase or using an LSP symbol tool — not by citing a doc. Docs give you higher-level *shape*; code gives you ground truth.
+- **Signal over noise.** Report genuine concerns only. LGTM is a perfectly valid verdict and is the correct one whenever the PR is clean. The goal is not to maximise finding count — it is to be worth a senior reviewer's attention.
+- **Local modes never post to GitHub.** In `diff` and `pr-local`, output is strictly terminal. No `gh pr review`, no `gh pr comment`. The user posts whatever they choose. In `pr-ci`, post exactly one consolidated review comment — no per-line spam.
+- **Code is the primary source of truth.** `CLAUDE.md`, design docs in `docs/`, and this skill's own sibling docs can go stale. When a finding turns on *"X is called from Y"* or *"this field is read by Z"*, verify with `git grep` / `rg` / LSP — not by citing a doc.
+- **Inverted: this PR can make existing docs / comments / its own description stale.** If a code change makes a comment, a `docs/` page, or the PR's own description no longer match the diff's current state, that is itself a finding (`Action:` → update X).
+- **`git blame` before flagging code that looks unusual.** Often code looks weird because it had to. Before suggesting a "cleanup", blame the affected lines, read the originating commit message and (if any) linked PR. A comment that says *"this looks accidental, did you mean X?"* without that step risks asking the author to undo a hard-won fix.
 - **Explain, don't just flag.** Each finding must give the reviewer enough context to understand *and defend* the point — not just forward AI-generated text.
-- **Actionable framing.** Every finding ends with either a concrete `Action:` or a specific `Question:`. Never both.
-- **Token discipline.** Don't read entire files when a grep or a targeted LSP symbol lookup suffices. Build a codemap (see [§3.5](#35-codemap-phase)) *before* reading file bodies. When you do need a file, read hunks adjacent to changed lines rather than the whole thing.
+- **One framing per finding:** end with either `Action:` (concrete task) or `Question:` (clarification needed). Never both.
+- **Token discipline.** Don't read whole files when grep or LSP suffices. Build a codemap before reading file bodies.
+
+---
+
+## Universal Guardrails
+
+Apply these as the default lens for every change. Pull in CoW-specific siblings ([§3](#3-conditional-context)) only when the diff warrants them.
+
+1. **Keep the public API surface minimal.** A new `pub fn`, `pub struct`, or `pub mod` that isn't required by an external caller is a Medium finding asking why it isn't `pub(crate)` / `pub(super)` / private. Smaller surface = fewer downstream breakages = freer refactor for the next person.
+2. **Avoid rightward drift.** Code that's deeply nested (4+ levels, especially `match` inside `if let` inside `for` inside `async`) is hard to read and usually hides a missing extraction. Suggest an early-return, a helper, or `let-else`.
+3. **One responsibility per component.** A function, struct, or module that does two unrelated things (validates *and* persists; parses *and* renders) is harder to test and to reuse. Flag with a `Question:` if you're not sure the split is artificial.
+4. **Split big files.** A new file pushing past ~500 lines, or a touched file growing past ~1000 lines, is worth flagging. Suggest a sensible split (often by responsibility from #3).
+5. **Avoid argument bloat.** A function taking 6+ positional arguments is a code smell — usually missing a config struct, a builder, or a method on a context object. Especially flag if the arguments are mostly being threaded through unchanged.
+6. **Errors carry context.** `?` propagating a low-level error to a high-level boundary without enrichment loses the *what was the caller trying to do* information. `anyhow!("{err}")` flattens cause chains. Both are findings; severity depends on the path.
+
+---
 
 ## Execution Flow
 
-1. Fetch PR metadata and linked issue(s) — [§2. Metadata Fetch](#2-metadata-fetch)
-2. Classify diff paths and load sibling context docs — [§3. Classification](#3-classification)
-3. Build a targeted codemap — [§3.5. Codemap Phase](#35-codemap-phase)
-4. Synthesize the context block — [§4. Context Synthesis](#4-context-synthesis)
-5. Produce findings by severity — [§5. Review and Severity](#5-review-and-severity)
-6. Print the structured report — [§6. Report Template](#6-report-template)
-7. Offer verification (background) — [§7. Verification Offer](#7-verification-offer)
-8. Print cleanup hint — [§8. Cleanup](#8-cleanup)
+Steps run in this order. `diff` mode skips PR-metadata steps; `pr-ci` swaps the report sink at the end.
 
-Error behavior is consolidated in [§9. Error Playbook](#9-error-playbook).
+1. Fetch PR metadata and linked issue(s) — [§2](#2-metadata-fetch). *(`pr-local` / `pr-ci` only.)*
+2. Classify diff paths and load conditional context — [§3](#3-conditional-context).
+3. Build a targeted codemap — [§4](#4-codemap-phase).
+4. Synthesize the context block — [§5](#5-context-synthesis).
+5. Review and produce findings — [§6](#6-review-and-severity).
+6. Emit the report — [§7](#7-report-templates). Sink depends on mode.
+7. Offer verification (background) — [§8](#8-verification-offer). *(Local modes only.)*
+8. Print cleanup hint — [§9](#9-cleanup). *(`pr-local` only.)*
+
+Error behaviour is consolidated in [§10](#10-error-playbook).
 
 ---
 
 ## 2. Metadata Fetch
 
-Run these commands in **parallel** (single message, multiple Bash tool calls):
+*(Skip in `diff` mode — there is no PR yet.)*
+
+Run in **parallel** (single message, multiple Bash tool calls):
 
 ```bash
-# Full metadata
-gh pr view <PR_NUMBER> -R <owner>/<repo> --json title,body,author,labels,files,baseRefName,headRefName,additions,deletions,commits,reviewDecision,isDraft,state
+gh pr view <PR_NUMBER> -R <owner>/<repo> \
+  --json title,body,author,labels,files,baseRefName,headRefName,additions,deletions,commits,reviewDecision,isDraft,state
 
-# Full diff
 gh pr diff <PR_NUMBER> -R <owner>/<repo>
 ```
 
-In **degraded static-diff mode** (fork fallback), replace `gh pr diff` with:
+In **degraded static-diff mode** (fork without checkout permission, only relevant in `pr-local`), replace `gh pr diff` with:
+
 ```bash
 gh pr diff <PR_NUMBER> --patch -R <owner>/<repo>
 ```
 
 ### Linked issues
 
-Parse the PR body for `Fixes #<N>`, `Closes #<N>`, `Resolves #<N>` (case-insensitive). For each match, fetch in parallel with the above:
+Parse the PR body for `Fixes #<N>`, `Closes #<N>`, `Resolves #<N>` (case-insensitive). Fetch each in parallel with the above:
+
 ```bash
 gh issue view <N> -R <owner>/<repo> --json title,body,labels,state
 ```
 
-If no linked issue is referenced, proceed without one. Do not manufacture an issue link.
+If no linked issue is referenced, proceed without one. Do not manufacture one.
 
 ### State handling
 
-- `state == "CLOSED"` or `state == "MERGED"` → proceed, but prepend to the report:
-  > ⚠ This PR is {closed,merged}; review is informational.
-- `isDraft == true` → proceed, but prepend:
-  > ⚠ This PR is a draft; author may still be iterating.
+- `state == "CLOSED"` or `"MERGED"` → proceed; prepend a one-line warning to the report.
+- `isDraft == true` → proceed; prepend `Draft — author may still be iterating.`
 
 ---
 
-## 3. Classification
+## 3. Conditional Context
 
-Walk the file list from `gh pr view --json files`. For each changed file, evaluate these rules and accumulate a `context_docs` list:
+For each changed file, evaluate this table and accumulate a `context_docs` list. Read each matched doc once.
 
-| Rule | Match | Load |
-|---|---|---|
-| R1 — Alloy usage (path) | Any change under `crates/ethrpc/`, `crates/chain/`, or `crates/contracts/` | `docs/review-context/alloy-rs.md` |
-| R2 — Alloy usage (import) | Any `.rs` file whose diff hunks add `use alloy::*;`, `use alloy_*;`, or `alloy::` qualified paths | `docs/review-context/alloy-rs.md` |
-| R3 — DB migrations | Any file under `database/sql/**` | `docs/review-context/database-migrations.md` |
-| R4 — OpenAPI | Any file matching `**/openapi.yml` | `docs/review-context/openapi.md` |
+| Match | Load |
+|---|---|
+| Any file under `database/sql/**` | `docs/review-context/database-migrations.md` |
 
-R1 and R2 are OR'd — load `alloy-rs.md` **once** if either matches.
+Add a new sibling only when:
 
-### Loading
+- A real review surfaced a CoW-specific concern the AI consistently missed, **and**
+- That concern can't reasonably be inferred from the [Universal Guardrails](#universal-guardrails) plus general Rust judgment, **and**
+- It can be expressed as a tight checklist (≤30 lines), not a sprawling rulebook.
 
-Read each matched sibling doc via the `Read` tool. Record the loaded list — it will appear in the report header's `Loaded context:` line.
+### One inline guardrail worth keeping
 
-If no rules match, `context_docs` is empty and the review proceeds with only the always-loaded `CLAUDE.md` + `actionbook/rust-skills`.
-
-### Future siblings
-
-This list will grow. When adding a new sibling doc (e.g. `solver-engine.md`, `autopilot.md`), add its trigger row to the table above. Keep the filters tight — a sibling should load only when its content is actually relevant.
+When a PR touches **any `openapi.yml`**: scan for breaking changes (removed/renamed/typed-changed fields, new required request fields, narrowed enums, changed auth or HTTP method). If any are present, ask whether the goal could be achieved non-breakingly (additive field, new optional, deprecation window) and whether the affected consumer teams (Frontend, SAFE, etc.) have been notified. Severity: High when undisclosed in the PR description; Medium otherwise.
 
 ---
 
-## 3.5 Codemap Phase
+## 4. Codemap Phase
 
-**Purpose:** Before reading file bodies, build a targeted map of the symbols the diff touches, their callers, and their call sites. A codemap turns a 1000-line diff into a ~20-line mental model and preempts the "I read 10 files to find the impact" failure mode. It also catches findings that only become visible at the *shape* level (API ergonomics, unused abstractions, caller-count inconsistencies).
+**Purpose:** before reading file bodies, map the symbols the diff touches, their callers, and their call sites. A codemap turns a 1000-line diff into a ~20-line mental model and catches findings that only become visible at the *shape* level (caller-count inconsistencies, dead abstractions, leaky public APIs).
 
 ### What to map
 
 For each non-trivial symbol the diff adds, modifies, or deletes:
 
-1. **New public types / traits / functions** — what are their fields / methods / signatures? (`rust-symbol-analyzer` or `get_symbols_overview`.)
-2. **Modified function signatures** — who calls them? (`rust-call-graph`, `find_referencing_symbols`, or `rg '<fn_name>\b' crates/`.) This is how you catch "this signature changed but 4 call sites weren't updated".
-3. **New trait impls** — which types implement the trait? Is the trait used anywhere outside the PR? (`rust-trait-explorer` or `find_referencing_symbols`.)
-4. **Error-type changes** — where do callers match on this error? (`rg '::<ErrorVariant>'` / `find_referencing_symbols`.)
+1. **New public types / traits / functions** — fields, methods, signatures.
+2. **Modified function signatures** — caller count, were all sites updated?
+3. **New trait impls** — which types implement the trait? Is the trait used outside this PR?
+4. **Error-type changes** — where do callers match on this error?
 
-### Tools (prefer the cheapest viable option)
+### Tools (cheapest viable option first)
 
-In order of token cost, ascending:
+| Tool | Status | When to use |
+|---|---|---|
+| `Grep` / `rg` with `-n` on a symbol name | Always available | Caller counts and basic location lookups. Example: `rg 'OrderValidator::new\b' crates/`. |
+| `gh api` / `git blame` | Always available | Historic context on suspicious-looking lines. |
+| `mcp__plugin_serena_serena__find_symbol` / `find_referencing_symbols` / `get_symbols_overview` | Optional (LSP-backed; available when Serena MCP is configured) | Precise location + kind + signature without reading the full file. |
+| Skills from `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`) | Optional (installed via `npx skills add actionbook/rust-skills`) | Richer cross-crate analysis. Not present in CI by default. |
+| `Read` of a full file | Last resort | Only when the diff hunks plus the cheaper tools don't pin down what you need. |
 
-| Tool | When |
-|---|---|
-| `Grep` with `-n` on a symbol name | Fastest. Use when you need caller counts, not structure. Example: `rg 'OrderValidator::new\b' crates/` to verify all call sites were updated. |
-| `mcp__plugin_serena_serena__find_symbol` / `find_referencing_symbols` | Cheap, precise. Use when you need location + kind + signature, not the whole file. |
-| `mcp__plugin_serena_serena__get_symbols_overview` on a single file | Use before reading the file body — gets the symbol table for free. |
-| LSP-backed skills (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`) | Richer analysis — full call hierarchies, trait impl trees, type relationships. Use for diffs that touch cross-crate abstractions. |
-| Reading full files with `Read` | Last resort. Only when the diff hunks don't give enough surrounding context and the LSP tools can't pin down what you need. |
+**Fallback rule:** in CI (or any environment where the optional tools aren't installed), every codemap step still works with `rg` and `git`. The optional tools are accelerators, not requirements.
 
 ### What the codemap produces
 
-A short block in the report header (shown to the reviewer) that looks like:
+A short block in the report that looks like:
 
 ```
 Codemap
 ───────────────────────────────────────────────────────────
-New symbols (shared::order_validation):
-  Eip1271Simulating      (trait, new)
-  Eip1271Simulator       (struct, 3 pub fields, no constructor)
-  ValidationError::SimulationFailed(String)  (new variant)
+New symbols (crate::module):
+  <Name>  (kind, key fact)
+  ...
 
-Callers of OrderValidator::new: 16 sites total (1 real, 15 test).
-  All updated in diff ✓
-
-Config asymmetry noted:
-  configs::Eip1271SimulationMode (3 variants, Disabled default)
-  shared::Eip1271SimulationMode  (2 variants, Shadow default)
+Callers of <Name>: <count> sites (<real> real, <test> test). All updated ✓
 ```
 
-This is not filler — it's the raw material §4 (synthesis) and §5 (findings) work from. A finding like *"`Eip1271Simulator` pub fields have no constructor; 16 callers means each future field addition is a source-break"* only becomes findable once the codemap surfaces the caller count.
+This is the raw material §5 (synthesis) and §6 (findings) work from.
 
-### When to skip the codemap
+### When to skip
 
-- Trivial PRs (docs-only, single-line version bump, pure test addition) — skip.
-- Pure refactor PRs where the diff has no added public API — skim only.
-- Everything else — do it.
+Trivial PRs (docs-only, single-line bump, pure test addition) — skip. Pure refactors with no added public API — skim. Everything else — do it.
 
 ---
 
-## 4. Context Synthesis
+## 5. Context Synthesis
 
-Produce a 1-3 paragraph block combining:
-
-- PR title.
-- PR description (Description / Changes / How to test sections from the template, if filled).
-- Linked issue title + description, if any.
-- File scope — breadth of the diff (single crate, cross-crate, docs-only, DB, API spec).
-- Rough intent — new feature, bugfix, refactor, dep bump, docs, test-only.
+Produce 1–3 paragraphs combining the PR title, description, linked issue(s), file scope, and intent (feature, bugfix, refactor, dep bump, docs, test).
 
 ### Rules
 
-1. **Synthesize, do not copy-paste.** If the description is five words, say so: *"PR description is minimal — intent inferred from diff"*. Don't pretend.
-2. **Flag description-vs-diff mismatches as findings.** If the description says "docs-only" but `.rs` files are touched, open a **High**-severity finding titled `PR description contradicts diff scope` immediately. This is the one case where a finding precedes the normal review loop.
-3. **Linked-issue context goes into synthesis, not as a separate block.** Summarise motivation from the issue alongside the PR's own description.
-4. **No vague verbs.** *"This PR updates something"* is a failure. Name the component, the change, and the mechanism.
+1. **Synthesize, don't copy-paste.** If the description is five words, say so plainly: *"description is minimal; intent inferred from diff"*.
+2. **Watch for description-vs-diff drift.** A PR description must describe the diff's *current* state, not the author's iteration history. If a claim in the description is no longer true of the diff, raise a finding with `Action: update the PR description to match the current diff`. Do not flag the absence of a changelog of removed/superseded behaviour — that belongs in commit history, not the description.
+3. **No vague verbs.** *"This PR updates something"* is a failure. Name the component, the change, and the mechanism.
 
 ### Shape
 
-- **Paragraph 1** — *What* the PR changes (mechanics, file scope).
-- **Paragraph 2** — *Why* the change exists (from description + linked issue).
-- **Paragraph 3** (only if warranted) — *How* it's implemented (the approach, not a line-by-line walkthrough).
+- **Paragraph 1** — *what* changed.
+- **Paragraph 2** — *why* (description + linked issue).
+- **Paragraph 3** (if warranted) — *how* (the approach, not a line-by-line walkthrough).
 
 ---
 
-## 5. Review and Severity
+## 6. Review and Severity
 
-With the codemap ([§3.5](#35-codemap-phase)) and context synthesis ([§4](#4-context-synthesis)) in hand, review the diff. For non-trivial hunks, read the full changed file only when the codemap + diff don't answer the question. Apply, in order:
+Apply, in order:
 
-1. CoW services conventions from `CLAUDE.md`.
-2. Sibling docs from [§3](#3-classification) (conditionally loaded).
-3. **Activate installed Rust review skills by diff content (below).**
-4. Soft QM skill (`ra-qm-team`), if in `loaded_context`.
+1. The [Universal Guardrails](#universal-guardrails).
+2. The conditional context from [§3](#3-conditional-context), if any was loaded.
+3. CoW-services conventions from `CLAUDE.md`.
+4. Optional skills from [§4 → tools table](#tools-cheapest-viable-option-first), activated by what the diff actually contains. If installed, invoke `m06-error-handling` for `Result`/`Option`/`?` changes, `m07-concurrency` for `tokio::*` / async / locking, `m04-zero-cost` for new generics or trait objects, `m15-anti-pattern` for general sanity, `unsafe-checker` for any `unsafe` (mandatory High). If they aren't installed, reason from general Rust knowledge plus the [Universal Guardrails](#universal-guardrails).
 
-### Skill router — activate installed Rust skills by diff content
+### Use `git blame` for historic context
 
-These skills are installed via `actionbook/rust-skills` (hard prereq) and the related ecosystem. They're most effective when *explicitly* activated based on what the diff contains. Before writing findings, scan the diff and invoke any skill whose trigger fires:
+Before flagging code that looks unusual, redundant, or "easy to clean up":
 
-| Skill | Trigger in diff | Why activate |
-|---|---|---|
-| `m06-error-handling` | Adds/modifies `Result`, `Option`, `?`, `.unwrap()`, `.expect()`, `anyhow!`, `thiserror`, or error-enum variants | Validates error taxonomy, propagation, lost context (e.g. `anyhow!("{err}")` flattening), panic-vs-Result choice. |
-| `m07-concurrency` | Adds `tokio::`, `async fn`, `.await`, `tokio::join!` / `try_join!`, `tokio::spawn`, `tokio::time::timeout`, `Mutex`, `RwLock`, `Arc<...>` in shared state | Validates timeout scoping, join-vs-try_join, deadlock/lock-contention, task cancellation semantics, Send/Sync bounds. |
-| `m04-zero-cost` | Adds new generics, `impl Trait`, `dyn Trait`, trait objects, `Box<dyn ...>` | Validates static-vs-dynamic dispatch choice, unnecessary allocation, trait-object safety, monomorphization cost on a workspace this large. |
-| `m05-type-driven` | Adds newtypes, `PhantomData`, marker traits, builder patterns, type-state | Validates "make invalid states unrepresentable" and whether the type design actually narrows the state space. |
-| `m15-anti-pattern` | Any non-trivial new code | Sanity pass for common Rust anti-patterns. Cheap; run it. |
-| `m10-performance` | Changes to hot paths (auction loop, settlement submission, per-order handlers, native price estimation) | Validates allocations, caching, loop invariants, lock granularity. |
-| `unsafe-checker` | Any `unsafe` block, FFI (`extern`), `transmute`, raw pointers, `MaybeUninit` | **Mandatory** — any finding here defaults to **High**. Soundness issues are never Small. |
-| `rust-trait-explorer` | Adds a new trait or a new impl of an existing trait | Maps the trait's existing impls — catches "you added a default method to a trait with 12 impls, one of them should override it". |
-| `rust-call-graph` / `rust-code-navigator` | Modified function signatures on cross-crate public APIs | Catches missed caller sites, breaking changes, downstream blast radius. |
-| `ra-qm-skills` | Soft prereq | QM checklists — supplementary if installed. |
+```bash
+git blame -L <start>,<end> -- <file>            # who/what/when
+git log --format='%H %s' -n 1 <commit>          # commit message
+gh pr view <#> -R cowprotocol/services          # if commit message links a PR
+```
 
-**Rule of thumb:** If a skill's trigger keywords appear in the diff's **added** lines, activate it. Don't run skills on context lines (unchanged code around the diff) — that wastes tokens on things you're not actually reviewing.
+If the originating commit message or PR explains *why* the code is shaped that way, factor that into your finding. A "this looks accidental" comment is much weaker when blame shows a deliberate fix from six months ago. Mention what blame revealed in the finding's Explanation so the reviewer can defend the point.
 
 ### Severity Rubric
 
-| Severity | Meaning | Example |
-|---|---|---|
-| **High** | Merging as-is is a real risk: correctness bug, data loss, security issue, incompatible DB migration, auction/settlement invariant broken, likely panic, unsound `unsafe`. | `.unwrap()` on a solver response path; SQL migration that rewrites a multi-million-row table without `CONCURRENTLY`. |
-| **Medium** | Worth fixing before merge — won't break prod but will cost later. Missing error context, test gap on a new invariant, public API ergonomics, missing doc-comment on a cross-crate `pub`, unhandled edge case. | New `pub fn` in `shared` with no doc-comment; `?` swallowing an error without context. |
-| **Small / QoL** | Would genuinely improve the code. **Not a nit.** | `Vec` could be `impl Iterator` in a hot path; duplicated 3-line block could be a helper. |
+| Severity | Meaning |
+|---|---|
+| **High** | Merging as-is is a real risk: correctness bug, data loss, security issue, incompatible DB migration, auction/settlement invariant broken, likely panic, unsound `unsafe`. |
+| **Medium** | Worth fixing before merge — won't break prod but will cost later. Missing error context, public-API ergonomics, unhandled edge case, n-1 rollout incompatibility, undisclosed breaking API change. |
+| **Small / QoL** | Would genuinely improve the code. **Not a nit.** |
 
 ### Anti-nit Rule (mandatory)
 
-- If the only reason to change it is personal taste or stylistic preference, **do not report it**.
-- Formatting findings belong to `rustfmt` / CI, not to this skill. Never surface a finding whose fix is "run `cargo +nightly fmt`".
-- Clippy lints are a CI concern by default. **Exception:** a clippy warning inside the new code may be reported as **Small** if and only if it improves correctness or clarity — never for style.
-- If you're uncertain whether something is a nit, omit it. LGTM when clean.
-- **Don't inflate severity.** The severity of a finding is what a senior reviewer would actually call it in GitHub, not what sounds safer. Most substantive comments are just unmarked; only the few purely cosmetic ones carry a `nit:` prefix in practice. Don't tier-down everything to "Small" to avoid confrontation — that dilutes the signal. Either it's a Medium worth discussing or it's omitted.
+- If the only reason to change it is taste or stylistic preference, **do not report it**.
+- Formatting belongs to `rustfmt` / CI. Never raise a finding whose fix is "run `cargo +nightly fmt`".
+- Clippy lints are a CI concern by default. **Exception:** a clippy warning inside the new code may be reported as **Small** if and only if it improves correctness or clarity — never style.
+- If you're uncertain whether something is a nit, omit it. LGTM is the right verdict when the PR is clean.
+- **Don't inflate severity** to look thorough. Each finding's severity is what a senior reviewer would actually call it on GitHub. Either it's worth discussing or it's omitted.
 
-### Reviewer Discipline — Heuristics Beyond "Is This Bug"
-
-A senior reviewer catches things that aren't bugs. They shape the code for future readers and future maintainers. These are the patterns a good CoW review surfaces:
-
-1. **Motivation before mechanism.** Before reviewing *how* the code works, verify *why* it exists. If the PR description doesn't justify the change, or justifies it with an assumption ("EIP-4626 tokens will have coverage problems"), ask the author to confirm the assumption — as a `Question:`, not a demand. You can't judge tradeoffs against a motivation you don't understand.
-
-2. **Root cause over workaround.** If a new file contains logic that feels like it exists to cancel out a wart somewhere else ("insert WETH into non_vault_tokens", "treat this special case differently"), investigate the wart. Fixing the root cause upstream is usually cleaner than adding a compensating wart downstream. Ask the author: *"this logic looks like it's working around X — could X be fixed instead?"*
-
-3. **Suggest simpler primitives; listen to pushback.** If code uses `join!` where `try_join!` would work, ask. If it uses `Mutex<HashSet<_>>` where `DashSet` would work, ask. The author often has a reason (as in the eip4626.rs case where `join!` is deliberate because the branch logic depends on both results), and the back-and-forth resolves the question. Framing: *"Can this be `<simpler alternative>`?"*, not *"Use `<alternative>`"*.
-
-4. **Return-type consistency over side-effects at distance.** A function returning `Result<Option<(T, U)>, Error>` explicitly encodes its three states (value / no-value / error). A function that writes to a cache two layers down the call stack as a side effect hides the same information. Prefer explicit return types. The cost of a verbose type signature is always smaller than the cost of a reviewer (or future you) missing a hidden mutation.
-
-5. **Top-to-bottom readability.** Within a file, order functions in the direction callers-before-callees or high-level-before-low-level (pick one and keep it consistent). When reviewing, if you find yourself scrolling back and forth between `fn do_thing` and `fn helper_for_thing`, flag the ordering — *not as a nit, as a Medium if it's non-trivial navigation*.
-
-6. **Stale comments.** When behavior changes, comments describing that behavior often rot. Read the comments *against* the code around them and flag any drift. A comment saying "zero timeout signals best-effort" attached to code that no longer has a zero-timeout path is a Medium finding — future readers will believe it.
-
-7. **Description-vs-code mismatches.** If the PR body describes `Mutex<HashSet>` and the code has `DashSet`, the description is stale. Flag it — not because it changes the code, but because whoever reads the PR as history will be confused. Small finding, usually.
-
-   **Related: design spec referenced but not committed.** If the PR body mentions a design spec (e.g. `docs/superpowers/specs/...`) that isn't in the PR's diff, that's a **Small** finding asking the author to commit it — teammates reading the PR six months from now can't see the rationale otherwise.
-
-8. **Bundled orthogonal changes.** When a PR contains a change that isn't clearly required by the main feature, ask: does this belong in its own PR? Sometimes the answer is "it's required, here's why" (fine — ask for the reason to be in the commit message or a code comment). Sometimes the answer is "you're right, let me split it" (better git history).
-
-9. **Error taxonomies in web3 code.** Blockchain RPC errors have multiple categories: contract reverts, RPC transport failures, provider-side rate-limiting, timeout errors, decoding failures. Each should lead to *different* handling. If new code treats `Err(_)` as a single bucket when the branches should differ (e.g. cache a non-vault verdict on contract revert, but *not* on a network error), this is a correctness issue — Medium or High depending on whether the wrong classification can poison downstream behavior.
-
-10. **Generated-code and lockfile diffs.** Never include generated-bindings or `Cargo.lock` findings. CI's type-check validates the generated code; if CI is green, there's nothing a reviewer will see that the compiler won't. Filter these at the entry-point (see `.claude/commands/review-pr.md` §6) and report only on human-written changes.
-
-### Using GitHub "Suggested change" Blocks in the Output
-
-When a finding has a clear mechanical fix (e.g. remove a `.clone()`, swap a type), phrase the `Action:` line so the user can paste it straight into a GitHub *Suggested change* block. Example:
-
-```
-Action: Replace `self.provider.clone()` with `&self.provider` — the alloy
-        Instance constructors take `IntoProvider` which is implemented for
-        both owned and borrowed providers. (GitHub suggested-change:
-        `let vault = IERC4626::new(token, &self.provider);`)
-```
-
-The bracketed suggestion is copy-pasteable into GitHub's suggestion feature, which makes the author's acceptance a single click.
-
-### Per-finding Shape
-
-Every finding contains exactly these four parts:
+### Per-finding shape
 
 1. **Title** — short noun phrase (≤ 8 words).
-2. **Location** — `path/to/file.ext:line` (or `path/to/file.ext:start-end` for a range).
-3. **Explanation** — enough that the reviewer understands *and can defend* the point without re-reading the diff. Must include:
-   - **The mechanism** (what's wrong).
-   - **The impact** (why it matters for CoW services specifically — auction, settlement, solver competition, DB migration, etc.).
-   - **Repo-specific context** where it helps (e.g. "this path runs per-auction, ~12s cadence, so an extra RPC is costly").
-4. **Action OR Question** — exactly one, never both:
-   - `Action: <concrete task the author should do>`
-   - `Question: <specific clarification needed before the reviewer can decide>`
+2. **Location** — `path/to/file.ext:line` or `path:start-end`.
+3. **Explanation** — mechanism, impact, and (if relevant) what `git blame` / the codemap revealed.
+4. **`Action:` OR `Question:`** — exactly one.
+
+When a finding has a clear mechanical fix, phrase the `Action:` so the reviewer can paste it as a GitHub *Suggested change* block.
 
 ---
 
-## 6. Report Template
+## 7. Report Templates
 
-Print the report in this exact shape. Omit sections that don't apply (e.g. no `VERIFICATION` block if the user declined).
+### Terminal form (`diff` and `pr-local`)
 
 ```
 ═══════════════════════════════════════════════════════════
-PR #<N> — <title>
+PR #<N> — <title>                       (or "Diff review — <branch>" in diff mode)
 ═══════════════════════════════════════════════════════════
-Author:       @<author>
-Scope:        +<additions> −<deletions> across <N> files
-              (include a "(~X LOC human-written; rest generated/lockfile,
-              filtered)" suffix when the filter materially changed the count)
-Labels:       <labels, comma-separated; or "—">
-Base/Head:    <baseRef> ← <headRef>
-Linked issue: #<N> — <issue title>            (omit line if none)
-Loaded context: <comma-separated loaded_context list>
-Activated skills: <list of Rust skills fired by the skill router, e.g.
-                  m07-concurrency, m06-error-handling>
-Mode:         full checkout   |   degraded static-diff
+Author:       @<author>                 (omit in diff mode)
+Scope:        +<add> −<del> across <N> files
+              (~X LOC human-written; rest generated/lockfile, filtered)
+Labels:       <labels or "—">           (omit in diff mode)
+Base/Head:    <baseRef> ← <headRef>     (or "main ← <branch>" in diff mode)
+Linked issue: #<N> — <title>            (omit if none)
+Mode:         diff | pr-local | pr-ci   ;  full checkout | degraded static-diff
 
 Codemap
 ───────────────────────────────────────────────────────────
-<concise codemap from §3.5 — new symbols, modified signatures, caller counts.
- Omit when the diff is trivial enough that §3.5 was skipped.>
+<from §4 — omit if skipped>
 
 ───────────────────────────────────────────────────────────
 CONTEXT
 ───────────────────────────────────────────────────────────
-<synthesis from §4>
+<synthesis from §5>
 
 ───────────────────────────────────────────────────────────
 VERDICT:  <LGTM | Changes requested | Needs clarification>
@@ -309,7 +259,7 @@ VERDICT:  <LGTM | Changes requested | Needs clarification>
 FINDINGS
   [High]    <count>
   [Medium]  <count>
-  [Small]   <count>    (QoL-only; true nits omitted)
+  [Small]   <count>    (QoL-only; nits omitted)
 
 ───── High ─────────────────────────────────────────────────
 1. <title>
@@ -334,33 +284,45 @@ cargo clippy           <status>
 cargo +nightly fmt     <status>
 
 ───────────────────────────────────────────────────────────
-NEXT STEPS
+NEXT STEPS                              (pr-local only)
 ───────────────────────────────────────────────────────────
 Currently on:  <current branch>
 Return with:   git switch <prior_branch>
 ```
 
-### LGTM short form
+#### LGTM short form
 
-When there are **zero** findings (High, Medium, and Small all zero), collapse everything between `VERDICT:` and `NEXT STEPS` to a single line:
+When there are zero findings at all severities, collapse everything between `VERDICT:` and `NEXT STEPS` to a single line:
 
 ```
 VERDICT:  LGTM — no blocking or notable issues.
 ```
 
-The header, CONTEXT, and NEXT STEPS sections still print.
+Header, CONTEXT, and (in `pr-local`) NEXT STEPS still print.
+
+### Comment form (`pr-ci`)
+
+In CI, post **one** review comment via the action. Use the same body shape as the terminal form, minus:
+
+- The NEXT STEPS section (no local branch state to print).
+- The VERIFICATION block (CI runs its own checks separately).
+- ANSI box-drawing characters (Markdown headings instead).
+
+GitHub-render the body using `##`/`###` headings and fenced code blocks. Keep findings collapsible with `<details>` if there are more than ~5.
 
 ### Verdict selection
 
-- **LGTM** — no High or Medium findings; zero or a handful of Small findings that the reviewer may still choose to post.
-- **Changes requested** — any High findings, or Medium findings that block safety/correctness.
-- **Needs clarification** — no High findings, but one or more Medium/Small findings use the `Question:` form because the reviewer can't decide without author input.
+- **LGTM** — no High or Medium findings.
+- **Changes requested** — any High, or Medium that blocks safety/correctness.
+- **Needs clarification** — no High, but one or more findings use the `Question:` form.
 
 ---
 
-## 7. Verification Offer
+## 8. Verification Offer
 
-After printing the report, ask the user inline:
+*(Local modes only. Skip in `pr-ci` — CI runs its own check/clippy/fmt jobs in parallel.)*
+
+After printing the report, ask the user:
 
 > "Run local verification in the background? Reply with one of:
 > `check` — `cargo check --locked --workspace --all-features --all-targets`
@@ -369,90 +331,44 @@ After printing the report, ask the user inline:
 > `all` — run all three
 > `skip` — don't run anything"
 
-On user reply:
+Dispatch each selected command as a **background** Bash invocation. On completion, append the result to a VERIFICATION block.
 
-- **`skip`** → omit the VERIFICATION block entirely. Proceed to [§8](#8-cleanup).
-- **`check` / `clippy` / `fmt` / `all`** → dispatch each selected command as a **background** Bash invocation (`run_in_background: true`). Do not sleep, do not poll — the runtime sends a completion notification. On completion, call `BashOutput` to retrieve the result and append it to the VERIFICATION block:
-  ```
-  cargo check            ✅  clean
-  cargo clippy           ⚠   2 warnings (details below)
-  cargo +nightly fmt     ✅  clean
-  ```
+If `cargo check` or `cargo clippy` surfaces issues **inside files this PR modified**, fold them into Findings (compile errors → High, correctness clippy → Medium, clarity clippy → Small subject to the Anti-nit rule). Do not surface warnings from files the PR didn't touch. `fmt --check` failures are a status, never a finding.
 
-### When verification output produces findings
-
-- If `cargo check` or `cargo clippy` surfaces errors/warnings **inside files changed by this PR**, add them to the Findings list:
-  - Compile errors → **High** (the PR doesn't build).
-  - Clippy warnings that flag a correctness issue → **Medium**.
-  - Clippy warnings that flag clarity (e.g. `needless_return` inside new code) → **Small** — but only when they pass the [§5](#5-review-and-severity) Anti-nit rule.
-- Do **not** surface warnings from files the PR did not modify.
-- `cargo +nightly fmt -- --check` failures are **not** findings. The Anti-nit rule forbids surfacing format findings. The VERIFICATION block reports the status; that's where it ends.
-
-### Never run tests by default
-
-The menu deliberately omits `cargo nextest run`. Services' test suite is large and takes minutes — gating every review on a full test run is too expensive. If the reviewer wants tests, they run them outside the skill.
+Tests are intentionally not in the menu — services' suite is too long-running to gate every review on.
 
 ---
 
-## 8. Cleanup
+## 9. Cleanup
 
-The NEXT STEPS footer (already part of the report template in [§6](#6-report-template)) names the current branch and the exact command to return to the prior branch:
+*(`pr-local` only.)*
 
-```
-Currently on:  <current branch>
-Return with:   git switch <prior_branch>
-```
-
-**Do not run `git switch` yourself.** The user may want to stay on the PR branch to continue investigating, run their own tests, or browse related code. The command is a hint, not an action.
+The NEXT STEPS footer names the current branch and the `git switch` to return to. Print it; never run it. The user may want to stay on the PR branch.
 
 ---
 
-## 9. Error Playbook
+## 10. Error Playbook
 
-| Condition | Behavior |
+| Condition | Behaviour |
 |---|---|
-| `gh` not installed | Print `Install gh: https://cli.github.com/`, abort. |
+| `gh` not installed (pr modes) | Print `Install gh: https://cli.github.com/`, abort. |
 | `gh` not authenticated | Print `gh auth status` output + `Run: gh auth login`, abort. |
-| PR number not parseable | Print usage string (see `.claude/commands/review-pr.md` step 1), abort. |
+| PR number not parseable | Print usage, abort. |
 | PR doesn't exist / wrong repo | Surface `gh` error verbatim, abort. |
-| PR is closed or merged | Prepend state warning to the report ([§2](#2-metadata-fetch)), proceed. |
-| PR is a draft | Prepend draft warning to the report ([§2](#2-metadata-fetch)), proceed. |
-| Working tree dirty | Print `git status --porcelain`, instruct `git stash` or commit, abort — **no auto-stash**. |
-| `git pull --rebase origin main` conflict | Abort, print conflicted files, instruct manual resolution. |
-| `gh pr checkout` fails (fork permission) | Degrade to static-diff mode, flag in report header `Mode:` field. |
-| Hard prereq skill missing | Print install command, abort. Handled in the entry-point prologue, not here. |
-| Soft prereq skill missing | Print install-command banner, continue. Handled in the entry-point prologue, not here. |
-| Verification offer declined (`skip`) | Omit VERIFICATION block. |
-| Verification command fails or warns | Surface output in VERIFICATION block; add findings only for issues inside changed files. |
+| PR closed/merged | Prepend warning, proceed. |
+| PR is draft | Prepend warning, proceed. |
+| Working tree dirty (pr-local) | Print `git status --porcelain`, instruct stash/commit, abort. **No auto-stash.** |
+| `gh pr checkout` fails (fork permission) | Degrade to static-diff mode, flag in report header. |
+| Optional skill not installed | Continue using `rg` / general Rust knowledge. Do **not** abort. |
+| `diff` mode but no diff (branch == main) | Print `No diff vs main — nothing to review.`, exit clean. |
+| Verification command fails | Surface output in VERIFICATION block; raise findings only for issues inside changed files. |
 
-**Rule of thumb:** never silently degrade behavior without the `Mode:` header reflecting it. If something went sideways, the reviewer should know from the report itself.
+**Rule of thumb:** never silently degrade. If a tool was missing or a step was skipped, the report's Mode/Header line should reflect it.
 
 ---
 
-## 10. Code-vs-docs Discipline (Always Apply)
+## 11. Maintenance Notes
 
-When a finding rests on a claim about the codebase, verify the claim by looking at the code — not by trusting a doc, a comment, or this skill's own sibling files.
-
-- **Claim:** *"`OrderSimulator::encode_order` only reads `OrderData` and `Interactions`."*
-  **Wrong:** cite a doc comment.
-  **Right:** `rg 'fn encode_order' crates/orderbook/src/` → read the function body → verify.
-
-- **Claim:** *"All `OrderValidator::new` call sites have been updated."*
-  **Wrong:** count the test assertions in the diff.
-  **Right:** `rg 'OrderValidator::new\b' crates/` → compare the count to the diff's modified lines.
-
-- **Claim:** *"This module is only used by X."*
-  **Wrong:** trust the module's top-level comment.
-  **Right:** `find_referencing_symbols` on the public exports → see actual call graph.
-
-Docs age. Comments lie. Grep and LSP don't. When reporting a finding that depends on such a claim, verify *before* you write the finding — not after the author pushes back.
-
----
-
-## Maintenance Notes
-
-- **When you find yourself adding a project-specific heuristic more than twice**, move it into a sibling context doc under `docs/review-context/` and add a trigger rule to [§3](#3-classification).
-- **When you find the skill making a false-positive finding**, add a counter-example to the Anti-nit rule section in [§5](#5-review-and-severity). The rubric calibrates over time.
-- **When CoW introduces a new subsystem with its own review considerations** (e.g. a new crate, new auction policy, new settlement path), create a sibling doc for it and wire in a trigger.
-
-This skill is expected to grow — both `docs/review-context/*.md` and this reference's rubric will accumulate CoW-specific knowledge over time.
+- When the AI consistently misses a CoW-specific concern across multiple reviews, first try expressing it as one more bullet in [Universal Guardrails](#universal-guardrails). Only carve a sibling doc if it can't be expressed generically.
+- When the skill produces a false-positive finding, add a one-line counter-example to the [Anti-nit Rule](#anti-nit-rule-mandatory).
+- Keep this document under 500 lines.
