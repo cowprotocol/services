@@ -58,6 +58,10 @@ pub struct Metrics {
         )
     )]
     pub used_solve_time: prometheus::HistogramVec,
+
+    /// Auction work canceled before producing a result.
+    #[metric(labels("stage", "reason"))]
+    pub auction_cancellations: prometheus::IntCounterVec,
 }
 
 impl Metrics {

@@ -42,6 +42,7 @@ mod pre_processing;
 pub mod risk_detector;
 pub mod solution;
 pub mod sorting;
+pub mod deadline_cancellation;
 
 use {
     crate::infra::notify::liquidity_sources::LiquiditySourceNotifying,

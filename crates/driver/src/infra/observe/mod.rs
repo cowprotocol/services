@@ -497,3 +497,12 @@ pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: &Result<Gas, simulator::Erro
         Err(err) => tracing::debug!(block = ?block, ?err, "simulated settlement"),
     }
 }
+
+/// Observe that auction work was canceled.
+pub fn auction_cancelled(stage: &'static str, reason: &'static str) {
+    tracing::debug!(stage, reason, "cancelled auction work");
+    metrics::get()
+        .auction_cancellations
+        .with_label_values(&[stage, reason])
+        .inc();
+}
