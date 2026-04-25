@@ -1,5 +1,5 @@
 ---
-description: Produce a structured local PR review report for cowprotocol/services — synthesizes context, builds a codemap, applies CoW-specific + Rust review skills, and emits severity-ranked findings with actionable questions. Use when the user says "review this PR", "/review-pr 1234", "look at PR #1234", or pastes a cowprotocol/services PR URL. Read-only; the user posts any comments manually.
+description: Produce a structured PR review for cowprotocol/services. Invoked locally as `/review-pr` (diff mode, against current branch vs main) or `/review-pr <N|url>` (PR mode). Same command also runs in CI via `.github/workflows/claude-code-review.yml`, where it posts a single review comment instead of printing to terminal. Read-only in local modes; the user posts any comments manually.
 ---
 
 Review PR: $ARGUMENTS
@@ -8,55 +8,62 @@ Follow the instructions in `./docs/COW_PR_REVIEW_SKILL.md` to produce the review
 
 ## Prologue (execute in order; abort on any failure)
 
-### 1. Parse $ARGUMENTS
+### 1. Detect mode
+
+The skill runs in one of three modes. Detection:
+
+- If the environment variable `$GITHUB_ACTIONS == "true"` → `mode = "pr-ci"`.
+  - `$ARGUMENTS` MUST be a PR number, URL, or `owner/repo#N` form (the workflow passes it).
+- Else if `$ARGUMENTS` is non-empty → `mode = "pr-local"`. Parse the argument (see [step 2](#2-parse-arguments-pr-modes-only)).
+- Else (`$ARGUMENTS` empty, not in CI) → `mode = "diff"`. No `gh` calls needed; source is `git diff $(git merge-base HEAD main)..HEAD`.
+
+### 2. Parse $ARGUMENTS (PR modes only)
+
+*(Skip in `diff` mode.)*
 
 Accept any of:
+
 - A PR number: `4267`
 - A full URL: `https://github.com/cowprotocol/services/pull/4267`
 - An `owner/repo#N` form: `cowprotocol/services#4267`
 
-Default owner/repo to `cowprotocol/services` if only a number is given.
+Default `owner/repo` to `cowprotocol/services` when only a number is given.
 
 Extract: `<PR_NUMBER>`, `<owner>`, `<repo>`.
 
-If unparseable, print this usage and abort:
+If unparseable, print and abort:
+
 ```
-Usage: /review-pr <PR_NUMBER>
+Usage: /review-pr                       # diff mode (current branch vs main)
+       /review-pr <PR_NUMBER>           # PR mode
        /review-pr https://github.com/owner/repo/pull/<N>
        /review-pr owner/repo#<N>
 ```
 
-### 2. Prereq check
+### 3. Diff-mode preflight
 
-**Hard (abort if missing):**
+*(Only in `mode == "diff"`.)*
 
-Check that `<RUST_SKILLS_PATH>` exists as a directory. If missing, print and **abort**:
-```
-✗ Required skill missing: actionbook/rust-skills
+Run:
 
-  Install:
-    npx skills add actionbook/rust-skills
-
-  Then exit this Claude session (/exit) and restart with:
-    claude --continue
+```bash
+git fetch origin main --quiet
+BASE=$(git merge-base HEAD origin/main)
+git diff --stat "$BASE..HEAD"
 ```
 
-**Soft (warn and continue if missing):**
+If `git diff "$BASE..HEAD"` is empty, print `No diff vs main — nothing to review.` and exit clean (not an error).
 
-Check that `<QM_PATH>` exists as a directory. If missing, print the banner below and **continue**:
-```
-⚠ Optional skill missing: alirezarezvani/claude-skills/ra-qm-team
-  Install (recommended):
-    npx ai-agent-skills install alirezarezvani/claude-skills/ra-qm-team
-```
+There is **no** clean-tree check, **no** rebase, and **no** `git pull` of main. Diff scope comes from the fetched `origin/main` merge-base.
 
-Build a `loaded_context` list containing the prereq skills that ARE installed. This list appears in the report header's `Loaded context:` line.
+### 4. PR-mode preflight
 
-> **Note to maintainer:** Replace `<RUST_SKILLS_PATH>` and `<QM_PATH>` with the absolute paths captured in `docs/superpowers/plans/2026-04-21-pr-review-skill.notes.md` (§0.1). They're left as placeholders because the installer paths are determined empirically post-restart.
+*(Only in `mode == "pr-local"` or `mode == "pr-ci"`.)*
 
-### 3. Clean-tree check
+#### 4a. Working tree (pr-local only)
 
-Run `git status --porcelain`. If output is non-empty, print it plus the following message, then **abort**:
+Run `git status --porcelain`. If non-empty, print it plus:
+
 ```
 Working tree is dirty. Stash or commit your changes, then re-run.
 
@@ -64,69 +71,65 @@ Working tree is dirty. Stash or commit your changes, then re-run.
   git stash pop    # to restore later
 ```
 
-**Never auto-stash.**
+Then **abort**. Never auto-stash.
 
-### 4. Update main
+#### 4b. Save the current branch (pr-local only)
 
-Save the current branch name to `<prior_branch>` (this variable is used again in step 8 of the reference doc).
+Save the current branch name to `<prior_branch>` so the report's NEXT STEPS footer can suggest `git switch <prior_branch>` when the review is done.
 
-Then:
-- If the current branch IS `main`: run `git pull --rebase origin main`.
-- Otherwise: run `git fetch origin main` (do **not** rebase the user's feature branch silently).
+#### 4c. Fetch base ref
 
-On rebase conflict, abort and print:
-```
-Rebase conflict on main. Resolve manually, then re-run.
+Run `git fetch origin --quiet`. This makes the diff comparable to base without rebasing or modifying the user's branch.
 
-Conflicted files:
-<output of: git diff --name-only --diff-filter=U>
-```
+#### 4d. Checkout the PR
 
-### 5. Checkout PR
-
-Run `gh pr checkout <PR_NUMBER> -R <owner>/<repo>`.
-
-On failure, handle specifically:
+Run `gh pr checkout <PR_NUMBER> -R <owner>/<repo>`. Failure handling:
 
 - **`gh` not installed** → print `Install gh: https://cli.github.com/` and abort.
-- **Auth error** → print the output of `gh auth status` plus `Run: gh auth login` and abort.
+- **Auth error** → print `gh auth status` output plus `Run: gh auth login` and abort.
 - **PR doesn't exist / wrong repo** → surface `gh`'s error verbatim and abort.
 - **Fork without checkout permission** → switch to **degraded static-diff mode**:
-  - Do **not** abort.
-  - Set `mode = "degraded static-diff"`.
-  - In step 6 of the reference doc, replace the `gh pr diff` call with:
-    ```bash
-    gh pr diff <PR_NUMBER> --patch -R <owner>/<repo>
-    ```
-  - Flag the degraded mode prominently in the report header's `Mode:` line.
+  - Set `mode_qualifier = "degraded static-diff"`.
+  - In the reference doc's §2, replace `gh pr diff <N>` with `gh pr diff <N> --patch -R <owner>/<repo>`.
+  - Flag the qualifier in the report header's `Mode:` line.
 - **Any other error** → surface verbatim and abort.
 
-If successful, `mode = "full checkout"`.
+In `pr-ci`, the workflow has already checked out the PR branch — skip 4d and just verify `HEAD` matches the expected ref.
 
-### 6. Noise filtering (before handoff)
+### 5. Optional-tooling probe
 
-CoW services PRs frequently bundle generated/mechanical files with the real change. Before handing off, classify each changed file in the diff:
+Detect which optional accelerators are available in the current session: Serena MCP (`mcp__plugin_serena_serena__*`), `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`), `ra-qm-skills`, the `m04`/`m06`/`m07`/`m15` modules, `unsafe-checker`.
+
+Build a `loaded_context` list of whichever ones resolved. Pass it through to the reference doc; it prints verbatim in the report header's `Loaded context:` line.
+
+Do not abort if a skill is missing. Do not print install banners.
+
+### 6. Noise filter (before handoff)
+
+Classify each changed file:
 
 **Review surface (read fully):**
+
 - Anything under `crates/*/src/**/*.rs` (excluding `contracts/generated/**`).
 - `crates/e2e/tests/**/*.rs`.
 - `contracts/solidity/**/*.sol` (authored Solidity).
-- Config files: `**/openapi.yml`, `database/sql/**`, `configs/**`, `*.toml` (only if semantically interesting — dep version bumps with CI green are generally fine).
+- Config files: `**/openapi.yml`, `database/sql/**`, `configs/**`, semantically interesting `*.toml`.
 
 **Noise (skip or skim):**
-- `Cargo.lock` (any): reviewing lockfile diffs is high-cost, low-signal. If CI is green, cargo resolved the graph; a lockfile review won't catch what CI missed. Skip.
-- `contracts/generated/**` and `contracts/artifacts/**`: machine-generated bindings and ABI JSON. Skip unless the PR is explicitly *about* the binding generation process.
-- Auto-generated `Cargo.toml` entries from contract-binding crates (`contracts/generated/*/Cargo.toml`): skip.
-- Binary fixtures, ABI blobs, snapshot files: skip.
 
-Report the filter in the report's header `Scope:` line as `+X −Y across Z files (~N LOC human-written; rest generated/lockfile, filtered)`. This tells the human reviewer the *real* surface size — a 4000-line diff is often 400 lines of actual review.
+- `Cargo.lock` (any). CI validates the resolution; reviewing the lockfile diff is high-cost, low-signal.
+- `contracts/generated/**` and `contracts/artifacts/**` — machine-generated bindings and ABI JSON.
+- Auto-generated `Cargo.toml` entries from contract-binding crates.
+- Binary fixtures, ABI blobs, snapshot files.
+
+Report the filter in the report's `Scope:` line as `+X −Y across Z files (~N LOC human-written; rest generated/lockfile, filtered)`.
 
 ### 7. Handoff
 
-Read `docs/COW_PR_REVIEW_SKILL.md` and follow it from **§2. Metadata Fetch** onward, passing through:
+Read `docs/COW_PR_REVIEW_SKILL.md` and follow it from §2 (Metadata Fetch) onward, passing through:
 
-- `<PR_NUMBER>`, `<owner>`, `<repo>`
-- `<prior_branch>` (the branch to return to at the end)
-- `loaded_context` (list of installed prereq skills)
-- `mode` (`full checkout` or `degraded static-diff`)
-- The filter list from step 6 — the reference doc uses it to decide what to `Read`.
+- `mode` (`diff` / `pr-local` / `pr-ci`) and `mode_qualifier` if set.
+- `<PR_NUMBER>`, `<owner>`, `<repo>` (PR modes only).
+- `prior_branch` (`pr-local` only).
+- `loaded_context` (optional skills detected in step 5).
+- The noise-filter classification from step 6 — the reference doc uses it to decide what to read.
