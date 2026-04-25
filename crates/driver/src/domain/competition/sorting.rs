@@ -1,3 +1,4 @@
+use tokio_util::sync::CancellationToken;
 use {
     crate::{
         domain::competition::{auction::Tokens, order},
@@ -7,6 +8,7 @@ use {
     eth_domain_types as eth,
     std::{fmt::Debug, sync::Arc},
 };
+use crate::domain::time::DeadlineExceeded;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum SortingKey {
@@ -130,13 +132,20 @@ impl SortingStrategy for OwnQuotes {
 
 /// Sort orders based on the provided comparators. Reverse ordering is used to
 /// ensure that the most important element comes first.
+/// Returns `DeadlineExceeded` if cancel has been triggered.
 pub fn sort_orders(
     orders: &mut [order::Order],
     tokens: &Tokens,
     solver: &eth::Address,
     order_comparators: &[Arc<dyn SortingStrategy>],
-) {
+    cancel: &CancellationToken,
+) -> Result<(), DeadlineExceeded> {
+    if cancel.is_cancelled() {
+        return Err(DeadlineExceeded);
+    }
+
     let now = chrono::Utc::now();
+
     orders.sort_by_cached_key(|order| {
         std::cmp::Reverse(
             order_comparators
@@ -145,4 +154,10 @@ pub fn sort_orders(
                 .collect::<Vec<_>>(),
         )
     });
+
+    if cancel.is_cancelled() {
+        return Err(DeadlineExceeded);
+    }
+
+    Ok(())
 }

@@ -1,3 +1,4 @@
+use tokio_util::sync::CancellationToken;
 use {
     self::solution::settlement,
     super::{
@@ -331,6 +332,11 @@ impl Competition {
             Err(err) => return Err(err.into()),
         };
 
+        let deadline = auction.deadline(self.solver.timeouts()).driver();
+        let deadline_cancellation =
+            deadline_cancellation::DeadlineCancellation::new(deadline);
+        let deadline_cancel = deadline_cancellation.token();
+
         let solver_address = self.solver.address();
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
@@ -338,10 +344,12 @@ impl Competition {
         let cow_amm_orders = tasks.cow_amm_orders.await?;
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
+        let sort_cancel = deadline_cancel.clone();
+
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
-            Self::sort_orders(auction, solver_address, order_sorting_strategies)
+            Self::sort_orders(auction, solver_address, order_sorting_strategies, sort_cancel)
         });
 
         // We can sort the orders and fetch auction data in parallel
@@ -350,10 +358,17 @@ impl Competition {
 
         let balances = balances?;
         let app_data = app_data?;
+        let auction = auction?;
 
+        let update_cancel = deadline_cancel.clone();
         let auction = Self::run_blocking_with_timer("update_orders", move || {
-            Self::update_orders(auction, balances, app_data, cow_amm_orders)
+            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
+            // bound computations are happening and we want to avoid blocking
+            // the runtime
+            Self::update_orders(auction, balances, app_data, cow_amm_orders, update_cancel)
         }).await;
+
+        let auction = auction?;
 
         // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::join!(
@@ -643,36 +658,48 @@ impl Competition {
         Some(solved.id.get())
     }
 
-    // Oders already need to be sorted from most relevant to least relevant so that
-    // we allocate balances for the most relevants first.
+    /// Orders already need to be sorted from most relevant to the least relevant so that
+    /// we allocate balances for the most relevant first.
+    /// Returns `DeadlineExceeded` if cancel has been triggered.
     fn sort_orders(
         mut auction: Auction,
         solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-    ) -> Auction {
+        cancel: CancellationToken,
+    ) -> Result<Auction, DeadlineExceeded> {
         sorting::sort_orders(
             &mut auction.orders,
             &auction.tokens,
             &solver,
             &order_sorting_strategies,
-        );
-        auction
+            &cancel,
+        )?;
+
+        Ok(auction)
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner
     /// and updates the fetched app data.
     /// It allocates available funds from left to right so the orders should
     /// already be sorted by priority going in.
+    /// Returns `DeadlineExceeded` if cancel has been triggered.
     fn update_orders(
         mut auction: Auction,
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
-    ) -> Auction {
+        cancel: CancellationToken,
+    ) -> Result<Auction, DeadlineExceeded> {
+        if cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
+
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
+
+        let mut cancelled = false;
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -683,6 +710,11 @@ impl Competition {
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
         auction.orders.retain_mut(|order| {
+            if cancel.is_cancelled() {
+                cancelled = true;
+                return false;
+            }
+
             if cow_amms.contains(&order.uid) {
                 // cow amm orders already get constructed fully initialized
                 // so we don't have to handle them here anymore.
@@ -767,7 +799,11 @@ impl Competition {
             true
         });
 
-        auction
+        if cancelled || cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
+
+        Ok(auction)
     }
 
     /// Runs a blocking function on a background thread, timing it using the
@@ -1082,4 +1118,62 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
+}
+
+#[cfg(test)]
+mod deadline_cancellation_tests {
+    use {
+        super::*,
+        crate::domain::time::DeadlineExceeded,
+        std::time::Duration,
+        tokio_util::sync::CancellationToken,
+    };
+
+    #[tokio::test]
+    async fn run_blocking_with_deadline_exceeded() {
+        let result = Competition::run_blocking_with_timer("deadline", || {
+            Err::<(), _>(DeadlineExceeded)
+        })
+            .await;
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+
+    #[tokio::test]
+    async fn run_blocking_returns_success() {
+        let result = Competition::run_blocking_with_timer("success", || {
+            Ok::<_, DeadlineExceeded>(42)
+        })
+            .await;
+
+        assert_eq!(result.expect("blocking succeed"), 42);
+    }
+
+    #[tokio::test]
+    async fn blocking_stage_cooperates_cancellation_token() {
+        let cancel = CancellationToken::new();
+        let cancel_for_blocking = cancel.clone();
+
+        let handle = tokio::spawn(async move {
+            Competition::run_blocking_with_timer("cancel", move || {
+                loop {
+                    if cancel_for_blocking.is_cancelled() {
+                        return Err::<(), _>(DeadlineExceeded);
+                    }
+
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            })
+                .await
+        });
+
+        cancel.cancel();
+
+        let result = tokio::time::timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("blocking cancellation")
+            .expect("join succeeded");
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+    }
 }
