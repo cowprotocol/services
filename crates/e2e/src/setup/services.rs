@@ -236,6 +236,97 @@ impl<'a> Services<'a> {
         .await;
     }
 
+    /// Starts a basic version of the protocol with pod flow enabled.
+    /// Use this for pod_* prefixed tests with a single solver.
+    pub async fn start_protocol_with_pod(&self, solver: TestAccount) {
+        self.start_protocol_with_pod_solvers(vec![(solver, 0)]) // 0 = no haircut
+            .await;
+    }
+
+    /// Starts the protocol with multiple solvers, all with pod enabled.
+    /// Each solver has a haircut_bps value to differentiate scores.
+    /// Use this for testing pod winner selection with competing solvers.
+    pub async fn start_protocol_with_pod_multi_solver(
+        &self,
+        solvers: Vec<(TestAccount, u32)>, // (solver_account, haircut_bps)
+    ) {
+        self.start_protocol_with_pod_solvers(solvers).await;
+    }
+
+    /// Internal helper: starts protocol with pod-enabled driver for given
+    /// solvers.
+    async fn start_protocol_with_pod_solvers(
+        &self,
+        solvers: Vec<(TestAccount, u32)>, // (solver_account, haircut_bps)
+    ) {
+        use configs::autopilot::solver::Solver;
+
+        let solver_engines: Vec<colocation::SolverEngine> =
+            futures::future::join_all(solvers.iter().enumerate().map(
+                |(i, (solver, haircut_bps))| {
+                    let name = if i == 0 {
+                        "test_solver".to_string()
+                    } else {
+                        format!("solver_{}", i + 1)
+                    };
+                    colocation::start_baseline_solver_with_haircut(
+                        name,
+                        solver.clone(),
+                        *self.contracts.weth.address(),
+                        vec![], // no special base tokens needed
+                        2,
+                        true,
+                        *haircut_bps,
+                    )
+                },
+            ))
+            .await;
+
+        let driver_solvers: Vec<Solver> = solver_engines
+            .iter()
+            .map(|e| Solver::test(&e.name, e.account.address()))
+            .collect();
+
+        colocation::start_driver_with_pod(
+            self.contracts,
+            solver_engines,
+            colocation::LiquidityProvider::UniswapV2,
+            false,
+        );
+
+        // Wait for driver to be ready before proceeding.
+        // The driver with pod config may take longer to start due to pod network
+        // connection.
+        Self::wait_for_driver_to_come_up().await;
+
+        let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
+
+        let autopilot_config = Configuration {
+            drivers: driver_solvers,
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter.clone()]),
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..Default::default()
+            },
+            ..Configuration::test_no_drivers()
+        };
+        let orderbook_config = configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![test_quoter]),
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..Default::default()
+            },
+            ..configs::orderbook::Configuration::test_default()
+        };
+
+        self.start_autopilot(None, autopilot_config).await;
+        self.start_api(orderbook_config).await;
+    }
+
     pub async fn start_protocol_with_args(
         &self,
         autopilot_config: configs::autopilot::Configuration,
@@ -420,6 +511,16 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
+    }
+
+    async fn wait_for_driver_to_come_up() {
+        const DRIVER_HOST: &str = "http://localhost:11088";
+        let is_up = || async { reqwest::get(format!("{DRIVER_HOST}/healthz")).await.is_ok() };
+
+        tracing::info!("Waiting for driver to come up.");
+        wait_for_condition(TIMEOUT, is_up)
+            .await
+            .expect("waiting for driver timed out");
     }
 
     async fn wait_until_autopilot_ready(&self) {
