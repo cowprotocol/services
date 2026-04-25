@@ -48,6 +48,7 @@ pub struct Config<'a> {
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
+    pub solver_delay: Option<std::time::Duration>,
 }
 
 impl Solver {
@@ -504,12 +505,20 @@ impl Solver {
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
                     check_solve_request(req, expected);
-                    let mut state = state.0.lock().unwrap();
-                    assert!(
-                        !state.called || state.allow_multiple_solve_requests,
-                        "can't call /solve multiple times"
-                    );
-                    state.called = true;
+
+                    {
+                        let mut state = state.0.lock().unwrap();
+                        assert!(
+                            !state.called || state.allow_multiple_solve_requests,
+                            "can't call /solve multiple times"
+                        );
+                        state.called = true;
+                    }
+
+                    if let Some(delay) = config.solver_delay {
+                        tokio::time::sleep(delay).await;
+                    }
+
                     axum::response::Json(json!({
                         "solutions": solutions_json,
                     }))

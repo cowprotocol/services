@@ -1,5 +1,4 @@
 //! Framework for setting up tests.
-
 use {
     self::{driver::Driver, solver::Solver as SolverInstance},
     crate::{
@@ -365,6 +364,8 @@ pub struct Solver {
     max_solutions_to_propose: usize,
     /// Additional submission accounts for EIP-7702 parallel settlement.
     submission_accounts: Vec<eth::Address>,
+    /// Delay the solver
+    solver_delay: Option<std::time::Duration>,
 }
 
 #[derive(Debug, Clone)]
@@ -394,6 +395,7 @@ pub fn test_solver() -> Solver {
         haircut_bps: 0,
         max_solutions_to_propose: 1,
         submission_accounts: vec![],
+        solver_delay: None,
     }
 }
 
@@ -447,6 +449,11 @@ impl Solver {
 
     pub fn submission_account(mut self, address: eth::Address) -> Self {
         self.submission_accounts.push(address);
+        self
+    }
+
+    pub fn solve_delay(mut self, delay: std::time::Duration) -> Self {
+        self.solver_delay = Some(delay);
         self
     }
 }
@@ -517,6 +524,7 @@ pub fn setup() -> Setup {
         auction_id: 1,
         settle_submission_deadline: 3,
         flashloans_enabled: true,
+        deadline: None,
         ..Default::default()
     }
 }
@@ -560,6 +568,8 @@ pub struct Setup {
     settle_submission_deadline: u64,
     /// Should flashloan-hint orders be accepted by the driver? True by default.
     flashloans_enabled: bool,
+    /// Deadline
+    deadline: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// The validity of a solution.
@@ -915,6 +925,12 @@ impl Setup {
         self
     }
 
+    /// Sets the deadline
+    pub fn set_deadline(mut self, deadline: chrono::DateTime<chrono::Utc>) -> Self {
+        self.deadline = Some(deadline);
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -1008,6 +1024,7 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
+                solver_delay: solver.solver_delay,
             })
             .await;
 
@@ -1060,7 +1077,8 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        crate::infra::time::now() + chrono::Duration::seconds(2)
+        self.deadline
+            .unwrap_or_else(|| crate::infra::time::now() + chrono::Duration::seconds(2))
     }
 
     pub fn allow_multiple_solve_requests(mut self) -> Self {

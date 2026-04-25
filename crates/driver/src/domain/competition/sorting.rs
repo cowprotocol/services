@@ -12,7 +12,7 @@ use {
     tokio_util::sync::CancellationToken,
 };
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SortingKey {
     Float(OrdFloat),
     Timestamp(Option<util::Timestamp>),
@@ -63,6 +63,7 @@ impl SortingStrategy for ExternalPrice {
 /// We use a wrapper around [f64] to make it sortable
 /// which is significantly faster than the
 /// [num::BigRational] we used before.
+#[derive(Clone)]
 pub struct OrdFloat(f64);
 impl PartialOrd for OrdFloat {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -148,26 +149,46 @@ pub fn sort_orders(
 
     let now = chrono::Utc::now();
 
-    orders.sort_by_cached_key(|order| {
-        std::cmp::Reverse(
+    let mut keyed = Vec::with_capacity(orders.len());
+
+    for (index, order) in orders.iter().enumerate() {
+        if cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
+
+        let key = std::cmp::Reverse(
             order_comparators
                 .iter()
                 .map(|cmp| cmp.key(order, tokens, solver, now))
                 .collect::<Vec<_>>(),
-        )
-    });
+        );
+
+        keyed.push((key, index));
+    }
 
     if cancel.is_cancelled() {
         return Err(DeadlineExceeded);
     }
+
+    keyed.sort_by_key(|(key, _)| key.clone());
+
+    if cancel.is_cancelled() {
+        return Err(DeadlineExceeded);
+    }
+
+    let sorted = keyed
+        .into_iter()
+        .map(|(_, index)| orders[index].clone())
+        .collect::<Vec<_>>();
+
+    orders.clone_from_slice(&sorted);
 
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tokio_util::sync::CancellationToken;
+    use {super::*, tokio_util::sync::CancellationToken};
 
     #[test]
     fn sort_orders_cancelled() {

@@ -320,7 +320,7 @@ impl Competition {
 
         let tasks = self
             .fetcher
-            .start_or_get_tasks_for_auction(request, self.solver.timeouts())
+            .start_or_get_tasks_for_auction(request)
             .await
             .map_err(|err| {
                 tracing::error!(?err, "pre-processing auction failed");
@@ -335,8 +335,15 @@ impl Competition {
             }
         };
 
-        let deadline = auction.deadline(self.solver.timeouts()).driver();
-        let deadline_cancellation = deadline_cancellation::DeadlineCancellation::new(deadline);
+        let deadlines = auction.deadline(self.solver.timeouts());
+        if deadlines.auction() <= chrono::Utc::now() {
+            observe::auction_cancelled("auction", "deadline");
+            return Ok(vec![]);
+        }
+        let driver_deadline = deadlines.driver();
+
+        let deadline_cancellation =
+            deadline_cancellation::DeadlineCancellation::new(driver_deadline);
         let deadline_cancel = deadline_cancellation.token();
 
         let solver_address = self.solver.address();
@@ -419,7 +426,13 @@ impl Competition {
         })
         .await;
 
-        let auction = auction?;
+        let auction = match auction {
+            Ok(auction) => auction,
+            Err(DeadlineExceeded) => {
+                observe::auction_cancelled("update_orders", "deadline");
+                return Ok(vec![]);
+            }
+        };
 
         // We can run bad token filtering and liquidity fetching in parallel
         let (liquidity, auction) = tokio::select! {
@@ -470,11 +483,15 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = tokio::select! {
             result = self.solver.solve(auction, &liquidity) => {
-                result.inspect_err(|err| {
-                    if err.is_timeout() {
+                match result {
+                    Ok(solutions) => solutions,
+                    Err(err) if err.is_timeout() => {
                         notify::solver_timeout(&self.solver, auction.id());
+                        observe::auction_cancelled("solver", "timeout");
+                        return Ok(vec![]);
                     }
-                })?
+                    Err(err) => return Err(err.into()),
+                }
             }
             _ = deadline_cancel.cancelled() => {
                 observe::auction_cancelled("solver", "deadline");
@@ -482,8 +499,7 @@ impl Competition {
             }
         };
 
-        let deadline = auction.deadline(self.solver.timeouts()).driver();
-        observe::postprocessing(&solutions, deadline);
+        observe::postprocessing(&solutions, driver_deadline);
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -662,7 +678,7 @@ impl Competition {
         }
 
         if !deadline_cancel.is_cancelled() {
-            if let Ok(remaining) = deadline.remaining() {
+            if let Ok(remaining) = driver_deadline.remaining() {
                 let _ = tokio::select! {
                     result = tokio::time::timeout(
                         remaining,
@@ -784,7 +800,16 @@ impl Competition {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
+
+        if cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
+
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
+
+        if cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
 
         let mut cancelled = false;
 
@@ -1228,7 +1253,8 @@ mod deadline_cancellation_tests {
     #[tokio::test]
     async fn run_blocking_returns_success() {
         let result =
-            Competition::run_blocking_with_timer("success", || Ok::<_, DeadlineExceeded>("ok")).await;
+            Competition::run_blocking_with_timer("success", || Ok::<_, DeadlineExceeded>("ok"))
+                .await;
 
         assert_eq!(result.expect("blocking succeed"), "ok");
     }

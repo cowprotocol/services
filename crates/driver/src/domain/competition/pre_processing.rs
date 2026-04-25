@@ -11,13 +11,7 @@ use {
             liquidity,
             time::DeadlineExceeded,
         },
-        infra::{
-            self,
-            api::routes::solve::dto::SolveRequest,
-            observe::metrics,
-            solver::Timeouts,
-            tokens,
-        },
+        infra::{self, api::routes::solve::dto::SolveRequest, observe::metrics, tokens},
     },
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Bytes, FixedBytes},
@@ -112,7 +106,6 @@ impl DataAggregator {
     pub async fn start_or_get_tasks_for_auction(
         &self,
         request: Request<Body>,
-        timeouts: Timeouts,
     ) -> Result<DataFetchingTasks> {
         // Figure out for which auction this `/solve` request was issued
         // by looking at the `X-Auction-Id` header.
@@ -139,7 +132,7 @@ impl DataAggregator {
             return Ok(tasks);
         }
 
-        let tasks = self.assemble_tasks(request, timeouts).await?;
+        let tasks = self.assemble_tasks(request).await?;
 
         tracing::debug!("started new data aggregation task");
 
@@ -207,14 +200,9 @@ impl DataAggregator {
         }
     }
 
-    async fn assemble_tasks(
-        &self,
-        request: Request<Body>,
-        timeouts: Timeouts,
-    ) -> Result<DataFetchingTasks> {
+    async fn assemble_tasks(&self, request: Request<Body>) -> Result<DataFetchingTasks> {
         let auction = self.utilities.parse_request(request).await?;
-        let deadline = auction.deadline(timeouts).driver();
-        let deadline_cancellation = Arc::new(DeadlineCancellation::new(deadline));
+        let deadline_cancellation = Arc::new(DeadlineCancellation::new(auction.deadline));
 
         let balances = Self::spawn_shared(
             deadline_cancellation.clone(),
