@@ -633,10 +633,11 @@ async fn collect_request_body(request: Request<Body>) -> Result<body::Bytes> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use chrono::Utc;
-    use std::time::Duration;
-    use std::sync::Arc;
+    use {
+        super::*,
+        chrono::Utc,
+        std::{sync::Arc, time::Duration},
+    };
 
     /// fake DataFetchingTasks for tests
     fn dummy_tasks() -> DataFetchingTasks {
@@ -647,15 +648,22 @@ mod tests {
             balances: futures::future::pending::<Result<Arc<Balances>, DeadlineExceeded>>()
                 .boxed()
                 .shared(),
-            app_data:  futures::future::pending::<Result<Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>, DeadlineExceeded>>()
-                .boxed()
-                .shared(),
+            app_data: futures::future::pending::<
+                Result<
+                    Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
+                    DeadlineExceeded,
+                >,
+            >()
+            .boxed()
+            .shared(),
             cow_amm_orders: futures::future::pending::<Result<Arc<Vec<Order>>, DeadlineExceeded>>()
                 .boxed()
                 .shared(),
-            liquidity:  futures::future::pending::<Result<Arc<Vec<liquidity::Liquidity>>, DeadlineExceeded>>()
-                .boxed()
-                .shared(),
+            liquidity: futures::future::pending::<
+                Result<Arc<Vec<liquidity::Liquidity>>, DeadlineExceeded>,
+            >()
+            .boxed()
+            .shared(),
         }
     }
 

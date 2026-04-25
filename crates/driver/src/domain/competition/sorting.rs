@@ -1,14 +1,16 @@
-use tokio_util::sync::CancellationToken;
 use {
     crate::{
-        domain::competition::{auction::Tokens, order},
+        domain::{
+            competition::{auction::Tokens, order},
+            time::DeadlineExceeded,
+        },
         util,
     },
     chrono::Duration,
     eth_domain_types as eth,
     std::{fmt::Debug, sync::Arc},
+    tokio_util::sync::CancellationToken,
 };
-use crate::domain::time::DeadlineExceeded;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum SortingKey {

@@ -45,8 +45,11 @@ impl Drop for DeadlineCancellation {
 
 #[cfg(test)]
 mod tests {
-    use {chrono::Utc, std::time::Duration};
-    use crate::domain::competition::deadline_cancellation::DeadlineCancellation;
+    use {
+        crate::domain::competition::deadline_cancellation::DeadlineCancellation,
+        chrono::Utc,
+        std::time::Duration,
+    };
 
     #[tokio::test]
     async fn cancels_after_deadline() {
