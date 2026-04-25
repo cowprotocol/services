@@ -760,7 +760,7 @@ impl Competition {
             return Ok(());
         };
 
-        let solve_response = dto::SolveResponse::new(Some(score_value.clone()), solver);
+        let solve_response = dto::SolveResponse::new(vec![score_value.clone()], solver);
         let solution_data = match serde_json::to_string(&solve_response) {
             Ok(data) => data,
             Err(e) => {
