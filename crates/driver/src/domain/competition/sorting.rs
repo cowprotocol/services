@@ -163,3 +163,24 @@ pub fn sort_orders(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn sort_orders_cancelled() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let mut orders = Vec::new();
+        let tokens = Tokens::default();
+        let solver = eth::Address::default();
+        let strategies = Vec::<Arc<dyn SortingStrategy>>::new();
+
+        let result = sort_orders(&mut orders, &tokens, &solver, &strategies, &cancel);
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+}
