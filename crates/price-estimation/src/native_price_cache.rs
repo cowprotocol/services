@@ -200,7 +200,8 @@ impl Cache {
         let percent_expired = rng.random_range(50..=90);
         let age = max_age.mul_f64(percent_expired as f64 / 100.0);
         now.checked_sub(age)
-            .unwrap_or_else(|| now - Duration::from_secs(1))
+            .or_else(|| now.checked_sub(Duration::from_secs(1)))
+            .unwrap_or(now)
     }
 
     fn len(&self) -> usize {
