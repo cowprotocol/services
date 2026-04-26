@@ -198,8 +198,9 @@ impl Cache {
     /// once.
     fn random_updated_at(max_age: Duration, now: Instant, rng: &mut impl Rng) -> Instant {
         let percent_expired = rng.random_range(50..=90);
-        let age = max_age.as_secs() * percent_expired / 100;
-        now - Duration::from_secs(age)
+        let age = max_age.mul_f64(percent_expired as f64 / 100.0);
+        now.checked_sub(age)
+            .unwrap_or_else(|| now - Duration::from_secs(1))
     }
 
     fn len(&self) -> usize {
