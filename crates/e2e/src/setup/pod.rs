@@ -1,7 +1,6 @@
 use {
     alloy::{network::EthereumWallet, primitives::Address, signers::local::PrivateKeySigner},
     pod_sdk::{auctions::client::AuctionClient, provider::PodProviderBuilder},
-    std::str::FromStr,
     url::Url,
 };
 
@@ -14,7 +13,7 @@ pub struct PodConfig {
 impl Default for PodConfig {
     fn default() -> Self {
         Self {
-            endpoint: Url::from_str(super::config::pod::POD_ENDPOINT).unwrap(),
+            endpoint: super::config::pod::POD_ENDPOINT.parse().unwrap(),
             auction_contract: super::config::pod::POD_AUCTION_CONTRACT.parse().unwrap(),
         }
     }
@@ -55,43 +54,20 @@ impl PodTestClient {
         Ok(Self { client })
     }
 
-    /// Fetch all bids for a given auction ID
-    /// Note: This should only be called after the auction deadline has passed
+    /// Fetch all bids for a given auction ID. Should only be called after
+    /// the auction deadline has passed.
     pub async fn fetch_bids(&self, auction_id: i64) -> anyhow::Result<Vec<PodBidInfo>> {
-        let pod_auction_id = pod_sdk::U256::from(auction_id as u64);
-        let bids = self.client.fetch_bids(pod_auction_id).await?;
-
-        let bid_infos: Vec<PodBidInfo> = bids
+        let bids = self
+            .client
+            .fetch_bids(pod_sdk::U256::from(auction_id as u64))
+            .await?;
+        Ok(bids
             .into_iter()
             .map(|bid| PodBidInfo {
                 submission_address: bid.bidder,
                 score: bid.amount,
                 data_len: bid.data.len(),
             })
-            .collect();
-
-        Ok(bid_infos)
-    }
-
-    /// Check if a specific solver submitted a bid for the auction
-    pub async fn verify_bid_submitted(
-        &self,
-        auction_id: i64,
-        solver_address: Address,
-    ) -> anyhow::Result<bool> {
-        let bids = self.fetch_bids(auction_id).await?;
-        Ok(bids.iter().any(|b| b.submission_address == solver_address))
-    }
-
-    /// Get the number of bids submitted for an auction
-    pub async fn get_bid_count(&self, auction_id: i64) -> anyhow::Result<usize> {
-        let bids = self.fetch_bids(auction_id).await?;
-        Ok(bids.len())
-    }
-
-    /// Find the winning bid (highest score) for an auction
-    pub async fn get_winning_bid(&self, auction_id: i64) -> anyhow::Result<Option<PodBidInfo>> {
-        let bids = self.fetch_bids(auction_id).await?;
-        Ok(bids.into_iter().max_by_key(|b| b.score))
+            .collect())
     }
 }

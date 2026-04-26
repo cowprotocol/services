@@ -11,7 +11,7 @@ use {
 mod bid;
 pub mod winner_selection;
 
-use ::winner_selection::solution_hash::{HashableSolution, HashableTradedOrder};
+use ::winner_selection::solution_hash::{HashableOrder, HashableSolution};
 pub use bid::{Bid, RankType, Ranked, Scored, Unscored};
 
 type SolutionId = u64;
@@ -63,27 +63,23 @@ impl Solution {
     }
 }
 
-impl HashableSolution for Solution {
-    type Order = TradedOrder;
-    type OrderId = domain::OrderUid;
-    type TokenAddr = eth::TokenAddress;
-
-    fn solution_id(&self) -> u64 {
-        self.id
-    }
-
-    fn solver_address(&self) -> &[u8] {
-        self.solver.as_slice()
-    }
-
-    fn orders(&self) -> impl Iterator<Item = (&Self::OrderId, &Self::Order)> {
-        self.orders.iter()
-    }
-
-    fn prices(&self) -> impl Iterator<Item = (&Self::TokenAddr, [u8; 32])> {
-        self.prices
-            .iter()
-            .map(|(token, price)| (token, price.get().0.to_be_bytes()))
+impl Solution {
+    /// Builds the canonical view used by `winner_selection::solution_hash`.
+    pub fn as_hashable(&self) -> HashableSolution<'_> {
+        HashableSolution {
+            solution_id: self.id,
+            solver_address: self.solver.as_slice(),
+            orders: self
+                .orders
+                .iter()
+                .map(|(uid, order)| (uid.0.as_slice(), order.as_hashable()))
+                .collect(),
+            prices: self
+                .prices
+                .iter()
+                .map(|(token, price)| (token.0.as_slice(), price.get().0.to_be_bytes()))
+                .collect(),
+        }
     }
 }
 
@@ -100,36 +96,20 @@ pub struct TradedOrder {
     pub executed_buy: eth::TokenAmount,
 }
 
-impl HashableTradedOrder for TradedOrder {
-    fn side_byte(&self) -> u8 {
-        match self.side {
-            order::Side::Buy => 0,
-            order::Side::Sell => 1,
+impl TradedOrder {
+    fn as_hashable(&self) -> HashableOrder<'_> {
+        HashableOrder {
+            side: match self.side {
+                order::Side::Buy => 0,
+                order::Side::Sell => 1,
+            },
+            sell_token: self.sell.token.0.as_slice(),
+            sell_amount: self.sell.amount.0.to_be_bytes(),
+            buy_token: self.buy.token.0.as_slice(),
+            buy_amount: self.buy.amount.0.to_be_bytes(),
+            executed_sell: self.executed_sell.0.to_be_bytes(),
+            executed_buy: self.executed_buy.0.to_be_bytes(),
         }
-    }
-
-    fn sell_token(&self) -> &[u8] {
-        self.sell.token.0.as_slice()
-    }
-
-    fn sell_amount(&self) -> [u8; 32] {
-        self.sell.amount.0.to_be_bytes()
-    }
-
-    fn buy_token(&self) -> &[u8] {
-        self.buy.token.0.as_slice()
-    }
-
-    fn buy_amount(&self) -> [u8; 32] {
-        self.buy.amount.0.to_be_bytes()
-    }
-
-    fn executed_sell(&self) -> [u8; 32] {
-        self.executed_sell.0.to_be_bytes()
-    }
-
-    fn executed_buy(&self) -> [u8; 32] {
-        self.executed_buy.0.to_be_bytes()
     }
 }
 

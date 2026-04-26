@@ -8,7 +8,7 @@ use {
                 order,
                 risk_detector,
                 solution::{self, Solution},
-                solver_winner_selection::{self, SolverArbitrator, WrappedNativeToken},
+                solver_winner_selection::{self, SolverArbitrator},
             },
             liquidity,
             time::Remaining,
@@ -28,7 +28,7 @@ use {
         primitives::Address,
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
-    anyhow::{Result, anyhow},
+    anyhow::Result,
     derive_more::{From, Into},
     eth_domain_types as eth,
     num::BigRational,
@@ -263,10 +263,9 @@ impl Solver {
 
         let pod_provider = Self::build_pod_provider(&config).await;
 
-        let weth_address: Address = eth.contracts().weth_address().0.into();
         let arbitrator = SolverArbitrator::new(
             10, // TODO: make max_winners configurable
-            WrappedNativeToken::from(weth_address),
+            eth.contracts().weth_address(),
         );
         Ok(Self {
             client: reqwest::ClientBuilder::new()
@@ -373,65 +372,44 @@ impl Solver {
     }
 
     async fn build_pod_provider(config: &Config) -> Option<PodProvider> {
-        let pod_config = match config.pod.as_ref() {
-            Some(cfg) => cfg,
-            None => return None,
-        };
-
-        let signer = match Self::make_signer(config.account.clone()).await {
-            Ok(signer) => signer,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to create signer for pod provider");
-                return None;
-            }
-        };
-
-        let signer_address = signer.address();
-        let wallet = EthereumWallet::from(signer);
-
-        let provider = match PodProviderBuilder::with_recommended_settings()
-            .wallet(wallet)
-            .on_url(pod_config.endpoint.clone())
-            .await
-        {
-            Ok(p) => p,
+        let pod_config = config.pod.as_ref()?;
+        match Self::try_build_pod_provider(&config.account, pod_config).await {
+            Ok(provider) => Some(provider),
             Err(e) => {
                 tracing::error!(error = %e, "failed to initialize pod provider");
-                return None;
-            }
-        };
-
-        // Log balance and nonce for debugging pending TX issues
-        let balance = provider.get_balance(signer_address).await;
-        let nonce = provider.get_transaction_count(signer_address).await;
-
-        match (balance, nonce) {
-            (Ok(bal), Ok(n)) => {
-                tracing::info!(
-                    signer_address = %signer_address,
-                    signer_balance = %bal,
-                    current_nonce = %n,
-                    "pod provider initialized",
-                );
-            }
-            (Ok(bal), Err(e)) => {
-                tracing::warn!(
-                    signer_address = %signer_address,
-                    signer_balance = %bal,
-                    error = %e,
-                    "pod provider initialized but failed to fetch nonce",
-                );
-            }
-            (Err(e), _) => {
-                tracing::warn!(
-                    error = %e,
-                    signer_address = %signer_address,
-                    "pod provider initialized but failed to fetch balance",
-                );
+                None
             }
         }
+    }
 
-        Some(provider)
+    async fn try_build_pod_provider(
+        account: &Account,
+        pod_config: &pod::config::Config,
+    ) -> Result<PodProvider> {
+        let wallet = match account {
+            Account::PrivateKey(s) => EthereumWallet::from(s.clone()),
+            Account::Kms(s) => EthereumWallet::from(s.clone()),
+            Account::Address(addr) => {
+                anyhow::bail!("address-only account ({addr:?}) cannot sign pod transactions")
+            }
+        };
+        let signer_address = account.address();
+        let provider = PodProviderBuilder::with_recommended_settings()
+            .wallet(wallet)
+            .on_url(pod_config.endpoint.clone())
+            .await?;
+
+        // Diagnostic info for debugging pending-TX issues; don't fail provider
+        // creation if these RPCs hiccup.
+        let balance = provider.get_balance(signer_address).await.ok();
+        let nonce = provider.get_transaction_count(signer_address).await.ok();
+        tracing::info!(
+            %signer_address,
+            ?balance,
+            ?nonce,
+            "pod provider initialized",
+        );
+        Ok(provider)
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -618,24 +596,6 @@ impl Solver {
 
     pub fn config(&self) -> &Config {
         &self.config
-    }
-
-    async fn make_signer(
-        account: infra::solver::Account,
-    ) -> Result<Box<dyn TxSigner<Signature> + Send + Sync>, anyhow::Error> {
-        match account {
-            Account::PrivateKey(private_key_signer) => {
-                tracing::debug!("using PrivateKey signer for pod");
-                Ok(Box::new(private_key_signer))
-            }
-            Account::Kms(aws_signer) => {
-                tracing::debug!("using KMS signer for pod");
-                Ok(Box::new(aws_signer))
-            }
-            Account::Address(addr) => Err(anyhow!(
-                "unsupported Address account type for pod signer: {addr:?}"
-            )),
-        }
     }
 }
 

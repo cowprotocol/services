@@ -1,7 +1,7 @@
 pub use winner_selection::Unscored;
 use {
     crate::domain::competition::order::FeePolicy,
-    eth_domain_types::{self as eth, Address, Ether},
+    eth_domain_types::{self as eth, Address, Ether, WrappedNativeToken},
     std::collections::HashMap,
     winner_selection::{
         self as winsel,
@@ -15,22 +15,6 @@ use {
 #[derive(Debug, Clone, Copy)]
 pub struct Score(pub Ether);
 
-/// Wrapped native token address (e.g., WETH).
-#[derive(Debug, Clone, Copy)]
-pub struct WrappedNativeToken(pub Address);
-
-impl From<Address> for WrappedNativeToken {
-    fn from(addr: Address) -> Self {
-        Self(addr)
-    }
-}
-
-impl From<WrappedNativeToken> for Address {
-    fn from(w: WrappedNativeToken) -> Self {
-        w.0
-    }
-}
-
 #[derive(Clone)]
 pub struct SolverArbitrator(winsel::Arbitrator);
 
@@ -43,20 +27,25 @@ pub struct SolverArbitrator(winsel::Arbitrator);
 /// changing the ordering or the `bids`.
 impl SolverArbitrator {
     pub fn new(max_winners: usize, wrapped_native_token: WrappedNativeToken) -> Self {
+        let token: eth::TokenAddress = *wrapped_native_token;
         Self(winsel::Arbitrator {
             max_winners,
-            weth: wrapped_native_token.0,
+            weth: *token,
         })
     }
 
     /// Runs the entire auction mechanism on the passed in solutions.
     pub fn arbitrate(
         &self,
-        bids: Vec<Bid<Unscored>>,
+        mut bids: Vec<Bid<Unscored>>,
         auction: &crate::domain::competition::Auction,
     ) -> Vec<Bid> {
-        let mut bids = bids;
-        bids.sort_by_cached_key(|b| winsel::solution_hash::hash_solution(b.solution()));
+        // Sort by solution hash so every observer (driver, autopilot, third-party
+        // verifier) processes bids in the same deterministic order — required for
+        // tie-breaking to agree across independent runs.
+        bids.sort_by_cached_key(|b| {
+            winsel::solution_hash::hash_solution(b.solution().as_hashable())
+        });
 
         let context = auction.into();
         let mut bid_by_key = HashMap::with_capacity(bids.len());
@@ -112,7 +101,6 @@ impl From<&crate::domain::competition::Auction> for winsel::AuctionContext {
                     let policies = order
                         .protocol_fees
                         .iter()
-                        //.copied()
                         .map(winsel::primitives::FeePolicy::from)
                         .collect();
                     (uid, policies)

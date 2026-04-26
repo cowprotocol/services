@@ -20,7 +20,7 @@ use {
         },
         util::math,
     },
-    alloy::{hex, network::TxSigner as _, primitives::Bytes},
+    alloy::{network::TxSigner as _, primitives::Bytes},
     anyhow::Context as _,
     axum::{body::Body, http::Request},
     eth_domain_types as eth,
@@ -567,31 +567,20 @@ impl Competition {
             lock.truncate(max_to_propose * MAX_CONCURRENT_AUCTIONS);
         }
 
-        // pod submission - winning auction calculation
-        if let Some((pod, pod_auction_contract_address)) = self.solver.pod() {
-            if let Some(auction_id) = auction.id {
-                let _ = Self::pod_flow(
-                    pod.clone(),
-                    pod_auction_contract_address,
-                    auction_id,
-                    auction.clone(),
-                    deadline,
-                    scored.first().map(|(solved, _)| solved.clone()),
-                    self.solver.clone(),
-                )
-                .await
-                .inspect_err(|e| {
-                    tracing::error!(
-                        error = %e,
-                        auction_id = %auction_id,
-                        deadline = ?deadline,
-                        solver_address = %self.solver.address().0.to_string(),
-                        "pod flow failed"
-                    );
-                });
-            } else {
-                tracing::warn!("skipping pod submission: empty auction id");
-            }
+        // Shadow-mode submission to the pod network. Failures must never affect
+        // the response we return to the autopilot.
+        if let (Some((pod, contract)), Some(auction_id), Some((best, _))) =
+            (self.solver.pod(), auction.id, scored.first())
+        {
+            Self::spawn_pod_flow(
+                pod.clone(),
+                contract,
+                auction_id,
+                auction.clone(),
+                deadline,
+                best.clone(),
+                self.solver.clone(),
+            );
         }
 
         // Re-simulate the solution on every new block until the deadline ends to make
@@ -674,277 +663,177 @@ impl Competition {
         Some(solved.id.get())
     }
 
-    async fn pod_flow(
+    /// Spawns the shadow-mode pod flow: submits the best bid, waits for the
+    /// auction to end, fetches all bids, and runs local arbitration. The
+    /// caller is not blocked and any error is logged but never surfaced.
+    fn spawn_pod_flow(
         pod_provider: PodProvider,
-        pod_auction_contract_address: Address,
+        pod_auction_contract: Address,
         auction_id: Id,
         auction: Auction,
         deadline: chrono::DateTime<chrono::Utc>,
-        score: Option<Solved>,
+        best: Solved,
         solver: Solver,
-    ) -> Result<(), anyhow::Error> {
+    ) {
         let span =
             tracing::info_span!("pod_flow", auction_id = %auction_id.0, solver = %solver.name());
         tokio::spawn(
             async move {
-                let pod_auction_client =
-                    AuctionClient::new(pod_provider.clone(), pod_auction_contract_address);
+                let client = AuctionClient::new(pod_provider.clone(), pod_auction_contract);
 
-                if let Err(e) = Self::pod_solution_submission(
+                if let Err(e) = Self::pod_submit_bid(
                     &pod_provider,
-                    &pod_auction_client,
+                    &client,
                     auction_id,
                     deadline,
-                    score,
+                    best,
                     &solver,
                 )
                 .await
                 {
-                    tracing::error!(
-                        error = %e,
-                        deadline = ?deadline,
-                        "solution submission failed, aborting"
-                    );
+                    tracing::warn!(error = %e, "pod bid submission failed (shadow mode)");
                     return;
                 }
 
-                let participants_result =
-                    Self::pod_fetch_bids(&pod_auction_client, auction_id, deadline).await;
-
-                if let Ok(participants) = participants_result {
-                    tracing::info!(
-                        num_participants = participants.len(),
-                        deadline = ?deadline,
-                        "fetched bids"
-                    );
-                    let arbitrator = solver.arbitrator();
-                    if let Err(e) =
-                        Self::local_winner_selection(&auction, auction_id, participants, arbitrator)
-                            .await
-                    {
-                        tracing::error!(
-                            error = %e,
-                            deadline = ?deadline,
-                            "winner selection failed, aborting"
-                        );
+                let participants = match Self::pod_fetch_bids(&client, auction_id, deadline).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "pod fetch bids failed (shadow mode)");
+                        return;
                     }
-                } else if let Err(e) = participants_result {
-                    tracing::error!(
-                        error = %e,
-                        deadline = ?deadline,
-                        "failed to fetch participants, aborting"
-                    );
+                };
+
+                if let Err(e) = Self::pod_local_arbitration(
+                    &auction,
+                    auction_id,
+                    participants,
+                    solver.arbitrator(),
+                ) {
+                    tracing::warn!(error = %e, "pod local arbitration failed (shadow mode)");
                 }
             }
             .instrument(span),
         );
-
-        Ok(())
     }
 
     #[instrument(name = "pod_submit_bid", skip_all, fields(auction_id = %auction_id.0))]
-    async fn pod_solution_submission(
+    async fn pod_submit_bid(
         pod_provider: &PodProvider,
-        pod_auction_client: &AuctionClient,
+        client: &AuctionClient,
         auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
-        score: Option<Solved>,
+        best: Solved,
         solver: &Solver,
-    ) -> Result<(), anyhow::Error> {
-        let pod_auction_id = pod_sdk::U256::from(u64::try_from(auction_id.0).inspect_err(|e| {
-            tracing::error!(error = %e, "invalid auction id");
-        })?);
+    ) -> anyhow::Result<()> {
+        let pod_auction_id =
+            pod_sdk::U256::from(u64::try_from(auction_id.0).context("auction id")?);
+        let value = best.score.0;
+        let data = serde_json::to_vec(&dto::SolveResponse::new(vec![best], solver))
+            .context("serialize bid payload")?;
 
-        let Some(score_value) = score.clone() else {
-            tracing::warn!(deadline = %deadline, "no score available, skipping bid submission");
-            return Ok(());
-        };
-
-        let solve_response = dto::SolveResponse::new(vec![score_value.clone()], solver);
-        let solution_data = match serde_json::to_string(&solve_response) {
-            Ok(data) => data,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to serialize SolveResponse");
-                return Err(anyhow::Error::new(e));
-            }
-        };
-
-        let pod_auction_value = score_value.score.0;
-
-        tracing::info!(
-            deadline = ?deadline,
-            score = ?pod_auction_value,
-            payload_len = solution_data.len(),
-            "preparing bid submission"
-        );
-        tracing::debug!(payload_hex = %hex::encode(solution_data.clone().into_bytes()), "bid payload");
-
-        // Attempt bid submission with automatic recovery for locked accounts
-        let submission_result = Self::submit_bid_with_recovery(
-            pod_provider,
-            pod_auction_client,
-            pod_auction_id,
-            deadline,
-            pod_auction_value,
-            solution_data.clone(),
-        )
-        .await;
-
-        match submission_result {
-            Ok(_) => tracing::info!(deadline = %deadline, "bid submitted successfully"),
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    error_chain = ?e,
-                    deadline = %deadline,
-                    auction_id = %pod_auction_id,
-                    bid_value = %pod_auction_value,
-                    "pod bid submission failed (shadow mode - continuing)"
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn submit_bid_with_recovery(
-        provider: &PodProvider,
-        client: &AuctionClient,
-        auction_id: pod_sdk::U256,
-        deadline: chrono::DateTime<chrono::Utc>,
-        value: pod_sdk::U256,
-        data: String,
-    ) -> Result<(), anyhow::Error> {
-        use alloy::providers::Provider;
-
-        let submit = |data: String| async {
+        tracing::info!(score = %value, payload_len = data.len(), "submitting bid");
+        let submit = || async {
             client
-                .submit_bid(auction_id, deadline.into(), value, data.into_bytes())
+                .submit_bid(pod_auction_id, deadline.into(), value, data.clone())
                 .await
-                .map(|_| ())
         };
 
-        let err = match submit(data.clone()).await {
-            Ok(()) => return Ok(()),
-            Err(e) if is_account_locked_error(&e.to_string()) => e,
-            Err(e) => return Err(e),
-        };
-
-        tracing::warn!(error = %err, "locked account detected, attempting recovery");
-
-        let signer = provider
-            .get_accounts()
-            .await?
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("no signer available"))?;
-
-        match recovery::recover_locked_account(provider, signer).await {
-            Ok(true) => tracing::info!("recovery successful, retrying"),
-            Ok(false) => return Err(err),
-            Err(e) => return Err(anyhow::anyhow!("recovery failed: {e}")),
+        match submit().await {
+            Ok(_) => {
+                tracing::info!("bid submitted");
+                return Ok(());
+            }
+            Err(e) if is_account_locked_error(&e.to_string()) => {
+                tracing::warn!(error = %e, "locked account detected, attempting recovery");
+            }
+            Err(e) => return Err(e.context("submit bid")),
         }
 
-        submit(data).await.context("retry after recovery failed")
+        if !recovery::recover_locked_account(pod_provider, solver.address())
+            .await
+            .context("recover locked account")?
+        {
+            anyhow::bail!("submission failed but account was not locked");
+        }
+
+        submit().await.context("submit bid after recovery")?;
+        tracing::info!("bid submitted after recovery");
+        Ok(())
     }
 
     #[instrument(name = "pod_fetch_bids", skip_all, fields(auction_id = %auction_id.0))]
     async fn pod_fetch_bids(
-        pod_auction_client: &AuctionClient,
+        client: &AuctionClient,
         auction_id: Id,
         deadline: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<Bid<Unscored>>, anyhow::Error> {
-        let pod_auction_id = pod_sdk::U256::from(u64::try_from(auction_id.0).inspect_err(|e| {
-            tracing::error!(error = %e, "invalid auction id");
-        })?);
+    ) -> anyhow::Result<Vec<Bid<Unscored>>> {
+        let pod_auction_id =
+            pod_sdk::U256::from(u64::try_from(auction_id.0).context("auction id")?);
 
-        if let Err(e) = pod_auction_client
+        client
             .wait_for_auction_end(deadline.into())
             .await
-        {
-            tracing::error!(error = %e, deadline = %deadline, "wait_for_auction_end failed");
-            return Err(e);
-        }
-        tracing::info!(deadline = %deadline, "auction ended");
+            .context("wait for auction end")?;
 
-        let bids = match pod_auction_client.fetch_bids(pod_auction_id).await {
-            Ok(bids) => bids,
-            Err(e) => {
-                tracing::error!(error = %e, "fetch bids failed");
-                return Err(e);
-            }
-        };
+        let bids = client
+            .fetch_bids(pod_auction_id)
+            .await
+            .context("fetch bids")?;
 
-        let mut participants = Vec::new();
-        let mut malformed_count = 0usize;
-
+        let mut participants = Vec::with_capacity(bids.len());
+        let mut malformed = 0;
         for bid in bids {
-            match serde_json::from_slice::<dto::SolveResponse>(bid.data.as_slice()) {
-                Ok(resp) => {
-                    for solution in resp.solutions {
-                        participants.push(Bid::new(solution));
-                    }
-                }
+            match serde_json::from_slice::<dto::SolveResponse>(&bid.data) {
+                Ok(resp) => participants.extend(resp.solutions.into_iter().map(Bid::new)),
                 Err(e) => {
-                    malformed_count += 1;
-                    tracing::warn!(
-                        error = %e,
-                        bidder = %bid.bidder,
-                        data_len = bid.data.len(),
-                        "skipping malformed bid"
-                    );
+                    malformed += 1;
+                    tracing::warn!(error = %e, bidder = %bid.bidder, "skipping malformed bid");
                 }
             }
         }
-
-        if malformed_count > 0 {
-            tracing::warn!(malformed_count, "some bids were malformed and skipped");
+        if malformed > 0 {
+            tracing::warn!(malformed, "some bids were malformed and skipped");
         }
-
+        tracing::info!(num_participants = participants.len(), "fetched bids");
         Ok(participants)
     }
 
-    #[instrument(name = "pod_local_arbitration", skip_all, fields(auction_id = %auction_id.0, num_participants = participants.len()))]
-    async fn local_winner_selection(
+    #[instrument(
+        name = "pod_local_arbitration",
+        skip_all,
+        fields(auction_id = %auction_id.0, num_participants = participants.len()),
+    )]
+    fn pod_local_arbitration(
         auction: &Auction,
         auction_id: Id,
         participants: Vec<Bid<Unscored>>,
         arbitrator: &SolverArbitrator,
-    ) -> Result<(), anyhow::Error> {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    ) -> anyhow::Result<()> {
+        let ranked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             arbitrator.arbitrate(participants, auction)
-        }));
+        }))
+        .map_err(|e| {
+            let msg = e
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_owned())
+                .or_else(|| e.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic payload".to_owned());
+            anyhow::anyhow!("panic during arbitration: {msg}")
+        })?;
 
-        match result {
-            Ok(ranked) => {
-                let winners = ranked.iter().filter(|b| b.is_winner()).collect::<Vec<_>>();
-                let non_winners = ranked.iter().filter(|b| !b.is_winner()).collect::<Vec<_>>();
-                tracing::info!(
-                    num_winners = winners.len(),
-                    num_non_winners = non_winners.len(),
-                    "local arbitration completed"
-                );
-                for winner in winners {
-                    tracing::info!(
-                        submission_address = %winner.submission_address().to_string(),
-                        computed_score = ?winner.score(),
-                        "winner selected"
-                    );
-                }
-            }
-            Err(e) => {
-                let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
-                    s.to_string()
-                } else if let Some(s) = e.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "unknown panic payload".to_string()
-                };
-
-                return Err(anyhow::anyhow!("panic during arbitration: {}", panic_msg));
-            }
+        let (winners, non_winners): (Vec<_>, Vec<_>) = ranked.iter().partition(|b| b.is_winner());
+        tracing::info!(
+            num_winners = winners.len(),
+            num_non_winners = non_winners.len(),
+            "local arbitration completed",
+        );
+        for winner in winners {
+            tracing::info!(
+                submission_address = %winner.submission_address(),
+                computed_score = ?winner.score(),
+                "winner selected",
+            );
         }
-
         Ok(())
     }
 

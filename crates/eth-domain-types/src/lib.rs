@@ -75,12 +75,6 @@ impl From<TokenAddress> for Address {
     }
 }
 
-impl AsRef<[u8]> for TokenAddress {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
 impl From<ContractAddress> for Address {
     fn from(value: ContractAddress) -> Self {
         value.0

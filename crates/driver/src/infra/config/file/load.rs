@@ -372,7 +372,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,
-        pod: config.pod,
     }
 }
 

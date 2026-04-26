@@ -10,3 +10,6 @@ itertools = { workspace = true }
 number = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[lints]
+workspace = true

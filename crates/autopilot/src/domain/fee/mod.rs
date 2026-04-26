@@ -6,7 +6,7 @@
 
 mod policy;
 
-pub use {
+use {
     crate::{
         boundary::{self},
         domain,

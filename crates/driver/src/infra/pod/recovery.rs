@@ -2,12 +2,12 @@
 //! See: https://docs.v2.pod.network/guides-references/guides/recover-locked-account
 
 use {
-    alloy::{providers::Provider, sol},
+    alloy::{primitives::address, providers::Provider, sol},
+    anyhow::{Context, anyhow},
     pod_sdk::{Address, alloy_primitives::B256, provider::PodProvider},
-    thiserror::Error,
 };
 
-const RECOVERY_PRECOMPILE: &str = "0x50d0000000000000000000000000000000000003";
+const RECOVERY_PRECOMPILE: Address = address!("50d0000000000000000000000000000000000003");
 
 sol! {
     #[sol(rpc)]
@@ -23,43 +23,31 @@ struct RecoveryTarget {
     nonce: u64,
 }
 
-#[derive(Debug, Error)]
-pub enum RecoveryError {
-    #[error("get target: {0}")]
-    GetTarget(String),
-    #[error("send: {0}")]
-    Send(String),
-    #[error("tx failed: {0}")]
-    TxFailed(String),
-    #[error("not locked")]
-    NotLocked,
-}
-
+/// Attempts to recover a locked pod account. Returns `Ok(true)` on successful
+/// recovery, `Ok(false)` if the account is not locked, and `Err` on RPC or
+/// transaction failure.
 #[tracing::instrument(skip_all, fields(%account))]
 pub async fn recover_locked_account(
     provider: &PodProvider,
     account: Address,
-) -> Result<bool, RecoveryError> {
-    let target = match get_recovery_target(provider, account).await {
-        Ok(t) => t,
-        Err(RecoveryError::NotLocked) => return Ok(false),
-        Err(e) => return Err(e),
+) -> anyhow::Result<bool> {
+    let Some(target) = get_recovery_target(provider, account).await? else {
+        return Ok(false);
     };
 
     tracing::info!(tx_hash = %target.tx_hash, nonce = target.nonce, "recovering");
 
-    let precompile: Address = RECOVERY_PRECOMPILE.parse().unwrap();
-    let receipt = Recovery::new(precompile, provider)
+    let receipt = Recovery::new(RECOVERY_PRECOMPILE, provider)
         .recover(target.tx_hash, target.nonce)
         .send()
         .await
-        .map_err(|e| RecoveryError::Send(e.to_string()))?
+        .context("send recovery tx")?
         .get_receipt()
         .await
-        .map_err(|e| RecoveryError::TxFailed(e.to_string()))?;
+        .context("recovery tx receipt")?;
 
     if !receipt.status() {
-        return Err(RecoveryError::TxFailed("reverted".into()));
+        return Err(anyhow!("recovery tx reverted"));
     }
 
     tracing::info!("recovered");
@@ -69,19 +57,24 @@ pub async fn recover_locked_account(
 async fn get_recovery_target(
     provider: &PodProvider,
     account: Address,
-) -> Result<RecoveryTarget, RecoveryError> {
-    let result: serde_json::Value = provider
-        .raw_request("pod_getRecoveryTargetTx".into(), vec![account])
-        .await
-        .map_err(|e| {
+) -> anyhow::Result<Option<RecoveryTarget>> {
+    let result = provider
+        .raw_request::<_, serde_json::Value>("pod_getRecoveryTargetTx".into(), vec![account])
+        .await;
+
+    match result {
+        Ok(value) => Ok(Some(
+            serde_json::from_value(value).context("decode target")?,
+        )),
+        Err(e) => {
             let s = e.to_string();
             if s.contains("not locked") || s.contains("no recovery") {
-                RecoveryError::NotLocked
+                Ok(None)
             } else {
-                RecoveryError::GetTarget(s)
+                Err(anyhow!(s).context("pod_getRecoveryTargetTx"))
             }
-        })?;
-    serde_json::from_value(result).map_err(|e| RecoveryError::GetTarget(e.to_string()))
+        }
+    }
 }
 
 pub fn is_account_locked_error(error: &str) -> bool {

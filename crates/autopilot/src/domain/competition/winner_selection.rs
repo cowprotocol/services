@@ -58,9 +58,13 @@ impl Arbitrator {
 
     /// Runs the entire auction mechanism on the passed in solutions.
     #[instrument(skip_all)]
-    pub fn arbitrate(&self, bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
-        let mut bids = bids;
-        bids.sort_by_cached_key(|b| winsel::solution_hash::hash_solution(b.solution()));
+    pub fn arbitrate(&self, mut bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
+        // Sort by solution hash so independent observers (autopilot, drivers,
+        // third-party verifiers) all process bids in the same order, making
+        // tie-breaking deterministic across runs.
+        bids.sort_by_cached_key(|b| {
+            winsel::solution_hash::hash_solution(b.solution().as_hashable())
+        });
 
         let context = auction.into();
         let mut bid_by_key = HashMap::with_capacity(bids.len());
@@ -109,29 +113,11 @@ impl Arbitrator {
             );
         }
 
-        let rank = Ranking {
+        Ranking {
             filtered_out,
             ranked,
             reference_scores,
-        };
-
-        let winners = rank.winners().collect::<Vec<_>>();
-        let non_winners = rank.non_winners().collect::<Vec<_>>();
-        tracing::info!(
-            auction_id = ?auction.id,
-            num_winners = winners.len(),
-            num_non_winners = non_winners.len(),
-            "CoW Protocol arbitration completed"
-        );
-        for winner in winners {
-            tracing::info!(
-                auction_id = ?auction.id,
-                submission_address = %winner.driver().submission_address.to_string(),
-                computed_score = ?winner.score(),
-                "winner selected"
-            );
         }
-        rank
     }
 }
 

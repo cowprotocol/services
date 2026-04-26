@@ -196,17 +196,15 @@ async fn pod_basic_test(web3: Web3) {
         "Driver should have submitted at least 1 bid to pod network"
     );
 
-    // Find the bid from our solver
     let solver_bid = pod_bids
         .iter()
-        .find(|b| b.submission_address == solver.address());
-
-    assert!(
-        solver_bid.is_some(),
-        "Our solver {} should have a bid in pod network",
-        solver.address()
-    );
-    let solver_bid = solver_bid.unwrap();
+        .find(|b| b.submission_address == solver.address())
+        .unwrap_or_else(|| {
+            panic!(
+                "solver {} should have a bid in pod network",
+                solver.address()
+            )
+        });
 
     // Verify the autopilot winner matches the pod bid submitter
     assert_eq!(
@@ -475,13 +473,10 @@ async fn pod_multi_order_test(web3: Web3) {
         "Driver should have submitted bid to pod network"
     );
 
-    let solver_bid = pod_bids
+    pod_bids
         .iter()
-        .find(|b| b.submission_address == solver.address());
-    assert!(
-        solver_bid.is_some(),
-        "Our solver should have bid in pod network"
-    );
+        .find(|b| b.submission_address == solver.address())
+        .expect("our solver should have bid in pod network");
 
     tracing::info!(
         autopilot_winner = %autopilot_winner.solver_address,
@@ -697,32 +692,27 @@ async fn pod_multi_solver_test(web3: Web3) {
 
     let solver_a_bid = pod_bids
         .iter()
-        .find(|b| b.submission_address == solver_a.address());
+        .find(|b| b.submission_address == solver_a.address())
+        .expect("solver A should have submitted bid to pod network");
     let solver_b_bid = pod_bids
         .iter()
-        .find(|b| b.submission_address == solver_b.address());
+        .find(|b| b.submission_address == solver_b.address())
+        .expect("solver B should have submitted bid to pod network");
 
-    assert!(
-        solver_a_bid.is_some(),
-        "Solver A should have submitted bid to pod network"
-    );
-    assert!(
-        solver_b_bid.is_some(),
-        "Solver B should have submitted bid to pod network"
-    );
-
-    // Verify winner selection consistency
-    let pod_winner = pod_bids.iter().max_by_key(|b| b.score).unwrap();
+    let pod_winner = pod_bids
+        .iter()
+        .max_by_key(|b| b.score)
+        .expect("pod_bids is non-empty per assertion above");
     assert_eq!(
         autopilot_winner.solver_address, pod_winner.submission_address,
-        "Autopilot winner should match pod network winner"
+        "autopilot winner should match pod network winner"
     );
 
     tracing::info!(
         solver_a = %solver_a.address(),
-        solver_a_score = ?solver_a_bid.unwrap().score,
+        solver_a_score = ?solver_a_bid.score,
         solver_b = %solver_b.address(),
-        solver_b_score = ?solver_b_bid.unwrap().score,
+        solver_b_score = ?solver_b_bid.score,
         pod_winner = %pod_winner.submission_address,
         autopilot_winner = %autopilot_winner.solver_address,
         "✓ Pod multi-solver verified: both solvers submitted bids, winner selection consistent"
