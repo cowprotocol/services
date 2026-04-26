@@ -1144,4 +1144,16 @@ mod tests {
             anyhow!("protocol")
         ))));
     }
+
+    #[test]
+    fn random_updated_at_underflow_check() {
+        let now = Instant::now();
+        let max_age = Duration::MAX;
+        let mut rng = rand::rng();
+
+        let updated_at = Cache::random_updated_at(max_age, now, &mut rng);
+
+        assert!(updated_at < now);
+        assert!(updated_at >= now - Duration::from_secs(1));
+    }
 }
