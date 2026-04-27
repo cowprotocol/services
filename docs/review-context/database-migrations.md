@@ -15,7 +15,9 @@ Two facts shape every check below:
 
 Both points generalise beyond DB — config schema changes, request/response formats, and message-queue payloads have the same n-1 / staging-vs-production caveat. When a PR touches any of those *and* the DB, mention the cross-cutting risk in the synthesis.
 
-## Non-negotiables (default **High** until addressed)
+## Non-negotiables
+
+Each item carries its own severity. Items 1–3 are correctness/availability concerns and default to **High**; items 4–5 are author hygiene and default to **Medium**.
 
 1. **Reversibility.** State whether the migration is reversible. If yes, include or link the rollback script. If no, the PR explains *why* irreversibility is acceptable. Missing either → **High**.
 2. **n-1 schema compatibility.** The previous app version must still function against the new schema. A migration that drops or renames a column, narrows a type, or adds a `NOT NULL` constraint without code already tolerating both shapes → **High** until the rollout plan is spelled out (typically: ship change in three releases — add → migrate code → drop).

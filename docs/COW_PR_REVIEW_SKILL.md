@@ -5,7 +5,7 @@ This document instructs Claude how to produce a PR review for cowprotocol/servic
 At the point this document is read, the entry-point has already determined:
 
 - **`mode`** — one of:
-  - `diff` — local, no PR yet. Source is `git diff $(git merge-base HEAD main)..HEAD` (the whole feature-branch worth of work). No PR metadata, no `gh` calls. Output to terminal.
+  - `diff` — local, no PR yet. Source is `git diff $(git merge-base HEAD origin/main)..HEAD` (the whole feature-branch worth of work, computed against the freshly-fetched remote `main` to avoid a stale local `main`). No PR metadata, no `gh` calls. Output to terminal.
   - `pr-local` — local, PR exists. Source is `gh pr diff <N>` plus PR metadata. Output to terminal.
   - `pr-ci` — running inside `.github/workflows/claude-code-review.yml`. Source is `gh pr diff <N>` plus PR metadata. Output is a single review comment posted to the PR.
 - **`<PR_NUMBER>`, `<owner>`, `<repo>`** (only in `pr-local` / `pr-ci`).
@@ -137,7 +137,16 @@ For each non-trivial symbol the diff adds, modifies, or deletes:
 | Skills from `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`) | Optional (installed via `npx skills add actionbook/rust-skills`) | Richer cross-crate analysis. Not present in CI by default. |
 | `Read` of a full file | Last resort | Only when the diff hunks plus the cheaper tools don't pin down what you need. |
 
-**Fallback rule:** in CI (or any environment where the optional tools aren't installed), every codemap step still works with `rg` and `git`. The optional tools are accelerators, not requirements.
+**Fallback rule:** in CI and in `pr-local` (full checkout), every codemap step still works with `rg` and `git` against the local working tree. The optional tools are accelerators, not requirements.
+
+**Exception — degraded static-diff mode.** When `pr-local` falls back to static-diff (a fork the user can't `gh pr checkout`), the working tree is the *prior* branch, not the PR's. `rg crates/`, `Read` of repo files, and `git blame` on the working tree all reflect the wrong code. In this mode:
+
+- Take the diff content from `gh pr diff <N> --patch -R <owner>/<repo>` (already arranged in [`commands/review-pr.md` §4d](../.claude/commands/review-pr.md)).
+- Read individual files at the PR's head SHA via `gh api /repos/<owner>/<repo>/contents/<path>?ref=<head_sha>` instead of `Read`.
+- Skip `git blame`-based historic context for lines that only exist on the PR branch (the local repo doesn't know about them); blame against `origin/main` is still fine for *unchanged* surrounding code.
+- Caller-count searches via `rg` are usable only for symbols that exist on `origin/main`; new symbols introduced by the PR must be looked up via the patch and `gh api`.
+
+The report header's `Mode:` line already flags `degraded static-diff` — a reviewer reading the output knows which constraint applied.
 
 ### What the codemap produces
 

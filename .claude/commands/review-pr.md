@@ -15,7 +15,7 @@ The skill runs in one of three modes. Detection:
 - If the environment variable `$GITHUB_ACTIONS == "true"` → `mode = "pr-ci"`.
   - `$ARGUMENTS` MUST be a PR number, URL, or `owner/repo#N` form (the workflow passes it).
 - Else if `$ARGUMENTS` is non-empty → `mode = "pr-local"`. Parse the argument (see [step 2](#2-parse-arguments-pr-modes-only)).
-- Else (`$ARGUMENTS` empty, not in CI) → `mode = "diff"`. No `gh` calls needed; source is `git diff $(git merge-base HEAD main)..HEAD`.
+- Else (`$ARGUMENTS` empty, not in CI) → `mode = "diff"`. No `gh` calls needed; source is `git diff $(git merge-base HEAD origin/main)..HEAD` (the actual command runs in step 3 below, after fetching `origin/main`).
 
 ### 2. Parse $ARGUMENTS (PR modes only)
 
