@@ -195,7 +195,7 @@ Apply, in order:
 1. The [Universal Guardrails](#universal-guardrails).
 2. The conditional context from [§3](#3-conditional-context), if any was loaded.
 3. CoW-services conventions from `CLAUDE.md`.
-4. Optional skills from [§4 → tools table](#tools-cheapest-viable-option-first), activated by what the diff actually contains. If installed, invoke `m06-error-handling` for `Result`/`Option`/`?` changes, `m07-concurrency` for `tokio::*` / async / locking, `m04-zero-cost` for new generics or trait objects, `m15-anti-pattern` for general sanity, `unsafe-checker` for any `unsafe` (mandatory High). If they aren't installed, reason from general Rust knowledge plus the [Universal Guardrails](#universal-guardrails).
+4. Optional accelerators from [§4 → tools table](#tools-cheapest-viable-option-first) when available — Serena MCP for symbol lookups, `actionbook/rust-skills` for caller / trait / structural analysis. If they aren't installed, reason from `rg` + general Rust knowledge plus the [Universal Guardrails](#universal-guardrails).
 
 ### Use `git blame` for historic context
 

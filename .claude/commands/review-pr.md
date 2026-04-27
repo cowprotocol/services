@@ -98,7 +98,7 @@ In `pr-ci`, the workflow has already checked out the PR branch — skip 4d and j
 
 ### 5. Optional-tooling probe
 
-Detect which optional accelerators are available in the current session: Serena MCP (`mcp__plugin_serena_serena__*`), `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`), `ra-qm-skills`, the `m04`/`m06`/`m07`/`m15` modules, `unsafe-checker`.
+Detect which optional accelerators are available in the current session: Serena MCP (`mcp__plugin_serena_serena__*`) and `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`).
 
 Build a `loaded_context` list of whichever ones resolved. Pass it through to the reference doc; it prints verbatim in the report header's `Loaded context:` line.
 
