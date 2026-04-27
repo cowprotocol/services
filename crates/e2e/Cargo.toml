@@ -61,6 +61,7 @@ solvers = { workspace = true }
 solvers-dto = { workspace = true }
 sqlx = { workspace = true }
 tempfile = { workspace = true }
+testlib = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
 toml = { workspace = true }
 tracing = { workspace = true }

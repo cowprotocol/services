@@ -59,15 +59,22 @@ impl ContractErrorExt for ContractError {
 
     fn is_contract_revert(&self) -> bool {
         match self {
-            // Revert data, geth code 3, or a "revert" message — any is a
-            // contract-level rejection. Other ErrorResps (rate limits,
-            // bad params) are transport and must retry.
+            // Revert data, geth code 3, a "revert" message, or any other EVM
+            // halt (e.g. the `INVALID`/0xFE opcode older Solidity emits when
+            // no selector matches) — all are deterministic contract-level
+            // rejections. Other ErrorResps (rate limits, bad params) are
+            // transport and must retry.
             ContractError::TransportError(RpcError::ErrorResp(err)) => {
+                let message = err.message.to_lowercase();
                 err.as_revert_data().is_some()
                     // https://github.com/ethereum/go-ethereum/blob/8e2107dc39dc9dab132150ec915e7ac299f9eb48/internal/ethapi/errors.go#L42-L46
                     // https://github.com/alloy-rs/alloy/blob/b6753088241a50730c092bdba7036f52887c4c57/crates/rpc-types-eth/src/error.rs#L32
                     || err.code == 3
-                    || err.message.to_lowercase().contains("revert")
+                    || message.contains("revert")
+                    // anvil/revm surfaces all halt reasons as
+                    // `EVM error <HaltReason>` (e.g. `EVM error InvalidFEOpcode`
+                    // for Bancor BNT). Halts are contract-level, not transport.
+                    || message.contains("evm error")
             }
             ContractError::ZeroData(..)
             | ContractError::UnknownFunction(..)
@@ -135,6 +142,17 @@ mod tests {
         assert!(error_resp(-32000, "VM Exception: revert").is_contract_revert());
         // Case-insensitive: capitalized node messages still match.
         assert!(error_resp(-32000, "Execution Reverted").is_contract_revert());
+    }
+
+    #[test]
+    fn contract_revert_accepts_evm_halt_errors() {
+        // anvil surfaces the INVALID (0xFE) opcode as `EVM error InvalidFEOpcode`
+        // — older Solidity (e.g. Bancor BNT) emits it on a missing selector.
+        assert!(error_resp(-32603, "EVM error InvalidFEOpcode").is_contract_revert());
+        // Other EVM halt reasons follow the same `EVM error <HaltReason>`
+        // shape and must classify the same way.
+        assert!(error_resp(-32603, "EVM error OpcodeNotFound").is_contract_revert());
+        assert!(error_resp(-32603, "EVM error InvalidJump").is_contract_revert());
     }
 
     #[test]
