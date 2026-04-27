@@ -15,6 +15,8 @@ use {
     serde::de::DeserializeOwned,
 };
 
+/// JSON extractor that wraps Axum's native one and logs deserialization
+/// errors.
 pub struct LoggingJson<T>(pub T);
 
 impl<S, T> FromRequest<S> for LoggingJson<T>
@@ -39,6 +41,8 @@ where
     }
 }
 
+/// Query extractor that wraps Axum's native one and logs deserialization
+/// errors.
 pub struct LoggingQuery<T>(pub T);
 
 impl<S, T> FromRequestParts<S> for LoggingQuery<T>
