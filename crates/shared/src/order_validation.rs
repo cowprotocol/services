@@ -167,17 +167,28 @@ fn classify_signature(res: &Result<u64, SignatureValidationError>) -> SignatureO
     }
 }
 
-fn classify_simulation(res: &Result<(), Eip1271SimulationError>) -> SimulationOutcome {
-    match res {
-        Ok(()) => SimulationOutcome::Pass,
-        Err(Eip1271SimulationError::Reverted {
+/// Runs a simulation under the given timeout, recording the duration in the
+/// `simulation_time` histogram, and folds the timeout / revert / infra error
+/// cases into a single `SimulationOutcome`.
+async fn timed_simulation(
+    sim: &dyn Eip1271Simulating,
+    order: &Order,
+    timeout: Duration,
+) -> SimulationOutcome {
+    let _timer = Eip1271SimulationMetrics::get()
+        .simulation_time
+        .start_timer();
+    match tokio::time::timeout(timeout, sim.simulate(order)).await {
+        Ok(Ok(())) => SimulationOutcome::Pass,
+        Ok(Err(Eip1271SimulationError::Reverted {
             reason,
             tenderly_url,
-        }) => SimulationOutcome::Fail {
-            reason: reason.clone(),
-            tenderly_url: tenderly_url.clone(),
+        })) => SimulationOutcome::Fail {
+            reason,
+            tenderly_url,
         },
-        Err(Eip1271SimulationError::Infra(err)) => SimulationOutcome::Infra(anyhow!("{err}")),
+        Ok(Err(Eip1271SimulationError::Infra(err))) => SimulationOutcome::Infra(err),
+        Err(_) => SimulationOutcome::Infra(anyhow!("eip1271 simulation timeout")),
     }
 }
 
@@ -220,16 +231,7 @@ fn record_simulation_outcome(
 }
 
 async fn run_eip1271_simulation_only(config: &Eip1271Simulator, preview_order: &Order) {
-    let res = {
-        let _timer = Eip1271SimulationMetrics::get()
-            .simulation_time
-            .start_timer();
-        tokio::time::timeout(config.timeout, config.simulator.simulate(preview_order)).await
-    };
-    let outcome = match res {
-        Ok(inner) => classify_simulation(&inner),
-        Err(_) => SimulationOutcome::Infra(anyhow!("eip1271 simulation timeout")),
-    };
+    let outcome = timed_simulation(config.simulator.as_ref(), preview_order, config.timeout).await;
     Eip1271SimulationMetrics::get()
         .total
         .with_label_values(&[SignatureOutcome::Skipped.label(), outcome.label()])
@@ -576,6 +578,48 @@ impl OrderValidator {
         }
     }
 
+    /// Computes the `verification_gas_limit` for an order. Returns `0` for
+    /// non-EIP-1271 signatures, otherwise delegates to `run_eip1271_checks`.
+    async fn calculate_verification_gas_limit(
+        &self,
+        order: &OrderCreation,
+        data: &OrderData,
+        app_data: &OrderAppData,
+        domain_separator: &DomainSeparator,
+        owner: Address,
+        uid: OrderUid,
+    ) -> Result<u64, ValidationError> {
+        let Signature::Eip1271(signature) = &order.signature else {
+            return Ok(0u64);
+        };
+
+        let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
+        let check = SignatureCheck::new(
+            owner,
+            hash.0,
+            signature.to_owned(),
+            app_data.interactions.pre.clone(),
+            app_data
+                .inner
+                .protocol
+                .flashloan
+                .as_ref()
+                .map(|loan| BalanceOverrideRequest {
+                    token: loan.token,
+                    holder: loan.receiver,
+                    amount: loan.amount,
+                }),
+        );
+        let preview_order = build_preview_order_for_sim(
+            data,
+            &app_data.interactions,
+            owner,
+            uid,
+            order.signature.clone(),
+        );
+        self.run_eip1271_checks(check, &preview_order, hash).await
+    }
+
     /// Entry point for the EIP-1271 block of `validate_and_construct_order`.
     ///
     /// Two paths, depending on the `eip1271_skip_creation_validation` flag:
@@ -606,7 +650,7 @@ impl OrderValidator {
     /// configured, the full order simulation concurrently. Decides the
     /// outcome:
     ///
-    /// - signature `Invalid` → `InvalidEip1271Signature` (today's behaviour).
+    /// - signature `Invalid` → `InvalidEip1271Signature` (current behaviour).
     /// - signature `Other`   → `ValidationError::Other` (infra error).
     /// - signature `Ok(gas)` + simulation `Reverted` + **Enforce** mode →
     ///   `SimulationFailed(reason)` (the new rejection added by this PR).
@@ -630,23 +674,12 @@ impl OrderValidator {
             });
         };
 
-        let sim = config.simulator.clone();
-        let simulation_timeout = config.timeout;
-        let order = preview_order.clone();
-        let simulation_fut = async move {
-            let _timer = Eip1271SimulationMetrics::get()
-                .simulation_time
-                .start_timer();
-            tokio::time::timeout(simulation_timeout, sim.simulate(&order)).await
-        };
+        let simulation_fut =
+            timed_simulation(config.simulator.as_ref(), preview_order, config.timeout);
 
-        let (signature_res, simulation_res) = tokio::join!(signature_fut, simulation_fut);
+        let (signature_res, simulation_outcome) = tokio::join!(signature_fut, simulation_fut);
 
         let signature_outcome = classify_signature(&signature_res);
-        let simulation_outcome = match simulation_res {
-            Ok(inner) => classify_simulation(&inner),
-            Err(_) => SimulationOutcome::Infra(anyhow!("eip1271 simulation timeout")),
-        };
         record_simulation_outcome(
             signature_outcome,
             &simulation_outcome,
@@ -960,35 +993,16 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, owner);
 
-        let verification_gas_limit =
-            if let Signature::Eip1271(signature) = &order.signature {
-                let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
-                let check =
-                    SignatureCheck::new(
-                        owner,
-                        hash.0,
-                        signature.to_owned(),
-                        app_data.interactions.pre.clone(),
-                        app_data.inner.protocol.flashloan.as_ref().map(|loan| {
-                            BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
-                            }
-                        }),
-                    );
-                let preview_order = build_preview_order_for_sim(
-                    &data,
-                    &app_data.interactions,
-                    owner,
-                    uid,
-                    order.signature.clone(),
-                );
-                self.run_eip1271_checks(check, &preview_order, hash).await?
-            } else {
-                // in any other case, just apply 0
-                0u64
-            };
+        let verification_gas_limit = self
+            .calculate_verification_gas_limit(
+                &order,
+                &data,
+                &app_data,
+                domain_separator,
+                owner,
+                uid,
+            )
+            .await?;
 
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
