@@ -1,6 +1,5 @@
 use {
     crate::encoding::{EncodedSettlement, Interaction, WrapperCall},
-    alloy_eips::BlockId,
     alloy_network::Ethereum,
     alloy_primitives::{Address, Bytes, U256},
     alloy_provider::{DynProvider, EthCall, Provider},
@@ -10,6 +9,7 @@ use {
     },
     anyhow::Result,
     balance_overrides::BalanceOverriding,
+    ethrpc::block_stream::CurrentBlockWatcher,
     model::{
         DomainSeparator,
         order::OrderData,
@@ -32,6 +32,7 @@ pub(crate) struct Inner {
     pub(crate) provider: DynProvider,
     pub(crate) domain_separator: DomainSeparator,
     pub(crate) chain_id: u64,
+    pub(crate) current_block: CurrentBlockWatcher,
 }
 
 impl SettlementSimulator {
@@ -39,6 +40,7 @@ impl SettlementSimulator {
         settlement: contracts::GPv2Settlement::Instance,
         flash_loan_router: Address,
         balance_overrides: Arc<dyn BalanceOverriding>,
+        current_block: CurrentBlockWatcher,
     ) -> Result<Self> {
         let authenticator = Address(settlement.authenticator().call().await?.0);
         let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
@@ -52,6 +54,7 @@ impl SettlementSimulator {
             provider,
             domain_separator,
             chain_id,
+            current_block,
         })))
     }
 
@@ -68,9 +71,17 @@ impl SettlementSimulator {
             auction_id: None,
             state_overrides: StateOverride::default(),
             fund_settlement_contract: false,
-            block: BlockId::latest(),
+            block: Block::Latest,
         }
     }
+}
+
+/// Which block to simulate against.
+pub enum Block {
+    /// Use the current head block from the block stream, pinning the
+    /// simulation to a concrete number at build time.
+    Latest,
+    Number(u64),
 }
 
 /// Assembles a GPv2 settlement call for simulation purposes.
@@ -88,7 +99,7 @@ pub struct SimulationBuilder {
     pub(crate) state_overrides: StateOverride,
     pub(crate) simulator: SettlementSimulator,
     pub(crate) fund_settlement_contract: bool,
-    pub(crate) block: BlockId,
+    pub(crate) block: Block,
 }
 
 impl SimulationBuilder {
@@ -144,7 +155,7 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn at_block(mut self, block: BlockId) -> Self {
+    pub fn at_block(mut self, block: Block) -> Self {
         self.block = block;
         self
     }
@@ -286,7 +297,7 @@ pub struct EthCallInputs {
     pub request: TransactionRequest,
     pub state_overrides: StateOverride,
     pub simulator: SettlementSimulator,
-    pub block: BlockId,
+    pub block: u64,
 }
 
 impl EthCallInputs {
@@ -300,7 +311,7 @@ impl EthCallInputs {
             .clone()
             .call(self.request)
             .overrides(self.state_overrides)
-            .block(self.block)
+            .block(self.block.into())
     }
 }
 

@@ -8,6 +8,7 @@ use {
             encode_wrapper_settlement,
         },
         simulation_builder::{
+            Block,
             BuildError,
             EthCallInputs,
             ExecutionAmount,
@@ -32,7 +33,12 @@ pub(crate) async fn encode(
 ) -> Result<EthCallInputs, BuildError> {
     let order = builder.order.as_ref().ok_or(BuildError::NoOrder)?;
 
-    let executed_amount = executed_amount(&builder, order).await?;
+    let block = match builder.block {
+        Block::Latest => builder.simulator.0.current_block.borrow().number,
+        Block::Number(n) => n,
+    };
+
+    let executed_amount = executed_amount(&builder, order, block).await?;
 
     let (tokens, clearing_prices) = match builder.prices {
         Some(Prices::Explicit {
@@ -166,12 +172,16 @@ pub(crate) async fn encode(
             ..Default::default()
         },
         state_overrides,
+        block,
         simulator: builder.simulator,
-        block: builder.block,
     })
 }
 
-async fn executed_amount(builder: &SimulationBuilder, order: &Order) -> Result<U256, BuildError> {
+async fn executed_amount(
+    builder: &SimulationBuilder,
+    order: &Order,
+    block: u64,
+) -> Result<U256, BuildError> {
     let full = match order.data.kind {
         OrderKind::Sell => order.data.sell_amount,
         OrderKind::Buy => order.data.buy_amount,
@@ -189,7 +199,7 @@ async fn executed_amount(builder: &SimulationBuilder, order: &Order) -> Result<U
                 .0
                 .settlement
                 .filledAmount(Bytes::from(uid.0))
-                .block(builder.block)
+                .block(block.into())
                 .call()
                 .await
                 .map_err(|err| BuildError::FilledAmountQuery(err.into()))?;
