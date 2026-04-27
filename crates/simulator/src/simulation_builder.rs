@@ -11,6 +11,7 @@ use {
         },
         state_override_helpers::{EthBalanceOverride, SolverAllowlisting},
     },
+    alloy_eips::BlockId,
     alloy_network::Ethereum,
     alloy_primitives::{Address, Bytes, U256},
     alloy_provider::{DynProvider, EthCall, Provider},
@@ -29,6 +30,19 @@ use {
     std::sync::Arc,
 };
 
+/// How much of an order should be filled during simulation.
+pub enum ExecutionAmount {
+    /// Fill the full order amount (sell_amount for sell orders, buy_amount for
+    /// buy orders), ignoring any on-chain filled state.
+    Full,
+    /// Fill whatever is still remaining on-chain (queries the settlement
+    /// contract for the already-filled amount and subtracts it). Falls back to
+    /// the full amount if the query fails.
+    Remaining,
+    /// Use an explicit fill amount.
+    Explicit(U256),
+}
+
 /// A simulator-specific order that bundles the data needed to encode a trade.
 ///
 /// Construct with [`Order::new`] and add optional fields via the builder
@@ -40,7 +54,7 @@ pub struct Order {
     signature: Signature,
     pre_interactions: Vec<Interaction>,
     post_interactions: Vec<Interaction>,
-    executed_amount: Option<U256>,
+    executed_amount: ExecutionAmount,
 }
 
 impl Order {
@@ -51,7 +65,7 @@ impl Order {
             signature: Signature::default_with(SigningScheme::Eip1271),
             pre_interactions: vec![],
             post_interactions: vec![],
-            executed_amount: None,
+            executed_amount: ExecutionAmount::Remaining,
         }
     }
 
@@ -71,8 +85,8 @@ impl Order {
         self
     }
 
-    pub fn with_executed_amount(mut self, amount: U256) -> Self {
-        self.executed_amount = Some(amount);
+    pub fn with_executed_amount(mut self, amount: ExecutionAmount) -> Self {
+        self.executed_amount = amount;
         self
     }
 }
@@ -127,16 +141,18 @@ pub struct EthCallInputs {
     pub request: TransactionRequest,
     pub state_overrides: StateOverride,
     pub provider: DynProvider,
+    pub block: BlockId,
 }
 
 impl EthCallInputs {
-    /// Prepares an `eth_call` with the transaction request and state overrides
-    /// already applied. The call is not sent — callers can chain additional
-    /// builder methods (e.g. `.block(...)`) before awaiting.
+    /// Prepares an `eth_call` with the transaction request, state overrides,
+    /// and block already applied. The call is not sent — callers can chain
+    /// additional builder methods before awaiting.
     pub fn simulate(self) -> EthCall<Ethereum, Bytes> {
         self.provider
             .call(self.request)
             .overrides(self.state_overrides)
+            .block(self.block)
     }
 }
 
@@ -155,6 +171,7 @@ pub struct SimulationBuilder {
     state_overrides: StateOverride,
     simulator: SettlementSimulator,
     fund_settlement_contract: bool,
+    block: BlockId,
 }
 
 impl SimulationBuilder {
@@ -208,6 +225,11 @@ impl SimulationBuilder {
         self
     }
 
+    pub fn at_block(mut self, block: BlockId) -> Self {
+        self.block = block;
+        self
+    }
+
     /// Override the settlement contract's buy token balance so it can pay out
     /// the order without any external liquidity. The required amount is derived
     /// from the order's executed amount and clearing prices at `build()` time.
@@ -230,7 +252,7 @@ impl SimulationBuilder {
     ) -> Result<EthCallInputs, BuildError> {
         let order = self.order.as_ref().ok_or(BuildError::NoOrder)?;
 
-        let executed_amount = self.executed_amount(order).await;
+        let executed_amount = self.executed_amount(order).await?;
 
         let (tokens, clearing_prices) = match self.prices {
             Some(Prices::Explicit {
@@ -239,10 +261,13 @@ impl SimulationBuilder {
             }) => (tokens, clearing_prices),
             // At limit price: price[sell_token] = buy_amount, price[buy_token] = sell_amount.
             // This makes sell_amount * price[sell] / price[buy] = buy_amount exactly.
-            _ => (
+            Some(Prices::Limit) => (
                 vec![order.data.sell_token, order.data.buy_token],
                 vec![order.data.buy_amount, order.data.sell_amount],
             ),
+            None => {
+                return Err(BuildError::NoPriceEncoding);
+            }
         };
 
         let sell_token_index = tokens
@@ -365,46 +390,36 @@ impl SimulationBuilder {
             },
             state_overrides,
             provider: self.simulator.0.provider.clone(),
+            block: self.block,
         })
     }
 
     /// Determines the amount the order is supposed to be filled with.
-    /// If user did not configure a value the order's remaining fillable
-    /// amount will be chosen (determined by call to settlement contract).
-    async fn executed_amount(&self, order: &Order) -> U256 {
-        if let Some(executed_amount) = order.executed_amount {
-            return executed_amount;
-        }
-
+    async fn executed_amount(&self, order: &Order) -> Result<U256, BuildError> {
         let full = match order.data.kind {
             OrderKind::Sell => order.data.sell_amount,
             OrderKind::Buy => order.data.buy_amount,
         };
 
-        let uid = order
-            .data
-            .uid(&self.simulator.0.domain_separator, order.owner);
-        let filled_res = self
-            .simulator
-            .0
-            .settlement
-            .filledAmount(Bytes::from(uid.0))
-            .call()
-            .await;
-
-        match filled_res {
-            Err(err) => {
-                // doesn't make sense to pre-emptively fail the simulation
-                // in this case. Most orders are not filled at all so it's
-                // reasonable to use the full order amount as a fallback here.
-                tracing::debug!(
-                    ?err,
-                    "failed to query executed amount - assume full order amount"
-                );
-                full
+        Ok(match order.executed_amount {
+            ExecutionAmount::Full => full,
+            ExecutionAmount::Explicit(amount) => amount,
+            ExecutionAmount::Remaining => {
+                let uid = order
+                    .data
+                    .uid(&self.simulator.0.domain_separator, order.owner);
+                let filled_amount = self
+                    .simulator
+                    .0
+                    .settlement
+                    .filledAmount(Bytes::from(uid.0))
+                    .block(self.block)
+                    .call()
+                    .await
+                    .map_err(|err| BuildError::FilledAmountQuery(err.into()))?;
+                full.saturating_sub(filled_amount)
             }
-            Ok(filled_amount) => full.saturating_sub(filled_amount),
-        }
+        })
     }
 }
 
@@ -420,6 +435,10 @@ pub enum BuildError {
     MissingBuyToken,
     #[error("could not override token balances to fund settlement contract")]
     FailedToOverrideBalances,
+    #[error("no strategy to compute the price vector was chosen")]
+    NoPriceEncoding,
+    #[error("failed to query filled amount from settlement contract: {0}")]
+    FilledAmountQuery(#[source] anyhow::Error),
 }
 
 struct Inner {
@@ -469,6 +488,7 @@ impl SettlementSimulator {
             auction_id: None,
             state_overrides: StateOverride::default(),
             fund_settlement_contract: false,
+            block: BlockId::latest(),
         }
     }
 }
