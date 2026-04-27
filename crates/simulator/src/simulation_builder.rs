@@ -1,16 +1,5 @@
 use {
-    crate::{
-        encoding::{
-            EncodedSettlement,
-            Interaction,
-            Interactions,
-            WrapperCall,
-            encode_interactions,
-            encode_trade,
-            encode_wrapper_settlement,
-        },
-        state_override_helpers::{EthBalanceOverride, SolverAllowlisting},
-    },
+    crate::encoding::{EncodedSettlement, Interaction, WrapperCall},
     alloy_eips::BlockId,
     alloy_network::Ethereum,
     alloy_primitives::{Address, Bytes, U256},
@@ -19,12 +8,11 @@ use {
         TransactionRequest,
         state::{AccountOverride, StateOverride},
     },
-    alloy_sol_types::SolCall,
     anyhow::Result,
-    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
+    balance_overrides::BalanceOverriding,
     model::{
         DomainSeparator,
-        order::{OrderData, OrderKind},
+        order::OrderData,
         signature::{Signature, SigningScheme},
     },
     std::sync::Arc,
@@ -49,12 +37,12 @@ pub enum ExecutionAmount {
 /// methods. Defaults to an EIP-1271 signature (pairs with [`FakeUser`] for
 /// simulations that need to bypass signature verification).
 pub struct Order {
-    data: OrderData,
-    owner: Address,
-    signature: Signature,
-    pre_interactions: Vec<Interaction>,
-    post_interactions: Vec<Interaction>,
-    executed_amount: ExecutionAmount,
+    pub(crate) data: OrderData,
+    pub(crate) owner: Address,
+    pub(crate) signature: Signature,
+    pub(crate) pre_interactions: Vec<Interaction>,
+    pub(crate) post_interactions: Vec<Interaction>,
+    pub(crate) executed_amount: ExecutionAmount,
 }
 
 impl Order {
@@ -160,18 +148,18 @@ impl EthCallInputs {
 ///
 /// Call [`SimulationBuilder::build`] when done to produce a [`SettlementCall`].
 pub struct SimulationBuilder {
-    order: Option<Order>,
-    pre_interactions: Vec<Interaction>,
-    main_interactions: Vec<Interaction>,
-    post_interactions: Vec<Interaction>,
-    wrapper: Option<WrapperConfig>,
-    prices: Option<Prices>,
-    solver: Option<Solver>,
-    auction_id: Option<i64>,
-    state_overrides: StateOverride,
-    simulator: SettlementSimulator,
-    fund_settlement_contract: bool,
-    block: BlockId,
+    pub(crate) order: Option<Order>,
+    pub(crate) pre_interactions: Vec<Interaction>,
+    pub(crate) main_interactions: Vec<Interaction>,
+    pub(crate) post_interactions: Vec<Interaction>,
+    pub(crate) wrapper: Option<WrapperConfig>,
+    pub(crate) prices: Option<Prices>,
+    pub(crate) solver: Option<Solver>,
+    pub(crate) auction_id: Option<i64>,
+    pub(crate) state_overrides: StateOverride,
+    pub(crate) simulator: SettlementSimulator,
+    pub(crate) fund_settlement_contract: bool,
+    pub(crate) block: BlockId,
 }
 
 impl SimulationBuilder {
@@ -244,182 +232,15 @@ impl SimulationBuilder {
     }
 
     /// Same as `build()` but allows the caller to alter the simulation
-    /// before it gets finalized. This should only be used for very speicific
+    /// before it gets finalized. This should only be used for very specific
     /// setups.
     pub async fn build_with_modifications(
         self,
         customize: impl FnOnce(&mut EncodedSettlement),
     ) -> Result<EthCallInputs, BuildError> {
-        let order = self.order.as_ref().ok_or(BuildError::NoOrder)?;
-
-        let executed_amount = self.executed_amount(order).await?;
-
-        let (tokens, clearing_prices) = match self.prices {
-            Some(Prices::Explicit {
-                tokens,
-                clearing_prices,
-            }) => (tokens, clearing_prices),
-            // At limit price: price[sell_token] = buy_amount, price[buy_token] = sell_amount.
-            // This makes sell_amount * price[sell] / price[buy] = buy_amount exactly.
-            Some(Prices::Limit) => (
-                vec![order.data.sell_token, order.data.buy_token],
-                vec![order.data.buy_amount, order.data.sell_amount],
-            ),
-            None => {
-                return Err(BuildError::NoPriceEncoding);
-            }
-        };
-
-        let sell_token_index = tokens
-            .iter()
-            .position(|t| *t == order.data.sell_token)
-            .ok_or(BuildError::MissingSellToken)?;
-        let buy_token_index = tokens
-            .iter()
-            .position(|t| *t == order.data.buy_token)
-            .ok_or(BuildError::MissingBuyToken)?;
-
-        // Compute before clearing_prices is moved into EncodedSettlement below.
-        let fund_amount = self
-            .fund_settlement_contract
-            .then(|| match order.data.kind {
-                OrderKind::Sell => clearing_prices[sell_token_index]
-                    .saturating_mul(executed_amount)
-                    .checked_div(clearing_prices[buy_token_index])
-                    .unwrap_or(U256::MAX),
-                OrderKind::Buy => executed_amount,
-            });
-
-        let trade = encode_trade(
-            &order.data,
-            &order.signature,
-            order.owner,
-            sell_token_index,
-            buy_token_index,
-            executed_amount,
-        );
-
-        let order_pre = &order.pre_interactions;
-        let order_post = &order.post_interactions;
-
-        let mut settlement = EncodedSettlement {
-            tokens,
-            clearing_prices,
-            trades: vec![trade],
-            interactions: Interactions {
-                // order's pre-hooks run before any additional pre-interactions
-                pre: encode_interactions(order_pre.iter().chain(&self.pre_interactions)),
-                main: encode_interactions(&self.main_interactions),
-                // additional post-interactions run before the order's post-hooks
-                post: encode_interactions(self.post_interactions.iter().chain(order_post)),
-            },
-        };
-
-        customize(&mut settlement);
-
-        let settle_calldata = {
-            let mut bytes = settlement.into_settle_call().to_vec();
-            if let Some(id) = self.auction_id {
-                bytes.extend_from_slice(&id.to_be_bytes());
-            }
-            bytes.into()
-        };
-
-        let (to, input) = match self.wrapper {
-            Some(WrapperConfig::Custom(wrappers)) if !wrappers.is_empty() => {
-                encode_wrapper_settlement(&wrappers, settle_calldata)
-                    .expect("wrappers is non-empty")
-            }
-            Some(WrapperConfig::Flashloan(loans)) => {
-                let calldata =
-                    contracts::FlashLoanRouter::FlashLoanRouter::flashLoanAndSettleCall {
-                        loans: loans
-                            .into_iter()
-                            .map(|l| contracts::FlashLoanRouter::LoanRequest::Data {
-                                amount: l.amount,
-                                borrower: l.borrower,
-                                lender: l.lender,
-                                token: l.token,
-                            })
-                            .collect(),
-                        settlement: settle_calldata,
-                    }
-                    .abi_encode()
-                    .into();
-                (self.simulator.0.flash_loan_router, calldata)
-            }
-            _ => (*self.simulator.0.settlement.address(), settle_calldata),
-        };
-
-        let mut state_overrides = self.state_overrides;
-        let from = match self.solver {
-            Some(Solver::Real(addr)) => addr,
-            Some(Solver::Fake(opt)) => {
-                let addr = opt.unwrap_or_else(Address::random);
-                state_overrides.insert(addr, EthBalanceOverride(U256::MAX / U256::from(2)).into());
-
-                state_overrides.insert(
-                    self.simulator.0.authenticator,
-                    SolverAllowlisting(addr).into(),
-                );
-                addr
-            }
-            None => return Err(BuildError::NoSolver),
-        };
-        if let Some(amount) = fund_amount {
-            let (address, state_override) = self
-                .simulator
-                .0
-                .balance_overrides
-                .state_override(BalanceOverrideRequest {
-                    token: order.data.buy_token,
-                    holder: *self.simulator.0.settlement.address(),
-                    amount,
-                })
-                .await
-                .ok_or(BuildError::FailedToOverrideBalances)?;
-            state_overrides.insert(address, state_override);
-        };
-
-        Ok(EthCallInputs {
-            request: TransactionRequest {
-                from: Some(from),
-                to: Some(to.into()),
-                input: input.into(),
-                ..Default::default()
-            },
-            state_overrides,
-            provider: self.simulator.0.provider.clone(),
-            block: self.block,
-        })
-    }
-
-    /// Determines the amount the order is supposed to be filled with.
-    async fn executed_amount(&self, order: &Order) -> Result<U256, BuildError> {
-        let full = match order.data.kind {
-            OrderKind::Sell => order.data.sell_amount,
-            OrderKind::Buy => order.data.buy_amount,
-        };
-
-        Ok(match order.executed_amount {
-            ExecutionAmount::Full => full,
-            ExecutionAmount::Explicit(amount) => amount,
-            ExecutionAmount::Remaining => {
-                let uid = order
-                    .data
-                    .uid(&self.simulator.0.domain_separator, order.owner);
-                let filled_amount = self
-                    .simulator
-                    .0
-                    .settlement
-                    .filledAmount(Bytes::from(uid.0))
-                    .block(self.block)
-                    .call()
-                    .await
-                    .map_err(|err| BuildError::FilledAmountQuery(err.into()))?;
-                full.saturating_sub(filled_amount)
-            }
-        })
+        // Forward to a helper function to split the boring repetitive builder
+        // code from the non-trivial code that actually does the encoding.
+        crate::simulation_encoding::encode(self, customize).await
     }
 }
 
@@ -441,20 +262,20 @@ pub enum BuildError {
     FilledAmountQuery(#[source] anyhow::Error),
 }
 
-struct Inner {
-    settlement: contracts::GPv2Settlement::Instance,
-    authenticator: Address,
-    flash_loan_router: Address,
-    balance_overrides: Arc<dyn BalanceOverriding>,
-    provider: DynProvider,
-    domain_separator: DomainSeparator,
+pub(crate) struct Inner {
+    pub(crate) settlement: contracts::GPv2Settlement::Instance,
+    pub(crate) authenticator: Address,
+    pub(crate) flash_loan_router: Address,
+    pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
+    pub(crate) provider: DynProvider,
+    pub(crate) domain_separator: DomainSeparator,
 }
 
 /// Holds the settlement contract and its authenticator address, and acts as a
 /// factory for [`SimulationBuilder`] instances that are pre-configured with
 /// these values.
 #[derive(Clone)]
-pub struct SettlementSimulator(Arc<Inner>);
+pub struct SettlementSimulator(pub(crate) Arc<Inner>);
 
 impl SettlementSimulator {
     pub async fn new(
