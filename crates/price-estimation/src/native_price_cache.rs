@@ -194,10 +194,8 @@ impl Cache {
     }
 
     /// Returns a timestamp that is a `percentage` of `max_age`
-    /// in the past. Panics if `percentage` > 100. Clamps to `now` if an
-    /// underflow occurs.
+    /// in the past. Clamps to `now` if an underflow occurs.
     fn updated_at_percentage(max_age: Duration, now: Instant, percentage: u32) -> Instant {
-        assert!(percentage <= 100, "percentage > 100");
         let age = max_age.saturating_mul(percentage) / 100;
         now.checked_sub(age).unwrap_or(now)
     }
@@ -552,7 +550,7 @@ mod tests {
         anyhow::anyhow,
         futures::FutureExt,
         num::ToPrimitive,
-        rand_chacha::{ChaCha20Rng, rand_core::SeedableRng},
+        rand::{SeedableRng, rngs::StdRng},
     };
 
     fn token(u: u64) -> Address {
@@ -1157,18 +1155,10 @@ mod tests {
     fn random_updated_at_underflow_check() {
         let now = Instant::now();
         let max_age = Duration::MAX;
-        let mut rng = ChaCha20Rng::from_seed(Default::default());
+        let mut rng = StdRng::seed_from_u64(0);
 
         let updated_at = Cache::random_updated_at(max_age, now, &mut rng);
         assert_eq!(updated_at, now);
-    }
-
-    #[test]
-    #[should_panic(expected = "percentage > 100")]
-    fn updated_at_percent_panic() {
-        let now = Instant::now();
-        let max_age = Duration::MAX;
-        Cache::updated_at_percentage(max_age, now, 101);
     }
 
     #[test]
@@ -1194,7 +1184,7 @@ mod tests {
     fn random_updated_at_range() {
         let now = Instant::now();
         let max_age = Duration::from_secs(600);
-        let mut rng = ChaCha20Rng::from_seed(Default::default());
+        let mut rng = StdRng::seed_from_u64(0);
         let min = now - (max_age * 90 / 100);
         let max = now - (max_age * 50 / 100);
 

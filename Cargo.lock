@@ -6392,7 +6392,6 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "rand 0.9.4",
- "rand_chacha 0.9.0",
  "rate-limit",
  "request-sharing",
  "reqwest 0.13.2",
