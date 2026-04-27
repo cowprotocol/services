@@ -173,19 +173,7 @@ Trivial PRs (docs-only, single-line bump, pure test addition) — skip. Pure ref
 
 ## 5. Context Synthesis
 
-Produce 1–3 paragraphs combining the PR title, description, linked issue(s), file scope, and intent (feature, bugfix, refactor, dep bump, docs, test).
-
-### Rules
-
-1. **Synthesize, don't copy-paste.** If the description is five words, say so plainly: *"description is minimal; intent inferred from diff"*.
-2. **Watch for description-vs-diff drift.** A PR description must describe the diff's *current* state, not the author's iteration history. If a claim in the description is no longer true of the diff, raise a finding with `Action: update the PR description to match the current diff`. Do not flag the absence of a changelog of removed/superseded behaviour — that belongs in commit history, not the description.
-3. **No vague verbs.** *"This PR updates something"* is a failure. Name the component, the change, and the mechanism.
-
-### Shape
-
-- **Paragraph 1** — *what* changed.
-- **Paragraph 2** — *why* (description + linked issue).
-- **Paragraph 3** (if warranted) — *how* (the approach, not a line-by-line walkthrough).
+Follow the [`pr-context-synthesis`](skills/pr-context-synthesis.md) skill with `<pr_text>` = PR title + body from [§2](#2-metadata-fetch), `<linked_issue>` = the fetched issue (if any, also from §2), and `<diff_summary>` = the [§4](#4-codemap-phase) codemap plus the changed file list.
 
 ---
 
@@ -198,17 +186,9 @@ Apply, in order:
 3. CoW-services conventions from `CLAUDE.md`.
 4. Optional accelerators from [§4 → tools table](#tools-cheapest-viable-option-first) when available — Serena MCP for symbol lookups, `actionbook/rust-skills` for caller / trait / structural analysis. If they aren't installed, reason from `rg` + general Rust knowledge plus the [Universal Guardrails](#universal-guardrails).
 
-### Use `git blame` for historic context
+### Historic context
 
-Before flagging code that looks unusual, redundant, or "easy to clean up":
-
-```bash
-git blame -L <start>,<end> -- <file>            # who/what/when
-git log --format='%H %s' -n 1 <commit>          # commit message
-gh pr view <#> -R cowprotocol/services          # if commit message links a PR
-```
-
-If the originating commit message or PR explains *why* the code is shaped that way, factor that into your finding. A "this looks accidental" comment is much weaker when blame shows a deliberate fix from six months ago. Mention what blame revealed in the finding's Explanation so the reviewer can defend the point.
+Before flagging code that looks unusual, redundant, or "easy to clean up", follow the [`git-blame-historic-context`](skills/git-blame-historic-context.md) skill and factor what blame reveals into the finding's Explanation.
 
 ### Severity Rubric
 
