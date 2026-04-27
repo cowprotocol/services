@@ -31,6 +31,7 @@ pub(crate) struct Inner {
     pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
     pub(crate) provider: DynProvider,
     pub(crate) domain_separator: DomainSeparator,
+    pub(crate) chain_id: u64,
 }
 
 impl SettlementSimulator {
@@ -42,6 +43,7 @@ impl SettlementSimulator {
         let authenticator = Address(settlement.authenticator().call().await?.0);
         let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
         let provider = settlement.provider().clone();
+        let chain_id = provider.get_chain_id().await?;
         Ok(Self(Arc::new(Inner {
             settlement,
             authenticator,
@@ -49,6 +51,7 @@ impl SettlementSimulator {
             balance_overrides,
             provider,
             domain_separator,
+            chain_id,
         })))
     }
 
@@ -282,7 +285,7 @@ impl Order {
 pub struct EthCallInputs {
     pub request: TransactionRequest,
     pub state_overrides: StateOverride,
-    pub provider: DynProvider,
+    pub simulator: SettlementSimulator,
     pub block: BlockId,
 }
 
@@ -291,7 +294,10 @@ impl EthCallInputs {
     /// and block already applied. The call is not sent — callers can chain
     /// additional builder methods before awaiting.
     pub fn simulate(self) -> EthCall<Ethereum, Bytes> {
-        self.provider
+        self.simulator
+            .0
+            .provider
+            .clone()
             .call(self.request)
             .overrides(self.state_overrides)
             .block(self.block)

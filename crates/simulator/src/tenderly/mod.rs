@@ -1,5 +1,6 @@
 use {
-    crate::ethereum::Ethereum,
+    crate::{ethereum::Ethereum, simulation_builder::EthCallInputs},
+    alloy_eips::{BlockId, BlockNumberOrTag},
     alloy_primitives::TxKind,
     alloy_rpc_types::{TransactionRequest, state::StateOverride},
     anyhow::{Result, anyhow},
@@ -243,6 +244,19 @@ pub fn prepare_request(
         access_list: tx.access_list.as_ref().map(Into::into),
         ..Default::default()
     })
+}
+
+pub fn request_from_eth_call(inputs: &EthCallInputs) -> Result<dto::Request, Error> {
+    let block = match inputs.block {
+        BlockId::Number(BlockNumberOrTag::Number(n)) => Some(BlockNo(n)),
+        _ => None,
+    };
+    prepare_request(
+        inputs.simulator.0.chain_id.to_string(),
+        &inputs.request,
+        inputs.state_overrides.clone(),
+        block,
+    )
 }
 
 pub fn log_simulation_request(

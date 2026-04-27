@@ -166,7 +166,7 @@ pub(crate) async fn encode(
             ..Default::default()
         },
         state_overrides,
-        provider: builder.simulator.0.provider.clone(),
+        simulator: builder.simulator,
         block: builder.block,
     })
 }
