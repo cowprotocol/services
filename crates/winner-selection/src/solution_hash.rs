@@ -29,7 +29,7 @@ pub fn hash_solution(mut sol: HashableSolution<'_>) -> [u8; 32] {
     buf.extend_from_slice(&sol.solution_id.to_be_bytes());
     buf.extend_from_slice(sol.solver_address);
 
-    sol.orders.sort_by(|(a, _), (b, _)| a.cmp(b));
+    sol.orders.sort_by_key(|(uid, _)| *uid);
     buf.extend_from_slice(&(sol.orders.len() as u64).to_be_bytes());
     for (uid, order) in sol.orders {
         buf.extend_from_slice(uid);
@@ -42,7 +42,7 @@ pub fn hash_solution(mut sol: HashableSolution<'_>) -> [u8; 32] {
         buf.extend_from_slice(&order.executed_buy);
     }
 
-    sol.prices.sort_by(|(a, _), (b, _)| a.cmp(b));
+    sol.prices.sort_by_key(|(token, _)| *token);
     buf.extend_from_slice(&(sol.prices.len() as u64).to_be_bytes());
     for (token, price) in sol.prices {
         buf.extend_from_slice(token);
