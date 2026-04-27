@@ -18,129 +18,55 @@ use {
     std::sync::Arc,
 };
 
-/// How much of an order should be filled during simulation.
-pub enum ExecutionAmount {
-    /// Fill the full order amount (sell_amount for sell orders, buy_amount for
-    /// buy orders), ignoring any on-chain filled state.
-    Full,
-    /// Fill whatever is still remaining on-chain (queries the settlement
-    /// contract for the already-filled amount and subtracts it). Falls back to
-    /// the full amount if the query fails.
-    Remaining,
-    /// Use an explicit fill amount.
-    Explicit(U256),
+/// Holds the settlement contract and its authenticator address, and acts as a
+/// factory for [`SimulationBuilder`] instances that are pre-configured with
+/// these values.
+#[derive(Clone)]
+pub struct SettlementSimulator(pub(crate) Arc<Inner>);
+
+pub(crate) struct Inner {
+    pub(crate) settlement: contracts::GPv2Settlement::Instance,
+    pub(crate) authenticator: Address,
+    pub(crate) flash_loan_router: Address,
+    pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
+    pub(crate) provider: DynProvider,
+    pub(crate) domain_separator: DomainSeparator,
 }
 
-/// A simulator-specific order that bundles the data needed to encode a trade.
-///
-/// Construct with [`Order::new`] and add optional fields via the builder
-/// methods. Defaults to an EIP-1271 signature (pairs with [`FakeUser`] for
-/// simulations that need to bypass signature verification).
-pub struct Order {
-    pub(crate) data: OrderData,
-    pub(crate) owner: Address,
-    pub(crate) signature: Signature,
-    pub(crate) pre_interactions: Vec<Interaction>,
-    pub(crate) post_interactions: Vec<Interaction>,
-    pub(crate) executed_amount: ExecutionAmount,
-}
+impl SettlementSimulator {
+    pub async fn new(
+        settlement: contracts::GPv2Settlement::Instance,
+        flash_loan_router: Address,
+        balance_overrides: Arc<dyn BalanceOverriding>,
+    ) -> Result<Self> {
+        let authenticator = Address(settlement.authenticator().call().await?.0);
+        let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
+        let provider = settlement.provider().clone();
+        Ok(Self(Arc::new(Inner {
+            settlement,
+            authenticator,
+            flash_loan_router,
+            balance_overrides,
+            provider,
+            domain_separator,
+        })))
+    }
 
-impl Order {
-    pub fn new(data: OrderData) -> Self {
-        Self {
-            data,
-            owner: Address::ZERO,
-            signature: Signature::default_with(SigningScheme::Eip1271),
+    pub fn new_simulation_builder(&self) -> SimulationBuilder {
+        SimulationBuilder {
+            simulator: self.clone(),
+            order: None,
             pre_interactions: vec![],
+            main_interactions: vec![],
             post_interactions: vec![],
-            executed_amount: ExecutionAmount::Remaining,
+            wrapper: None,
+            prices: None,
+            solver: None,
+            auction_id: None,
+            state_overrides: StateOverride::default(),
+            fund_settlement_contract: false,
+            block: BlockId::latest(),
         }
-    }
-
-    pub fn with_signature(mut self, owner: Address, signature: Signature) -> Self {
-        self.owner = owner;
-        self.signature = signature;
-        self
-    }
-
-    pub fn with_pre_interactions(mut self, interactions: Vec<Interaction>) -> Self {
-        self.pre_interactions = interactions;
-        self
-    }
-
-    pub fn with_post_interactions(mut self, interactions: Vec<Interaction>) -> Self {
-        self.post_interactions = interactions;
-        self
-    }
-
-    pub fn with_executed_amount(mut self, amount: ExecutionAmount) -> Self {
-        self.executed_amount = amount;
-        self
-    }
-}
-
-pub struct FlashloanRequest {
-    pub amount: U256,
-    pub borrower: Address,
-    pub lender: Address,
-    pub token: Address,
-}
-
-pub enum Solver {
-    /// Simulation assumes this is an actual solver so no state overrides will
-    /// be applied to allow list it explicitly.
-    /// If you need a very specific solver setup for your simulation consider
-    /// using this and explicitly add the necessary state overrides yourself
-    /// with `Simulation::build_with_modifications()`.
-    Real(Address),
-    /// A fake solver for simulation. Uses the provided address or generates a
-    /// random one. The simulation builder will automatically set the required
-    /// state overrides to give it enough ETH and allow list it as a solver.
-    Fake(Option<Address>),
-}
-
-/// Configuration for wrapping the settlement in a flashloan or custom wrapper
-/// contract chain.
-pub enum WrapperConfig {
-    Flashloan(Vec<FlashloanRequest>),
-    Custom(Vec<WrapperCall>),
-}
-
-/// How clearing prices are determined for the encoded settlement.
-pub enum Prices {
-    /// Derive clearing prices directly from the order's limit price.
-    ///
-    /// Sets `price[sell_token] = buy_amount` and `price[buy_token] =
-    /// sell_amount`, exactly satisfying the order's limit with no surplus.
-    /// This should NOT be used when encoding solutions you actually want
-    /// to submit.
-    Limit,
-    // TODO: check how this can be made nicer.
-    /// Explicit token list and matching clearing prices.
-    Explicit {
-        tokens: Vec<Address>,
-        clearing_prices: Vec<U256>,
-    },
-}
-
-/// The output of [`SimulationBuilder::build`]: a transaction request and state
-/// overrides ready to be passed to an alloy provider for simulation.
-pub struct EthCallInputs {
-    pub request: TransactionRequest,
-    pub state_overrides: StateOverride,
-    pub provider: DynProvider,
-    pub block: BlockId,
-}
-
-impl EthCallInputs {
-    /// Prepares an `eth_call` with the transaction request, state overrides,
-    /// and block already applied. The call is not sent — callers can chain
-    /// additional builder methods before awaiting.
-    pub fn simulate(self) -> EthCall<Ethereum, Bytes> {
-        self.provider
-            .call(self.request)
-            .overrides(self.state_overrides)
-            .block(self.block)
     }
 }
 
@@ -163,6 +89,8 @@ pub struct SimulationBuilder {
 }
 
 impl SimulationBuilder {
+    // TODO: support multiple orders to support use case of encoding solutions
+    // in the driver and the trade verification (requires JIT orders)
     pub fn add_order(mut self, order: Order) -> Self {
         self.order = Some(order);
         self
@@ -244,6 +172,132 @@ impl SimulationBuilder {
     }
 }
 
+pub enum Solver {
+    /// Simulation assumes this is an actual solver so no state overrides will
+    /// be applied to allow list it explicitly.
+    /// If you need a very specific solver setup for your simulation consider
+    /// using this and explicitly add the necessary state overrides yourself
+    /// with `Simulation::build_with_modifications()`.
+    Real(Address),
+    /// A fake solver for simulation. Uses the provided address or generates a
+    /// random one. The simulation builder will automatically set the required
+    /// state overrides to give it enough ETH and allow list it as a solver.
+    Fake(Option<Address>),
+}
+
+/// How clearing prices are determined for the encoded settlement.
+pub enum Prices {
+    /// Derive clearing prices directly from the order's limit price.
+    ///
+    /// Sets `price[sell_token] = buy_amount` and `price[buy_token] =
+    /// sell_amount`, exactly satisfying the order's limit with no surplus.
+    /// This should NOT be used when encoding solutions you actually want
+    /// to submit.
+    Limit,
+    // TODO: check how this can be made nicer.
+    /// Explicit token list and matching clearing prices.
+    Explicit {
+        tokens: Vec<Address>,
+        clearing_prices: Vec<U256>,
+    },
+}
+
+/// How much of an order should be filled during simulation.
+pub enum ExecutionAmount {
+    /// Fill the full order amount (sell_amount for sell orders, buy_amount for
+    /// buy orders), ignoring any on-chain filled state.
+    Full,
+    /// Fill whatever is still remaining on-chain (queries the settlement
+    /// contract for the already-filled amount and subtracts it). Falls back to
+    /// the full amount if the query fails.
+    Remaining,
+    /// Use an explicit fill amount.
+    Explicit(U256),
+}
+
+/// A simulator-specific order that bundles the data needed to encode a trade.
+///
+/// Construct with [`Order::new`] and add optional fields via the builder
+/// methods. Defaults to an EIP-1271 signature (pairs with [`FakeUser`] for
+/// simulations that need to bypass signature verification).
+pub struct Order {
+    pub(crate) data: OrderData,
+    pub(crate) owner: Address,
+    pub(crate) signature: Signature,
+    pub(crate) pre_interactions: Vec<Interaction>,
+    pub(crate) post_interactions: Vec<Interaction>,
+    pub(crate) executed_amount: ExecutionAmount,
+}
+
+/// Configuration for wrapping the settlement in a flashloan or custom wrapper
+/// contract chain.
+pub enum WrapperConfig {
+    Flashloan(Vec<FlashloanRequest>),
+    Custom(Vec<WrapperCall>),
+}
+
+pub struct FlashloanRequest {
+    pub amount: U256,
+    pub borrower: Address,
+    pub lender: Address,
+    pub token: Address,
+}
+
+impl Order {
+    pub fn new(data: OrderData) -> Self {
+        Self {
+            data,
+            owner: Address::ZERO,
+            signature: Signature::default_with(SigningScheme::Eip1271),
+            pre_interactions: vec![],
+            post_interactions: vec![],
+            executed_amount: ExecutionAmount::Remaining,
+        }
+    }
+
+    pub fn with_signature(mut self, owner: Address, signature: Signature) -> Self {
+        self.owner = owner;
+        self.signature = signature;
+        self
+    }
+
+    pub fn with_pre_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+        self.pre_interactions = interactions;
+        self
+    }
+
+    pub fn with_post_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+        self.post_interactions = interactions;
+        self
+    }
+
+    pub fn with_executed_amount(mut self, amount: ExecutionAmount) -> Self {
+        self.executed_amount = amount;
+        self
+    }
+}
+
+/// The output of [`SimulationBuilder::build`]: a transaction request and state
+/// overrides ready to be passed to an alloy provider for simulation.
+pub struct EthCallInputs {
+    pub request: TransactionRequest,
+    pub state_overrides: StateOverride,
+    pub provider: DynProvider,
+    pub block: BlockId,
+}
+
+impl EthCallInputs {
+    /// Prepares an `eth_call` with the transaction request, state overrides,
+    /// and block already applied. The call is not sent — callers can chain
+    /// additional builder methods before awaiting.
+    pub fn simulate(self) -> EthCall<Ethereum, Bytes> {
+        self.provider
+            .call(self.request)
+            .overrides(self.state_overrides)
+            .block(self.block)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
     #[error("no order was added")]
@@ -260,56 +314,4 @@ pub enum BuildError {
     NoPriceEncoding,
     #[error("failed to query filled amount from settlement contract: {0}")]
     FilledAmountQuery(#[source] anyhow::Error),
-}
-
-pub(crate) struct Inner {
-    pub(crate) settlement: contracts::GPv2Settlement::Instance,
-    pub(crate) authenticator: Address,
-    pub(crate) flash_loan_router: Address,
-    pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
-    pub(crate) provider: DynProvider,
-    pub(crate) domain_separator: DomainSeparator,
-}
-
-/// Holds the settlement contract and its authenticator address, and acts as a
-/// factory for [`SimulationBuilder`] instances that are pre-configured with
-/// these values.
-#[derive(Clone)]
-pub struct SettlementSimulator(pub(crate) Arc<Inner>);
-
-impl SettlementSimulator {
-    pub async fn new(
-        settlement: contracts::GPv2Settlement::Instance,
-        flash_loan_router: Address,
-        balance_overrides: Arc<dyn BalanceOverriding>,
-    ) -> Result<Self> {
-        let authenticator = Address(settlement.authenticator().call().await?.0);
-        let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
-        let provider = settlement.provider().clone();
-        Ok(Self(Arc::new(Inner {
-            settlement,
-            authenticator,
-            flash_loan_router,
-            balance_overrides,
-            provider,
-            domain_separator,
-        })))
-    }
-
-    pub fn new_simulation_builder(&self) -> SimulationBuilder {
-        SimulationBuilder {
-            simulator: self.clone(),
-            order: None,
-            pre_interactions: vec![],
-            main_interactions: vec![],
-            post_interactions: vec![],
-            wrapper: None,
-            prices: None,
-            solver: None,
-            auction_id: None,
-            state_overrides: StateOverride::default(),
-            fund_settlement_contract: false,
-            block: BlockId::latest(),
-        }
-    }
 }
