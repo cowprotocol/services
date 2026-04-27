@@ -249,8 +249,7 @@ impl Settlement {
             Err(simulator::Error::Other(err)) if partial_access_list.is_none() => {
                 tracing::warn!(
                     ?err,
-                    "access list estimation failed; continuing without it (no ETH->contract \
-                     trades)"
+                    "access list estimation failed, falling back to empty list"
                 );
                 eth::AccessList::default()
             }
@@ -376,16 +375,13 @@ impl Settlement {
     }
 }
 
-/// Access list entries covering a trade that strictly requires the
-/// ETH→contract gas-limit workaround. Distinct from a bare `eth::AccessList`
-/// so the settlement-level fallback can tell "no trade required one" (`None`)
-/// apart from "trade required one but the list turned out empty" (`Some`).
+/// Access lists that are required when the order buys native ETH and the
+/// receiver is a smart-contract.
 #[derive(Debug, Clone)]
 struct RequiredAccessList(eth::AccessList);
 
-/// Return the partial access list for a single trade. `None` means the trade
-/// does not trigger the gas-limit workaround (non-ETH buy or EOA receiver),
-/// so its absence must not be treated as "required but empty".
+/// Returns the partial access list for a single trade, or `None` if the
+/// trade does not buy native ETH or its receiver has no on-chain code.
 async fn partial_access_list_for(
     trade: &trade::Fulfillment,
     solution: &Solution,
