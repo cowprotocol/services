@@ -132,7 +132,8 @@ For each non-trivial symbol the diff adds, modifies, or deletes:
 | Tool | Status | When to use |
 |---|---|---|
 | `Grep` / `rg` with `-n` on a symbol name | Always available | Caller counts and basic location lookups. Example: `rg 'OrderValidator::new\b' crates/`. |
-| `gh api` / `git blame` | Always available | Historic context on suspicious-looking lines. |
+| `git blame` / `git log` | Always available | Historic context on suspicious-looking lines. Local, read-only. |
+| `gh api` (read-only verbs) | Always available | Reading individual file contents at a specific ref (e.g. degraded static-diff mode in §4). **Never** use mutating verbs (`POST`/`PATCH`/`DELETE`) — review skill is read-only. |
 | `mcp__plugin_serena_serena__find_symbol` / `find_referencing_symbols` / `get_symbols_overview` | Optional (LSP-backed; available when Serena MCP is configured) | Precise location + kind + signature without reading the full file. |
 | Skills from `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`) | Optional (installed via `npx skills add actionbook/rust-skills`) | Richer cross-crate analysis. Not present in CI by default. |
 | `Read` of a full file | Last resort | Only when the diff hunks plus the cheaper tools don't pin down what you need. |
@@ -221,7 +222,7 @@ If the originating commit message or PR explains *why* the code is shaped that w
 
 - If the only reason to change it is taste or stylistic preference, **do not report it**.
 - Formatting belongs to `rustfmt` / CI. Never raise a finding whose fix is "run `cargo +nightly fmt`".
-- Clippy lints are a CI concern by default. **Exception:** a clippy warning inside the new code may be reported as **Small** if and only if it improves correctness or clarity — never style.
+- Clippy lints are a CI concern. Don't surface them as findings — CI flags them automatically. If the new code reads poorly, raise a Small finding on the actual readability issue (Universal Guardrails #2/#3 cover most cases).
 - If you're uncertain whether something is a nit, omit it. LGTM is the right verdict when the PR is clean.
 - **Don't inflate severity** to look thorough. Each finding's severity is what a senior reviewer would actually call it on GitHub. Either it's worth discussing or it's omitted.
 
@@ -342,7 +343,7 @@ After printing the report, ask the user:
 
 Dispatch each selected command as a **background** Bash invocation. On completion, append the result to a VERIFICATION block.
 
-If `cargo check` or `cargo clippy` surfaces issues **inside files this PR modified**, fold them into Findings (compile errors → High, correctness clippy → Medium, clarity clippy → Small subject to the Anti-nit rule). Do not surface warnings from files the PR didn't touch. `fmt --check` failures are a status, never a finding.
+If `cargo check` surfaces **compile errors inside files this PR modified**, fold them into Findings as **High**. `cargo clippy` and `cargo +nightly fmt --check` results are status-only — record them in the VERIFICATION block, never as findings. CI gates on both, so duplicating them in the review report is noise.
 
 Tests are intentionally not in the menu — services' suite is too long-running to gate every review on.
 

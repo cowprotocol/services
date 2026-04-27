@@ -29,12 +29,11 @@ Each item carries its own severity. Items 1–3 are correctness/availability con
 
 - `ALTER TABLE ... ADD COLUMN NOT NULL` on a multi-million-row table without a default — table lock plus slow backfill. Remedy: add nullable, batched backfill, then `NOT NULL` in a later migration.
 - Renaming a column in a single migration rather than the three-release add → migrate → drop pattern.
-- Adding a `UNIQUE` constraint without first verifying current data is unique (the migration will fail in prod if duplicates exist).
-- Type changes in place on a large table without a plan for the rewrite cost.
+- Adding a `UNIQUE` constraint without first verifying current data is unique (migrations fail when duplicates exist).
+- `ALTER COLUMN ... TYPE ...` on a large table without a multi-step migration plan — Postgres rewrites every row and holds an `ACCESS EXCLUSIVE` lock for the duration. Remedy: new column, dual-write, backfill, swap, drop old.
 
 ## Usually worth flagging as **Medium**
 
-- Migration scripts without comments when the *what* is non-obvious.
 - New foreign keys without an explicit `ON DELETE` clause (default `NO ACTION` is often surprising).
 - New tables without indexes on the columns obvious queries will filter on.
 
