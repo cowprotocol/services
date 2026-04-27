@@ -15,13 +15,14 @@ impl BalanceOverridesConfigExt for BalanceOverridesConfig {
             detector: self.autodetect.then(|| {
                 (
                     balance_overrides::detector::Detector::new(
-                        web3,
+                        web3.clone(),
                         self.probing_depth,
                         self.detection_timeout,
                     ),
                     std::sync::Mutex::new(cached::SizedCache::with_size(self.cache_size)),
                 )
             }),
+            web3: Some(web3),
         })
     }
 }
