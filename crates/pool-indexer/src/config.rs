@@ -111,6 +111,24 @@ pub struct NetworkConfig {
     pub seed_block: Option<u64>,
 }
 
+impl NetworkConfig {
+    pub fn poll_interval(&self) -> Duration {
+        Duration::from_secs(self.poll_interval_secs)
+    }
+
+    pub fn indexer_config(&self, factory: Address) -> IndexerConfig {
+        IndexerConfig {
+            network: self.name.clone(),
+            chain_id: self.chain_id,
+            factory_address: factory,
+            chunk_size: self.chunk_size,
+            use_latest: self.use_latest,
+            fetch_concurrency: self.fetch_concurrency,
+            prefetch_concurrency: self.prefetch_concurrency,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FactoryConfig {
@@ -134,24 +152,6 @@ pub struct IndexerConfig {
     pub use_latest: bool,
     pub fetch_concurrency: usize,
     pub prefetch_concurrency: usize,
-}
-
-impl NetworkConfig {
-    pub fn poll_interval(&self) -> Duration {
-        Duration::from_secs(self.poll_interval_secs)
-    }
-
-    pub fn indexer_config(&self, factory: Address) -> IndexerConfig {
-        IndexerConfig {
-            network: self.name.clone(),
-            chain_id: self.chain_id,
-            factory_address: factory,
-            chunk_size: self.chunk_size,
-            use_latest: self.use_latest,
-            fetch_concurrency: self.fetch_concurrency,
-            prefetch_concurrency: self.prefetch_concurrency,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
