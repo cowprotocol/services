@@ -90,6 +90,10 @@ pub struct NetworkConfig {
     pub chunk_size: u64,
     #[serde(default = "default_poll_interval_secs")]
     pub poll_interval_secs: u64,
+    #[serde(default = "default_fetch_concurrency")]
+    pub fetch_concurrency: usize,
+    #[serde(default = "default_prefetch_concurrency")]
+    pub prefetch_concurrency: usize,
     /// When `true`, use `latest` instead of `finalized` as the target block.
     /// Useful for test environments where finality is not simulated (e.g. local
     /// Anvil).
@@ -105,10 +109,6 @@ pub struct NetworkConfig {
     /// Block number to seed at. Defaults to the subgraph's current block when
     /// `subgraph_url` is set.
     pub seed_block: Option<u64>,
-    #[serde(default = "default_fetch_concurrency")]
-    pub fetch_concurrency: usize,
-    #[serde(default = "default_prefetch_concurrency")]
-    pub prefetch_concurrency: usize,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
