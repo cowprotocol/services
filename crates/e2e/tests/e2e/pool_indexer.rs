@@ -621,7 +621,7 @@ async fn driver_integration(web3: Web3) {
     // `pools_tokens_have_decimals` then drops the pool, leaving the
     // top-N selection empty and skipping the bulk-by-ids/ticks fetch path
     // this test wants to assert. Backfill plausible decimals so the driver
-    // doesn't drop it. 
+    // doesn't drop it.
     sqlx::query(
         "UPDATE uniswap_v3_pools SET token0_decimals = 18, token1_decimals = 6 WHERE chain_id = 1 \
          AND address = $1",
@@ -673,9 +673,7 @@ max-pools-to-initialize = 10
         let pools_by_ids =
             api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
         let ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
-        pools > baseline_pools
-            && pools_by_ids > baseline_pools_by_ids
-            && ticks > baseline_ticks
+        pools > baseline_pools && pools_by_ids > baseline_pools_by_ids && ticks > baseline_ticks
     })
     .await
     .expect("driver did not complete pool + tick fetch from pool-indexer within timeout");

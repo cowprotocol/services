@@ -16,6 +16,7 @@ use {
     crate::{
         db::uniswap_v3 as db,
         indexer::uniswap_v3::{NewPoolData, PoolStateData, TickDeltaData, bisecting_get_logs},
+        metrics::Metrics,
     },
     alloy::{primitives::Address, providers::Provider, rpc::types::Log, sol_types::SolEvent},
     anyhow::{Context, Result},
@@ -81,7 +82,7 @@ pub async fn cold_seed(
 
     let pools = {
         let labels = [network, "discovery"];
-        let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
+        let _t = Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
         discover_pools(&provider, factory, factory_deployment_block, snapshot_block).await?
     };
     metrics
@@ -93,7 +94,7 @@ pub async fn cold_seed(
 
     let states = {
         let labels = [network, "state_snapshot"];
-        let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
+        let _t = Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
         snapshot_pool_states(&provider, &pools, snapshot_block).await?
     };
     info!(chain_id, states = states.len(), "pool states snapshotted");
@@ -117,7 +118,7 @@ pub async fn cold_seed(
 
     {
         let labels = [network, "tick_reconstruction"];
-        let _t = crate::metrics::Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
+        let _t = Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
         reconstruct_and_persist_ticks(
             db,
             chain_id,
