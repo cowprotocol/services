@@ -411,7 +411,7 @@ pub async fn run(config: Configuration) {
         ipfs,
     ));
 
-    let order_simulator = if let Some(config) = config.order_simulation {
+    let order_simulator = if let Some(config) = &config.order_simulation {
         let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
             config.tenderly.as_ref().map(|tenderly_config| {
                 Box::new(simulator::tenderly::TenderlyApi::new(
@@ -441,6 +441,30 @@ pub async fn run(config: Configuration) {
         None
     };
 
+    let order_simulator2 = if let Some(config) = config.order_simulation {
+        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
+            config.tenderly.as_ref().map(|tenderly_config| {
+                Arc::new(simulator::tenderly::TenderlyApi::new(
+                    tenderly_config,
+                    &http_factory,
+                    chain.id().to_string(),
+                )) as _
+            });
+        Some(Arc::new(
+            simulator::simulation_builder::SettlementSimulator::new(
+                settlement_contract.clone(),
+                Default::default(),
+                balance_overrider.clone(),
+                current_block_stream.clone(),
+                tenderly,
+            )
+            .await
+            .unwrap(),
+        ))
+    } else {
+        None
+    };
+
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         *settlement_contract.address(),
@@ -450,6 +474,7 @@ pub async fn run(config: Configuration) {
         app_data.clone(),
         config.active_order_competition_threshold,
         order_simulator,
+        order_simulator2,
     ));
 
     check_database_connection(orderbook.as_ref()).await;

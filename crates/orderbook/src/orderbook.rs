@@ -42,6 +42,7 @@ use {
             is_order_outside_market_price,
         },
     },
+    simulator::simulation_builder::SettlementSimulator,
     std::{borrow::Cow, sync::Arc},
     strum::Display,
     thiserror::Error,
@@ -240,6 +241,7 @@ pub struct Orderbook {
     app_data: Arc<crate::app_data::Registry>,
     active_order_competition_threshold: u32,
     order_simulator: Option<Arc<OrderSimulator>>,
+    order_simulator2: Option<Arc<SettlementSimulator>>,
 }
 
 impl Orderbook {
@@ -253,6 +255,7 @@ impl Orderbook {
         app_data: Arc<crate::app_data::Registry>,
         active_order_competition_threshold: u32,
         order_simulator: Option<Arc<OrderSimulator>>,
+        order_simulator2: Option<Arc<SettlementSimulator>>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -264,6 +267,7 @@ impl Orderbook {
             app_data,
             active_order_competition_threshold,
             order_simulator,
+            order_simulator2,
         }
     }
 
@@ -642,7 +646,7 @@ impl Orderbook {
         uid: &OrderUid,
         block_number: Option<u64>,
     ) -> Result<Option<OrderSimulationResult>, OrderSimulationError> {
-        let Some(order_simulator) = &self.order_simulator else {
+        let Some(order_simulator) = &self.order_simulator2 else {
             return Err(OrderSimulationError::NotEnabled);
         };
         let Some(order) = self
@@ -653,18 +657,35 @@ impl Orderbook {
             return Ok(None);
         };
 
-        let (_, wrappers) = self
-            .parse_interactions_and_wrappers(
-                order.metadata.full_app_data.as_deref().unwrap_or_default(),
-            )
-            .map_err(OrderSimulationError::Other)?;
+        // let app_data = self
+        //     .parse_app_data(order.metadata.full_app_data.as_deref().
+        // unwrap_or_default())     .map_err(OrderSimulationError::Other)?;
 
-        let swap = order_simulator
-            .encode_order(&order, wrappers, block_number)
-            .await?;
-        Ok(Some(
-            order_simulator.simulate_swap(swap, block_number).await?,
-        ))
+        let sim = order_simulator.new_simulation_builder().add_order(
+            simulator::simulation_builder::Order::new(order.data)
+                .with_signature(order.metadata.owner, order.signature)
+                // properly populate those values
+                .with_pre_interactions(vec![])
+                .with_post_interactions(vec![])
+                .with_executed_amount(simulator::simulation_builder::ExecutionAmount::Remaining),
+        )
+            .at_block(block_number.map(simulator::simulation_builder::Block::Number).unwrap_or(simulator::simulation_builder::Block::Latest))
+            .fund_settlement_contract()
+            .from_solver(simulator::simulation_builder::Solver::Fake(None))
+            // TODO: add wrapper
+            .build()
+            .await
+            // TODO: proper error handling
+            .unwrap();
+
+        // TODO: error handling
+        let sim_res = sim.simulate_with_tenderly_report().await.unwrap();
+
+        Ok(Some(OrderSimulationResult {
+            tenderly_url: sim_res.tenderly_url,
+            tenderly_request: sim_res.tenderly_request,
+            error: sim_res.error,
+        }))
     }
 
     /// Simulates an arbitrary order without requiring it to exist in the
@@ -840,6 +861,7 @@ mod tests {
             app_data,
             active_order_competition_threshold: Default::default(),
             order_simulator: None,
+            order_simulator2: None,
         };
 
         // Different owner

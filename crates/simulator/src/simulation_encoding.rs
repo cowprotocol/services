@@ -66,15 +66,17 @@ pub(crate) async fn encode(
         .ok_or(BuildError::MissingBuyToken)?;
 
     // Compute before clearing_prices is moved into EncodedSettlement below.
-    let fund_amount = builder
-        .fund_settlement_contract
-        .then(|| match order.data.kind {
+    let fund_amount = builder.fund_settlement_contract.then(|| {
+        let base_amount = match order.data.kind {
             OrderKind::Sell => clearing_prices[sell_token_index]
                 .saturating_mul(executed_amount)
                 .checked_div(clearing_prices[buy_token_index])
                 .unwrap_or(U256::MAX),
             OrderKind::Buy => executed_amount,
-        });
+        };
+        // give 1 wei extra to avoid issues with rounding divisions
+        base_amount.saturating_add(U256::ONE)
+    });
 
     let trade = encode_trade(
         &order.data,

@@ -1,13 +1,16 @@
 use {
-    crate::encoding::{EncodedSettlement, Interaction, WrapperCall},
-    alloy_network::Ethereum,
-    alloy_primitives::{Address, Bytes, U256},
-    alloy_provider::{DynProvider, EthCall, Provider},
+    crate::{
+        encoding::{EncodedSettlement, Interaction, WrapperCall},
+        tenderly::dto::StateObject,
+    },
+    alloy_primitives::{Address, Bytes, TxKind, U256},
+    alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
         TransactionRequest,
         state::{AccountOverride, StateOverride},
     },
-    anyhow::Result,
+    alloy_transport::RpcError,
+    anyhow::{Context, Result},
     balance_overrides::BalanceOverriding,
     ethrpc::block_stream::CurrentBlockWatcher,
     model::{
@@ -33,6 +36,7 @@ pub(crate) struct Inner {
     pub(crate) domain_separator: DomainSeparator,
     pub(crate) chain_id: u64,
     pub(crate) current_block: CurrentBlockWatcher,
+    pub(crate) tenderly: Option<Arc<dyn crate::tenderly::Api>>,
 }
 
 impl SettlementSimulator {
@@ -41,6 +45,7 @@ impl SettlementSimulator {
         flash_loan_router: Address,
         balance_overrides: Arc<dyn BalanceOverriding>,
         current_block: CurrentBlockWatcher,
+        tenderly: Option<Arc<dyn crate::tenderly::Api>>,
     ) -> Result<Self> {
         let authenticator = Address(settlement.authenticator().call().await?.0);
         let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
@@ -55,6 +60,7 @@ impl SettlementSimulator {
             domain_separator,
             chain_id,
             current_block,
+            tenderly,
         })))
     }
 
@@ -300,11 +306,21 @@ pub struct EthCallInputs {
     pub block: u64,
 }
 
+/// The result of Order simulation, contains the error (if any)
+/// and full Tenderly API request that can be used to resimulate
+/// and debug using Tenderly
+#[derive(Clone, Debug)]
+pub struct TenderlyReport {
+    /// Full request object that can be used directly with the Tenderly API
+    pub tenderly_request: crate::tenderly::dto::Request,
+    /// Shared Tenderly simulation URL for debugging in the dashboard
+    pub tenderly_url: Option<String>,
+    /// Any error that might have been reported during order simulation
+    pub error: Option<String>,
+}
+
 impl EthCallInputs {
-    /// Prepares an `eth_call` with the transaction request, state overrides,
-    /// and block already applied. The call is not sent — callers can chain
-    /// additional builder methods before awaiting.
-    pub fn simulate(self) -> EthCall<Ethereum, Bytes> {
+    pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
         self.simulator
             .0
             .provider
@@ -312,7 +328,85 @@ impl EthCallInputs {
             .call(self.request)
             .overrides(self.state_overrides)
             .block(self.block.into())
+            .await
     }
+
+    pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
+        // TODO: error handling
+        let tenderly_request = self.to_tenderly_request().unwrap();
+        let tenderly_url = match &self.simulator.0.tenderly {
+            Some(api) => Some(
+                api.simulate_and_share(tenderly_request.clone())
+                    .await
+                    .context("tenderly failed")?,
+            ),
+            None => None,
+        };
+        let simulation_result = self.simulate().await;
+
+        Ok(TenderlyReport {
+            tenderly_request,
+            tenderly_url,
+            error: match simulation_result {
+                Ok(_) => None,
+                Err(err) => Some(err.to_string()),
+            },
+        })
+    }
+
+    /// Converts the simulation into a request that can be simulated with
+    /// tenderly.
+    pub fn to_tenderly_request(&self) -> Result<crate::tenderly::dto::Request, ConversionError> {
+        Ok(crate::tenderly::dto::Request {
+            block_number: Some(self.block),
+            // By default, tenderly simulates on the top of the specified block, whereas regular
+            // nodes simulate at the end of the specified block. This is to make
+            // simulation results match in case critical state changed within the block.
+            transaction_index: Some(-1),
+            network_id: self.simulator.0.chain_id.to_string(),
+            from: self.request.from.unwrap_or_default(),
+            // TODO: error handling
+            to: match &self.request.to.ok_or(ConversionError::MissingTo)? {
+                TxKind::Create => Default::default(),
+                TxKind::Call(to) => *to,
+            },
+            input: self
+                .request
+                .input
+                .input
+                .as_ref()
+                .map(|bytes| bytes.to_vec())
+                .unwrap_or_default(),
+            gas: self.request.gas,
+            gas_price: None, // use tenderly default for now
+            value: self.request.value,
+            simulation_type: Some(crate::tenderly::dto::SimulationType::Full),
+            state_objects: Some(
+                self.state_overrides
+                    .iter()
+                    .map(|(key, value)| {
+                        Ok((
+                            *key,
+                            StateObject::try_from(value.clone())
+                                .map_err(|_| ConversionError::StateOverrides)?,
+                        ))
+                    })
+                    .collect::<Result<_, ConversionError>>()?,
+            ),
+            access_list: self.request.access_list.as_ref().map(Into::into),
+            save: Some(true),
+            save_if_fails: Some(true),
+            ..Default::default()
+        })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversionError {
+    #[error("simulation does not have a target")]
+    MissingTo,
+    #[error("could not convert state overrides")]
+    StateOverrides,
 }
 
 #[derive(Debug, thiserror::Error)]
