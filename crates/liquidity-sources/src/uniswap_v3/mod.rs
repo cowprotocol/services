@@ -17,8 +17,10 @@ use {
 #[async_trait]
 pub trait V3PoolDataSource: Send + Sync + 'static {
     /// Fetch the full set of pools the source knows about, tagged with the
-    /// block number the snapshot was taken at. Ticks are NOT populated; use
-    /// [`Self::get_pools_with_ticks_by_ids`] for that.
+    /// block number the snapshot was taken at. `PoolData::ticks` is always
+    /// `None` here — callers needing ticks must use
+    /// [`Self::get_pools_with_ticks_by_ids`] separately. The split lets a
+    /// cheap "what pools exist?" lookup skip the expensive tick fetch.
     async fn get_registered_pools(&self) -> Result<RegisteredPools>;
 
     /// Fetch pools + their active ticks for the given pool addresses. The
