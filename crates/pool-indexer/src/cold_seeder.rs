@@ -344,6 +344,9 @@ async fn reconstruct_and_persist_ticks(
             .try_concat()
             .await?;
 
+        // Accumulate net liquidity per pool × tick boundary across the whole
+        // history range: `(pool_address, tick_idx) -> sum(liquidity_net)`.
+        // Mints add at tickLower / subtract at tickUpper; Burns reverse.
         let mut acc: HashMap<(Address, i32), i128> = HashMap::new();
         for log in logs {
             let Some(t) = log.topic0() else { continue };
