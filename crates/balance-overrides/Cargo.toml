@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
+alloy-contract = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true, features = ["rand"] }
 alloy-provider = { workspace = true, features = ["debug-api", "trace-api"] }
@@ -24,6 +25,7 @@ contracts = { workspace = true }
 ethrpc = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

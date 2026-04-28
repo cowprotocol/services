@@ -21,16 +21,22 @@ pub trait SolverCompetitionStoring: Send + Sync {
     ///
     /// Returns a `NotFound` error if no solver competition with that ID could
     /// be found.
+    /// When `after_block` is `Some`, competitions whose deadline hasn't
+    /// passed are treated as not found.
     async fn load_competition(
         &self,
         identifier: Identifier,
+        after_block: Option<i64>,
     ) -> Result<SolverCompetitionAPI, crate::solver_competition::LoadSolverCompetitionError>;
 
     /// Retrieves the solver competition for the most recent auction.
     ///
     /// Returns a `NotFound` error if no solver competition could be found.
+    /// When `after_block` is `Some`, only auctions whose deadline has passed
+    /// are considered.
     async fn load_latest_competition(
         &self,
+        after_block: Option<i64>,
     ) -> Result<SolverCompetitionAPI, crate::solver_competition::LoadSolverCompetitionError>;
 
     /// Retrieves the solver competitions for the most recent auctions.

@@ -8,7 +8,7 @@ use {
         rpc::types::trace::geth::{CallConfig, GethDebugTracingOptions},
     },
     app_data::{AppDataHash, hash_full_app_data},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -22,7 +22,7 @@ use {
 };
 
 /// The block number from which we will fetch state for the forked test.
-const FORK_BLOCK_MAINNET: u64 = 23688436;
+const FORK_BLOCK_MAINNET: u64 = 24843565;
 
 /// EmptyWrapper contract address deployed on mainnet.
 const EMPTY_WRAPPER_MAINNET: Address = address!("751871E9cA28B441Bb6d3b7C4255cf2B5873d56a");

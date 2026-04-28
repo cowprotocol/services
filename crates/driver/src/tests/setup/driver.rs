@@ -20,6 +20,7 @@ pub struct Config {
     pub mempools: Vec<Mempool>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub orderbook: Orderbook,
+    pub flashloans_enabled: bool,
 }
 
 pub struct Driver {
@@ -69,7 +70,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     // The orders are shuffled before being sent to the driver, to ensure that the
     // driver sorts them correctly before forwarding them to the solver.
     let mut quotes = test.quoted_orders.clone();
-    quotes.shuffle(&mut rand::thread_rng());
+    quotes.shuffle(&mut rand::rng());
     for quote in quotes.iter() {
         let mut order = json!({
             "uid": quote.order_uid(&test.blockchain),
@@ -219,7 +220,7 @@ async fn create_config_file(
         config.orderbook.addr
     )
     .unwrap();
-    writeln!(file, "flashloans-enabled = true").unwrap();
+    writeln!(file, "flashloans-enabled = {}", config.flashloans_enabled).unwrap();
     writeln!(file, "tx-gas-limit = \"45000000\"").unwrap();
     write!(
         file,
@@ -320,6 +321,7 @@ async fn create_config_file(
                fee-handler = {}
                merge-solutions = {}
                haircut-bps = {}
+               max-solutions-to-propose = {}
                "#,
             solver.name,
             addr,
@@ -335,8 +337,18 @@ async fn create_config_file(
             serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
             solver.haircut_bps,
+            solver.max_solutions_to_propose,
         )
         .unwrap();
+        if !solver.submission_accounts.is_empty() {
+            let accounts = solver
+                .submission_accounts
+                .iter()
+                .map(|a| format!("\"{a}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(file, "               submission-accounts = [{accounts}]").unwrap();
+        }
     }
     file.into_temp_path()
 }

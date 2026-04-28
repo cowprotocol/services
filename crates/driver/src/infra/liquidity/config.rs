@@ -2,7 +2,7 @@ use {
     crate::domain::blockchain::CodeDigest,
     alloy::primitives::Address,
     chain::Chain,
-    contracts::alloy::BalancerV2Vault,
+    contracts::BalancerV2Vault,
     derive_more::Debug,
     eth_domain_types::{self as eth, ContractAddress},
     hex_literal::hex,
@@ -63,7 +63,7 @@ impl UniswapV2 {
     #[expect(clippy::self_named_constructors)]
     pub fn uniswap_v2(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(contracts::alloy::UniswapV2Router02::deployment_address(
+            router: ContractAddress::from(contracts::UniswapV2Router02::deployment_address(
                 &chain.id(),
             )?),
             pool_code: UNISWAP_INIT.into(),
@@ -74,7 +74,7 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for SushiSwap.
     pub fn sushi_swap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(contracts::alloy::SushiSwapRouter::deployment_address(
+            router: ContractAddress::from(contracts::SushiSwapRouter::deployment_address(
                 &chain.id(),
             )?),
             pool_code: SUSHISWAP_INIT.into(),
@@ -85,7 +85,7 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Honeyswap.
     pub fn honeyswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(contracts::alloy::BaoswapRouter::deployment_address(
+            router: ContractAddress::from(contracts::BaoswapRouter::deployment_address(
                 &chain.id(),
             )?),
             pool_code: HONEYSWAP_INIT.into(),
@@ -96,7 +96,7 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Baoswap.
     pub fn baoswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(contracts::alloy::BaoswapRouter::deployment_address(
+            router: ContractAddress::from(contracts::BaoswapRouter::deployment_address(
                 &chain.id(),
             )?),
             pool_code: BAOSWAP_INIT.into(),
@@ -112,7 +112,7 @@ impl UniswapV2 {
         }
         .into();
         Some(Self {
-            router: ContractAddress::from(contracts::alloy::PancakeRouter::deployment_address(
+            router: ContractAddress::from(contracts::PancakeRouter::deployment_address(
                 &chain.id(),
             )?),
             pool_code,
@@ -124,9 +124,9 @@ impl UniswapV2 {
     /// test networks.
     pub fn testnet_uniswapv2(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(
-                contracts::alloy::TestnetUniswapV2Router02::deployment_address(&chain.id())?,
-            ),
+            router: ContractAddress::from(contracts::TestnetUniswapV2Router02::deployment_address(
+                &chain.id(),
+            )?),
             pool_code: TESTNET_UNISWAP_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -151,9 +151,7 @@ impl Swapr {
     #[expect(clippy::self_named_constructors)]
     pub fn swapr(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(contracts::alloy::SwaprRouter::deployment_address(
-                &chain.id(),
-            )?),
+            router: ContractAddress::from(contracts::SwaprRouter::deployment_address(&chain.id())?),
             pool_code: SWAPR_INIT.into(),
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
@@ -191,8 +189,7 @@ impl UniswapV3 {
         max_pools_per_tick_query: usize,
     ) -> Option<Self> {
         Some(Self {
-            router: contracts::alloy::UniswapV3SwapRouterV2::deployment_address(&chain.id())?
-                .into(),
+            router: contracts::UniswapV3SwapRouterV2::deployment_address(&chain.id())?.into(),
             max_pools_to_initialize: 100,
             graph_url: graph_url.clone(),
             reinit_interval: None,
@@ -257,33 +254,33 @@ impl BalancerV2 {
             weighted: address_for!(
                 chain,
                 [
-                    contracts::alloy::BalancerV2WeightedPoolFactory,
-                    contracts::alloy::BalancerV2WeightedPool2TokensFactory,
+                    contracts::BalancerV2WeightedPoolFactory,
+                    contracts::BalancerV2WeightedPool2TokensFactory,
                 ]
             ),
             weighted_v3plus: address_for!(
                 chain,
                 [
-                    contracts::alloy::BalancerV2WeightedPoolFactoryV3,
-                    contracts::alloy::BalancerV2WeightedPoolFactoryV4,
+                    contracts::BalancerV2WeightedPoolFactoryV3,
+                    contracts::BalancerV2WeightedPoolFactoryV4,
                 ]
             ),
-            stable: address_for!(chain, [contracts::alloy::BalancerV2StablePoolFactoryV2,]),
+            stable: address_for!(chain, [contracts::BalancerV2StablePoolFactoryV2,]),
             liquidity_bootstrapping: address_for!(
                 chain,
                 [
-                    contracts::alloy::BalancerV2LiquidityBootstrappingPoolFactory,
-                    contracts::alloy::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+                    contracts::BalancerV2LiquidityBootstrappingPoolFactory,
+                    contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
                 ]
             ),
             composable_stable: address_for!(
                 chain,
                 [
-                    contracts::alloy::BalancerV2ComposableStablePoolFactory,
-                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV3,
-                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV4,
-                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV5,
-                    contracts::alloy::BalancerV2ComposableStablePoolFactoryV6,
+                    contracts::BalancerV2ComposableStablePoolFactory,
+                    contracts::BalancerV2ComposableStablePoolFactoryV3,
+                    contracts::BalancerV2ComposableStablePoolFactoryV4,
+                    contracts::BalancerV2ComposableStablePoolFactoryV5,
+                    contracts::BalancerV2ComposableStablePoolFactoryV6,
                 ]
             ),
             pool_deny_list: Vec::new(),

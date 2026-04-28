@@ -1,7 +1,7 @@
 use {
     chain::Chain,
     configs::simulator::Addresses,
-    contracts::alloy::{GPv2Settlement, WETH9},
+    contracts::{GPv2Settlement, WETH9},
     ethrpc::Web3,
 };
 

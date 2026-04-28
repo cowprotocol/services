@@ -497,6 +497,28 @@ impl<'a> Services<'a> {
         }
     }
 
+    pub async fn get_solver_competition_unfiltered(
+        &self,
+        auction_id: AuctionId,
+    ) -> Result<solver_competition_v2::Response, StatusCode> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}/restricted/api/v2/solver_competition/{auction_id}"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
     pub async fn get_trades(&self, order: &OrderUid) -> Result<Vec<Trade>, StatusCode> {
         let url = format!("{API_HOST}/api/v1/trades?orderUid={order}");
         let response = self.http.get(url).send().await.unwrap();

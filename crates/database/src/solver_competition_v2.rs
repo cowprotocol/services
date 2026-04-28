@@ -75,6 +75,7 @@ pub struct SolverCompetition {
 pub async fn load_by_tx_hash(
     mut ex: &mut PgConnection,
     tx_hash: TransactionHash,
+    after_block: Option<i64>,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION_ID: &str = r#"
         SELECT s.auction_id
@@ -88,40 +89,45 @@ pub async fn load_by_tx_hash(
     let Some(auction_id) = auction_id else {
         return Ok(None);
     };
-    load_by_id(ex.deref_mut(), auction_id).await
+    load_by_id(ex.deref_mut(), auction_id, after_block).await
 }
 
 #[instrument(skip_all)]
 pub async fn load_latest(
     mut ex: &mut PgConnection,
+    after_block: Option<i64>,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION_ID: &str = r#"
         SELECT id
         FROM competition_auctions
+        WHERE ($1::bigint IS NULL OR deadline <= $1)
         ORDER BY id DESC
         LIMIT 1;
     "#;
     let auction_id: Option<i64> = sqlx::query_scalar(FETCH_AUCTION_ID)
+        .bind(after_block)
         .fetch_optional(ex.deref_mut())
         .await?;
     let Some(auction_id) = auction_id else {
         return Ok(None);
     };
-    load_by_id(ex.deref_mut(), auction_id).await
+    load_by_id(ex.deref_mut(), auction_id, after_block).await
 }
 
 #[instrument(skip_all)]
 pub async fn load_by_id(
     mut ex: &mut PgConnection,
     id: AuctionId,
+    after_block: Option<i64>,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION: &str = r#"
         SELECT id, order_uids, price_tokens, price_values, block, deadline
         FROM competition_auctions
-        WHERE id = $1;
+        WHERE id = $1 AND ($2::bigint IS NULL OR deadline <= $2);
     "#;
     let auction: Option<Auction> = sqlx::query_as(FETCH_AUCTION)
         .bind(id)
+        .bind(after_block)
         .fetch_optional(ex.deref_mut())
         .await?;
     let Some(auction) = auction else {
@@ -151,7 +157,7 @@ pub async fn load_by_id(
         .await?;
 
     const FETCH_TRADES: &str = r#"
-        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy, 
+        SELECT pte.solution_uid, pte.order_uid, executed_sell, executed_buy,
             COALESCE(o.sell_token, pjo.sell_token) AS sell_token,
             COALESCE(o.buy_token, pjo.buy_token) AS buy_token
         FROM proposed_trade_executions AS pte
@@ -262,7 +268,7 @@ async fn save_solutions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_solutions 
+        r#"INSERT INTO proposed_solutions
         (auction_id, uid, id, solver, is_winner, filtered_out, score, price_tokens, price_values)"#,
     );
 
@@ -290,7 +296,7 @@ async fn save_trade_executions(
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
     let mut builder = QueryBuilder::new(
-        r#"INSERT INTO proposed_trade_executions 
+        r#"INSERT INTO proposed_trade_executions
         (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
     );
 
@@ -326,7 +332,7 @@ async fn save_jit_orders(
             // Order data is saved to `proposed_jit_orders` table only if the order is not
             // already in the `orders` table.
             const QUERY_JIT: &str = r#"
-                INSERT INTO proposed_jit_orders 
+                INSERT INTO proposed_jit_orders
                 (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
                 SELECT $1, $2, $3, $4, $5, $6, $7, $8
                     WHERE NOT EXISTS (SELECT 1 FROM orders WHERE uid = $3)
@@ -643,10 +649,10 @@ mod tests {
             .await
             .unwrap();
 
-        let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
+        let solver_competition = load_by_tx_hash(&mut db, tx_hash, None).await.unwrap();
         assert!(solver_competition.is_none());
 
-        let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
+        let solver_competition = load_by_tx_hash(&mut db, tx_hash, None).await.unwrap();
         assert!(solver_competition.is_none());
 
         // update settlements
@@ -669,7 +675,7 @@ mod tests {
         };
         auction::save(&mut db, auction).await.unwrap();
 
-        let solver_competition = load_by_tx_hash(&mut db, tx_hash).await.unwrap();
+        let solver_competition = load_by_tx_hash(&mut db, tx_hash, None).await.unwrap();
         assert!(solver_competition.is_some());
         let solver_competition = solver_competition.unwrap();
         assert_eq!(solver_competition.settlements.len(), 1);
@@ -690,7 +696,7 @@ mod tests {
         let log_index = 0;
         let auction_id = 1;
 
-        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        let solver_competition = load_by_id(&mut db, auction_id, None).await.unwrap();
         assert!(solver_competition.is_none());
 
         // example order
@@ -715,7 +721,7 @@ mod tests {
         };
         auction::save(&mut db, auction).await.unwrap();
 
-        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        let solver_competition = load_by_id(&mut db, auction_id, None).await.unwrap();
         assert!(solver_competition.is_some());
 
         // settlements
@@ -733,14 +739,14 @@ mod tests {
             .unwrap();
 
         // Check before the joined table is populated
-        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        let solver_competition = load_by_id(&mut db, auction_id, None).await.unwrap();
         assert!(solver_competition.is_some());
         let solver_competition = solver_competition.unwrap();
         assert!(solver_competition.settlements.is_empty());
         assert_eq!(solver_competition.auction.id, 1);
 
         // Check after the joined table is populated
-        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        let solver_competition = load_by_id(&mut db, auction_id, None).await.unwrap();
         assert!(solver_competition.is_some());
         let solver_competition = solver_competition.unwrap();
         assert!(solver_competition.settlements.is_empty());
@@ -761,7 +767,7 @@ mod tests {
         .unwrap();
 
         // Check after both tables are linked
-        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        let solver_competition = load_by_id(&mut db, auction_id, None).await.unwrap();
         assert!(solver_competition.is_some());
         let solver_competition = solver_competition.unwrap();
         assert_eq!(solver_competition.settlements.len(), 1);
@@ -825,7 +831,7 @@ mod tests {
         .await
         .unwrap();
 
-        let solver_competition = load_by_id(&mut db, auction_id).await.unwrap();
+        let solver_competition = load_by_id(&mut db, auction_id, None).await.unwrap();
         assert!(solver_competition.is_some());
         let solver_competition = solver_competition.unwrap();
         assert_eq!(solver_competition.settlements.len(), 1);

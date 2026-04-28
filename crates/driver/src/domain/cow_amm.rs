@@ -1,6 +1,6 @@
 use {
     alloy::{primitives::Address, providers::DynProvider},
-    contracts::alloy::cow_amm::CowAmmLegacyHelper,
+    contracts::cow_amm::CowAmmLegacyHelper,
     cow_amm::Amm,
     eth_domain_types as eth,
     itertools::{
@@ -124,11 +124,10 @@ impl Cache {
     /// Fetches the factory address for the given AMM by calling the
     /// `FACTORY` function.
     async fn fetch_amm_factory_address(&self, amm_address: Address) -> anyhow::Result<Address> {
-        let factory_getter =
-            contracts::alloy::cow_amm::CowAmmFactoryGetter::CowAmmFactoryGetter::new(
-                amm_address,
-                self.web3.clone(),
-            );
+        let factory_getter = contracts::cow_amm::CowAmmFactoryGetter::CowAmmFactoryGetter::new(
+            amm_address,
+            self.web3.clone(),
+        );
         Ok(factory_getter.FACTORY().call().await?)
     }
 }

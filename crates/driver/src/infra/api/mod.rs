@@ -28,6 +28,7 @@ use {
 };
 
 mod error;
+mod extract;
 pub mod routes;
 
 pub struct Api {
@@ -195,7 +196,7 @@ impl State {
         &self.0.solver
     }
 
-    fn competition(&self) -> &domain::Competition {
+    fn competition(&self) -> &Arc<domain::Competition> {
         &self.0.competition
     }
 

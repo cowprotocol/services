@@ -8,16 +8,10 @@ distributor:
         grpc:
           endpoint: 0.0.0.0:4317
 
-ingester:
-  trace_idle_period: 10s
-  max_block_bytes: 1_000_000
-
-compactor:
-  compaction:
-    compacted_block_retention: 1h
-
 storage:
   trace:
     backend: local
+    wal:
+      path: /tmp/tempo/wal
     local:
-      path: /tmp/tempo
+      path: /tmp/tempo/blocks

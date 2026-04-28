@@ -2,7 +2,7 @@ use {
     alloy_primitives::{Address, B256, Bytes, U256},
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
-    contracts::alloy::GPv2Settlement,
+    contracts::GPv2Settlement,
     derive_more::Debug,
     model::{
         interaction::InteractionData,
@@ -273,7 +273,7 @@ pub fn encode_wrapper_settlement(
     let wrapper_data = encode_wrapper_data(wrappers);
 
     // Create wrappedSettleCall
-    let calldata = contracts::alloy::ICowWrapper::ICowWrapper::wrappedSettleCall {
+    let calldata = contracts::ICowWrapper::ICowWrapper::wrappedSettleCall {
         settleData: settle_calldata,
         wrapperData: wrapper_data,
     }

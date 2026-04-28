@@ -1,6 +1,6 @@
 use {
     super::Strategy,
-    crate::StrategyExt,
+    crate::{StrategyExt, aave},
     alloy_eips::BlockId,
     alloy_primitives::{Address, B256, TxKind, U256, keccak256},
     alloy_provider::ext::DebugApi,
@@ -11,14 +11,17 @@ use {
     },
     alloy_sol_types::SolCall,
     alloy_transport::{RpcError, TransportErrorKind},
-    contracts::alloy::ERC20,
+    contracts::ERC20,
     std::{
         collections::HashMap,
         fmt::{self, Debug, Formatter},
         sync::Arc,
+        time::Duration,
     },
     thiserror::Error,
 };
+
+pub const DEFAULT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(1);
 
 // These are the solady magic bytes for user balances, with padding
 // https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
@@ -44,6 +47,7 @@ pub struct Detector(Arc<Inner>);
 pub struct Inner {
     probing_depth: u8,
     web3: ethrpc::Web3,
+    verification_timeout: Duration,
 }
 
 impl std::ops::Deref for Detector {
@@ -62,6 +66,10 @@ impl std::ops::Deref for Detector {
 /// 2. Use the Solidity mapping hashes as a heuristic and prioritize scanning
 ///    those storage slots first - these return `SolidityMapping` strategy
 /// 3. For non-heuristic slots, return `DirectSlot` strategy
+///
+/// Note: this function does not emit `AaveV3AToken` candidates. Aave v3 is
+/// handled by the fast-path in `detect()` which tries the canonical
+/// `_userState` slot directly; the fallback here is for non-Aave tokens only.
 fn create_strategies_from_slots(
     storage_slots: &[(Address, B256)],
     holder: &Address,
@@ -112,24 +120,59 @@ fn create_strategies_from_slots(
 
 impl Detector {
     /// Creates a new balance override detector.
-    pub fn new(web3: ethrpc::Web3, probing_depth: u8) -> Self {
+    pub fn new(web3: ethrpc::Web3, probing_depth: u8, verification_timeout: Duration) -> Self {
         Self(Arc::new(Inner {
             web3,
             probing_depth,
+            verification_timeout,
         }))
     }
 
-    /// Detects the balance storage slot using debug_traceCall, similar to
-    /// Foundry's `deal`. This traces a balanceOf call and finds which
-    /// storage slot is accessed. If more than one slot is accessed, we reverse
-    /// by order accessed, sort by if the slot was one that would normally
-    /// be seen in solidity mapping, and test one by one to see if the
-    /// override is effective.
+    /// The `Web3` handle shared with whoever constructed the detector; also
+    /// used by `BalanceOverrides` for strategies that need on-chain reads at
+    /// override-resolution time (e.g. `AaveV3AToken`).
+    pub fn web3(&self) -> &ethrpc::Web3 {
+        &self.web3
+    }
+
+    /// Detects the balance storage slot for `token`.
+    ///
+    /// Takes a fast path for Aave v3 aTokens: a cheap two-call probe, plus
+    /// a single verification using the canonical `_userState` slot — no
+    /// `debug_traceCall` needed on the happy path. Everything else falls
+    /// through to the generic SLOAD-trace detection.
     pub async fn detect(
         &self,
         token: Address,
         holder: Address,
     ) -> Result<Strategy, DetectionError<TransportErrorKind>> {
+        // Aave fast-path. If the token self-identifies as a v3 aToken and
+        // the pool confirms it, try the canonical `_userState` slot
+        // directly — no `debug_traceCall` needed. An Aave v3 fork that
+        // moved `_userState` to a different slot won't verify here and
+        // will fall through to the generic trace-based path, which only
+        // ever returns non-Aave strategies; such a fork needs an explicit
+        // hardcoded config entry.
+        if let Some((pool, underlying)) = aave::probe_aave_token(&self.web3, token).await {
+            let candidate = Strategy::AaveV3AToken {
+                target_contract: token,
+                pool,
+                underlying,
+            };
+            if self
+                .verify_strategy(token, holder, &candidate)
+                .await
+                .is_ok()
+            {
+                tracing::debug!(?token, "detected Aave v3 aToken");
+                return Ok(candidate);
+            }
+            tracing::debug!(
+                ?token,
+                "Aave probe succeeded but canonical slot didn't verify; falling back to trace"
+            );
+        }
+
         let balance_of_call = ERC20::ERC20::balanceOfCall { account: holder };
         let calldata = balance_of_call.abi_encode();
 
@@ -192,16 +235,39 @@ impl Detector {
             .take(self.probing_depth.into())
             .enumerate()
         {
-            if self.verify_strategy(token, holder, strategy).await.is_ok() {
-                tracing::debug!(
-                    ?token,
-                    ?holder,
-                    ?strategy,
-                    iterations = i + 1,
-                    total = storage_slots.len(),
-                    "verified balance strategy via testing",
-                );
-                return Ok(strategy.clone());
+            // Some tokens (e.g. reflection tokens like LuckyBlock) have
+            // `balanceOf` implementations that iterate over storage arrays.
+            // During verification we override storage slots with a test value —
+            // if that value lands on an array-length slot the EVM loops until
+            // the node's execution timeout. A per-strategy timeout prevents one
+            // slow slot from blocking the entire detection.
+            let result = tokio::time::timeout(
+                self.verification_timeout,
+                self.verify_strategy(token, holder, strategy),
+            )
+            .await;
+
+            match result {
+                Ok(Ok(())) => {
+                    tracing::debug!(
+                        ?token,
+                        ?holder,
+                        ?strategy,
+                        iterations = i + 1,
+                        total = storage_slots.len(),
+                        "verified balance strategy via testing",
+                    );
+                    return Ok(strategy.clone());
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        ?token,
+                        ?holder,
+                        ?strategy,
+                        "balance override strategy verification timed out, skipping",
+                    );
+                }
+                Ok(Err(_)) => {}
             }
         }
 
@@ -287,6 +353,11 @@ impl Detector {
 
     /// Verifies that a strategy correctly controls the balance by applying it
     /// and checking balanceOf.
+    ///
+    /// For the `AaveV3AToken` variant we allow `balanceOf` to be off by one
+    /// wei, since Aave's ray rounding can slightly differ from our locally
+    /// computed scaled value; for every other variant the check is still an
+    /// exact equality.
     async fn verify_strategy(
         &self,
         token: Address,
@@ -296,8 +367,12 @@ impl Detector {
         // Use a unique test value to verify this strategy works
         let test_balance = U256::from(0x1337_1337_1337_1337_u64);
 
-        // Create state override using the strategy
-        let overrides = strategy.state_override(&holder, &test_balance);
+        let overrides = strategy
+            .state_override(Some(&self.web3), &holder, &test_balance)
+            .await;
+        if overrides.is_empty() {
+            return Err(DetectionError::NotFound);
+        }
 
         // Call balanceOf with the override
         let token_contract = ERC20::Instance::new(token, self.web3.provider.clone());
@@ -312,12 +387,20 @@ impl Detector {
                 )))
             })?;
 
-        // If the balance matches our test value, the strategy works
-        if balance == test_balance {
-            Ok(())
-        } else {
-            Err(DetectionError::NotFound)
-        }
+        verified_balance_matches(strategy, balance, test_balance)
+            .then_some(())
+            .ok_or(DetectionError::NotFound)
+    }
+}
+
+/// Is the `balance` returned by `balanceOf` after applying the override
+/// consistent with the `test_balance` we wrote? For `AaveV3AToken` we tolerate
+/// 1 wei of difference because Aave's ray-div / ray-mul round-trip is not
+/// identity by construction; every other strategy must match exactly.
+fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U256) -> bool {
+    match strategy {
+        Strategy::AaveV3AToken { .. } => balance.abs_diff(test_balance) <= U256::ONE,
+        _ => balance == test_balance,
     }
 }
 
@@ -358,7 +441,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_mainnet() {
-        let detector = Detector::new(Web3::new_from_env(), 60);
+        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT);
 
         let storage = detector
             .detect(
@@ -411,7 +494,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn detects_storage_slots_arbitrum() {
-        let detector = Detector::new(Web3::new_from_env(), 60);
+        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT);
 
         // all bridged tokens on arbitrum require a ton of probing
         let storage = detector

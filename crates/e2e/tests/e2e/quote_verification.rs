@@ -2,8 +2,9 @@ use {
     ::alloy::{
         primitives::{Address, U256, address, map::AddressMap},
         providers::Provider,
+        rpc::types::state::StateOverride,
     },
-    balance_overrides::{BalanceOverrides, BalanceOverriding},
+    balance_overrides::{BalanceOverrideRequest, BalanceOverrides, BalanceOverriding},
     bigdecimal::{BigDecimal, Zero},
     configs::{
         autopilot::Configuration,
@@ -11,6 +12,7 @@ use {
         price_estimation::BalanceOverridesConfig,
         test_util::TestDefault,
     },
+    contracts::ERC20,
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
@@ -27,7 +29,7 @@ use {
     },
     serde_json::json,
     simulator::swap_simulator::SwapSimulator,
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
 #[tokio::test]
@@ -84,6 +86,44 @@ async fn forked_node_mainnet_usdt_quote() {
     .await;
 }
 
+/// Quote verification for an Aave v3 aToken as the sell token. Exercises
+/// the `AaveV3AToken` strategy end-to-end through `BalanceOverrides`. The
+/// detector is disabled (`detector: None`) to isolate the hardcoded-strategy
+/// path; auto-detection is covered by
+/// `forked_node_mainnet_aave_atoken_detection` below.
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_aave_atoken_quote() {
+    // Fork a block that matches the solver whitelist used for the quotes we
+    // inspected on barn (same day as the debugging session). The default
+    // `FORK_BLOCK_MAINNET` is a few weeks older and can miss newly
+    // whitelisted solvers.
+    const FORK_BLOCK: u64 = 24920000;
+    run_forked_test_with_extra_filters_and_block_number(
+        aave_atoken_quote_verification,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK,
+        ["price_estimation=trace", "balance_overrides=trace"],
+    )
+    .await;
+}
+
+/// The auto-detector identifies aEthWETH as a canonical Aave v3 aToken via
+/// the probe + canonical-slot fast-path, returning the right strategy
+/// without running a `debug_traceCall`. This runs in the forked-e2e CI job.
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_aave_atoken_detection() {
+    run_forked_test_with_block_number(
+        aave_atoken_detection,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
+    )
+    .await;
+}
+
 /// Verified quotes work as expected.
 async fn standard_verified_quote(web3: Web3) {
     tracing::info!("Setting up chain state.");
@@ -127,7 +167,7 @@ async fn standard_verified_quote(web3: Web3) {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-const FORK_BLOCK_MAINNET: u64 = 23112197;
+const FORK_BLOCK_MAINNET: u64 = 24843565;
 
 /// Tests that quotes requesting `tx_origin: 0x0000` bypass the verification
 /// because those are currently used by some solvers to provide market maker
@@ -605,7 +645,7 @@ async fn trace_based_balance_detection(web3: Web3) {
     // offset within a struct mapping, making it undetectable by standard slot
     // calculation methods
     let struct_offset_token =
-        contracts::alloy::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
+        contracts::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
             .await
             .unwrap();
 
@@ -614,20 +654,14 @@ async fn trace_based_balance_detection(web3: Web3) {
     // delegate the balance it returns between itself (allowing for testing of
     // calling another contract to get a balance--or calling another contract to
     // *not* get a balance)
-    let local_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.provider.clone(),
-        weth,
-        true,
-    )
-    .await
-    .unwrap();
-    let delegated_storage_token = contracts::alloy::test::RemoteERC20Balances::Instance::deploy(
-        web3.provider.clone(),
-        weth,
-        false,
-    )
-    .await
-    .unwrap();
+    let local_storage_token =
+        contracts::test::RemoteERC20Balances::Instance::deploy(web3.provider.clone(), weth, true)
+            .await
+            .unwrap();
+    let delegated_storage_token =
+        contracts::test::RemoteERC20Balances::Instance::deploy(web3.provider.clone(), weth, false)
+            .await
+            .unwrap();
 
     // Mint some tokens to the trader (so the contract has non-zero state)
     struct_offset_token
@@ -644,7 +678,11 @@ async fn trace_based_balance_detection(web3: Web3) {
         .await
         .unwrap();
 
-    let detector = Detector::new(web3.clone(), 60);
+    let detector = Detector::new(
+        web3.clone(),
+        60,
+        balance_overrides::detector::DEFAULT_VERIFICATION_TIMEOUT,
+    );
 
     let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
@@ -704,7 +742,7 @@ async fn trace_based_balance_detection(web3: Web3) {
 
     // Verify that the detected strategies actually work by testing balance
     // overrides
-    use contracts::alloy::ERC20;
+    use contracts::ERC20;
 
     async fn test_balance_override(
         web3: &Web3,
@@ -718,6 +756,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         let balance_overrides = BalanceOverrides {
             hardcoded: HashMap::from([(token, strategy)]),
             detector: None,
+            web3: None,
         };
 
         let override_result = balance_overrides
@@ -791,4 +830,85 @@ async fn trace_based_balance_detection(web3: Web3) {
         test_balance,
     )
     .await;
+}
+
+/// Exercises the `AaveV3AToken` balance override strategy against a real
+/// mainnet fork. We build the override with the forked web3 (so it reads
+/// the live `getReserveNormalizedIncome` from the Aave v3 Pool), then apply
+/// it in an `eth_call` to `aToken.balanceOf(holder)` and assert the
+/// reported balance matches the requested amount within one wei of ray
+/// rounding. This is the property `TradeVerifier` relies on when using
+/// the override to fund the spardose.
+async fn aave_atoken_quote_verification(web3: Web3) {
+    // aEthWETH / WETH / Aave v3 Pool on mainnet.
+    let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
+    let weth = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+    let aave_v3_pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
+    let spardose = address!("0000000000000000000000000000000000020000");
+
+    let hardcoded = HashMap::from([(
+        a_eth_weth,
+        Strategy::AaveV3AToken {
+            target_contract: a_eth_weth,
+            pool: aave_v3_pool,
+            underlying: weth,
+        },
+    )]);
+    let balance_overrides = BalanceOverrides {
+        hardcoded,
+        detector: None,
+        web3: Some(web3.clone()),
+    };
+
+    let amount = 5u64.eth(); // 5 aEthWETH
+
+    let (target, override_) = balance_overrides
+        .state_override(BalanceOverrideRequest {
+            token: a_eth_weth,
+            holder: spardose,
+            amount,
+        })
+        .await
+        .expect("override computed");
+    assert_eq!(target, a_eth_weth);
+
+    // Apply the override to a live `balanceOf` call via the forked node and
+    // make sure the contract now reports the requested amount (± 1 wei of
+    // ray rounding).
+    let overrides: StateOverride = [(target, override_)].into_iter().collect();
+    let a_token_contract = ERC20::Instance::new(a_eth_weth, web3.provider.clone());
+    let reported = a_token_contract
+        .balanceOf(spardose)
+        .state(overrides)
+        .call()
+        .await
+        .unwrap();
+
+    let diff = reported.abs_diff(amount);
+    assert!(
+        diff <= U256::from(1u64),
+        "balanceOf after override returned {reported}, expected ~{amount} (diff {diff} wei)",
+    );
+}
+
+/// Auto-detection against the mainnet fork: the probe + canonical-slot
+/// fast-path must identify aEthWETH as an `AaveV3AToken` without falling
+/// through to `debug_traceCall`.
+async fn aave_atoken_detection(web3: Web3) {
+    use balance_overrides::detector::{DEFAULT_VERIFICATION_TIMEOUT, Detector};
+
+    let detector = Detector::new(web3, 60, DEFAULT_VERIFICATION_TIMEOUT);
+    let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
+    let strategy = detector
+        .detect(a_eth_weth, Address::with_last_byte(1))
+        .await
+        .unwrap();
+    assert_eq!(
+        strategy,
+        Strategy::AaveV3AToken {
+            target_contract: a_eth_weth,
+            pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
+            underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+        }
+    );
 }

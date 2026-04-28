@@ -4,7 +4,7 @@ use {
         domain::{self, auction::order, blockchain},
     },
     alloy::{eips::BlockId, sol_types::SolCall},
-    contracts::alloy::{GPv2AllowListAuthentication, GPv2Settlement},
+    contracts::{GPv2AllowListAuthentication, GPv2Settlement},
     eth_domain_types as eth,
     std::collections::HashSet,
 };

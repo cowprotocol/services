@@ -8,7 +8,7 @@ use {
     },
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
-    contracts::alloy::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
+    contracts::UniswapV3SwapRouterV2::IV3SwapRouter::ExactOutputSingleParams,
     liquidity_sources::{recent_block_cache::Block, uniswap_v3::pool_fetching::PoolFetching},
     model::TokenPair,
     num::{CheckedMul, rational::Ratio},

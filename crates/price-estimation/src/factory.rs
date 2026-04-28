@@ -21,7 +21,7 @@ use {
     anyhow::{Context as _, Result},
     bad_tokens::list_based::DenyListedTokens,
     configs::price_estimation::PriceEstimation,
-    contracts::alloy::WETH9,
+    contracts::WETH9,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,
     http_client::HttpClientFactory,
@@ -368,7 +368,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
-    /// Creates a native price estimator from the given sources.
+    /// Creates a native price estimator from the given sources. When `eip4626`
+    /// is true the resulting estimator is wrapped in an [`native::Eip4626`]
+    /// layer that transparently prices vault tokens.
     pub async fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
@@ -393,17 +395,29 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     /// Creates a [`CachingNativePriceEstimator`] that wraps a native price
     /// estimator with an in-memory cache.
+    ///
+    /// If `eip4626` is true, it will wrap the estimator with EIP-4626
+    /// unwrapping.
     pub async fn caching_native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: &WETH9::Instance,
         cache: native_price_cache::Cache,
+        eip4626: bool,
     ) -> native_price_cache::CachingNativePriceEstimator {
         let inner = self
             .native_price_estimator(native, results_required, weth)
             .await
             .expect("failed to build native price estimator");
+        let inner = if eip4626 {
+            Box::new(InstrumentedPriceEstimator::new(
+                native::Eip4626::new(inner, self.network.web3.provider.clone()),
+                "Eip4626".to_string(),
+            ))
+        } else {
+            inner
+        };
         self.caching_native_price_estimator_from_inner(inner, cache)
             .await
     }

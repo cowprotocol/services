@@ -3,7 +3,7 @@ use {
         primitives::{Address, U256},
         sol_types::SolCall,
     },
-    contracts::alloy::UniswapV3SwapRouterV2::{
+    contracts::UniswapV3SwapRouterV2::{
         IV3SwapRouter::ExactOutputSingleParams,
         UniswapV3SwapRouterV2::exactOutputSingleCall,
     },

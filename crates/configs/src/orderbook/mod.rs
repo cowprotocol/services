@@ -53,6 +53,12 @@ pub struct VolumeFeeConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct OrderSimulationConfig {
     pub gas_limit: U256,
+
+    /// Optional Tenderly configuration. When set, simulations are automatically
+    /// submitted and shared on Tenderly, and the response includes a dashboard
+    /// URL.
+    #[serde(default)]
+    pub tenderly: Option<crate::simulator::TenderlyConfig>,
 }
 
 /// Top-level orderbook service configuration.
@@ -122,6 +128,11 @@ pub struct Configuration {
     /// Order simulation configuration. If `None`, the endpoint is disabled.
     #[serde(default)]
     pub order_simulation: Option<OrderSimulationConfig>,
+
+    /// When enabled, solver competition endpoints return 404 until the
+    /// auction's submission deadline block has been reached.
+    #[serde(default)]
+    pub hide_competition_before_deadline: bool,
 }
 
 impl Configuration {
@@ -216,7 +227,9 @@ pub mod test_util {
                 // Enable order simulation for testing
                 order_simulation: Some(OrderSimulationConfig {
                     gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
+                    tenderly: None,
                 }),
+                hide_competition_before_deadline: false,
             }
         }
     }
@@ -241,7 +254,7 @@ mod tests {
         active-order-competition-threshold = 10
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
-        order-simulation-gas-limit = "123456789"
+        hide-competition-before-deadline = true
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
@@ -279,6 +292,7 @@ mod tests {
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
+        assert!(config.hide_competition_before_deadline);
         assert_eq!(
             config.order_simulation.map(|config| config.gas_limit),
             Some(U256::from(123456789u64))
@@ -344,6 +358,7 @@ mod tests {
         assert!(config.unsupported_tokens.is_empty());
         assert!(config.banned_users.addresses.is_empty());
         assert!(!config.eip1271_skip_creation_validation);
+        assert!(!config.hide_competition_before_deadline);
     }
 
     #[test]
@@ -376,6 +391,7 @@ mod tests {
             ],
             banned_users: Default::default(),
             eip1271_skip_creation_validation: true,
+            hide_competition_before_deadline: true,
             native_price_estimation: NativePriceConfig {
                 estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::CoinGecko]]),
                 fallback_estimators: None,
@@ -415,6 +431,10 @@ mod tests {
         assert_eq!(
             config.eip1271_skip_creation_validation,
             deserialized.eip1271_skip_creation_validation
+        );
+        assert_eq!(
+            config.hide_competition_before_deadline,
+            deserialized.hide_competition_before_deadline
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
     }
