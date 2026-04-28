@@ -63,7 +63,10 @@ pub enum Eip1271SimulationError {
     Infra(anyhow::Error),
 }
 
-/// Simulates an EIP-1271 order end-to-end (pre-hooks → swap → post-hooks).
+/// Simulates an EIP-1271 order's pre-hooks, swap, and post-hooks against
+/// the chain. Does not re-prove `isValidSignature`: the signer contract
+/// is replaced by `Trader.sol` during simulation, so signature correctness
+/// is still gated by the cheap `signature_validator` check.
 ///
 /// Defined here rather than in `crates/simulator` because `OrderValidator`
 /// cannot depend on `orderbook`, where the concrete implementation lives.
