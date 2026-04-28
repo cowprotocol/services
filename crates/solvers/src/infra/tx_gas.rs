@@ -6,7 +6,7 @@ use {
         rpc::types::state::{AccountOverride, StateOverride},
     },
     balance_overrides::BalanceOverrideRequest,
-    contracts::alloy::support::{AnyoneAuthenticator, Trader},
+    contracts::support::{AnyoneAuthenticator, Trader},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     number::nonzero::NonZeroU256,
     simulator::{

@@ -90,8 +90,8 @@ pub async fn load(path: &Path) -> solver::Config {
             addr
         } else {
             let chain_id = config.chain_id.expect(
-                "invalid configuration: `chain-id` is required when `gas-simulation-node-url` \
-                 is set and `gas-simulation-settlement` is not provided",
+                "invalid configuration: `chain-id` is required when `gas-simulation-node-url` is \
+                 set and `gas-simulation-settlement` is not provided",
             );
             contracts::Contracts::for_chain(chain_id).settlement
         };

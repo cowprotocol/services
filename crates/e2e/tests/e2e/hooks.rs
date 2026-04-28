@@ -661,7 +661,7 @@ async fn tx_gas_simulation(web3: Web3) {
         .await
         .unwrap();
 
-    let counter = contracts::alloy::test::Counter::Instance::deploy(web3.provider.clone())
+    let counter = contracts::test::Counter::Instance::deploy(web3.provider.clone())
         .await
         .unwrap();
     let pre_call = counter.incrementCounter("pre".to_string());
