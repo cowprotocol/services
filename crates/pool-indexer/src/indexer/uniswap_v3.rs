@@ -147,14 +147,16 @@ impl UniswapV3Indexer {
         }
     }
 
-    /// Processes all pending blocks starting from `from_block` up to the
-    /// current finalized block and returns. Loops until no further blocks
-    /// remain (handles new blocks finalizing during a long catch-up).
+    /// Bootstrap helper: brings a fresh (chain, factory) up to the current
+    /// finalized block in one shot, then returns. Loops until no further
+    /// blocks remain (handles new blocks finalizing during a long catch-up).
+    /// Intended to run exactly once, right after seeding completes.
     ///
-    /// Intended for the post-seed bootstrap only: initializes the checkpoint to
-    /// `from_block - 1` if absent so that `run_once` starts at `from_block`.
-    /// Errors if a checkpoint already exists — overwriting would silently
-    /// regress progress and re-index history.
+    /// The checkpoint stores the *last indexed* block, so to make the next
+    /// indexer pass start at `from_block` we initialize the checkpoint to
+    /// `from_block - 1`. Errors if a checkpoint already exists — overwriting
+    /// would silently regress progress and re-index history; callers should
+    /// guard with `if checkpoint.is_none()` before invoking.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
         if db::get_checkpoint(&self.db, self.chain_id, &self.factory)
             .await?
