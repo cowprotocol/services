@@ -241,9 +241,12 @@ impl From<InteractionData> for Interaction {
     }
 }
 
-pub fn encode_interactions<'a>(
-    interactions: impl IntoIterator<Item = &'a Interaction>,
-) -> Vec<EncodedInteraction> {
+pub fn encode_interactions<'a, I>(
+    interactions: impl IntoIterator<Item = &'a I>,
+) -> Vec<EncodedInteraction>
+where
+    I: InteractionEncoding + 'a,
+{
     interactions.into_iter().map(|i| i.encode()).collect()
 }
 

@@ -1,6 +1,6 @@
 use {
     crate::{
-        encoding::{EncodedSettlement, Interaction, WrapperCall},
+        encoding::{EncodedSettlement, WrapperCall},
         tenderly::dto::StateObject,
     },
     alloy_primitives::{Address, Bytes, TxKind, U256},
@@ -15,6 +15,7 @@ use {
     ethrpc::block_stream::CurrentBlockWatcher,
     model::{
         DomainSeparator,
+        interaction::InteractionData,
         order::OrderData,
         signature::{Signature, SigningScheme},
     },
@@ -71,7 +72,7 @@ impl SettlementSimulator {
             pre_interactions: vec![],
             main_interactions: vec![],
             post_interactions: vec![],
-            wrapper: None,
+            wrapper: WrapperConfig::NoWrapper,
             prices: None,
             solver: None,
             auction_id: None,
@@ -95,10 +96,10 @@ pub enum Block {
 /// Call [`SimulationBuilder::build`] when done to produce a [`SettlementCall`].
 pub struct SimulationBuilder {
     pub(crate) order: Option<Order>,
-    pub(crate) pre_interactions: Vec<Interaction>,
-    pub(crate) main_interactions: Vec<Interaction>,
-    pub(crate) post_interactions: Vec<Interaction>,
-    pub(crate) wrapper: Option<WrapperConfig>,
+    pub(crate) pre_interactions: Vec<InteractionData>,
+    pub(crate) main_interactions: Vec<InteractionData>,
+    pub(crate) post_interactions: Vec<InteractionData>,
+    pub(crate) wrapper: WrapperConfig,
     pub(crate) prices: Option<Prices>,
     pub(crate) solver: Option<Solver>,
     pub(crate) auction_id: Option<i64>,
@@ -116,23 +117,23 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn with_pre_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+    pub fn with_pre_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
         self.pre_interactions = interactions;
         self
     }
 
-    pub fn with_main_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+    pub fn with_main_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
         self.main_interactions = interactions;
         self
     }
 
-    pub fn with_post_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+    pub fn with_post_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
         self.post_interactions = interactions;
         self
     }
 
     pub fn with_wrapper(mut self, wrapper: WrapperConfig) -> Self {
-        self.wrapper = Some(wrapper);
+        self.wrapper = wrapper;
         self
     }
 
@@ -169,7 +170,7 @@ impl SimulationBuilder {
     /// Override the settlement contract's buy token balance so it can pay out
     /// the order without any external liquidity. The required amount is derived
     /// from the order's executed amount and clearing prices at `build()` time.
-    pub fn fund_settlement_contract(mut self) -> Self {
+    pub fn fund_settlement_contract_with_buy_tokens(mut self) -> Self {
         self.fund_settlement_contract = true;
         self
     }
@@ -244,8 +245,8 @@ pub struct Order {
     pub(crate) data: OrderData,
     pub(crate) owner: Address,
     pub(crate) signature: Signature,
-    pub(crate) pre_interactions: Vec<Interaction>,
-    pub(crate) post_interactions: Vec<Interaction>,
+    pub(crate) pre_interactions: Vec<InteractionData>,
+    pub(crate) post_interactions: Vec<InteractionData>,
     pub(crate) executed_amount: ExecutionAmount,
 }
 
@@ -254,6 +255,7 @@ pub struct Order {
 pub enum WrapperConfig {
     Flashloan(Vec<FlashloanRequest>),
     Custom(Vec<WrapperCall>),
+    NoWrapper,
 }
 
 pub struct FlashloanRequest {
@@ -281,12 +283,12 @@ impl Order {
         self
     }
 
-    pub fn with_pre_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+    pub fn with_pre_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
         self.pre_interactions = interactions;
         self
     }
 
-    pub fn with_post_interactions(mut self, interactions: Vec<Interaction>) -> Self {
+    pub fn with_post_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
         self.post_interactions = interactions;
         self
     }

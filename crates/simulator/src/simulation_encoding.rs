@@ -114,10 +114,10 @@ pub(crate) async fn encode(
     };
 
     let (to, input) = match builder.wrapper {
-        Some(WrapperConfig::Custom(wrappers)) if !wrappers.is_empty() => {
+        WrapperConfig::Custom(wrappers) if !wrappers.is_empty() => {
             encode_wrapper_settlement(&wrappers, settle_calldata).expect("wrappers is non-empty")
         }
-        Some(WrapperConfig::Flashloan(loans)) => {
+        WrapperConfig::Flashloan(loans) => {
             let calldata = contracts::FlashLoanRouter::FlashLoanRouter::flashLoanAndSettleCall {
                 loans: loans
                     .into_iter()

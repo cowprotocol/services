@@ -42,7 +42,7 @@ use {
             is_order_outside_market_price,
         },
     },
-    simulator::simulation_builder::SettlementSimulator,
+    simulator::simulation_builder::{self, SettlementSimulator},
     std::{borrow::Cow, sync::Arc},
     strum::Display,
     thiserror::Error,
@@ -657,37 +657,71 @@ impl Orderbook {
             return Ok(None);
         };
 
-        // let app_data = self
-        //     .parse_app_data(order.metadata.full_app_data.as_deref().
-        // unwrap_or_default())     .map_err(OrderSimulationError::Other)?;
+        let full_app_data = order
+            .metadata
+            .full_app_data
+            .as_ref()
+            .ok_or_else(|| OrderSimulationError::Other(anyhow!("can't find appdata")))?;
 
-        let sim = order_simulator.new_simulation_builder().add_order(
-                simulator::simulation_builder::Order::new(order.data)
+        let parsed_app_data = self
+            .order_validator
+            .validate_app_data(
+                &OrderCreationAppData::Full {
+                    full: full_app_data.clone(),
+                },
+                &None,
+            )
+            .map_err(|err| OrderSimulationError::Other(anyhow::anyhow!("{:?}", err)))?
+            .inner
+            .protocol;
+
+        let wrapper = match (parsed_app_data.flashloan, parsed_app_data.wrappers) {
+            (None, wrappers) if wrappers.is_empty() => simulation_builder::WrapperConfig::NoWrapper,
+            (None, wrappers) if !wrappers.is_empty() => {
+                // TODO: convert wrappers
+                simulation_builder::WrapperConfig::Custom(vec![])
+            }
+            (Some(flashloan), wrappers) if wrappers.is_empty() => {
+                // TODO: convert flashloan
+                simulation_builder::WrapperConfig::Flashloan(vec![])
+            }
+            _ => {
+                return Err(OrderSimulationError::Other(anyhow!(
+                    "can't configure custom wrappers and flashloans at the same time"
+                )));
+            }
+        };
+
+        let sim = order_simulator
+            .new_simulation_builder()
+            .add_order(
+                simulation_builder::Order::new(order.data)
                     .with_signature(order.metadata.owner, order.signature)
-                    // properly populate those values
-                    .with_pre_interactions(vec![])
-                    .with_post_interactions(vec![])
-                    .with_executed_amount(simulator::simulation_builder::ExecutionAmount::Remaining),
+                    .with_pre_interactions(order.interactions.pre)
+                    .with_post_interactions(order.interactions.post)
+                    .with_executed_amount(simulation_builder::ExecutionAmount::Remaining),
             )
             .at_block(
-                block_number.map(simulator::simulation_builder::Block::Number)
-                .unwrap_or(simulator::simulation_builder::Block::Latest)
+                block_number
+                    .map(simulation_builder::Block::Number)
+                    .unwrap_or(simulation_builder::Block::Latest),
             )
-            .fund_settlement_contract()
-            .from_solver(simulator::simulation_builder::Solver::Fake(None))
-            // TODO: add wrapper
+            .fund_settlement_contract_with_buy_tokens()
+            .from_solver(simulation_builder::Solver::Fake(None))
+            .with_wrapper(wrapper)
             .build()
             .await
-            // TODO: proper error handling
-            .unwrap();
+            .context("failed to finalize simulation")?;
 
-        // TODO: error handling
-        let sim_res = sim.simulate_with_tenderly_report().await.unwrap();
+        let simulation_result = sim
+            .simulate_with_tenderly_report()
+            .await
+            .context("failed to execute simulation")?;
 
         Ok(Some(OrderSimulationResult {
-            tenderly_url: sim_res.tenderly_url,
-            tenderly_request: sim_res.tenderly_request,
-            error: sim_res.error,
+            tenderly_url: simulation_result.tenderly_url,
+            tenderly_request: simulation_result.tenderly_request,
+            error: simulation_result.error,
         }))
     }
 
@@ -764,7 +798,7 @@ pub enum OrderSimulationError {
     #[error("order simulation is not enabled")]
     NotEnabled,
     #[error("malformed input")]
-    MalformedInput(anyhow::Error),
+    MalformedInput(#[from] anyhow::Error),
     #[error("simulation could not be created for order")]
     Other(anyhow::Error),
 }
