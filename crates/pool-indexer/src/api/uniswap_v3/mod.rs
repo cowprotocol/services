@@ -25,7 +25,14 @@ impl<'de> Deserialize<'de> for PoolIds {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let raw = <&str>::deserialize(de)?;
         let mut out = Vec::new();
-        for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        for entry in raw.split(',').map(str::trim).filter(|s| {
+            if s.is_empty() {
+                tracing::warn!("pool_ids query contained an empty entry");
+                false
+            } else {
+                true
+            }
+        }) {
             out.push(
                 entry
                     .parse::<Address>()
