@@ -51,11 +51,6 @@ pub struct Metrics {
     #[metric(labels("network"))]
     pub cold_seed_pools_discovered: prometheus::IntGaugeVec,
 
-    /// Pools with non-zero liquidity at snapshot time (phase 2 → phase 3
-    /// input).
-    #[metric(labels("network"))]
-    pub cold_seed_active_pools: prometheus::IntGaugeVec,
-
     /// Duration of the full subgraph seed (pool page fetch + tick fetch).
     #[metric(
         labels("network"),

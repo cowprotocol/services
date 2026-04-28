@@ -100,20 +100,16 @@ pub async fn cold_seed(
     info!(chain_id, states = states.len(), "pool states snapshotted");
     persist_pool_states(db, chain_id, &factory, &states).await?;
 
-    let active_pools: Vec<Address> = states
-        .iter()
-        .filter(|s| s.liquidity > 0)
-        .map(|s| s.pool_address)
-        .collect();
-    metrics
-        .cold_seed_active_pools
-        .with_label_values(&[network])
-        .set(i64::try_from(active_pools.len()).unwrap_or(0));
+    // Reconstruct ticks for every discovered pool, not just the ones with
+    // currently-active liquidity. A pool with `state.liquidity == 0` can
+    // still hold dormant out-of-range positions whose `liquidity_net` deltas
+    // matter once the price moves back into range — skipping them would
+    // leave the indexer mispricing those pools after the fact.
+    let pool_addresses: Vec<Address> = pools.iter().map(|p| p.address).collect();
     info!(
         chain_id,
-        active = active_pools.len(),
-        inactive = pools.len() - active_pools.len(),
-        "reconstructing ticks for active pools"
+        pools = pool_addresses.len(),
+        "reconstructing ticks for all discovered pools"
     );
 
     {
@@ -124,7 +120,7 @@ pub async fn cold_seed(
             chain_id,
             &factory,
             &provider,
-            &active_pools,
+            &pool_addresses,
             factory_deployment_block,
             snapshot_block,
         )
@@ -305,21 +301,21 @@ async fn persist_pool_states(
 /// Each group's full history is fetched, deltas accumulated, and flushed to
 /// the DB before moving on — bounds memory to roughly one batch's worth of
 /// logs at any moment, and gives operators visible progress on long runs.
-#[instrument(skip(db, provider, active_pools))]
+#[instrument(skip(db, provider, pool_addresses))]
 async fn reconstruct_and_persist_ticks(
     db: &PgPool,
     chain_id: u64,
     factory: &Address,
     provider: &AlloyProvider,
-    active_pools: &[Address],
+    pool_addresses: &[Address],
     from_block: u64,
     to_block: u64,
 ) -> Result<()> {
-    let total = active_pools.len();
+    let total = pool_addresses.len();
     let mut processed = 0usize;
     let mut tick_rows = 0usize;
 
-    for pool_batch in active_pools.chunks(POOL_ADDRESS_BATCH) {
+    for pool_batch in pool_addresses.chunks(POOL_ADDRESS_BATCH) {
         let pool_batch = pool_batch.to_vec();
         let batch_size = pool_batch.len();
 
