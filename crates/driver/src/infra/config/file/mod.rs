@@ -540,6 +540,9 @@ enum UniswapV3Config {
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
         max_pools_to_initialize: usize,
 
+        // TODO: model these two URLs as an enum (Graph / PoolIndexer / Both)
+        // once serde supports `deny_unknown_fields` with internally-tagged or
+        // flattened enum variants — https://github.com/serde-rs/serde/issues/1547.
         /// The URL used to connect to uniswap v3 subgraph client. At least one
         /// of `graph_url` or `pool_indexer_url` must be set; `pool_indexer_url`
         /// takes precedence when both are provided.
@@ -578,6 +581,9 @@ enum UniswapV3Config {
         #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
         max_pools_per_tick_query: usize,
 
+        // TODO: model these two URLs as an enum (Graph / PoolIndexer / Both)
+        // once serde supports `deny_unknown_fields` with internally-tagged or
+        // flattened enum variants — https://github.com/serde-rs/serde/issues/1547.
         /// The URL used to connect to uniswap v3 subgraph client. At least one
         /// of `graph_url` or `pool_indexer_url` must be set; `pool_indexer_url`
         /// takes precedence when both are provided.
