@@ -196,6 +196,7 @@ impl Cache {
     /// Returns a timestamp that is a `percentage` of `max_age`
     /// in the past. Clamps to `now` if an underflow occurs.
     fn updated_at_percentage(max_age: Duration, now: Instant, percentage: u32) -> Instant {
+        let percentage = if percentage > 100 { 100 } else { percentage };
         let age = max_age.saturating_mul(percentage) / 100;
         now.checked_sub(age).unwrap_or(now)
     }
