@@ -196,7 +196,7 @@ async fn list_pools(
     let has_next = rows.len() > limit as usize;
     rows.truncate(limit as usize);
     let next_cursor = has_next
-        .then(|| rows.last().map(|row| format!("{:?}", row.address)))
+        .then(|| rows.last().map(|row| format!("{:#x}", row.address)))
         .flatten();
 
     Ok(pools_response(block_number, &rows, next_cursor))
