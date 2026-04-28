@@ -662,14 +662,17 @@ impl Orderbook {
         // unwrap_or_default())     .map_err(OrderSimulationError::Other)?;
 
         let sim = order_simulator.new_simulation_builder().add_order(
-            simulator::simulation_builder::Order::new(order.data)
-                .with_signature(order.metadata.owner, order.signature)
-                // properly populate those values
-                .with_pre_interactions(vec![])
-                .with_post_interactions(vec![])
-                .with_executed_amount(simulator::simulation_builder::ExecutionAmount::Remaining),
-        )
-            .at_block(block_number.map(simulator::simulation_builder::Block::Number).unwrap_or(simulator::simulation_builder::Block::Latest))
+                simulator::simulation_builder::Order::new(order.data)
+                    .with_signature(order.metadata.owner, order.signature)
+                    // properly populate those values
+                    .with_pre_interactions(vec![])
+                    .with_post_interactions(vec![])
+                    .with_executed_amount(simulator::simulation_builder::ExecutionAmount::Remaining),
+            )
+            .at_block(
+                block_number.map(simulator::simulation_builder::Block::Number)
+                .unwrap_or(simulator::simulation_builder::Block::Latest)
+            )
             .fund_settlement_contract()
             .from_solver(simulator::simulation_builder::Solver::Fake(None))
             // TODO: add wrapper
