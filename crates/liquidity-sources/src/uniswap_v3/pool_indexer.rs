@@ -106,19 +106,45 @@ struct IndexerTick {
     liquidity_net: String,
 }
 
+/// Filter predicate: drop pools where either token's `decimals` is missing.
+/// `decimals = 0` reaching the solver would mis-scale prices by 10^18, so we
+/// fail closed (drop + warn) until the indexer backfills the value.
+fn pools_tokens_have_decimals(p: &IndexerPool) -> bool {
+    if p.token0.decimals.is_none() || p.token1.decimals.is_none() {
+        tracing::warn!(
+            pool = %format!("{:#x}", p.id),
+            token0 = %format!("{:#x}", p.token0.id),
+            token1 = %format!("{:#x}", p.token1.id),
+            token0_decimals_set = p.token0.decimals.is_some(),
+            token1_decimals_set = p.token1.decimals.is_some(),
+            "pool dropped from response: missing token decimals"
+        );
+        return false;
+    }
+    true
+}
+
 impl TryFrom<IndexerPool> for PoolData {
     type Error = anyhow::Error;
 
     fn try_from(pool: IndexerPool) -> Result<Self> {
+        let token0_decimals = pool
+            .token0
+            .decimals
+            .context("BUG: missing token0 decimals after pools_tokens_have_decimals filter")?;
+        let token1_decimals = pool
+            .token1
+            .decimals
+            .context("BUG: missing token1 decimals after pools_tokens_have_decimals filter")?;
         Ok(Self {
             id: pool.id,
             token0: Token {
                 id: pool.token0.id,
-                decimals: pool.token0.decimals.unwrap_or(0),
+                decimals: token0_decimals,
             },
             token1: Token {
                 id: pool.token1.id,
-                decimals: pool.token1.decimals.unwrap_or(0),
+                decimals: token1_decimals,
             },
             fee_tier: U256::from_str(&pool.fee_tier).context("parse fee_tier")?,
             liquidity: U256::from_str(&pool.liquidity).context("parse liquidity")?,
@@ -178,6 +204,7 @@ impl V3PoolDataSource for PoolIndexerClient {
                 .pools
                 .into_iter()
                 .filter(|p| p.liquidity != "0")
+                .filter(pools_tokens_have_decimals)
                 .map(PoolData::try_from)
                 .collect::<Result<Vec<_>>>()?;
             pools.extend(filtered);
@@ -241,7 +268,11 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .json()
         .await
         .context("pools-by-ids body")?;
-    resp.pools.into_iter().map(PoolData::try_from).collect()
+    resp.pools
+        .into_iter()
+        .filter(pools_tokens_have_decimals)
+        .map(PoolData::try_from)
+        .collect()
 }
 
 async fn fetch_ticks_by_pool_ids(
