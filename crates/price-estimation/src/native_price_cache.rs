@@ -1153,12 +1153,15 @@ mod tests {
     }
 
     #[test]
-    fn random_updated_at_underflow_check() {
+    fn updated_at_percentage_underflow_check() {
         let now = Instant::now();
-        let max_age = Duration::MAX;
-        let mut rng = StdRng::seed_from_u64(0);
-
-        let updated_at = Cache::random_updated_at(max_age, now, &mut rng);
+        let age = Duration::MAX;
+        // Check against maximum values from random_updated_at().
+        // Duration::MAX is max_age
+        // (max_age * 90) overflows, gets clamped to Duration::MAX
+        // producing (Duration::MAX / 100) as age
+        // (now - age) underflows, clamps to now
+        let updated_at = Cache::updated_at_percentage(age, now, 90);
         assert_eq!(updated_at, now);
     }
 
