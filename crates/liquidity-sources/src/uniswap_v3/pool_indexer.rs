@@ -255,7 +255,7 @@ fn ids_param(ids: &[Address]) -> String {
 }
 
 async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Result<Vec<PoolData>> {
-    let mut url = client.path("pools")?;
+    let mut url = client.path("pools/by-ids")?;
     url.query_pairs_mut()
         .append_pair("pool_ids", &ids_param(ids));
     let resp: PoolsResponse = client
@@ -263,7 +263,7 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .get(url)
         .send()
         .await
-        .context("GET /pools?pool_ids=")?
+        .context("GET /pools/by-ids?pool_ids=")?
         .error_for_status()
         .context("pools-by-ids HTTP status")?
         .json()

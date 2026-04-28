@@ -581,6 +581,7 @@ async fn local_node_pool_indexer_driver_integration() {
 /// driver's TOML config requires at least one `[[solver]]`.
 async fn driver_integration(web3: Web3) {
     const POOLS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools";
+    const POOLS_BY_IDS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/by-ids";
     const TICKS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/ticks";
 
     let db = PgPool::connect(LOCAL_DB_URL).await.unwrap();
@@ -589,7 +590,7 @@ async fn driver_integration(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
     let [solver] = onchain.make_solvers(10u64.eth()).await;
 
-    let (factory, _pool_addr) = deploy_univ3(&web3).await;
+    let (factory, pool_addr) = deploy_univ3(&web3).await;
     let factory_addr = *factory.address();
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
@@ -614,10 +615,28 @@ async fn driver_integration(web3: Web3) {
     .await
     .expect("indexer did not reach head with pool visible");
 
+    // The mock tokens (`[1u8;20]`, `[2u8;20]`) don't have a real `decimals()`
+    // selector, so the indexer's discovery-time eth_call returns `None` and
+    // the pool is stored with NULL decimals. The driver-side filter
+    // `pools_tokens_have_decimals` then drops the pool, leaving the
+    // top-N selection empty and skipping the bulk-by-ids/ticks fetch path
+    // this test wants to assert. Backfill plausible decimals so the driver
+    // doesn't drop it. 
+    sqlx::query(
+        "UPDATE uniswap_v3_pools SET token0_decimals = 18, token1_decimals = 6 WHERE chain_id = 1 \
+         AND address = $1",
+    )
+    .bind(pool_addr.as_slice())
+    .execute(&db)
+    .await
+    .unwrap();
+
     // Capture baselines after all test-side warm-up requests so the final
     // assertions prove the bumps came from the driver, not from the polling
     // above.
     let baseline_pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
+    let baseline_pools_by_ids =
+        api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
     let baseline_ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
 
     let baseline_solver = colocation::start_baseline_solver(
@@ -651,8 +670,12 @@ max-pools-to-initialize = 10
 
     wait_for_condition(TIMEOUT, || async {
         let pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
+        let pools_by_ids =
+            api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
         let ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
-        pools > baseline_pools && ticks > baseline_ticks
+        pools > baseline_pools
+            && pools_by_ids > baseline_pools_by_ids
+            && ticks > baseline_ticks
     })
     .await
     .expect("driver did not complete pool + tick fetch from pool-indexer within timeout");

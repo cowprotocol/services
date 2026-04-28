@@ -14,25 +14,28 @@ use {
     std::sync::Arc,
 };
 
-/// Query parameters for the `/pools` endpoint.
-///
-/// Dispatch (first match wins):
-/// 1. `pool_ids` — bulk lookup by pool address, returns only the requested
-///    pools (no pagination). Intended for clients that already know the pool
-///    addresses they care about, e.g. resolving pools referenced by an auction.
-/// 2. Neither — cursor-paginated list of all pools.
+/// Query parameters for the `GET /pools` endpoint — cursor-paginated full
+/// listing.
 #[derive(Deserialize)]
-pub struct PoolsQuery {
+pub struct ListPoolsQuery {
+    /// Opaque cursor returned by the previous page; omit to start from the
+    /// beginning.
+    pub after: Option<String>,
+    /// Maximum number of pools to return. Clamped to [1, 5000]; defaults to
+    /// 1000.
+    pub limit: Option<u64>,
+}
+
+/// Query parameters for the `GET /pools/by-ids` endpoint — bulk lookup of
+/// specific pool addresses, returns only the requested pools (no pagination).
+/// Intended for clients that already know the pool addresses they care about,
+/// e.g. resolving pools referenced by an auction.
+#[derive(Deserialize)]
+pub struct BulkLookupQuery {
     /// Comma-separated list of pool addresses (`0x…,0x…`) parsed eagerly.
     /// Capped at [`super::MAX_POOL_IDS_PER_REQUEST`] entries; callers with
     /// more addresses should chunk their requests.
-    pub pool_ids: Option<PoolIds>,
-    /// Opaque cursor returned by the previous page; omit to start from the
-    /// beginning. Ignored when `pool_ids` is set.
-    pub after: Option<String>,
-    /// Maximum number of pools to return. Clamped to [1, 5000]; defaults to
-    /// 1000. Ignored when `pool_ids` is set.
-    pub limit: Option<u64>,
+    pub pool_ids: PoolIds,
 }
 
 /// ERC-20 token metadata embedded in pool responses.
@@ -76,15 +79,6 @@ pub struct PoolsResponse {
     pub next_cursor: Option<String>,
 }
 
-/// Normalised view of a [`PoolsQuery`]: which of the two request shapes the
-/// client is asking for.
-enum PoolsRequest<'a> {
-    /// Bulk lookup by address list.
-    ByIds(&'a [Address]),
-    /// Cursor-paginated full listing.
-    PaginatedList,
-}
-
 /// Default number of pools to return per page when the client doesn't
 /// specify a `limit`. Sized so a full mainnet pool set can be drained in
 /// a few pages.
@@ -94,17 +88,7 @@ const DEFAULT_PAGE_LIMIT: u64 = 1_000;
 /// applies this even if the client asks for more.
 const MAX_PAGE_LIMIT: u64 = 5_000;
 
-impl PoolsQuery {
-    /// Dispatch the incoming query to the right handler shape — see
-    /// [`PoolsRequest`]. `pool_ids` wins over pagination when present.
-    fn request(&self) -> PoolsRequest<'_> {
-        if let Some(PoolIds(ids)) = &self.pool_ids {
-            PoolsRequest::ByIds(ids)
-        } else {
-            PoolsRequest::PaginatedList
-        }
-    }
-
+impl ListPoolsQuery {
     /// Resolve the effective page size: the client-supplied `limit` clamped
     /// to `[1, MAX_PAGE_LIMIT]`, defaulting to `DEFAULT_PAGE_LIMIT`.
     fn page_limit(&self) -> u64 {
@@ -173,6 +157,8 @@ fn pools_response(
     .into_response()
 }
 
+/// `GET /api/v1/{network}/uniswap/v3/pools`
+///
 /// Returns a cursor-paginated list of all indexed pools, ordered by address.
 ///
 /// Pagination is last-value-seen: the DB query returns `limit + 1` rows to
@@ -182,12 +168,13 @@ fn pools_response(
 /// `WHERE address > $cursor` to pick up from the row immediately after it —
 /// so the cursor points at the *last row served*, not the next one to
 /// serve.
-async fn list_pools(
-    state: &AppState,
-    chain_id: u64,
-    block_number: u64,
-    query: &PoolsQuery,
+pub async fn get_pools(
+    State(state): State<Arc<AppState>>,
+    Path(network): Path<String>,
+    Query(query): Query<ListPoolsQuery>,
 ) -> Result<Response, ApiError> {
+    let chain_id = resolve_chain_id(&state, &network)?;
+    let block_number = latest_indexed_block(&state, chain_id).await?;
     let limit = query.page_limit();
     let cursor = query.cursor()?;
 
@@ -202,37 +189,21 @@ async fn list_pools(
     Ok(pools_response(block_number, &rows, next_cursor))
 }
 
+/// `GET /api/v1/{network}/uniswap/v3/pools/by-ids?pool_ids=0x…,0x…`
+///
 /// Returns the pools with addresses in `pool_ids` (order not guaranteed to
 /// match the request). Silently skips unknown addresses so callers can treat
 /// a partial response as "these are the ones I have". Fetches the latest
 /// indexed block in parallel with the pool lookup.
-async fn lookup_pools_by_ids(
-    state: &AppState,
-    chain_id: u64,
-    addresses: &[Address],
-) -> Result<Response, ApiError> {
-    let (block, pools) = tokio::join!(
-        latest_indexed_block(state, chain_id),
-        db::get_pools_by_ids(&state.db, chain_id, addresses),
-    );
-    Ok(pools_response(block?, &pools?, None))
-}
-
-/// `GET /api/v1/{network}/uniswap/v3/pools`
-///
-/// Dispatches based on query params — see [`PoolsQuery`].
-pub async fn get_pools(
+pub async fn get_pools_by_ids(
     State(state): State<Arc<AppState>>,
     Path(network): Path<String>,
-    Query(query): Query<PoolsQuery>,
+    Query(BulkLookupQuery { pool_ids }): Query<BulkLookupQuery>,
 ) -> Result<Response, ApiError> {
     let chain_id = resolve_chain_id(&state, &network)?;
-
-    match query.request() {
-        PoolsRequest::ByIds(pool_ids) => lookup_pools_by_ids(&state, chain_id, pool_ids).await,
-        PoolsRequest::PaginatedList => {
-            let block_number = latest_indexed_block(&state, chain_id).await?;
-            list_pools(&state, chain_id, block_number, &query).await
-        }
-    }
+    let (block, pools) = tokio::join!(
+        latest_indexed_block(&state, chain_id),
+        db::get_pools_by_ids(&state.db, chain_id, &pool_ids.0),
+    );
+    Ok(pools_response(block?, &pools?, None))
 }

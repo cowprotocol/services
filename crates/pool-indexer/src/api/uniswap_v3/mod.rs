@@ -7,7 +7,7 @@ use {
     serde::{Deserialize, Deserializer},
 };
 pub use {
-    pools::get_pools,
+    pools::{get_pools, get_pools_by_ids},
     ticks::{get_ticks, get_ticks_bulk},
 };
 
