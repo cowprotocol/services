@@ -4029,6 +4029,7 @@ dependencies = [
  "solvers-dto",
  "sqlx",
  "tempfile",
+ "testlib",
  "tokio",
  "toml",
  "tracing",
