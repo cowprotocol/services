@@ -23,10 +23,13 @@ pub trait V3PoolDataSource: Send + Sync + 'static {
     /// cheap "what pools exist?" lookup skip the expensive tick fetch.
     async fn get_registered_pools(&self) -> Result<RegisteredPools>;
 
-    /// Fetch pools + their active ticks for the given pool addresses. The
-    /// `block_number` hint is honored by sources that support historical
-    /// queries (subgraph); sources that only expose head data (pool-indexer)
-    /// ignore it and return at-head data.
+    /// Fetch pools + their active ticks for the given pool addresses.
+    ///
+    /// `block_number` is a best-effort hint: sources that support historical
+    /// queries (subgraph) honor it exactly; sources that only expose head
+    /// data (pool-indexer) ignore it and return at-head data instead.
+    /// Callers requiring strict at-block semantics must not use this trait
+    /// generically — they must pin to an impl that supports it.
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],

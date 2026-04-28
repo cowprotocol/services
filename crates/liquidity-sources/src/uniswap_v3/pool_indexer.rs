@@ -222,6 +222,7 @@ impl V3PoolDataSource for PoolIndexerClient {
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
+        // pool-indexer is at-head only — see trait doc on `V3PoolDataSource`.
         _block_number: u64,
     ) -> Result<Vec<PoolData>> {
         if ids.is_empty() {
