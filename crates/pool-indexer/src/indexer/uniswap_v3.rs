@@ -4,7 +4,7 @@ use {
         db::uniswap_v3 as db,
     },
     alloy::{
-        primitives::Address,
+        primitives::{Address, aliases::U160},
         providers::Provider,
         rpc::types::{BlockNumberOrTag, Filter, FilterSet, Log},
         sol_types::SolEvent,
@@ -47,7 +47,7 @@ pub struct NewPoolData {
 pub struct PoolStateData {
     pub pool_address: Address,
     pub block_number: u64,
-    pub sqrt_price_x96: alloy::primitives::aliases::U160,
+    pub sqrt_price_x96: U160,
     pub liquidity: u128,
     pub tick: i32,
 }
