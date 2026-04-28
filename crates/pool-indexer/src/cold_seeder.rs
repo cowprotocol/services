@@ -83,7 +83,13 @@ pub async fn cold_seed(
     let pools = {
         let labels = [network, "discovery"];
         let _t = Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
-        discover_pools(&provider, factory, factory_deployment_block, snapshot_block).await?
+        discover_pools(
+            provider.clone(),
+            factory,
+            factory_deployment_block,
+            snapshot_block,
+        )
+        .await?
     };
     metrics
         .cold_seed_pools_discovered
@@ -95,7 +101,7 @@ pub async fn cold_seed(
     let states = {
         let labels = [network, "state_snapshot"];
         let _t = Metrics::timer(&metrics.cold_seed_phase_seconds, &labels);
-        snapshot_pool_states(&provider, &pools, snapshot_block).await?
+        snapshot_pool_states(provider.clone(), &pools, snapshot_block).await?
     };
     info!(chain_id, states = states.len(), "pool states snapshotted");
     persist_pool_states(db, chain_id, &factory, &states).await?;
@@ -119,7 +125,7 @@ pub async fn cold_seed(
             db,
             chain_id,
             &factory,
-            &provider,
+            provider.clone(),
             &pool_addresses,
             factory_deployment_block,
             snapshot_block,
@@ -133,7 +139,7 @@ pub async fn cold_seed(
 
 #[instrument(skip(provider))]
 async fn discover_pools(
-    provider: &AlloyProvider,
+    provider: AlloyProvider,
     factory: Address,
     from_block: u64,
     to_block: u64,
@@ -147,7 +153,7 @@ async fn discover_pools(
     let logs: Vec<Log> = futures::stream::iter(ranges)
         .map(|(from, to)| {
             let provider = provider.clone();
-            async move { fetch_pool_created_logs(&provider, factory, from, to).await }
+            async move { fetch_pool_created_logs(provider, factory, from, to).await }
         })
         .buffered(LOG_FETCH_CONCURRENCY)
         .try_concat()
@@ -185,13 +191,13 @@ async fn discover_pools(
 }
 
 async fn fetch_pool_created_logs(
-    provider: &AlloyProvider,
+    provider: AlloyProvider,
     factory: Address,
     from: u64,
     to: u64,
 ) -> Result<Vec<Log>> {
     bisecting_get_logs(
-        provider,
+        &provider,
         from,
         to,
         vec![factory],
@@ -201,7 +207,7 @@ async fn fetch_pool_created_logs(
 }
 
 async fn fetch_decimals_concurrent(
-    provider: &AlloyProvider,
+    provider: AlloyProvider,
     tokens: std::collections::HashSet<Address>,
 ) -> HashMap<Address, u8> {
     futures::stream::iter(tokens)
@@ -236,7 +242,7 @@ async fn persist_pools(
 
 #[instrument(skip(provider, pools))]
 async fn snapshot_pool_states(
-    provider: &AlloyProvider,
+    provider: AlloyProvider,
     pools: &[NewPoolData],
     at_block: u64,
 ) -> Result<Vec<PoolStateData>> {
@@ -244,7 +250,7 @@ async fn snapshot_pool_states(
     let states: Vec<PoolStateData> = futures::stream::iter(addresses)
         .map(|pool| {
             let provider = provider.clone();
-            async move { fetch_pool_state(&provider, pool, at_block).await }
+            async move { fetch_pool_state(provider, pool, at_block).await }
         })
         .buffer_unordered(POOL_VIEW_CALL_CONCURRENCY)
         .filter_map(|res| async move { res })
@@ -253,8 +259,12 @@ async fn snapshot_pool_states(
     Ok(states)
 }
 
+/// Fetch a pool's `slot0` + `liquidity` at `at_block`. Returns `None` if
+/// either eth_call fails (RPC blip, contract not yet deployed at that block,
+/// non-conforming pool); the failure is logged and the caller treats this
+/// pool as missing-state for the snapshot.
 async fn fetch_pool_state(
-    provider: &AlloyProvider,
+    provider: AlloyProvider,
     pool: Address,
     at_block: u64,
 ) -> Option<PoolStateData> {
@@ -306,7 +316,7 @@ async fn reconstruct_and_persist_ticks(
     db: &PgPool,
     chain_id: u64,
     factory: &Address,
-    provider: &AlloyProvider,
+    provider: AlloyProvider,
     pool_addresses: &[Address],
     from_block: u64,
     to_block: u64,
@@ -328,7 +338,7 @@ async fn reconstruct_and_persist_ticks(
             .map(|(from, to)| {
                 let provider = provider.clone();
                 let pool_batch = pool_batch.clone();
-                async move { fetch_mint_burn_logs(&provider, pool_batch, from, to).await }
+                async move { fetch_mint_burn_logs(provider, pool_batch, from, to).await }
             })
             .buffered(LOG_FETCH_CONCURRENCY)
             .try_concat()
@@ -377,14 +387,14 @@ async fn reconstruct_and_persist_ticks(
 }
 
 async fn fetch_mint_burn_logs(
-    provider: &AlloyProvider,
+    provider: AlloyProvider,
     pool_batch: Vec<Address>,
     from: u64,
     to: u64,
 ) -> Result<Vec<Log>> {
     let pool_count = pool_batch.len();
     bisecting_get_logs(
-        provider,
+        &provider,
         from,
         to,
         pool_batch,
