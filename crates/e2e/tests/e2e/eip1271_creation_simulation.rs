@@ -71,12 +71,11 @@ async fn rejects_when_wrapper_reverts(web3: Web3) {
         }),
     );
 
-    let err = services.create_order(&order).await.unwrap_err();
-    assert_eq!(err.0, StatusCode::BAD_REQUEST, "body: {}", err.1);
+    let (status, body) = services.create_order(&order).await.unwrap_err();
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
     assert!(
-        err.1.contains("Eip1271SimulationFailed"),
-        "expected Eip1271SimulationFailed in body, got: {}",
-        err.1
+        body.contains("Eip1271SimulationFailed"),
+        "expected Eip1271SimulationFailed in body, got: {body}",
     );
 }
 
