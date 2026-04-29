@@ -183,9 +183,10 @@ impl NativePriceEstimating for Eip4626 {
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
         // The ETH-flow sentinel is not a real contract. Calling `asset()` on it
         // would either revert with a misleading error or be misclassified as a
-        // zero-asset vault. Just pass it through to the inner estimator unchanged.
+        // zero-asset vault. Prices 1:1 in native by definition, Mirrors
+        // `external_prices.rs`.
         if token == BUY_ETH_ADDRESS {
-            return self.inner.estimate_native_price(token, timeout);
+            return async { Ok(1.0) }.boxed();
         }
         self.estimate(token, timeout).boxed()
     }
