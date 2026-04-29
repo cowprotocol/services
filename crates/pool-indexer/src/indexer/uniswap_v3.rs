@@ -778,8 +778,12 @@ impl LogAccumulator {
     /// cache. Symbols are left `None` here and populated later by the
     /// background backfill task.
     fn handle_pool_created(&mut self, log: &Log, dec_cache: &DecimalsCache) {
-        let Ok(decoded) = PoolCreated::decode_log(&log.inner) else {
-            return;
+        let decoded = match PoolCreated::decode_log(&log.inner) {
+            Ok(d) => d,
+            Err(err) => {
+                tracing::warn!(?err, pool = %log.address(), block = ?log.block_number, "failed to decode PoolCreated log");
+                return;
+            }
         };
         let e = &decoded.data;
         let pool: Address = e.pool;
@@ -806,8 +810,12 @@ impl LogAccumulator {
     /// Records the initial price and tick from an `Initialize` event.
     /// Preserves any liquidity already seen for this pool earlier in the chunk.
     fn handle_initialize(&mut self, log: &Log) {
-        let Ok(decoded) = Initialize::decode_log(&log.inner) else {
-            return;
+        let decoded = match Initialize::decode_log(&log.inner) {
+            Ok(d) => d,
+            Err(err) => {
+                tracing::warn!(?err, pool = %log.address(), block = ?log.block_number, "failed to decode Initialize log");
+                return;
+            }
         };
         let e = &decoded.data;
         let pool = log.address();
