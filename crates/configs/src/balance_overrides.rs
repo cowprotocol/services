@@ -36,6 +36,21 @@ pub enum Strategy {
         target_contract: Address,
         slot: B256,
     },
+    /// Balance override strategy for Aave v3 aTokens whose `balanceOf` applies
+    /// a scaling factor (the reserve's normalized income) and whose storage
+    /// packs `UserState { uint128 balance; uint128 additionalData }` into a
+    /// single slot. The override is resolved at call time by fetching the
+    /// current normalized income from the Aave pool and dividing the target
+    /// amount by it (ray division), so that `balanceOf` returns the desired
+    /// amount. The high 128 bits of the slot (`additionalData`) are zeroed,
+    /// which is safe for fresh holders like the spardose.
+    ///
+    /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/tokenization/base/IncentivizedERC20.sol>
+    AaveV3AToken {
+        target_contract: Address,
+        pool: Address,
+        underlying: Address,
+    },
 }
 
 /// Token configurations for the `BalanceOverriding` component.
@@ -67,6 +82,15 @@ impl std::fmt::Display for TokenConfiguration {
                     target_contract,
                     slot,
                 } => write!(f, "DirectSlot({addr:?}: {target_contract:?}@{slot})"),
+                Strategy::AaveV3AToken {
+                    target_contract,
+                    pool,
+                    underlying,
+                } => write!(
+                    f,
+                    "AaveV3AToken({addr:?}: {target_contract:?}, pool={pool:?}, \
+                     underlying={underlying:?})"
+                ),
             };
 
         let mut entries = self.0.iter();
@@ -190,6 +214,30 @@ target_contract = "0x0000000000000000000000000000000000000005"
     fn deserialize_empty_config() {
         let config: TokenConfiguration = toml::from_str("").unwrap();
         assert!(config.0.is_empty());
+    }
+
+    #[test]
+    fn deserialize_aave_v3_a_token() {
+        use alloy::primitives::address;
+
+        let input = r#"
+[0x4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8]
+type = "AaveV3AToken"
+target_contract = "0x4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8"
+pool = "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+underlying = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+"#;
+        let config: TokenConfiguration = toml::from_str(input).unwrap();
+        let a_token = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
+        let strategy = config.0.get(&a_token).unwrap();
+        assert_eq!(
+            *strategy,
+            Strategy::AaveV3AToken {
+                target_contract: a_token,
+                pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
+                underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+            }
+        );
     }
 
     #[test]

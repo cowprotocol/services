@@ -116,7 +116,7 @@ impl OrderSimulator {
             self.remaining_amounts(order, block.map(Into::into)).await?;
         let query = Query {
             sell_amount: NonZeroU256::try_from(remaining_sell).map_err(|err| {
-                Error::MalformedInput(anyhow!("sell_amount `{}`: {err}", order.data.sell_amount))
+                Error::MalformedInput(anyhow!("sell_amount `{}`: {err}", remaining_sell))
             })?,
             sell_token: order.data.sell_token,
             buy_amount: remaining_buy,
@@ -176,7 +176,7 @@ impl OrderSimulator {
                 self.chain_id.clone(),
                 &result.tx,
                 result.overrides,
-                Some(BlockNo(block_number)),
+                BlockNo(block_number),
             )
             .map_err(|err| Error::Other(anyhow!(err)))?
         };

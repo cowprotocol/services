@@ -11,9 +11,15 @@ use {
     contracts::ERC20,
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
+    futures::{FutureExt, future::BoxFuture},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     number::units::EthUnit,
+    price_estimation::{
+        HEALTHY_PRICE_ESTIMATION_TIME,
+        native::{Eip4626, NativePriceEstimateResult, NativePriceEstimating},
+    },
     shared::web3::Web3,
+    std::time::Duration,
 };
 
 /// The block number from which we will fetch state for the forked test.
@@ -27,6 +33,10 @@ const SDAI_WHALE: Address = address!("4C612E3B15b96Ff9A6faED838F8d07d479a8dD4c")
 
 /// WETH on mainnet.
 const WETH: Address = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+
+/// USDC on mainnet. The proxy has no `asset()` selector, so calls to it
+/// revert with *empty* revert data — the regression case below.
+const USDC: Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
 
 #[tokio::test]
 #[ignore]
@@ -233,4 +243,44 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
         (ratio - 2.0 / 9.0).abs() / (2.0 / 9.0) < 0.01,
         "wrapper (1/3) price ratio to baseline (3/2) should be 2/9: got {ratio:.6}",
     );
+}
+
+/// Regression: tokens that revert `asset()` with empty data (e.g. USDC) must
+/// classify as non-vault, not abort as a transport failure.
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_eip4626_empty_revert_terminal_token() {
+    run_forked_test_with_block_number(
+        eip4626_empty_revert_terminal_token_test,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
+    )
+    .await;
+}
+
+async fn eip4626_empty_revert_terminal_token_test(web3: Web3) {
+    // USDC is expected to classify as non-vault, so `inner`'s price round-trips
+    // unchanged — any fixed value works.
+    let expected_price = 0.0001;
+    let inner = FixedPrice(expected_price);
+    let estimator = Eip4626::new(Box::new(inner), web3.provider);
+    let price = estimator
+        .estimate_native_price(USDC, HEALTHY_PRICE_ESTIMATION_TIME)
+        .await
+        .expect("empty-revert on terminal token must not abort the unwrap");
+    assert_eq!(price, expected_price);
+}
+
+struct FixedPrice(f64);
+
+impl NativePriceEstimating for FixedPrice {
+    fn estimate_native_price(
+        &self,
+        _token: Address,
+        _timeout: Duration,
+    ) -> BoxFuture<'_, NativePriceEstimateResult> {
+        let price = self.0;
+        async move { Ok(price) }.boxed()
+    }
 }
