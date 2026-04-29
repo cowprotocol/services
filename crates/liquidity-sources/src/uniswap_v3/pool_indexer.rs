@@ -37,29 +37,14 @@ pub struct PoolIndexerClient {
 }
 
 impl PoolIndexerClient {
-    pub fn new(base_url: Url, chain: Chain, http: Client) -> Result<Self> {
-        // `Url::join` replaces the last path segment unless the base ends in
-        // a `/`. Build `<service-root>/api/v1/<network>/uniswap/v3/` once so
-        // every `path()` call behaves like "append".
+    pub fn new(base_url: Url, chain: Chain, http: Client) -> Self {
         let prefix = format!("api/v1/{}/uniswap/v3/", chain.slug());
-        let with_trailing_slash = if base_url.path().ends_with('/') {
-            base_url
-        } else {
-            let mut u = base_url;
-            let p = format!("{}/", u.path());
-            u.set_path(&p);
-            u
-        };
-        let base_url = with_trailing_slash
-            .join(&prefix)
-            .with_context(|| format!("joining {prefix} onto {with_trailing_slash}"))?;
-        Ok(Self { base_url, http })
+        let base_url = shared::url::join(&base_url, &prefix);
+        Self { base_url, http }
     }
 
-    fn path(&self, suffix: &str) -> Result<Url> {
-        self.base_url
-            .join(suffix)
-            .with_context(|| format!("joining {suffix} onto {}", self.base_url))
+    fn path(&self, suffix: &str) -> Url {
+        shared::url::join(&self.base_url, suffix)
     }
 }
 
@@ -178,7 +163,7 @@ impl V3PoolDataSource for PoolIndexerClient {
         let mut pools: Vec<PoolData> = Vec::new();
         let mut fetched_block_number: u64 = 0;
         loop {
-            let mut url = self.path("pools")?;
+            let mut url = self.path("pools");
             url.query_pairs_mut()
                 .append_pair("limit", &LIST_PAGE_SIZE.to_string());
             if let Some(c) = &cursor {
@@ -255,7 +240,7 @@ fn ids_param(ids: &[Address]) -> String {
 }
 
 async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Result<Vec<PoolData>> {
-    let mut url = client.path("pools/by-ids")?;
+    let mut url = client.path("pools/by-ids");
     url.query_pairs_mut()
         .append_pair("pool_ids", &ids_param(ids));
     let resp: PoolsResponse = client
@@ -280,7 +265,7 @@ async fn fetch_ticks_by_pool_ids(
     client: &PoolIndexerClient,
     ids: &[Address],
 ) -> Result<HashMap<Address, Vec<TickData>>> {
-    let mut url = client.path("pools/ticks")?;
+    let mut url = client.path("pools/ticks");
     url.query_pairs_mut()
         .append_pair("pool_ids", &ids_param(ids));
     let resp: BulkTicksResponse = client

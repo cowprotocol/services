@@ -152,10 +152,11 @@ async fn build_pool_data_source(
 
     if let Some(url) = &config.pool_indexer_url {
         tracing::info!(%url, "uniswap v3: using pool-indexer as data source");
-        return Ok(Arc::new(
-            PoolIndexerClient::new(url.clone(), eth.chain(), http)
-                .context("failed to construct pool-indexer client")?,
-        ));
+        return Ok(Arc::new(PoolIndexerClient::new(
+            url.clone(),
+            eth.chain(),
+            http,
+        )));
     }
 
     let graph_url = config
