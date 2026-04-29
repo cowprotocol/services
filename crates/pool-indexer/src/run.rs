@@ -8,7 +8,7 @@ use {
     clap::Parser,
     ethrpc::{AlloyProvider, Config as EthRpcConfig, web3},
     sqlx::{PgPool, postgres::PgPoolOptions},
-    std::{collections::HashSet, net::SocketAddr, sync::Arc},
+    std::sync::Arc,
     tokio::task::JoinSet,
 };
 
@@ -22,8 +22,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
 }
 
 pub async fn run(config: Configuration) {
-    validate_networks(&config.networks);
-
     let db = connect_db(&config).await;
     let api_state = build_api_state(&db, &config.networks);
 
@@ -35,10 +33,13 @@ pub async fn run(config: Configuration) {
     );
 
     let mut set = JoinSet::new();
-    spawn_api_task(&mut set, api_state, config.api.bind_address);
+    let api_router = crate::api::router(api_state);
+    let api_addr = config.api.bind_address;
+    set.spawn(async move { serve(api_router, api_addr).await });
 
     for network in config.networks {
-        spawn_network_task(&mut set, db.clone(), network);
+        let db = db.clone();
+        set.spawn(async move { run_network_indexer(db, network).await });
     }
 
     if let Some(result) = set.join_next().await {
@@ -75,17 +76,6 @@ fn build_api_state(db: &PgPool, networks: &[NetworkConfig]) -> Arc<AppState> {
     })
 }
 
-fn spawn_api_task(set: &mut JoinSet<()>, state: Arc<AppState>, bind_address: SocketAddr) {
-    let router = crate::api::router(state);
-    set.spawn(async move { serve(router, bind_address).await });
-}
-
-fn spawn_network_task(set: &mut JoinSet<()>, db: PgPool, network: NetworkConfig) {
-    set.spawn(async move {
-        run_network_indexer(db, network).await;
-    });
-}
-
 async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
     tracing::info!(
         network = %network.name,
@@ -95,6 +85,22 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
     );
 
     let provider = build_provider(&network);
+
+    // Verify the configured chain_id matches the RPC. A misconfigured
+    // deployment (e.g. chain_id = 1 pointed at an Arbitrum RPC) would
+    // otherwise silently index Arbitrum events into the mainnet partition
+    // of the shared DB.
+    use alloy::providers::Provider;
+    let actual_chain_id = provider
+        .get_chain_id()
+        .await
+        .expect("failed to fetch chain_id from RPC");
+    assert_eq!(
+        actual_chain_id, network.chain_id,
+        "chain_id mismatch for network {}: config says {}, RPC reports {}",
+        network.name, network.chain_id, actual_chain_id,
+    );
+
     let network = Arc::new(network);
 
     // One indexer task per factory, sharing the same provider and DB pool.
@@ -135,44 +141,55 @@ async fn run_factory_indexer(
         "starting factory indexer",
     );
 
-    // A checkpoint already means this (chain, factory) has been bootstrapped —
-    // e.g. a prior run seeded it. Skip the seed and resume live indexing.
-    let checkpoint = crate::db::uniswap_v3::get_checkpoint(&db, network.chain_id, &factory.address)
+    bootstrap_factory(&db, &provider, &indexer, &network, &factory).await;
+    indexer.run(network.poll_interval()).await;
+}
+
+/// Seed + catch-up for a fresh `(chain, factory)`. A pre-existing checkpoint
+/// means this pair has already been bootstrapped (e.g. a prior run seeded
+/// it), in which case we skip straight to live indexing.
+async fn bootstrap_factory(
+    db: &PgPool,
+    provider: &AlloyProvider,
+    indexer: &UniswapV3Indexer,
+    network: &NetworkConfig,
+    factory: &crate::config::FactoryConfig,
+) {
+    let checkpoint = crate::db::uniswap_v3::get_checkpoint(db, network.chain_id, &factory.address)
         .await
         .expect("failed to read checkpoint");
-
-    if checkpoint.is_none() {
-        let seeded_block = if let Some(subgraph_url) = network.subgraph_url.as_ref() {
-            crate::subgraph_seeder::seed(
-                &db,
-                network.name.as_str(),
-                network.chain_id,
-                factory.address,
-                subgraph_url,
-                network.seed_block,
-            )
-            .await
-            .expect("subgraph seeding failed")
-        } else {
-            crate::cold_seeder::cold_seed(
-                &db,
-                network.name.as_str(),
-                network.chain_id,
-                provider,
-                factory.address,
-                factory.deployment_block,
-                network.seed_block,
-            )
-            .await
-            .expect("cold seeding failed")
-        };
-        indexer
-            .catch_up(seeded_block)
-            .await
-            .expect("catch-up indexing failed");
+    if checkpoint.is_some() {
+        return;
     }
 
-    indexer.run(network.poll_interval()).await;
+    let seeded_block = if let Some(subgraph_url) = network.subgraph_url.as_ref() {
+        crate::subgraph_seeder::seed(
+            db,
+            network.name.as_str(),
+            network.chain_id,
+            factory.address,
+            subgraph_url,
+            network.seed_block,
+        )
+        .await
+        .expect("subgraph seeding failed")
+    } else {
+        crate::cold_seeder::cold_seed(
+            db,
+            network.name.as_str(),
+            network.chain_id,
+            provider.clone(),
+            factory.address,
+            factory.deployment_block,
+            network.seed_block,
+        )
+        .await
+        .expect("cold seeding failed")
+    };
+    indexer
+        .catch_up(seeded_block)
+        .await
+        .expect("catch-up indexing failed");
 }
 
 fn build_provider(network: &NetworkConfig) -> AlloyProvider {
@@ -183,50 +200,6 @@ fn build_provider(network: &NetworkConfig) -> AlloyProvider {
     )
     .provider
     .clone()
-}
-
-fn validate_networks(networks: &[NetworkConfig]) {
-    assert!(
-        !networks.is_empty(),
-        "at least one [[network]] must be configured"
-    );
-    let mut names = HashSet::new();
-    let mut chain_ids = HashSet::new();
-    for n in networks {
-        assert!(
-            names.insert(n.name.as_str()),
-            "duplicate network name: {}",
-            n.name,
-        );
-        assert!(
-            chain_ids.insert(n.chain_id),
-            "duplicate chain_id: {}",
-            n.chain_id,
-        );
-        assert!(
-            !n.factories.is_empty(),
-            "network {} must list at least one factory",
-            n.name,
-        );
-        let mut seen = HashSet::new();
-        for f in &n.factories {
-            assert!(
-                seen.insert(f.address),
-                "network {}: duplicate factory {}",
-                n.name,
-                f.address,
-            );
-        }
-        // A subgraph indexes one specific factory — applying one URL to many
-        // factories would double-seed the wrong data. Multi-factory networks
-        // must cold-seed each factory.
-        assert!(
-            !(n.factories.len() > 1 && n.subgraph_url.is_some()),
-            "network {}: subgraph-url cannot be combined with multiple factories (omit \
-             subgraph-url to cold-seed each factory)",
-            n.name,
-        );
-    }
 }
 
 async fn connect_db(config: &Configuration) -> sqlx::PgPool {

@@ -200,6 +200,56 @@ impl Configuration {
     pub fn from_path(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading config file {}", path.display()))?;
-        toml::from_str(&content).context("parsing config file")
+        let config: Self = toml::from_str(&content).context("parsing config file")?;
+        config.validate_networks();
+        Ok(config)
+    }
+
+    /// Cross-network sanity checks that don't fit serde's per-field
+    /// validation: uniqueness of names / chain IDs / factory addresses, the
+    /// subgraph-URL ↔ multi-factory mutual exclusion, and the at-least-one-
+    /// network requirement.
+    fn validate_networks(&self) {
+        assert!(
+            !self.networks.is_empty(),
+            "at least one [[network]] must be configured"
+        );
+        let mut names = std::collections::HashSet::new();
+        let mut chain_ids = std::collections::HashSet::new();
+        for n in &self.networks {
+            assert!(
+                names.insert(n.name.as_str()),
+                "duplicate network name: {}",
+                n.name,
+            );
+            assert!(
+                chain_ids.insert(n.chain_id),
+                "duplicate chain_id: {}",
+                n.chain_id,
+            );
+            assert!(
+                !n.factories.is_empty(),
+                "network {} must list at least one factory",
+                n.name,
+            );
+            let mut seen = std::collections::HashSet::new();
+            for f in &n.factories {
+                assert!(
+                    seen.insert(f.address),
+                    "network {}: duplicate factory {}",
+                    n.name,
+                    f.address,
+                );
+            }
+            // A subgraph indexes one specific factory — applying one URL to
+            // many factories would double-seed the wrong data. Multi-factory
+            // networks must cold-seed each factory.
+            assert!(
+                !(n.factories.len() > 1 && n.subgraph_url.is_some()),
+                "network {}: subgraph-url cannot be combined with multiple \
+                 factories (omit subgraph-url to cold-seed each factory)",
+                n.name,
+            );
+        }
     }
 }
