@@ -986,6 +986,7 @@ mod tests {
         alloy::{
             primitives::{
                 I256,
+                U256,
                 aliases::{I24, U24, U160},
             },
             sol_types::SolEvent,
