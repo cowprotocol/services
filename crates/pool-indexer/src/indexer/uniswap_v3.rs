@@ -399,15 +399,24 @@ impl UniswapV3Indexer {
 }
 
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
-    match contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
-        .liquidity()
-        .block(block.into())
-        .call()
-        .await
+    use ethrpc::alloy::errors::ContractErrorExt;
+    match shared::retry::retry_with_sleep_if(
+        || async move {
+            contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
+                .liquidity()
+                .block(block.into())
+                .call()
+                .await
+        },
+        // Retry only on transient transport errors. Contract reverts and
+        // missing-selector failures are permanent — no point sleeping.
+        |err: &alloy::contract::Error| err.is_node_error(),
+    )
+    .await
     {
         Ok(liq) => Some(liq),
-        Err(err) => {
-            tracing::warn!(%pool, block, ?err, "fetch_pool_liquidity failed");
+        Err(errors) => {
+            tracing::warn!(%pool, block, ?errors, "fetch_pool_liquidity gave up");
             None
         }
     }

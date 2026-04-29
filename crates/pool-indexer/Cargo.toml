@@ -36,6 +36,7 @@ reqwest = { workspace = true, features = ["json"] }
 scopeguard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+shared = { workspace = true }
 sqlx = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
