@@ -39,7 +39,7 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
         let wrapper = match flashloan {
             Some(loan) => WrapperConfig::Flashloan(vec![FlashloanRequest {
                 amount: loan.amount,
-                borrower: loan.receiver,
+                borrower: loan.protocol_adapter,
                 lender: loan.liquidity_provider,
                 token: loan.token,
             }]),
