@@ -57,7 +57,9 @@ impl Eip4626 {
             .inner
             .estimate_native_price(underlying, remaining)
             .await?;
-        Ok(asset_price * cumulative_rate)
+        let estimate = asset_price * cumulative_rate;
+        tracing::debug!(%token, estimate, "eip4626: estimated native price");
+        Ok(estimate)
     }
 
     /// Follows the vault chain (e.g. vault → vault → asset) until reaching a
@@ -86,12 +88,14 @@ impl Eip4626 {
         token: Address,
     ) -> Result<Option<(Address, f64)>, PriceEstimationError> {
         if self.non_vault_tokens.contains(&token) {
+            tracing::debug!(%token, "eip4626: cached non-vault, stop unwrapping");
             return Ok(None);
         }
 
         let Some((asset, vault_decimals)) = self.fetch_vault_info(token).await? else {
             self.non_vault_tokens.insert(token);
             metrics::non_vault_cache_size(self.non_vault_tokens.len());
+            tracing::debug!(%token, "eip4626: classified as non-vault");
             return Ok(None);
         };
         let (assets, asset_decimals) = self
@@ -100,6 +104,7 @@ impl Eip4626 {
         let rate = conversion_rate(assets, asset_decimals)
             .context("conversion rate is not representable as f64")
             .map_err(PriceEstimationError::EstimatorInternal)?;
+        tracing::debug!(%token, %asset, rate, "eip4626: unwrapped vault layer");
         Ok(Some((asset, rate)))
     }
 
@@ -130,9 +135,10 @@ impl Eip4626 {
                 })?;
                 Ok(Some((asset, vault_decimals)))
             }
-            // `asset()` reverted but the contract is a valid ERC-20 (decimals()
-            // succeeded). Classify as non-vault.
-            Err(err) if err.is_contract_error() && decimals_result.is_ok() => Ok(None),
+            // Contract-level revert on `asset()` + working `decimals()` =
+            // plain ERC-20. Transient transport failures propagate so they
+            // retry instead of pinning the token as non-vault.
+            Err(err) if err.is_contract_revert() && decimals_result.is_ok() => Ok(None),
             Err(err) => Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                 "failed to call asset() on {token}: {err}"
             ))),
