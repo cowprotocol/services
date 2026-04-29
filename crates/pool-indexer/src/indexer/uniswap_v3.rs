@@ -4,10 +4,11 @@ use {
         db::uniswap_v3 as db,
     },
     alloy::{
-        primitives::{Address, B256, U256, aliases::U160},
+        primitives::{Address, B256, aliases::U160},
         providers::Provider,
         rpc::types::{BlockNumberOrTag, Filter, FilterSet, Log},
         sol_types::SolEvent,
+        transports::RpcError,
     },
     anyhow::{Context, Result},
     contracts::{
@@ -530,7 +531,11 @@ async fn run_symbol_backfill_pass(
                         .inc();
                 }
             }
-            Err(err) => tracing::warn!(?err, batch_size = symbols.len(), "failed to backfill symbols batch"),
+            Err(err) => tracing::warn!(
+                ?err,
+                batch_size = symbols.len(),
+                "failed to backfill symbols batch"
+            ),
         }
 
         processed += token_batch.len();
@@ -651,19 +656,21 @@ async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String
 }
 
 /// Returns true when the RPC rejects — or gives up on — a request because
-/// the range is too wide. Checks the full error chain because anyhow
-/// context wraps the inner RPC error. Extend when a new rejection phrase
-/// appears in the wild.
-pub(crate) fn is_range_too_large(err: &anyhow::Error) -> bool {
-    err.chain().any(|e| {
-        let msg = e.to_string().to_lowercase();
-        // Alchemy: "query exceeds max block range 10000"
-        msg.contains("max block range")
+/// the range is too wide. Reads the structured `message` field on the
+/// server-side error response directly (no `Display`-then-substring on a
+/// type-erased `anyhow::Error`). Extend when a new rejection phrase appears
+/// in the wild.
+pub(crate) fn is_range_too_large(err: &alloy::transports::TransportError) -> bool {
+    let RpcError::ErrorResp(payload) = err else {
+        return false;
+    };
+    let msg = payload.message.to_lowercase();
+    // Alchemy: "query exceeds max block range 10000"
+    msg.contains("max block range")
         // OVH: "request timed out" — the server cuts off oversized queries
         // instead of rejecting with a size error, so bisecting on timeout
         // eventually lands on a tractable range.
         || msg.contains("timed out")
-    })
 }
 
 /// Bisecting bound — `is_range_too_large` substring-matches `"timed out"`,
@@ -707,9 +714,10 @@ fn bisecting_get_logs_with_depth(
 
         let err = match provider.get_logs(&filter).await {
             Ok(logs) => return Ok(logs),
-            Err(err) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
+            Err(err) => err,
         };
-        if is_range_too_large(&err) && to > from && depth < MAX_BISECTION_DEPTH {
+        let too_large = is_range_too_large(&err);
+        if too_large && to > from && depth < MAX_BISECTION_DEPTH {
             let mid = (from + to) / 2;
             tracing::debug!(from, to, mid, depth, "range too large, bisecting");
             let mut left = bisecting_get_logs_with_depth(
@@ -721,19 +729,13 @@ fn bisecting_get_logs_with_depth(
                 depth + 1,
             )
             .await?;
-            let right = bisecting_get_logs_with_depth(
-                provider,
-                mid + 1,
-                to,
-                addresses,
-                topics,
-                depth + 1,
-            )
-            .await?;
+            let right =
+                bisecting_get_logs_with_depth(provider, mid + 1, to, addresses, topics, depth + 1)
+                    .await?;
             left.extend(right);
             Ok(left)
         } else {
-            Err(err)
+            Err(anyhow::Error::new(err).context(format!("get_logs({from}..={to})")))
         }
     })
 }
@@ -830,8 +832,12 @@ impl LogAccumulator {
 
     /// Records a full pool-state update (price, liquidity, tick) from a `Swap`.
     fn handle_swap(&mut self, log: &Log) {
-        let Ok(decoded) = Swap::decode_log(&log.inner) else {
-            return;
+        let decoded = match Swap::decode_log(&log.inner) {
+            Ok(d) => d,
+            Err(err) => {
+                tracing::warn!(?err, pool = %log.address(), block = ?log.block_number, "failed to decode Swap log");
+                return;
+            }
         };
         let e = &decoded.data;
         let pool = log.address();
@@ -852,8 +858,12 @@ impl LogAccumulator {
     /// Applies positive tick-liquidity deltas from a `Mint` and refreshes
     /// pool liquidity from the prefetch cache.
     fn handle_mint(&mut self, log: &Log, liq_cache: &LiquidityCache) {
-        let Ok(decoded) = Mint::decode_log(&log.inner) else {
-            return;
+        let decoded = match Mint::decode_log(&log.inner) {
+            Ok(d) => d,
+            Err(err) => {
+                tracing::warn!(?err, pool = %log.address(), block = ?log.block_number, "failed to decode Mint log");
+                return;
+            }
         };
         let e = &decoded.data;
         let pool = log.address();
@@ -866,8 +876,12 @@ impl LogAccumulator {
     /// Applies negative tick-liquidity deltas from a `Burn` and refreshes
     /// pool liquidity from the prefetch cache.
     fn handle_burn(&mut self, log: &Log, liq_cache: &LiquidityCache) {
-        let Ok(decoded) = Burn::decode_log(&log.inner) else {
-            return;
+        let decoded = match Burn::decode_log(&log.inner) {
+            Ok(d) => d,
+            Err(err) => {
+                tracing::warn!(?err, pool = %log.address(), block = ?log.block_number, "failed to decode Burn log");
+                return;
+            }
         };
         let e = &decoded.data;
         let pool = log.address();
