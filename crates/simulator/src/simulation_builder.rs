@@ -256,6 +256,9 @@ pub enum WrapperConfig {
     Flashloan(Vec<FlashloanRequest>),
     Custom(Vec<WrapperCall>),
     NoWrapper,
+    /// Parse the app data JSON string and extract flashloan/wrapper
+    /// configuration.
+    FromAppData(String),
 }
 
 pub struct FlashloanRequest {
@@ -426,4 +429,8 @@ pub enum BuildError {
     NoPriceEncoding,
     #[error("failed to query filled amount from settlement contract: {0}")]
     FilledAmountQuery(#[source] anyhow::Error),
+    #[error("failed to parse app data: {0}")]
+    AppDataParse(#[source] serde_json::Error),
+    #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
+    FlashloanWrappersIncompatible,
 }

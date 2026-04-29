@@ -660,38 +660,8 @@ impl Orderbook {
         let full_app_data = order
             .metadata
             .full_app_data
-            .as_ref()
+            .clone()
             .ok_or_else(|| OrderSimulationError::Other(anyhow!("can't find appdata")))?;
-
-        // TODO: move this logic into builder by introducing `WrapperConfig::FromAppData(String)`?
-        let parsed_app_data = self
-            .order_validator
-            .validate_app_data(
-                &OrderCreationAppData::Full {
-                    full: full_app_data.clone(),
-                },
-                &None,
-            )
-            .map_err(|err| OrderSimulationError::Other(anyhow::anyhow!("{:?}", err)))?
-            .inner
-            .protocol;
-
-        let wrapper = match (parsed_app_data.flashloan, parsed_app_data.wrappers) {
-            (None, wrappers) if wrappers.is_empty() => simulation_builder::WrapperConfig::NoWrapper,
-            (None, wrappers) if !wrappers.is_empty() => {
-                // TODO: convert wrappers
-                simulation_builder::WrapperConfig::Custom(vec![])
-            }
-            (Some(flashloan), wrappers) if wrappers.is_empty() => {
-                // TODO: convert flashloan
-                simulation_builder::WrapperConfig::Flashloan(vec![])
-            }
-            _ => {
-                return Err(OrderSimulationError::Other(anyhow!(
-                    "can't configure custom wrappers and flashloans at the same time"
-                )));
-            }
-        };
 
         let sim = order_simulator
             .new_simulation_builder()
@@ -709,7 +679,9 @@ impl Orderbook {
             )
             .fund_settlement_contract_with_buy_tokens()
             .from_solver(simulation_builder::Solver::Fake(None))
-            .with_wrapper(wrapper)
+            .with_wrapper(simulation_builder::WrapperConfig::FromAppData(
+                full_app_data,
+            ))
             .build()
             .await
             .context("failed to finalize simulation")?;
