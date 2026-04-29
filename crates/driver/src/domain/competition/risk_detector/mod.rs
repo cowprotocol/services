@@ -23,6 +23,7 @@ use {
     std::{
         collections::{HashMap, HashSet},
         fmt,
+        ops::Deref,
         time::Instant,
     },
 };
@@ -49,13 +50,35 @@ pub enum Quality {
     Unknown,
 }
 
+#[async_trait::async_trait]
+pub trait SellQualityDetector: Send + Sync {
+    async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality;
+    fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality;
+    fn evict_outdated_entries(&self);
+}
+
+#[async_trait::async_trait]
+impl SellQualityDetector for bad_tokens::simulation::Detector {
+    async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality {
+        self.determine_sell_token_quality(order, now).await
+    }
+
+    fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality {
+        Deref::deref(self).get_quality(token, now)
+    }
+
+    fn evict_outdated_entries(&self) {
+        Deref::deref(self).evict_outdated_entries()
+    }
+}
+
 #[derive(Default)]
 pub struct Detector {
     /// manually configured list of supported and unsupported tokens. Only
     /// tokens that get detected incorrectly by the automatic detectors get
     /// listed here and therefore have a higher precedence.
     hardcoded: HashMap<eth::TokenAddress, Quality>,
-    simulation_detector: Option<bad_tokens::simulation::Detector>,
+    simulation_detector: Option<Box<dyn SellQualityDetector>>,
     metrics: Option<bad_orders::metrics::Detector>,
 }
 
@@ -73,9 +96,9 @@ impl Detector {
     /// methods.
     pub fn with_simulation_detector(
         &mut self,
-        detector: bad_tokens::simulation::Detector,
+        detector: impl SellQualityDetector + 'static,
     ) -> &mut Self {
-        self.simulation_detector = Some(detector);
+        self.simulation_detector = Some(Box::new(detector));
         self
     }
 
@@ -280,6 +303,38 @@ mod tests {
         Uid::from_parts(order_hash, signer, valid_to)
     }
 
+    struct TestSellQualityDetector {
+        sell_detector_unsupported_uid: Uid,
+        sell_detector_supported_uid: Uid,
+    }
+
+    #[async_trait::async_trait]
+    impl SellQualityDetector for TestSellQualityDetector {
+        async fn determine_sell_token_quality(&self, order: &Order, _: Instant) -> Quality {
+            if order.uid == self.sell_detector_unsupported_uid {
+                Quality::Unsupported
+            } else if order.uid == self.sell_detector_supported_uid {
+                Quality::Supported
+            } else {
+                Quality::Supported
+            }
+        }
+
+        fn get_quality(&self, _: &eth::TokenAddress, _: Instant) -> Quality {
+            Quality::Unknown
+        }
+
+        fn evict_outdated_entries(&self) {}
+    }
+
+    // Helper to create a mock sell quality detector purely for test
+    fn sell_quality_detector(supported: Uid, unsupported: Uid) -> TestSellQualityDetector {
+        TestSellQualityDetector {
+            sell_detector_unsupported_uid: unsupported,
+            sell_detector_supported_uid: supported,
+        }
+    }
+
     #[tokio::test]
     async fn unsupported_order_uids_empty_returns_empty() {
         let detector = Detector::new(Default::default());
@@ -352,10 +407,26 @@ mod tests {
                 addr(5).into(),
                 valid_to,
             ), // unknown buy
+            order(
+                uid(6, addr(11), valid_to),
+                addr(11),
+                addr(6).into(),
+                addr(2).into(),
+                valid_to,
+            ), // unknown sell unsupported
+            order(
+                uid(7, addr(12), valid_to),
+                addr(12),
+                addr(7).into(),
+                addr(2).into(),
+                valid_to,
+            ), // unknown sell supported
         ];
 
         let metrics_uid = orders[0].uid;
         let token_uid = orders[1].uid;
+        let sell_detector_unsupported_uid = orders[5].uid;
+        let sell_detector_supported_uid = orders[6].uid;
 
         let metrics_detector = bad_orders::metrics::Detector::new(
             0.5,
@@ -378,8 +449,19 @@ mod tests {
         detector.encoding_failed(&[metrics_uid]);
         detector.encoding_failed(&[metrics_uid]);
 
+        detector.with_simulation_detector(sell_quality_detector(
+            sell_detector_supported_uid,
+            sell_detector_unsupported_uid,
+        ));
+
         let removed = detector.unsupported_order_uids(&orders).await;
 
-        assert_eq!(removed, HashSet::from([metrics_uid, token_uid]));
+        assert_eq!(
+            removed,
+            HashSet::from([metrics_uid, token_uid, sell_detector_unsupported_uid])
+        ); // all unsupported removed
+        assert!(!removed.contains(&orders[2].uid)); // supported token kept
+        assert!(!removed.contains(&orders[4].uid)); // unknown buy kept
+        assert!(!removed.contains(&sell_detector_supported_uid)); // supported unknown sell kept
     }
 }

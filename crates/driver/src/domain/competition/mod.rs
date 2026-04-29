@@ -339,7 +339,7 @@ impl Competition {
             Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
-        // We can sort the orders, fetch auction data in parallel.
+        // We can sort the orders and fetch auction data in parallel.
         let (auction, balances, app_data) =
             tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
 
