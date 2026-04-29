@@ -360,11 +360,10 @@ impl EthCallInputs {
     /// tenderly.
     pub fn to_tenderly_request(&self) -> Result<crate::tenderly::dto::Request, ConversionError> {
         Ok(crate::tenderly::dto::Request {
-            block_number: Some(self.block),
-            // By default, tenderly simulates on the top of the specified block, whereas regular
-            // nodes simulate at the end of the specified block. This is to make
-            // simulation results match in case critical state changed within the block.
-            transaction_index: Some(-1),
+            // By default tenderly simulates calls at the start of the block. So if we simulate
+            // something when the latest block is `n` we need to tell tenderly to simulate at
+            // block `n+1` to still have all of block n's txs happen before our simulation runs.
+            block_number: Some(self.block + 1),
             network_id: self.simulator.0.chain_id.to_string(),
             from: self.request.from.unwrap_or_default(),
             // TODO: error handling
