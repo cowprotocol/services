@@ -399,20 +399,32 @@ impl UniswapV3Indexer {
 }
 
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
-    contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
+    match contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
         .liquidity()
         .block(block.into())
         .call()
         .await
-        .ok()
+    {
+        Ok(liq) => Some(liq),
+        Err(err) => {
+            tracing::warn!(%pool, block, ?err, "fetch_pool_liquidity failed");
+            None
+        }
+    }
 }
 
 async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> {
-    ERC20::Instance::new(token, provider.clone())
+    match ERC20::Instance::new(token, provider.clone())
         .decimals()
         .call()
         .await
-        .ok()
+    {
+        Ok(d) => Some(d),
+        Err(err) => {
+            tracing::warn!(%token, ?err, "fetch_decimals failed");
+            None
+        }
+    }
 }
 
 /// Periodically fills in missing `token{0,1}_symbol` values on
