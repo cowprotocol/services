@@ -223,7 +223,6 @@ async fn native_same_token_sell_with_eth_buy_marker(web3: Web3) {
     };
     services
         .start_protocol_with_args(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
             orderbook_config,
             solver.clone(),
@@ -306,7 +305,6 @@ async fn native_same_token_buy_with_eth_buy_marker_rejected(web3: Web3) {
     };
     services
         .start_protocol_with_args(
-            Default::default(),
             Configuration::test("test_solver", solver.address()),
             orderbook_config,
             solver.clone(),
