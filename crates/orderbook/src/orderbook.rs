@@ -663,6 +663,7 @@ impl Orderbook {
             .as_ref()
             .ok_or_else(|| OrderSimulationError::Other(anyhow!("can't find appdata")))?;
 
+        // TODO: move this logic into builder by introducing `WrapperConfig::FromAppData(String)`?
         let parsed_app_data = self
             .order_validator
             .validate_app_data(
