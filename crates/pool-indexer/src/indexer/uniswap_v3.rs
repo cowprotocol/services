@@ -657,11 +657,10 @@ async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String
 
 /// Returns true when the RPC rejects — or gives up on — a request because
 /// the range is too wide. Reads the structured `message` field on the
-/// server-side error response directly (no `Display`-then-substring on a
-/// type-erased `anyhow::Error`). Extend when a new rejection phrase appears
-/// in the wild.
+/// server-side error response directly.
 pub(crate) fn is_range_too_large(err: &alloy::transports::TransportError) -> bool {
     let RpcError::ErrorResp(payload) = err else {
+        // Early return for transport error where we don't get a payload from the node
         return false;
     };
     let msg = payload.message.to_lowercase();
