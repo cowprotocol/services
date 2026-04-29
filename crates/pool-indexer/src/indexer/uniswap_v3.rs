@@ -456,7 +456,7 @@ async fn backfill_symbols(
         if let Err(err) =
             run_symbol_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency).await
         {
-            tracing::warn!(?err, "token symbol backfill pass failed");
+            tracing::error!(?err, "token symbol backfill pass failed");
         }
         tokio::time::sleep(poll_interval).await;
     }
