@@ -655,30 +655,31 @@ async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String
     (!cleaned.is_empty()).then_some(cleaned)
 }
 
-/// Returns true when the RPC rejects — or gives up on — a request because
-/// the range is too wide. Reads the structured `message` field on the
-/// server-side error response directly.
+/// True if the server-side JSON-RPC payload rejected `eth_getLogs` for
+/// being too wide / returning too many logs / exceeding a response-size
+/// cap / hitting the server's query timeout. Substrings cover the
+/// rejections empirically seen on OVH and Alchemy mainnet. Transport-level
+/// errors (HTTP timeouts, DNS, connection resets) live in other `RpcError`
+/// variants and short-circuit to false, so client-side noise can't trigger
+/// pointless bisection.
 pub(crate) fn is_range_too_large(err: &alloy::transports::TransportError) -> bool {
     let RpcError::ErrorResp(payload) = err else {
-        // Early return for transport error where we don't get a payload from the node
         return false;
     };
     let msg = payload.message.to_lowercase();
-    // Alchemy: "query exceeds max block range 10000"
     msg.contains("max block range")
-        // OVH: "request timed out" — the server cuts off oversized queries
-        // instead of rejecting with a size error, so bisecting on timeout
-        // eventually lands on a tractable range.
-        || msg.contains("timed out")
+        || msg.contains("max results")
+        || msg.contains("log response size exceeded")
+        || msg.contains("query timeout exceeded")
+        || msg.contains("response is too big")
 }
 
-/// Bisecting bound — `is_range_too_large` substring-matches `"timed out"`,
-/// which can also fire on transient client/network timeouts unrelated to
-/// range size. Without this cap a single misclassified timeout would burn
-/// `log2(range)` RPC calls before the recursion bottoms out at `to == from`.
-/// 8 halvings = 256× resolution; for the indexer's ~1k-block chunks that
-/// means giving up around ~4-block ranges, well past where range-size could
-/// plausibly still be the cause.
+/// Bisecting bound — substring matching on RPC error messages is necessarily
+/// approximate, and a misclassified error would otherwise burn `log2(range)`
+/// RPC calls before the recursion bottoms out at `to == from`. 8 halvings =
+/// 256× resolution; for the indexer's ~1k-block chunks that means giving up
+/// around ~4-block ranges, well past where range-size could plausibly still
+/// be the cause.
 const MAX_BISECTION_DEPTH: u32 = 8;
 
 /// Fetches logs for `[from, to]` filtered by the given contract addresses

@@ -15,7 +15,7 @@ name = "pool-indexer"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { workspace = true, features = ["providers", "rpc-types", "sol-types"] }
+alloy = { workspace = true, features = ["contract", "providers", "rpc-types", "sol-types"] }
 alloy-primitives = { workspace = true, features = ["serde", "std"] }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
