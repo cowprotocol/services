@@ -159,14 +159,18 @@ async fn build_pool_data_source(
         )));
     }
 
-    let graph_url = config
-        .graph_url
+    let subgraph = config
+        .subgraph
         .as_ref()
-        .context("uniswap v3: graph_url required when pool_indexer_url is unset")?;
-    tracing::info!(url = %graph_url, "uniswap v3: using subgraph as data source");
+        .context("uniswap v3: subgraph required when pool_indexer_url is unset")?;
+    tracing::info!(url = %subgraph.url, "uniswap v3: using subgraph as data source");
     Ok(Arc::new(
-        UniV3SubgraphClient::from_subgraph_url(graph_url, http, config.max_pools_per_tick_query)
-            .await
-            .context("failed to construct UniV3 subgraph client")?,
+        UniV3SubgraphClient::from_subgraph_url(
+            &subgraph.url,
+            http,
+            subgraph.max_pools_per_tick_query,
+        )
+        .await
+        .context("failed to construct UniV3 subgraph client")?,
     ))
 }
