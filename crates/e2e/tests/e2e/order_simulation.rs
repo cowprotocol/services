@@ -415,7 +415,6 @@ async fn order_simulation_partial_fill(web3: Web3) {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let result = response.json::<OrderSimulationResult>().await.unwrap();
-    tracing::error!(?result);
 
     assert_eq!(
         result.error, None,
