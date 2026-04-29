@@ -10,6 +10,7 @@ mod app_data_signer;
 mod autopilot_leader;
 mod banned_users;
 mod buffers;
+mod contract_revert;
 mod cors;
 mod cow_amm;
 mod database;

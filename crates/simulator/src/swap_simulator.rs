@@ -19,7 +19,10 @@ use {
         support::Solver::{self, Solver::swapReturn},
     },
     eth_domain_types::NonZeroU256,
-    ethrpc::{Web3, block_stream::CurrentBlockWatcher},
+    ethrpc::{
+        Web3,
+        block_stream::{BlockInfo, CurrentBlockWatcher},
+    },
     model::{
         DomainSeparator,
         order::{BUY_ETH_ADDRESS, BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -192,12 +195,16 @@ impl SwapSimulator {
     /// Simulates a solver call to settlement contract with the provided swap
     /// data. The swap call result is contained in the returned
     /// SwapSimulation struct, along with the original TransactionRequest
-    /// and State overrides (if needed to be logged, or processed elsewhere)
+    /// and State overrides (if needed to be logged, or processed elsewhere).
+    ///
+    /// The caller supplies the `block` so the gas-price computation, the
+    /// pinned `.call()` block, and any downstream logging all reference the
+    /// same snapshot of chain state.
     pub async fn simulate_swap_with_solver(
         &self,
         swap: EncodedSwap,
+        block: BlockInfo,
     ) -> Result<SwapSimulation<swapReturn>> {
-        let block = *self.current_block.borrow();
         let (settlement_target, calldata) = self.get_target_and_calldata(&swap);
         let solver = Solver::Instance::new(swap.solver, self.web3.provider.clone());
         let overrides = swap.overrides;
@@ -224,6 +231,7 @@ impl SwapSimulator {
         let result = swap
             .call()
             .overrides(overrides.clone())
+            .block(block.number.into())
             .await
             .map_err(|err| anyhow!(err))
             .context("failed to simulate swap");

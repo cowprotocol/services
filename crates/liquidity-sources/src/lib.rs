@@ -49,6 +49,7 @@ pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
             BaselineSource::SushiSwap,
             BaselineSource::Baoswap,
             BaselineSource::Swapr,
+            BaselineSource::UniswapV3,
         ],
         Chain::ArbitrumOne => vec![
             BaselineSource::UniswapV2,
