@@ -198,7 +198,17 @@ impl Cache {
     fn updated_at_percentage(max_age: Duration, now: Instant, percentage: u32) -> Instant {
         let percentage = if percentage > 100 { 100 } else { percentage };
         let age = max_age.saturating_mul(percentage) / 100;
-        now.checked_sub(age).unwrap_or(now)
+        if let Some(updated_at) = now.checked_sub(age) {
+            // check subtraction is consistent, should get age back otherwise treat it as
+            // invalid and clamp to now
+            if now.duration_since(updated_at) == age {
+                updated_at
+            } else {
+                now
+            }
+        } else {
+            now
+        }
     }
 
     /// Returns a randomized `updated_at_percentage` timestamp that is 50–90% of
