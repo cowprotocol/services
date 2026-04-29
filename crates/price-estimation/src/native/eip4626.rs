@@ -7,6 +7,7 @@ use {
     dashmap::DashSet,
     ethrpc::{AlloyProvider, alloy::errors::ContractErrorExt},
     futures::{FutureExt, future::BoxFuture},
+    model::order::BUY_ETH_ADDRESS,
     num::{BigInt, BigRational, ToPrimitive},
     number::conversions::u256_to_big_rational,
     std::time::{Duration, Instant},
@@ -180,6 +181,12 @@ impl NativePriceEstimating for Eip4626 {
         token: Address,
         timeout: Duration,
     ) -> BoxFuture<'_, NativePriceEstimateResult> {
+        // The ETH-flow sentinel is not a real contract. Calling `asset()` on it
+        // would either revert with a misleading error or be misclassified as a
+        // zero-asset vault. Just pass it through to the inner estimator unchanged.
+        if token == BUY_ETH_ADDRESS {
+            return self.inner.estimate_native_price(token, timeout);
+        }
         self.estimate(token, timeout).boxed()
     }
 }

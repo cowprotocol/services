@@ -5,6 +5,7 @@ use {
     arc_swap::ArcSwap,
     bigdecimal::BigDecimal,
     futures::{FutureExt, StreamExt},
+    model::order::BUY_ETH_ADDRESS,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     rand::Rng,
     std::{
@@ -276,6 +277,7 @@ struct CachingInner {
     /// After startup this is a read only value.
     approximation_tokens: HashMap<Address, ApproximationToken>,
     quote_timeout: Duration,
+    native_token: Address,
 }
 
 impl CachingNativePriceEstimator {
@@ -285,6 +287,7 @@ impl CachingNativePriceEstimator {
         concurrent_requests: usize,
         approximation_tokens: HashMap<Address, ApproximationToken>,
         quote_timeout: Duration,
+        native_token: Address,
     ) -> Self {
         let inner = Arc::new(CachingInner {
             estimator,
@@ -292,8 +295,18 @@ impl CachingNativePriceEstimator {
             concurrent_requests,
             approximation_tokens,
             quote_timeout,
+            native_token,
         });
         Self(inner)
+    }
+
+    /// `BUY_ETH_ADDRESS` is the ETH-flow sentinel and `native_token` is the
+    /// chain's wrapped native asset; both price at 1 native by definition.
+    /// Short-circuiting here avoids dispatching the request to downstream
+    /// estimators (notably `Eip4626`, which would try RPC calls against the
+    /// sentinel and fail), and prevents cache pollution.
+    fn is_native_or_sentinel(&self, token: Address) -> bool {
+        token == self.0.native_token || token == BUY_ETH_ADDRESS
     }
 
     /// Checks cache for the given tokens one by one. If the price is already
@@ -312,6 +325,10 @@ impl CachingNativePriceEstimator {
         I::IntoIter: Send + 'a,
     {
         let estimates = tokens.into_iter().map(move |token| async move {
+            if self.is_native_or_sentinel(token) {
+                return (token, Ok(1.0));
+            }
+
             // check if the price is cached by now
             let now = Instant::now();
             if let Some(cached) =
@@ -389,6 +406,10 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
         token: Address,
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        if self.is_native_or_sentinel(token) {
+            return async { Ok(1.0) }.boxed();
+        }
+
         async move {
             let cached = {
                 let now = Instant::now();
@@ -565,6 +586,7 @@ mod tests {
             concurrent_requests,
             approximation_tokens,
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Address::repeat_byte(0xfe),
         )
     }
 
@@ -586,6 +608,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Address::repeat_byte(0xfe),
         );
 
         {
@@ -603,6 +626,50 @@ mod tests {
                 .await;
             assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
+    }
+
+    #[tokio::test]
+    async fn short_circuits_native_token_and_eth_sentinel() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner.expect_estimate_native_price().never();
+
+        let native_token = Address::with_last_byte(7);
+        let cache = Cache::new(Duration::from_secs(60), Default::default());
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            cache,
+            1,
+            Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            native_token,
+        );
+
+        // Direct estimation path
+        let native_result = estimator
+            .estimate_native_price(native_token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(native_result.unwrap(), 1.0);
+        let eth_result = estimator
+            .estimate_native_price(BUY_ETH_ADDRESS, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(eth_result.unwrap(), 1.0);
+
+        // Batch path used by the prefetcher and `fetch_prices`
+        let prices = estimator
+            .fetch_prices(
+                &[native_token, BUY_ETH_ADDRESS],
+                HEALTHY_PRICE_ESTIMATION_TIME,
+            )
+            .await;
+        assert_eq!(prices.get(&native_token).unwrap().as_ref().unwrap(), &1.0);
+        assert_eq!(
+            prices.get(&BUY_ETH_ADDRESS).unwrap().as_ref().unwrap(),
+            &1.0
+        );
+
+        // Cache should not have been written for the trivial cases.
+        estimator.cache().0.data.run_pending_tasks();
+        assert_eq!(estimator.cache().len(), 0);
     }
 
     #[tokio::test]
@@ -953,6 +1020,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Address::repeat_byte(0xfe),
         );
         let updater = NativePriceUpdater::new(
             estimator.clone(),
@@ -1011,6 +1079,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Address::repeat_byte(0xfe),
         );
         let all_tokens: HashSet<_> = (0..10).map(Address::with_last_byte).collect();
         let updater = NativePriceUpdater::new(
@@ -1070,6 +1139,7 @@ mod tests {
             BATCH_SIZE,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Address::repeat_byte(0xfe),
         );
         let all_tokens: HashSet<_> = (0..BATCH_SIZE as u64)
             .map(|u| Address::left_padding_from(&u.to_be_bytes()))
