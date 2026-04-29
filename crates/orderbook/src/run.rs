@@ -40,7 +40,12 @@ use {
     },
     shared::{
         order_quoting::{self, OrderQuoter},
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator},
+        order_validation::{
+            Eip1271SimulationMode,
+            Eip1271Simulator,
+            OrderValidPeriodConfiguration,
+            OrderValidator,
+        },
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -374,6 +379,52 @@ pub async fn run(config: Configuration) {
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
         .await
         .ok();
+
+    let (order_simulator, eip1271_simulator) = match &config.order_simulation {
+        Some(sim_config) => {
+            let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
+                sim_config.tenderly.as_ref().map(|tenderly_config| {
+                    Arc::new(simulator::tenderly::TenderlyApi::new(
+                        tenderly_config,
+                        &http_factory,
+                        chain.id().to_string(),
+                    )) as _
+                });
+            let order_simulator = simulator::simulation_builder::SettlementSimulator::new(
+                settlement_contract.clone(),
+                Default::default(),
+                hooks_trampoline_address,
+                balance_overrider.clone(),
+                current_block_stream.clone(),
+                tenderly,
+            )
+            .await
+            .expect("failed to create SettlementSimulator");
+            let mode = match sim_config.eip1271_simulation_mode {
+                configs::orderbook::Eip1271SimulationMode::Shadow => {
+                    Some(Eip1271SimulationMode::Shadow)
+                }
+                configs::orderbook::Eip1271SimulationMode::Enforce => {
+                    Some(Eip1271SimulationMode::Enforce)
+                }
+                configs::orderbook::Eip1271SimulationMode::Disabled => None,
+            };
+            let eip1271_simulator = mode.map(|mode| {
+                let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> =
+                    Arc::new(crate::eip1271_simulation::OrderSimulatorAdapter::new(
+                        order_simulator.clone(),
+                    ));
+                Eip1271Simulator {
+                    simulator,
+                    mode,
+                    timeout: sim_config.eip1271_simulation_timeout,
+                }
+            });
+            (Some(order_simulator), eip1271_simulator)
+        }
+        None => (None, None),
+    };
+
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -388,6 +439,7 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
+        eip1271_simulator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,
@@ -410,31 +462,6 @@ pub async fn run(config: Configuration) {
         ipfs,
     ));
 
-    let order_simulator2 = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Arc::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(
-            simulator::simulation_builder::SettlementSimulator::new(
-                settlement_contract.clone(),
-                Default::default(),
-                hooks_trampoline_address,
-                balance_overrider.clone(),
-                current_block_stream.clone(),
-                tenderly,
-            )
-            .await
-            .unwrap(),
-        )
-    } else {
-        None
-    };
-
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         *settlement_contract.address(),
@@ -443,7 +470,7 @@ pub async fn run(config: Configuration) {
         order_validator.clone(),
         app_data.clone(),
         config.active_order_competition_threshold,
-        order_simulator2,
+        order_simulator,
     ));
 
     check_database_connection(orderbook.as_ref()).await;

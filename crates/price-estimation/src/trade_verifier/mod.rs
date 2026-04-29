@@ -408,6 +408,11 @@ impl TradeVerifier {
                 }
             }
             _ => {
+                tracing::warn!(
+                    sell_token = ?query.sell_token,
+                    "could not set spardose balance override for sell token; trade \
+                     verification will rely on the trader's real balance"
+                );
                 if verification.from.is_zero() {
                     anyhow::bail!("trader is zero address and balances can not be faked");
                 }
