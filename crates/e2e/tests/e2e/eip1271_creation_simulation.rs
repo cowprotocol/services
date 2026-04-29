@@ -31,8 +31,7 @@ use {
 /// Constructor copies the 5-byte runtime (`PUSH1 0; PUSH1 0; REVERT`) into
 /// memory and returns it. The deployed contract reverts unconditionally
 /// regardless of selector or calldata.
-const ALWAYS_REVERT_INIT_CODE: [u8; 17] =
-    hex!("6005600c60003960056000f360006000fd");
+const ALWAYS_REVERT_INIT_CODE: [u8; 17] = hex!("6005600c60003960056000f360006000fd");
 
 #[tokio::test]
 #[ignore]

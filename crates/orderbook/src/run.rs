@@ -410,10 +410,9 @@ pub async fn run(config: Configuration) {
                 configs::orderbook::Eip1271SimulationMode::Disabled => None,
             };
             let eip1271_simulator = mode.map(|mode| {
-                let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> =
-                    Arc::new(crate::eip1271_simulation::OrderSimulatorAdapter::new(
-                        order_simulator.clone(),
-                    ));
+                let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
+                    crate::eip1271_simulation::OrderSimulatorAdapter::new(order_simulator.clone()),
+                );
                 Eip1271Simulator {
                     simulator,
                     mode,
