@@ -3,7 +3,6 @@ use {
         encoding::{
             EncodedSettlement,
             Interactions,
-            WrapperCall,
             encode_interactions,
             encode_trade,
             encode_wrapper_settlement,
@@ -13,7 +12,6 @@ use {
             BuildError,
             EthCallInputs,
             ExecutionAmount,
-            FlashloanRequest,
             Order,
             Prices,
             SimulationBuilder,
@@ -115,7 +113,7 @@ pub(crate) async fn encode(
         bytes.into()
     };
 
-    let wrapper = resolve_wrapper_config(builder.wrapper)?;
+    let wrapper = builder.wrapper;
     let (to, input) = match wrapper {
         WrapperConfig::Custom(wrappers) if !wrappers.is_empty() => {
             encode_wrapper_settlement(&wrappers, settle_calldata).expect("wrappers is non-empty")
@@ -180,45 +178,6 @@ pub(crate) async fn encode(
         block,
         simulator: builder.simulator,
     })
-}
-
-fn resolve_wrapper_config(wrapper: WrapperConfig) -> Result<WrapperConfig, BuildError> {
-    let WrapperConfig::FromAppData(app_data_str) = wrapper else {
-        return Ok(wrapper);
-    };
-
-    let protocol = app_data::parse(app_data_str.as_bytes()).map_err(BuildError::AppDataParse)?;
-
-    let has_wrappers = !protocol.wrappers.is_empty();
-    let has_flashloan = protocol.flashloan.is_some();
-
-    if has_wrappers && has_flashloan {
-        return Err(BuildError::FlashloanWrappersIncompatible);
-    }
-
-    if has_wrappers {
-        return Ok(WrapperConfig::Custom(
-            protocol
-                .wrappers
-                .into_iter()
-                .map(|w| WrapperCall {
-                    address: w.address,
-                    data: w.data.into(),
-                })
-                .collect(),
-        ));
-    }
-
-    if let Some(flashloan) = protocol.flashloan {
-        return Ok(WrapperConfig::Flashloan(vec![FlashloanRequest {
-            amount: flashloan.amount,
-            borrower: flashloan.protocol_adapter,
-            lender: flashloan.liquidity_provider,
-            token: flashloan.token,
-        }]));
-    }
-
-    Ok(WrapperConfig::NoWrapper)
 }
 
 async fn executed_amount(

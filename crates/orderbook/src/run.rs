@@ -5,7 +5,6 @@ use {
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
-        order_simulator::OrderSimulator,
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
@@ -43,7 +42,6 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
     },
-    simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
@@ -171,6 +169,7 @@ pub async fn run(config: Configuration) {
             .await
             .expect("load hooks trampoline contract"),
     };
+    let hooks_trampoline_address = *hooks_contract.address();
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
@@ -411,36 +410,6 @@ pub async fn run(config: Configuration) {
         ipfs,
     ));
 
-    let order_simulator = if let Some(config) = &config.order_simulation {
-        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Box::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(Arc::new(OrderSimulator::new(
-            SwapSimulator::new(
-                balance_overrider.clone(),
-                *settlement_contract.address(),
-                *native_token.address(),
-                current_block_stream.clone(),
-                web3,
-                config
-                    .gas_limit
-                    .try_into()
-                    .expect("gas_limit must fit in u64"),
-            )
-            .await
-            .expect("failed to create SwapSimulator"),
-            chain.id().to_string(),
-            tenderly,
-        )))
-    } else {
-        None
-    };
-
     let order_simulator2 = if let Some(config) = config.order_simulation {
         let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
             config.tenderly.as_ref().map(|tenderly_config| {
@@ -450,17 +419,18 @@ pub async fn run(config: Configuration) {
                     chain.id().to_string(),
                 )) as _
             });
-        Some(Arc::new(
+        Some(
             simulator::simulation_builder::SettlementSimulator::new(
                 settlement_contract.clone(),
                 Default::default(),
+                hooks_trampoline_address,
                 balance_overrider.clone(),
                 current_block_stream.clone(),
                 tenderly,
             )
             .await
             .unwrap(),
-        ))
+        )
     } else {
         None
     };
@@ -473,7 +443,6 @@ pub async fn run(config: Configuration) {
         order_validator.clone(),
         app_data.clone(),
         config.active_order_competition_threshold,
-        order_simulator,
         order_simulator2,
     ));
 

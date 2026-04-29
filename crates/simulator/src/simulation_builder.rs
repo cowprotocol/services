@@ -9,6 +9,7 @@ use {
         TransactionRequest,
         state::{AccountOverride, StateOverride},
     },
+    alloy_sol_types::SolCall,
     alloy_transport::RpcError,
     anyhow::{Context, Result},
     balance_overrides::BalanceOverriding,
@@ -32,6 +33,7 @@ pub(crate) struct Inner {
     pub(crate) settlement: contracts::GPv2Settlement::Instance,
     pub(crate) authenticator: Address,
     pub(crate) flash_loan_router: Address,
+    pub(crate) hooks_trampoline: Address,
     pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
     pub(crate) provider: DynProvider,
     pub(crate) domain_separator: DomainSeparator,
@@ -44,6 +46,7 @@ impl SettlementSimulator {
     pub async fn new(
         settlement: contracts::GPv2Settlement::Instance,
         flash_loan_router: Address,
+        hooks_trampoline: Address,
         balance_overrides: Arc<dyn BalanceOverriding>,
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn crate::tenderly::Api>>,
@@ -56,6 +59,7 @@ impl SettlementSimulator {
             settlement,
             authenticator,
             flash_loan_router,
+            hooks_trampoline,
             balance_overrides,
             provider,
             domain_separator,
@@ -167,6 +171,63 @@ impl SimulationBuilder {
         self
     }
 
+    /// Parses the app data JSON and configures the builder accordingly:
+    /// - Pre/post hooks are encoded as interactions via the [`HooksTrampoline`]
+    /// - Flashloan/wrapper fields set the [`WrapperConfig`].
+    pub fn parameters_from_app_data(mut self, app_data: &str) -> Result<Self, BuildError> {
+        let protocol = app_data::parse(app_data.as_bytes()).map_err(BuildError::AppDataParse)?;
+
+        let encode_hooks = |hooks: &[app_data::Hook]| -> Vec<InteractionData> {
+            if hooks.is_empty() {
+                return vec![];
+            }
+            vec![InteractionData {
+                target: self.simulator.0.hooks_trampoline,
+                value: U256::ZERO,
+                call_data: contracts::HooksTrampoline::HooksTrampoline::executeCall {
+                    hooks: hooks
+                        .iter()
+                        .map(|h| contracts::HooksTrampoline::HooksTrampoline::Hook {
+                            target: h.target,
+                            callData: Bytes::copy_from_slice(&h.call_data),
+                            gasLimit: U256::from(h.gas_limit),
+                        })
+                        .collect(),
+                }
+                .abi_encode(),
+            }]
+        };
+        self.pre_interactions = encode_hooks(&protocol.hooks.pre);
+        self.post_interactions = encode_hooks(&protocol.hooks.post);
+
+        let has_wrappers = !protocol.wrappers.is_empty();
+        let has_flashloan = protocol.flashloan.is_some();
+        if has_wrappers && has_flashloan {
+            return Err(BuildError::FlashloanWrappersIncompatible);
+        }
+        if has_wrappers {
+            self.wrapper = WrapperConfig::Custom(
+                protocol
+                    .wrappers
+                    .into_iter()
+                    .map(|w| WrapperCall {
+                        address: w.address,
+                        data: w.data.into(),
+                    })
+                    .collect(),
+            );
+        } else if let Some(flashloan) = protocol.flashloan {
+            self.wrapper = WrapperConfig::Flashloan(vec![FlashloanRequest {
+                amount: flashloan.amount,
+                borrower: flashloan.protocol_adapter,
+                lender: flashloan.liquidity_provider,
+                token: flashloan.token,
+            }]);
+        }
+
+        Ok(self)
+    }
+
     /// Override the settlement contract's buy token balance so it can pay out
     /// the order without any external liquidity. The required amount is derived
     /// from the order's executed amount and clearing prices at `build()` time.
@@ -256,9 +317,6 @@ pub enum WrapperConfig {
     Flashloan(Vec<FlashloanRequest>),
     Custom(Vec<WrapperCall>),
     NoWrapper,
-    /// Parse the app data JSON string and extract flashloan/wrapper
-    /// configuration.
-    FromAppData(String),
 }
 
 pub struct FlashloanRequest {
