@@ -395,8 +395,9 @@ impl EthCallInputs {
     }
 
     pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
-        // TODO: error handling
-        let tenderly_request = self.to_tenderly_request().unwrap();
+        let tenderly_request = self
+            .to_tenderly_request()
+            .context("failed to convert to tenderly request")?;
         let tenderly_url = match &self.simulator.0.tenderly {
             Some(api) => Some(
                 api.simulate_and_share(tenderly_request.clone())
