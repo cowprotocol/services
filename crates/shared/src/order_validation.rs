@@ -9,7 +9,7 @@ use {
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
-    app_data::{self, AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
+    app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
@@ -76,7 +76,7 @@ pub trait Eip1271Simulating: Send + Sync {
     async fn simulate(
         &self,
         order: &Order,
-        flashloan: Option<app_data::Flashloan>,
+        full_app_data: String,
     ) -> Result<(), Eip1271SimulationError>;
 }
 
@@ -178,13 +178,13 @@ fn classify_signature(res: &Result<u64, SignatureValidationError>) -> SignatureO
 async fn timed_simulation(
     sim: &dyn Eip1271Simulating,
     order: &Order,
-    flashloan: Option<app_data::Flashloan>,
+    full_app_data: String,
     timeout: Duration,
 ) -> SimulationOutcome {
     let _timer = Eip1271SimulationMetrics::get()
         .simulation_time
         .start_timer();
-    match tokio::time::timeout(timeout, sim.simulate(order, flashloan)).await {
+    match tokio::time::timeout(timeout, sim.simulate(order, full_app_data)).await {
         Ok(Ok(())) => SimulationOutcome::Pass,
         Ok(Err(Eip1271SimulationError::Reverted {
             reason,
@@ -239,12 +239,12 @@ fn record_simulation_outcome(
 async fn run_eip1271_simulation_only(
     config: &Eip1271Simulator,
     preview_order: &Order,
-    flashloan: Option<app_data::Flashloan>,
+    full_app_data: String,
 ) {
     let outcome = timed_simulation(
         config.simulator.as_ref(),
         preview_order,
-        flashloan,
+        full_app_data,
         config.timeout,
     )
     .await;
@@ -633,8 +633,8 @@ impl OrderValidator {
             uid,
             order.signature.clone(),
         );
-        let flashloan = app_data.inner.protocol.flashloan.clone();
-        self.run_eip1271_checks(check, &preview_order, flashloan, hash)
+        let full_app_data = app_data.inner.document.clone();
+        self.run_eip1271_checks(check, &preview_order, full_app_data, hash)
             .await
     }
 
@@ -652,16 +652,16 @@ impl OrderValidator {
         &self,
         check: SignatureCheck,
         preview_order: &Order,
-        flashloan: Option<app_data::Flashloan>,
+        full_app_data: String,
         hash: B256,
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
             if let Some(config) = &self.eip1271_simulator {
-                run_eip1271_simulation_only(config, preview_order, flashloan).await;
+                run_eip1271_simulation_only(config, preview_order, full_app_data).await;
             }
             return Ok(0u64);
         }
-        self.run_eip1271_with_signature_check(check, preview_order, flashloan, hash)
+        self.run_eip1271_with_signature_check(check, preview_order, full_app_data, hash)
             .await
     }
 
@@ -680,7 +680,7 @@ impl OrderValidator {
         &self,
         check: SignatureCheck,
         preview_order: &Order,
-        flashloan: Option<app_data::Flashloan>,
+        full_app_data: String,
         hash: B256,
     ) -> Result<u64, ValidationError> {
         let signature_fut = self
@@ -697,7 +697,7 @@ impl OrderValidator {
         let simulation_fut = timed_simulation(
             config.simulator.as_ref(),
             preview_order,
-            flashloan,
+            full_app_data,
             config.timeout,
         );
 

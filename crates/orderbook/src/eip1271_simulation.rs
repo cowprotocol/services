@@ -1,6 +1,5 @@
 use {
     anyhow::anyhow,
-    app_data::Flashloan,
     async_trait::async_trait,
     model::order::Order,
     shared::order_validation::{Eip1271Simulating, Eip1271SimulationError},
@@ -8,11 +7,9 @@ use {
         self,
         Block,
         ExecutionAmount,
-        FlashloanRequest,
         Prices,
         SettlementSimulator,
         Solver,
-        WrapperConfig,
     },
 };
 
@@ -34,31 +31,20 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
     async fn simulate(
         &self,
         order: &Order,
-        flashloan: Option<Flashloan>,
+        full_app_data: String,
     ) -> Result<(), Eip1271SimulationError> {
-        let wrapper = match flashloan {
-            Some(loan) => WrapperConfig::Flashloan(vec![FlashloanRequest {
-                amount: loan.amount,
-                borrower: loan.protocol_adapter,
-                lender: loan.liquidity_provider,
-                token: loan.token,
-            }]),
-            None => WrapperConfig::NoWrapper,
-        };
-
         let inputs = self
             .inner
             .new_simulation_builder()
             .add_order(
                 simulation_builder::Order::new(order.data)
                     .with_signature(order.metadata.owner, order.signature.clone())
-                    .with_pre_interactions(order.interactions.pre.clone())
-                    .with_post_interactions(order.interactions.post.clone())
                     .with_executed_amount(ExecutionAmount::Full),
             )
+            .parameters_from_app_data(&full_app_data)
+            .map_err(|err| Eip1271SimulationError::Infra(anyhow!(err).context("parse app data")))?
             .with_prices(Prices::Limit)
             .from_solver(Solver::Fake(None))
-            .with_wrapper(wrapper)
             .fund_settlement_contract_with_buy_tokens()
             .at_block(Block::Latest)
             .build()

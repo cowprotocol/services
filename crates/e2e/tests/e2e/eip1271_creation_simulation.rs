@@ -1,11 +1,22 @@
 //! Local-node tests for the EIP-1271 creation-time simulation.
 //!
-//! With the orderbook configured in `Eip1271SimulationMode::Enforce`, an order
-//! whose simulation reverts must be rejected at creation with HTTP 400 and an
-//! `Eip1271SimulationFailed` body. A well-formed order must be accepted.
+//! Two cases:
+//!
+//! - With the orderbook in `Eip1271SimulationMode::Enforce`, an order whose
+//!   simulated settlement reverts must be rejected at creation with HTTP 400
+//!   `Eip1271SimulationFailed`. We trigger this by routing the simulation
+//!   through a tiny always-revert wrapper contract referenced from
+//!   `app_data.protocol.wrappers`. Reverts coming from a wrapper bypass the
+//!   `HooksTrampoline` revert-swallow, so the simulation actually fails.
+//! - A well-formed Safe-signed order with no wrapper must be accepted (HTTP
+//!   200), proving the adapter wiring lets healthy orders through.
 
 use {
-    app_data::Hook,
+    alloy::{
+        primitives::{Address, Bytes, hex},
+        providers::Provider,
+        rpc::types::TransactionRequest,
+    },
     configs::{orderbook::Eip1271SimulationMode, test_util::TestDefault},
     e2e::setup::{MintableToken, OnchainComponents, Services, run_test, safe::Safe},
     model::order::{OrderCreation, OrderCreationAppData, OrderKind},
@@ -15,10 +26,18 @@ use {
     shared::web3::Web3,
 };
 
+/// Constructor + runtime that always reverts with empty data on any call.
+///
+/// Constructor copies the 5-byte runtime (`PUSH1 0; PUSH1 0; REVERT`) into
+/// memory and returns it. The deployed contract reverts unconditionally
+/// regardless of selector or calldata.
+const ALWAYS_REVERT_INIT_CODE: [u8; 17] =
+    hex!("6005600c60003960056000f360006000fd");
+
 #[tokio::test]
 #[ignore]
-async fn local_node_eip1271_creation_simulation_rejects_buggy_pre_hook() {
-    run_test(rejects_buggy_pre_hook).await;
+async fn local_node_eip1271_creation_simulation_rejects_when_wrapper_reverts() {
+    run_test(rejects_when_wrapper_reverts).await;
 }
 
 #[tokio::test]
@@ -27,12 +46,12 @@ async fn local_node_eip1271_creation_simulation_accepts_valid_order() {
     run_test(accepts_valid_order).await;
 }
 
-async fn rejects_buggy_pre_hook(web3: Web3) {
+async fn rejects_when_wrapper_reverts(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
     let [solver] = onchain.make_solvers(1u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
 
-    let safe = Safe::deploy(trader, web3.provider.clone()).await;
+    let safe = Safe::deploy(trader.clone(), web3.provider.clone()).await;
 
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
@@ -41,18 +60,17 @@ async fn rejects_buggy_pre_hook(web3: Web3) {
 
     let services = start_services_in_enforce_mode(&onchain, solver).await;
 
-    // Counter has only `incrementCounter` and `setCounterToBalance`. Calling
-    // it with selector 0xdeadbeef hits no dispatch and reverts.
-    let counter = contracts::test::Counter::Instance::deploy(web3.provider.clone())
-        .await
-        .unwrap();
-    let buggy_pre_hook = Hook {
-        target: *counter.address(),
-        call_data: vec![0xde, 0xad, 0xbe, 0xef],
-        gas_limit: 100_000,
-    };
+    let wrapper_addr = deploy_always_revert(&web3, trader.address()).await;
 
-    let order = sign_order_with_hooks(&safe, &onchain, &token, vec![buggy_pre_hook], vec![]);
+    let order = sign_order(
+        &safe,
+        &onchain,
+        &token,
+        Some(WrapperRef {
+            address: wrapper_addr,
+            data: vec![],
+        }),
+    );
 
     let err = services.create_order(&order).await.unwrap_err();
     assert_eq!(err.0, StatusCode::BAD_REQUEST, "body: {}", err.1);
@@ -77,7 +95,7 @@ async fn accepts_valid_order(web3: Web3) {
 
     let services = start_services_in_enforce_mode(&onchain, solver).await;
 
-    let order = sign_order_with_hooks(&safe, &onchain, &token, vec![], vec![]);
+    let order = sign_order(&safe, &onchain, &token, None);
 
     let uid = services
         .create_order(&order)
@@ -85,6 +103,25 @@ async fn accepts_valid_order(web3: Web3) {
         .expect("expected order to be accepted");
     let stored = services.get_order(&uid).await.unwrap();
     assert_eq!(stored.metadata.uid, uid);
+}
+
+/// Deploys a contract whose runtime is `PUSH1 0; PUSH1 0; REVERT`.
+async fn deploy_always_revert(web3: &Web3, from: Address) -> Address {
+    let receipt = web3
+        .provider
+        .send_transaction(
+            TransactionRequest::default()
+                .from(from)
+                .input(Bytes::from(ALWAYS_REVERT_INIT_CODE.to_vec()).into()),
+        )
+        .await
+        .unwrap()
+        .get_receipt()
+        .await
+        .unwrap();
+    receipt
+        .contract_address
+        .expect("deployment receipt should carry the contract address")
 }
 
 async fn fund_safe(safe: &Safe, token: &MintableToken, onchain: &OnchainComponents) {
@@ -119,21 +156,29 @@ async fn start_services_in_enforce_mode<'a>(
     services
 }
 
-fn sign_order_with_hooks(
+struct WrapperRef {
+    address: Address,
+    data: Vec<u8>,
+}
+
+fn sign_order(
     safe: &Safe,
     onchain: &OnchainComponents,
     sell_token: &MintableToken,
-    pre: Vec<Hook>,
-    post: Vec<Hook>,
+    wrapper: Option<WrapperRef>,
 ) -> OrderCreation {
-    let app_data = json!({
-        "metadata": {
-            "hooks": {
-                "pre": pre,
-                "post": post,
+    let app_data = match wrapper {
+        Some(w) => json!({
+            "metadata": {
+                "wrappers": [{
+                    "address": format!("{:?}", w.address),
+                    "data": format!("0x{}", hex::encode(&w.data)),
+                    "isOmittable": false,
+                }],
             },
-        },
-    })
+        }),
+        None => json!({}),
+    }
     .to_string();
 
     let mut order = OrderCreation {
