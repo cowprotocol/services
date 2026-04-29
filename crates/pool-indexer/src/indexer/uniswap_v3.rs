@@ -4,7 +4,7 @@ use {
         db::uniswap_v3 as db,
     },
     alloy::{
-        primitives::{Address, U256, aliases::U160},
+        primitives::{Address, B256, U256, aliases::U160},
         providers::Provider,
         rpc::types::{BlockNumberOrTag, Filter, FilterSet, Log},
         sol_types::SolEvent,
@@ -493,7 +493,10 @@ async fn run_symbol_backfill_pass(
     crate::metrics::Metrics::get()
         .symbols_pending
         .with_label_values(&[network])
-        .set(i64::try_from(tokens.len()).unwrap_or(0));
+        // -1 surfaces the impossible-but-defensive `usize → i64` overflow as
+        // a visible signal in metrics rather than masquerading as "no work
+        // pending".
+        .set(i64::try_from(tokens.len()).unwrap_or(-1));
     if tokens.is_empty() {
         return Ok(());
     }
@@ -576,7 +579,8 @@ async fn run_decimals_backfill_pass(
     crate::metrics::Metrics::get()
         .decimals_pending
         .with_label_values(&[network])
-        .set(i64::try_from(tokens.len()).unwrap_or(0));
+        // -1: see `symbols_pending` above for the rationale.
+        .set(i64::try_from(tokens.len()).unwrap_or(-1));
     if tokens.is_empty() {
         return Ok(());
     }
@@ -662,16 +666,37 @@ pub(crate) fn is_range_too_large(err: &anyhow::Error) -> bool {
     })
 }
 
+/// Bisecting bound — `is_range_too_large` substring-matches `"timed out"`,
+/// which can also fire on transient client/network timeouts unrelated to
+/// range size. Without this cap a single misclassified timeout would burn
+/// `log2(range)` RPC calls before the recursion bottoms out at `to == from`.
+/// 8 halvings = 256× resolution; for the indexer's ~1k-block chunks that
+/// means giving up around ~4-block ranges, well past where range-size could
+/// plausibly still be the cause.
+const MAX_BISECTION_DEPTH: u32 = 8;
+
 /// Fetches logs for `[from, to]` filtered by the given contract addresses
 /// and `topic0` event signatures, sequentially bisecting the block range on
 /// "too large" rejections until each sub-range is tractable. An empty
-/// `addresses` list means "any contract".
+/// `addresses` list means "any contract". Bisection depth is capped by
+/// [`MAX_BISECTION_DEPTH`].
 pub(crate) fn bisecting_get_logs(
     provider: &AlloyProvider,
     from: u64,
     to: u64,
     addresses: Vec<Address>,
-    topics: Vec<alloy::primitives::B256>,
+    topics: Vec<B256>,
+) -> futures::future::BoxFuture<'_, Result<Vec<Log>>> {
+    bisecting_get_logs_with_depth(provider, from, to, addresses, topics, 0)
+}
+
+fn bisecting_get_logs_with_depth(
+    provider: &AlloyProvider,
+    from: u64,
+    to: u64,
+    addresses: Vec<Address>,
+    topics: Vec<B256>,
+    depth: u32,
 ) -> futures::future::BoxFuture<'_, Result<Vec<Log>>> {
     Box::pin(async move {
         let filter = Filter::new()
@@ -684,12 +709,27 @@ pub(crate) fn bisecting_get_logs(
             Ok(logs) => return Ok(logs),
             Err(err) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
         };
-        if is_range_too_large(&err) && to > from {
+        if is_range_too_large(&err) && to > from && depth < MAX_BISECTION_DEPTH {
             let mid = (from + to) / 2;
-            tracing::debug!(from, to, mid, "range too large, bisecting");
-            let mut left =
-                bisecting_get_logs(provider, from, mid, addresses.clone(), topics.clone()).await?;
-            let right = bisecting_get_logs(provider, mid + 1, to, addresses, topics).await?;
+            tracing::debug!(from, to, mid, depth, "range too large, bisecting");
+            let mut left = bisecting_get_logs_with_depth(
+                provider,
+                from,
+                mid,
+                addresses.clone(),
+                topics.clone(),
+                depth + 1,
+            )
+            .await?;
+            let right = bisecting_get_logs_with_depth(
+                provider,
+                mid + 1,
+                to,
+                addresses,
+                topics,
+                depth + 1,
+            )
+            .await?;
             left.extend(right);
             Ok(left)
         } else {
