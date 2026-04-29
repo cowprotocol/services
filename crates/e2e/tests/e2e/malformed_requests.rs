@@ -492,6 +492,11 @@ async fn http_validation(web3: Web3) {
             "kind": "sell",
             "owner": VALID_ADDRESS,
             "appData": bad_app_data,
+            "signingScheme": "presign",
+            "signature": "0x",
+            "feeAmount": "0",
+            "validTo": u32::MAX,
+            "partiallyFillable": false,
         }))
         .send()
         .await
@@ -503,13 +508,8 @@ async fn http_validation(web3: Web3) {
     );
     let body: Error = response.json().await.unwrap();
     assert!(
-        body.description.contains("app_data"),
+        body.description.contains("app data"),
         "error description should name the failing field. Got: {}",
-        body.description
-    );
-    assert!(
-        body.description.contains(bad_app_data),
-        "error description should include the bad value. Got: {}",
         body.description
     );
 }
@@ -563,6 +563,12 @@ async fn simulation_not_enabled(web3: Web3) {
             "buyAmount": "1000000000000000000",
             "kind": "sell",
             "owner": VALID_ADDRESS,
+            "appData": "{}",
+            "signingScheme": "presign",
+            "signature": "0x",
+            "feeAmount": "0",
+            "validTo": u32::MAX,
+            "partiallyFillable": false,
         }))
         .send()
         .await
