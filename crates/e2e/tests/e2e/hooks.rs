@@ -746,6 +746,10 @@ async fn tx_gas_simulation(web3: Web3) {
                     ]]),
                     ..AutopilotNativePriceConfig::test_default()
                 },
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_quoter",
+                )]),
                 ..configs::autopilot::Configuration::test("test_quoter", solver_address)
             },
         )
@@ -811,6 +815,4 @@ async fn tx_gas_simulation(web3: Web3) {
         gas_with_sim >= hooks_gas,
         "simulated gas {gas_with_sim} should be at least the sum of hook gas limits"
     );
-
-    println!("gas_no_sim={gas_no_sim}, gas_with_sim={gas_with_sim}");
 }

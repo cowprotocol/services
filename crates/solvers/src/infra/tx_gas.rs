@@ -13,7 +13,12 @@ use {
         encoding::WrapperCall,
         swap_simulator::{Query, SwapSimulator, TradeEncoding},
     },
+    std::time::Duration,
+    tokio::time::timeout,
 };
+
+static FAKE_SOLVER: Address = Address::with_last_byte(1);
+const ESTIMATION_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct TxGasEstimator {
     simulator: SwapSimulator,
@@ -34,8 +39,22 @@ impl TxGasEstimator {
         input: eth::Asset,
         output: eth::Asset,
     ) -> Option<eth::Gas> {
+        timeout(
+            ESTIMATION_TIMEOUT,
+            self.estimate_inner(order, input, output),
+        )
+        .await
+        .ok()?
+    }
+
+    async fn estimate_inner(
+        &self,
+        order: &order::Order,
+        input: eth::Asset,
+        output: eth::Asset,
+    ) -> Option<eth::Gas> {
         let sell_amount = NonZeroU256::new(input.amount)?;
-        let solver = Address::random();
+        let solver = FAKE_SOLVER;
         let owner = order.owner();
 
         let query = Query {

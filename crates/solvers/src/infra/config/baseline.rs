@@ -96,6 +96,8 @@ pub async fn load(path: &Path) -> solver::Config {
             contracts::Contracts::for_chain(chain_id).settlement
         };
         let web3 = ethrpc::web3(Default::default(), &url, Some("tx-gas"));
+        // The WS variant requires a WebSocket URL; the polling fallback is
+        // acceptable here since gas simulation is best-effort.
         #[allow(deprecated)]
         let current_block =
             ethrpc::block_stream::current_block_stream(url.clone(), Default::default())
