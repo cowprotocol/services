@@ -246,8 +246,8 @@ impl Configuration {
             // networks must cold-seed each factory.
             assert!(
                 !(n.factories.len() > 1 && n.subgraph_url.is_some()),
-                "network {}: subgraph-url cannot be combined with multiple \
-                 factories (omit subgraph-url to cold-seed each factory)",
+                "network {}: subgraph-url cannot be combined with multiple factories (omit \
+                 subgraph-url to cold-seed each factory)",
                 n.name,
             );
         }
