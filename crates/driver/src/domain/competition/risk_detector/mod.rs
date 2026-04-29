@@ -15,8 +15,9 @@
 //! In other words the bad order detection is a last fail safe in case
 //! we were not able to predict issues with orders and pre-emptively
 //! filter them out of the auction.
+
 use {
-    crate::domain::competition::{Order, order::Uid},
+    crate::domain::competition::{Auction, Order, order::Uid},
     eth_domain_types as eth,
     futures::{StreamExt, stream::FuturesUnordered},
     std::{
@@ -84,6 +85,27 @@ impl Detector {
         self
     }
 
+    /// Removes all unsupported orders from the auction.
+    pub async fn filter_unsupported_orders_in_auction(
+        &self,
+        auction: &mut Auction,
+        flashloans: bool,
+    ) {
+        // Filter out orders that require flashloans if flashloans is disabled.
+        if !flashloans {
+            auction.orders.retain(|o| o.app_data.flashloan().is_none());
+        }
+        let unsupported_uids = self.unsupported_order_uids(auction.orders()).await;
+        // Filter out unsupported orders
+        if !unsupported_uids.is_empty() {
+            auction
+                .orders
+                .retain(|order| !unsupported_uids.contains(&order.uid));
+        }
+    }
+
+    /// Returns a set of orders uids for orders that are found to be
+    /// unsupported.
     pub async fn unsupported_order_uids(&self, orders: &[Order]) -> HashSet<Uid> {
         let now = Instant::now();
 
