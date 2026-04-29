@@ -220,7 +220,14 @@ impl UniswapV3Indexer {
             })
             .buffered(self.fetch_concurrency)
             .try_for_each(|(chunk, logs)| self.commit_chunk(chunk, logs))
-            .await
+            .await?;
+
+        tracing::info!(
+            block = finalized_block,
+            blocks_processed = lag,
+            "live indexer caught up to finalized block",
+        );
+        Ok(())
     }
 
     async fn finalized_block(&self) -> Result<u64> {
