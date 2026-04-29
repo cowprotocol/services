@@ -13,7 +13,7 @@
 
 use {
     alloy::{
-        primitives::{Address, Bytes, hex},
+        primitives::{Address, Bytes, TxKind, hex},
         providers::Provider,
         rpc::types::TransactionRequest,
     },
@@ -107,13 +107,13 @@ async fn accepts_valid_order(web3: Web3) {
 
 /// Deploys a contract whose runtime is `PUSH1 0; PUSH1 0; REVERT`.
 async fn deploy_always_revert(web3: &Web3, from: Address) -> Address {
+    let mut tx = TransactionRequest::default()
+        .from(from)
+        .input(Bytes::from(ALWAYS_REVERT_INIT_CODE.to_vec()).into());
+    tx.to = Some(TxKind::Create);
     let receipt = web3
         .provider
-        .send_transaction(
-            TransactionRequest::default()
-                .from(from)
-                .input(Bytes::from(ALWAYS_REVERT_INIT_CODE.to_vec()).into()),
-        )
+        .send_transaction(tx)
         .await
         .unwrap()
         .get_receipt()
