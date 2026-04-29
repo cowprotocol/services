@@ -1000,7 +1000,8 @@ mod tests {
     const POOL: Address = Address::repeat_byte(0x01);
     const TOKEN0: Address = Address::repeat_byte(0x02);
     const TOKEN1: Address = Address::repeat_byte(0x03);
-    // sqrt(1) * 2^96 — a valid initialised price
+    // `sqrtPriceX96 = sqrt(price) * 2^96` is Uniswap V3's Q64.96 fixed-point
+    // price representation; for `price = 1` this is exactly `2^96`.
     const SQRT_PRICE_1: u128 = 79_228_162_514_264_337_593_543_950_336;
 
     fn t(n: i32) -> I24 {
@@ -1144,8 +1145,8 @@ mod tests {
             tickLower: t(-100),
             tickUpper: t(100),
             amount: 100_000u128,
-            amount0: alloy::primitives::U256::ZERO,
-            amount1: alloy::primitives::U256::ZERO,
+            amount0: U256::ZERO,
+            amount1: U256::ZERO,
         };
         let liq_cache: LiquidityCache = HashMap::from([((POOL, 201u64), after_mint_liq)]);
         let logs = vec![make_log(POOL, 200, swap), make_log(POOL, 201, mint)];
@@ -1167,16 +1168,16 @@ mod tests {
             tickLower: t(-100),
             tickUpper: t(100),
             amount,
-            amount0: alloy::primitives::U256::ZERO,
-            amount1: alloy::primitives::U256::ZERO,
+            amount0: U256::ZERO,
+            amount1: U256::ZERO,
         };
         let burn = Burn {
             owner: Address::ZERO,
             tickLower: t(-100),
             tickUpper: t(100),
             amount,
-            amount0: alloy::primitives::U256::ZERO,
-            amount1: alloy::primitives::U256::ZERO,
+            amount0: U256::ZERO,
+            amount1: U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
         let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
@@ -1193,16 +1194,16 @@ mod tests {
             tickLower: t(-100),
             tickUpper: t(100),
             amount: mint_amount,
-            amount0: alloy::primitives::U256::ZERO,
-            amount1: alloy::primitives::U256::ZERO,
+            amount0: U256::ZERO,
+            amount1: U256::ZERO,
         };
         let burn = Burn {
             owner: Address::ZERO,
             tickLower: t(-100),
             tickUpper: t(100),
             amount: burn_amount,
-            amount0: alloy::primitives::U256::ZERO,
-            amount1: alloy::primitives::U256::ZERO,
+            amount0: U256::ZERO,
+            amount1: U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
         let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
