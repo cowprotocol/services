@@ -376,12 +376,15 @@ impl TryFrom<PgRow> for PoolRow {
             token0: bytes_to_addr(r.get("token0"))?,
             token1: bytes_to_addr(r.get("token1"))?,
             fee: r.get::<i32, _>("fee").cast_unsigned(),
+            // The DB stores `-1` as the "tried, failed" sentinel written by
+            // the decimals backfill task. Drop those back to `None` so callers
+            // see "missing" rather than a misleading `Some(0)`.
             token0_decimals: r
                 .get::<Option<i16>, _>("token0_decimals")
-                .map(|d| u8::try_from(d).unwrap_or(0)),
+                .and_then(|d| u8::try_from(d).ok()),
             token1_decimals: r
                 .get::<Option<i16>, _>("token1_decimals")
-                .map(|d| u8::try_from(d).unwrap_or(0)),
+                .and_then(|d| u8::try_from(d).ok()),
             token0_symbol: r.get("token0_symbol"),
             token1_symbol: r.get("token1_symbol"),
             sqrt_price_x96: r.get("sqrt_price_x96"),
@@ -595,31 +598,118 @@ pub async fn get_tokens_missing_symbols(pool: &PgPool, chain_id: u64) -> Result<
         .collect()
 }
 
-/// Updates `token0_symbol` / `token1_symbol` for all pools containing `token`.
-pub async fn set_token_symbol(
-    pool: &PgPool,
-    chain_id: u64,
-    token: &Address,
-    symbol: &str,
-) -> Result<()> {
-    sqlx::query(
-        "UPDATE uniswap_v3_pools
-         SET token0_symbol = CASE
-                 WHEN token0 = $2 AND token0_symbol IS NULL THEN $3
-                 ELSE token0_symbol
-             END,
-             token1_symbol = CASE
-                 WHEN token1 = $2 AND token1_symbol IS NULL THEN $3
-                 ELSE token1_symbol
-             END
-         WHERE chain_id = $1 AND (token0 = $2 OR token1 = $2)",
+/// Returns all distinct token addresses that have no decimals recorded yet.
+pub async fn get_tokens_missing_decimals(pool: &PgPool, chain_id: u64) -> Result<Vec<Address>> {
+    let rows = sqlx::query(
+        "SELECT DISTINCT token FROM (
+             SELECT token0 AS token FROM uniswap_v3_pools
+             WHERE chain_id = $1 AND token0_decimals IS NULL
+             UNION
+             SELECT token1 AS token FROM uniswap_v3_pools
+             WHERE chain_id = $1 AND token1_decimals IS NULL
+         ) t",
     )
     .bind(chain_id.cast_signed())
-    .bind(token.as_slice())
-    .bind(symbol)
+    .fetch_all(pool)
+    .await
+    .context("get_tokens_missing_decimals")?;
+
+    rows.into_iter()
+        .map(|r| bytes_to_addr(r.get("token")))
+        .collect()
+}
+
+/// Batched update of `token0_decimals` / `token1_decimals` for every pool
+/// containing one of the provided tokens. Pass `-1` for entries that were
+/// "tried, failed" so the next backfill pass's `IS NULL` filter skips them.
+///
+/// One round-trip via a writeable CTE: the side-by-side UPDATE ... FROM UNNEST
+/// pattern would mis-handle pools where both `token0` and `token1` appear in
+/// the batch (Postgres picks an arbitrary FROM row per target row, so only
+/// one side would get set). Splitting into two separate UPDATEs keyed on each
+/// side avoids that.
+pub async fn batch_set_token_decimals(
+    pool: &PgPool,
+    chain_id: u64,
+    entries: &[(Address, i16)],
+) -> Result<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let tokens: Vec<&[u8]> = entries.iter().map(|(t, _)| t.as_slice()).collect();
+    let decimals: Vec<i16> = entries.iter().map(|(_, d)| *d).collect();
+
+    sqlx::query(
+        "WITH input AS (
+             SELECT * FROM UNNEST($2::BYTEA[], $3::INT2[]) AS t(tok, dec)
+         ),
+         update_t0 AS (
+             UPDATE uniswap_v3_pools p
+             SET token0_decimals = i.dec
+             FROM input i
+             WHERE p.chain_id = $1
+               AND p.token0 = i.tok
+               AND p.token0_decimals IS NULL
+             RETURNING 1
+         )
+         UPDATE uniswap_v3_pools p
+         SET token1_decimals = i.dec
+         FROM input i
+         WHERE p.chain_id = $1
+           AND p.token1 = i.tok
+           AND p.token1_decimals IS NULL",
+    )
+    .bind(chain_id.cast_signed())
+    .bind(tokens)
+    .bind(decimals)
     .execute(pool)
     .await
-    .context("set_token_symbol")?;
+    .context("batch_set_token_decimals")?;
+
+    Ok(())
+}
+
+/// Batched update of `token0_symbol` / `token1_symbol` for every pool
+/// containing one of the provided tokens. Pass `""` for entries that were
+/// "tried, failed" so the next backfill pass's `IS NULL` filter skips them.
+/// See [`batch_set_token_decimals`] for the writeable-CTE rationale.
+pub async fn batch_set_token_symbols(
+    pool: &PgPool,
+    chain_id: u64,
+    entries: &[(Address, String)],
+) -> Result<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let tokens: Vec<&[u8]> = entries.iter().map(|(t, _)| t.as_slice()).collect();
+    let symbols: Vec<&str> = entries.iter().map(|(_, s)| s.as_str()).collect();
+
+    sqlx::query(
+        "WITH input AS (
+             SELECT * FROM UNNEST($2::BYTEA[], $3::TEXT[]) AS t(tok, sym)
+         ),
+         update_t0 AS (
+             UPDATE uniswap_v3_pools p
+             SET token0_symbol = i.sym
+             FROM input i
+             WHERE p.chain_id = $1
+               AND p.token0 = i.tok
+               AND p.token0_symbol IS NULL
+             RETURNING 1
+         )
+         UPDATE uniswap_v3_pools p
+         SET token1_symbol = i.sym
+         FROM input i
+         WHERE p.chain_id = $1
+           AND p.token1 = i.tok
+           AND p.token1_symbol IS NULL",
+    )
+    .bind(chain_id.cast_signed())
+    .bind(tokens)
+    .bind(symbols)
+    .execute(pool)
+    .await
+    .context("batch_set_token_symbols")?;
 
     Ok(())
 }

@@ -47,9 +47,12 @@ CREATE TABLE uniswap_v3_ticks (
     FOREIGN KEY (chain_id, pool_address) REFERENCES uniswap_v3_pools(chain_id, address)
 );
 
--- Symbol backfill hot paths: both `get_tokens_missing_symbols` (scan for NULL
--- symbols) and `set_token_symbol` (update by token address where symbol IS
--- NULL) hit these. Partial on the IS NULL predicate so the indices shrink to
--- near-empty once most symbols are populated.
+-- Symbol- and decimals-backfill hot paths: both `get_tokens_missing_*`
+-- (scan for NULL columns) and the batched `batch_set_token_*` updates hit
+-- these. Partial on the IS NULL predicate so each index shrinks to near-empty
+-- once most rows are populated (real value or `""` / `-1` "tried, failed"
+-- sentinel).
 CREATE INDEX ON uniswap_v3_pools (chain_id, token0) WHERE token0_symbol IS NULL;
 CREATE INDEX ON uniswap_v3_pools (chain_id, token1) WHERE token1_symbol IS NULL;
+CREATE INDEX ON uniswap_v3_pools (chain_id, token0) WHERE token0_decimals IS NULL;
+CREATE INDEX ON uniswap_v3_pools (chain_id, token1) WHERE token1_decimals IS NULL;

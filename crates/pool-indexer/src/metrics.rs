@@ -67,6 +67,15 @@ pub struct Metrics {
     #[metric(labels("network"))]
     pub symbols_pending: prometheus::IntGaugeVec,
 
+    /// Decimals written to the DB (label: `result` = `ok` for a real value,
+    /// `empty` for the "tried and failed" `-1` sentinel).
+    #[metric(labels("network", "result"))]
+    pub decimals_backfilled: prometheus::IntCounterVec,
+
+    /// Tokens still needing a decimals value, sampled each backfill pass.
+    #[metric(labels("network"))]
+    pub decimals_pending: prometheus::IntGaugeVec,
+
     /// API request count by route + HTTP status.
     #[metric(labels("route", "status"))]
     pub api_requests: prometheus::IntCounterVec,

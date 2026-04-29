@@ -4,7 +4,7 @@ use {
         db::uniswap_v3 as db,
     },
     alloy::{
-        primitives::{Address, aliases::U160},
+        primitives::{Address, U256, aliases::U160},
         providers::Provider,
         rpc::types::{BlockNumberOrTag, Filter, FilterSet, Log},
         sol_types::SolEvent,
@@ -128,6 +128,14 @@ impl UniswapV3Indexer {
 
     pub async fn run(self, poll_interval: std::time::Duration) -> ! {
         tokio::spawn(backfill_symbols(
+            self.provider.clone(),
+            self.db.clone(),
+            self.network.clone(),
+            self.chain_id,
+            self.prefetch_concurrency,
+            poll_interval,
+        ));
+        tokio::spawn(backfill_decimals(
             self.provider.clone(),
             self.db.clone(),
             self.network.clone(),
@@ -423,14 +431,23 @@ async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u6
 }
 
 async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> {
-    match ERC20::Instance::new(token, provider.clone())
-        .decimals()
-        .call()
-        .await
+    use ethrpc::alloy::errors::ContractErrorExt;
+    // Retry transient transport errors before giving up. Contract reverts /
+    // missing-selector failures bail out immediately.
+    match shared::retry::retry_with_sleep_if(
+        || async move {
+            ERC20::Instance::new(token, provider.clone())
+                .decimals()
+                .call()
+                .await
+        },
+        |err: &alloy::contract::Error| err.is_node_error(),
+    )
+    .await
     {
         Ok(d) => Some(d),
-        Err(err) => {
-            tracing::warn!(%token, ?err, "fetch_decimals failed");
+        Err(errors) => {
+            tracing::warn!(%token, ?errors, "fetch_decimals gave up");
             None
         }
     }
@@ -499,9 +516,9 @@ async fn run_symbol_backfill_pass(
             .await;
 
         let metrics = crate::metrics::Metrics::get();
-        for (token, symbol) in &symbols {
-            match db::set_token_symbol(db, chain_id, token, symbol).await {
-                Ok(()) => {
+        match db::batch_set_token_symbols(db, chain_id, &symbols).await {
+            Ok(()) => {
+                for (_, symbol) in &symbols {
                     updated += 1;
                     let result = if symbol.is_empty() { "empty" } else { "ok" };
                     metrics
@@ -509,8 +526,8 @@ async fn run_symbol_backfill_pass(
                         .with_label_values(&[network, result])
                         .inc();
                 }
-                Err(err) => tracing::warn!(%token, ?err, "failed to backfill symbol"),
             }
+            Err(err) => tracing::warn!(?err, batch_size = symbols.len(), "failed to backfill symbols batch"),
         }
 
         processed += token_batch.len();
@@ -518,6 +535,102 @@ async fn run_symbol_backfill_pass(
     }
 
     tracing::info!(updated, total, "token symbol backfill pass complete");
+    Ok(())
+}
+
+/// Periodically fills in missing `token{0,1}_decimals` values on
+/// `uniswap_v3_pools`. Same shape as [`backfill_symbols`]: sleeps
+/// `poll_interval` between passes, persists `-1` as the "tried and failed"
+/// sentinel for tokens whose `decimals()` call fails so subsequent passes
+/// skip them. A process restart re-probes them once.
+async fn backfill_decimals(
+    provider: AlloyProvider,
+    db: sqlx::PgPool,
+    network: NetworkName,
+    chain_id: u64,
+    prefetch_concurrency: usize,
+    poll_interval: std::time::Duration,
+) -> ! {
+    loop {
+        if let Err(err) =
+            run_decimals_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency)
+                .await
+        {
+            tracing::error!(?err, "token decimals backfill pass failed");
+        }
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
+async fn run_decimals_backfill_pass(
+    provider: &AlloyProvider,
+    db: &sqlx::PgPool,
+    network: &NetworkName,
+    chain_id: u64,
+    prefetch_concurrency: usize,
+) -> Result<()> {
+    let tokens = db::get_tokens_missing_decimals(db, chain_id)
+        .await
+        .context("get_tokens_missing_decimals")?;
+    let network = network.as_str();
+    crate::metrics::Metrics::get()
+        .decimals_pending
+        .with_label_values(&[network])
+        .set(i64::try_from(tokens.len()).unwrap_or(0));
+    if tokens.is_empty() {
+        return Ok(());
+    }
+    let total = tokens.len();
+    tracing::info!(total, "backfilling token decimals");
+
+    let mut updated = 0usize;
+    let mut processed = 0usize;
+
+    for token_batch in tokens.chunks(SYMBOL_BACKFILL_BATCH_SIZE) {
+        let decimals: Vec<(Address, i16)> = futures::stream::iter(token_batch.iter().copied())
+            .map(|token| async move {
+                // `None` → `-1` sentinel: marks the token as "tried and
+                // failed" so the next backfill pass's `IS NULL` filter skips
+                // it.
+                let dec = fetch_decimals(provider, token)
+                    .await
+                    .map(i16::from)
+                    .unwrap_or(-1);
+                (token, dec)
+            })
+            .buffer_unordered(prefetch_concurrency)
+            .collect()
+            .await;
+
+        let metrics = crate::metrics::Metrics::get();
+        match db::batch_set_token_decimals(db, chain_id, &decimals).await {
+            Ok(()) => {
+                for (_, dec) in &decimals {
+                    updated += 1;
+                    let result = if *dec < 0 { "empty" } else { "ok" };
+                    metrics
+                        .decimals_backfilled
+                        .with_label_values(&[network, result])
+                        .inc();
+                }
+            }
+            Err(err) => tracing::warn!(
+                ?err,
+                batch_size = decimals.len(),
+                "failed to backfill decimals batch"
+            ),
+        }
+
+        processed += token_batch.len();
+        tracing::info!(
+            processed,
+            total,
+            updated,
+            "token decimals backfill progress"
+        );
+    }
+
+    tracing::info!(updated, total, "token decimals backfill pass complete");
     Ok(())
 }
 
@@ -930,8 +1043,8 @@ mod tests {
             tickLower: t(-100),
             tickUpper: t(100),
             amount,
-            amount0: alloy::primitives::U256::ZERO,
-            amount1: alloy::primitives::U256::ZERO,
+            amount0: U256::ZERO,
+            amount1: U256::ZERO,
         };
         let liq_cache: LiquidityCache = HashMap::from([((POOL, 100u64), amount)]);
         let log = make_log(POOL, 100, event);
