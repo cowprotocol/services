@@ -8,6 +8,7 @@ use {
     simulator::simulation_builder::{
         self,
         Block,
+        EthCallInputs,
         ExecutionAmount,
         Prices,
         SettlementSimulator,
@@ -43,9 +44,57 @@ async fn aave_debt_swap_replay() {
         return;
     };
 
-    // One block before the on-chain settlement transaction. At this block the
-    // helper-clone owner contract has no code yet (the pre-hook deploys it),
-    // the protocol-adapter factory is live, and Aave v3 has WETH liquidity.
+    let app_data = include_str!("fixtures/aave_replay_app_data.json").trim();
+    let inputs = build_replay_simulation(&rpc_url, app_data).await;
+
+    inputs
+        .simulate()
+        .await
+        .expect("simulation must not revert for a healthy production order");
+}
+
+/// Same order, but the `flashloan.amount` in `app_data` is rewritten to a
+/// value Aave's WETH pool cannot satisfy. The wrapper call to the Aave Pool
+/// must revert, and the simulation must propagate that revert.
+///
+/// This proves the prototype actually executes the flashloan path: if the
+/// wrapper call were a silent no-op (e.g. wrong router address), the
+/// simulation would not depend on Aave's liquidity at all and would not
+/// fail here.
+#[tokio::test]
+#[ignore]
+async fn aave_debt_swap_replay_fails_when_flashloan_oversubscribed() {
+    let Ok(rpc_url) = std::env::var("MAINNET_RPC_URL") else {
+        eprintln!("MAINNET_RPC_URL not set - skipping replay test");
+        return;
+    };
+
+    let original = include_str!("fixtures/aave_replay_app_data.json").trim();
+    let mut value: serde_json::Value =
+        serde_json::from_str(original).expect("fixture must be valid JSON");
+    // Way more WETH than Aave can lend. Aave reverts with insufficient
+    // liquidity (or similar) before any settlement runs.
+    value["metadata"]["flashloan"]["amount"] =
+        serde_json::Value::String(U256::MAX.to_string());
+    let tampered_app_data = serde_json::to_string(&value).unwrap();
+
+    let inputs = build_replay_simulation(&rpc_url, &tampered_app_data).await;
+
+    let err = inputs
+        .simulate()
+        .await
+        .expect_err("simulation must revert when the flashloan exceeds Aave liquidity");
+    tracing::info!(?err, "expected simulation revert observed");
+}
+
+/// Builds a simulation pinned to the block right before the Aave debt-swap
+/// settlement. The caller controls `full_app_data` so the same wiring
+/// supports a positive replay (untouched) and a negative replay (tampered).
+async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallInputs {
+    // One block before the on-chain settlement transaction. At this block
+    // the helper-clone owner contract has no code yet (the pre-hook deploys
+    // it), the protocol-adapter factory is live, and Aave v3 has WETH
+    // liquidity.
     let fork_block_mainnet = 24_992_051u64;
     let order_owner = address!("e58aCB86761699c1cBC665e6b7E0271503f6336C");
     let sell_token_weth = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
@@ -53,10 +102,9 @@ async fn aave_debt_swap_replay() {
     let sell_amount = U256::from_str("4473358935639875302").unwrap();
     let buy_amount = U256::from_str("10003000000000000000000").unwrap();
     let valid_to = 1_777_542_136u32; // 2026-04-30 09:42:16 UTC
-    let full_app_data = include_str!("fixtures/aave_replay_app_data.json").trim();
     let signature_hex = include_str!("fixtures/aave_replay_signature.hex").trim();
 
-    let web3 = ethrpc::Web3::new_from_url(&rpc_url);
+    let web3 = ethrpc::Web3::new_from_url(rpc_url);
     let provider = web3.provider.clone();
     let chain_id = 1u64;
 
@@ -102,7 +150,7 @@ async fn aave_debt_swap_replay() {
         buy_token_balance: BuyTokenDestination::Erc20,
     };
 
-    let inputs = simulator
+    simulator
         .new_simulation_builder()
         .add_order(
             simulation_builder::Order::new(order_data)
@@ -110,17 +158,12 @@ async fn aave_debt_swap_replay() {
                 .with_executed_amount(ExecutionAmount::Full),
         )
         .parameters_from_app_data(full_app_data)
-        .expect("parameters_from_app_data should parse the fixture")
+        .expect("parameters_from_app_data should parse the app data")
         .with_prices(Prices::Limit)
         .from_solver(Solver::Fake(None))
         .fund_settlement_contract_with_buy_tokens()
         .at_block(Block::Number(fork_block_mainnet))
         .build()
         .await
-        .expect("failed to build simulation");
-
-    inputs
-        .simulate()
-        .await
-        .expect("simulation must not revert for a healthy production order");
+        .expect("failed to build simulation")
 }
