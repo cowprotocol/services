@@ -18,11 +18,8 @@ use {
 };
 
 /// Full `app_data` JSON the trader signed for the replayed Aave v3 debt-swap
-/// order. Whitespace here is for readability only - tests canonicalise via
-/// `serde_json` (which sorts keys alphabetically and strips whitespace)
-/// before hashing or passing the JSON downstream, and the production order's
-/// field ordering is already alphabetical at every level so the canonical
-/// form matches the signed bytes.
+/// order. Source-level whitespace is for readability only - run through
+/// `canonicalise_app_data` before hashing or passing downstream.
 const APP_DATA: &str = r#"{
     "appCode": "aave-v3-interface-debt-swap",
     "metadata": {
@@ -61,10 +58,9 @@ const APP_DATA: &str = r#"{
     "version": "1.14.0"
 }"#;
 
-/// Re-serialises `app_data` JSON to its canonical (minified, alphabetically
-/// keyed) form. `serde_json`'s default `Map` is a `BTreeMap`, so the output
-/// is deterministic and matches the production payload byte-for-byte (which
-/// is itself alphabetically keyed at every level).
+/// Returns `app_data` minified with keys sorted alphabetically. The output
+/// matches the signed production bytes byte-for-byte because that payload
+/// is already alphabetically keyed at every level.
 fn canonicalise_app_data(app_data: &str) -> String {
     let value: serde_json::Value =
         serde_json::from_str(app_data).expect("APP_DATA must be valid JSON");
