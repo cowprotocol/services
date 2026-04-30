@@ -42,6 +42,7 @@ pub(crate) struct Inner {
 }
 
 impl SettlementSimulator {
+    #[expect(clippy::too_many_arguments)]
     pub async fn new(
         settlement: contracts::GPv2Settlement::Instance,
         flash_loan_router: Address,

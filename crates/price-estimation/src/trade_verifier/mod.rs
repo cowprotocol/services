@@ -82,7 +82,6 @@ impl TradeVerifier {
     const SPARDOSE: Address = address!("0000000000000000000000000000000000020000");
     const TRADER_IMPL: Address = address!("0000000000000000000000000000000000010000");
 
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
         simulator: SettlementSimulator,
         tenderly: Option<Arc<dyn tenderly::Api>>,
