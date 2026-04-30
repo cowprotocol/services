@@ -424,6 +424,7 @@ pub async fn run(config: Configuration) {
                 settlement_contract.clone(),
                 Default::default(),
                 hooks_trampoline_address,
+                *native_token.address(),
                 balance_overrider.clone(),
                 current_block_stream.clone(),
                 tenderly,

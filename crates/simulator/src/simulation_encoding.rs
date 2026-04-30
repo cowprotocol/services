@@ -15,6 +15,7 @@ use {
             ExecutionAmount,
             MergeConflict,
             Order,
+            PriceEncoding,
             Prices,
             SimulationBuilder,
             Solver,
@@ -93,8 +94,21 @@ pub(crate) async fn encode(
         }
     }
 
+    let trade_data = match order.price_encoding {
+        PriceEncoding::Exact => std::borrow::Cow::Borrowed(&order.data),
+        PriceEncoding::Disadvantageous => {
+            let mut d = order.data.clone();
+            match d.kind {
+                model::order::OrderKind::Sell => d.buy_amount = U256::ZERO,
+                model::order::OrderKind::Buy => {
+                    d.sell_amount = d.sell_amount.max(U256::from(u128::MAX))
+                }
+            }
+            std::borrow::Cow::Owned(d)
+        }
+    };
     let trade = encode_trade(
-        &order.data,
+        &trade_data,
         &order.signature,
         order.owner,
         sell_token_index,
@@ -105,10 +119,13 @@ pub(crate) async fn encode(
     let order_pre = &order.pre_interactions;
     let order_post = &order.post_interactions;
 
+    let mut trades = vec![trade];
+    trades.extend(builder.extra_trades);
+
     let mut settlement = EncodedSettlement {
         tokens,
         clearing_prices,
-        trades: vec![trade],
+        trades,
         interactions: Interactions {
             // order's pre-hooks run before any additional pre-interactions
             pre: encode_interactions(order_pre.iter().chain(&builder.pre_interactions)),

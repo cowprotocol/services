@@ -642,7 +642,10 @@ impl Orderbook {
             .add_order(
                 simulation_builder::Order::new(order.data)
                     .with_signature(order.metadata.owner, order.signature)
-                    .with_executed_amount(simulation_builder::ExecutionAmount::Remaining),
+                    .fill_at(
+                        simulation_builder::ExecutionAmount::Remaining,
+                        simulation_builder::PriceEncoding::Exact,
+                    ),
             )
             .parameters_from_app_data(&full_app_data)
             .context("failed to parse app data")?
@@ -699,7 +702,10 @@ impl Orderbook {
                     partially_fillable: request.partially_fillable,
                 })
                 .with_signature(request.owner, request.signature)
-                .with_executed_amount(simulation_builder::ExecutionAmount::Full),
+                .fill_at(
+                    simulation_builder::ExecutionAmount::Full,
+                    simulation_builder::PriceEncoding::Exact,
+                ),
             )
             .parameters_from_app_data(&request.app_data)
             .context("failed to parse app data")?

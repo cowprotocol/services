@@ -486,6 +486,8 @@ impl TradeVerifier {
                 .call()
                 .await
                 .context("could not fetch authenticator")?;
+            // TODO: when switching to the `SettlementSimulator` use
+            // `StateOverrideRequest::AuthenticateAddress` for this
             overrides.insert(
                 authenticator,
                 AccountOverride {

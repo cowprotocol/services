@@ -1,6 +1,6 @@
 use {
     crate::{
-        encoding::{EncodedSettlement, WrapperCall},
+        encoding::{EncodedSettlement, EncodedTrade, WrapperCall},
         tenderly::dto::StateObject,
     },
     alloy_primitives::{Address, B256, Bytes, TxKind, U256},
@@ -34,6 +34,7 @@ pub(crate) struct Inner {
     pub(crate) authenticator: Address,
     pub(crate) flash_loan_router: Address,
     pub(crate) hooks_trampoline: Address,
+    pub(crate) native_token: Address,
     pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
     pub(crate) provider: DynProvider,
     pub(crate) domain_separator: DomainSeparator,
@@ -47,6 +48,7 @@ impl SettlementSimulator {
         settlement: contracts::GPv2Settlement::Instance,
         flash_loan_router: Address,
         hooks_trampoline: Address,
+        native_token: Address,
         balance_overrides: Arc<dyn BalanceOverriding>,
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn crate::tenderly::Api>>,
@@ -60,6 +62,7 @@ impl SettlementSimulator {
             authenticator,
             flash_loan_router,
             hooks_trampoline,
+            native_token,
             balance_overrides,
             provider,
             domain_separator,
@@ -67,6 +70,10 @@ impl SettlementSimulator {
             current_block,
             tenderly,
         })))
+    }
+
+    pub fn native_token(&self) -> Address {
+        self.0.native_token
     }
 
     pub fn new_simulation_builder(&self) -> SimulationBuilder {
@@ -81,6 +88,7 @@ impl SettlementSimulator {
             solver: None,
             auction_id: None,
             account_override_requests: vec![],
+            extra_trades: vec![],
             block: Block::Latest,
         }
     }
@@ -112,6 +120,7 @@ pub struct SimulationBuilder {
     pub(crate) auction_id: Option<i64>,
     pub(crate) simulator: SettlementSimulator,
     pub(crate) account_override_requests: Vec<AccountOverrideRequest>,
+    pub(crate) extra_trades: Vec<EncodedTrade>,
     pub(crate) block: Block,
 }
 
@@ -229,6 +238,13 @@ impl SimulationBuilder {
         self
     }
 
+    /// Appends pre-encoded trades (e.g. JIT orders) to the settlement.
+    /// These are appended after the primary order's trade entry.
+    pub fn add_extra_trades(mut self, trades: Vec<EncodedTrade>) -> Self {
+        self.extra_trades.extend(trades);
+        self
+    }
+
     /// Finishes the simulation struct based on the configuration thus far.
     pub async fn build(self) -> Result<EthCallInputs, BuildError> {
         self.build_with_modifications(|_| {}).await
@@ -290,6 +306,19 @@ pub enum ExecutionAmount {
     Explicit(U256),
 }
 
+/// How the limit price of an order's trade entry should be encoded.
+pub enum PriceEncoding {
+    /// Encode the exact sell_amount / buy_amount from the order as the limit
+    /// price. Default for production settlements.
+    Exact,
+    /// Set limit prices maximally permissive so the settlement always passes,
+    /// regardless of how many tokens the trader actually receives. Used for
+    /// quote verification so the actual out_amount can be measured afterward.
+    /// Sell orders: buy_amount = 0. Buy orders: sell_amount = max(sell_amount,
+    /// u128::MAX).
+    Disadvantageous,
+}
+
 /// A simulator-specific order that bundles the data needed to encode a trade.
 ///
 /// Construct with [`Order::new`] and add optional fields via the builder
@@ -302,6 +331,7 @@ pub struct Order {
     pub(crate) pre_interactions: Vec<InteractionData>,
     pub(crate) post_interactions: Vec<InteractionData>,
     pub(crate) executed_amount: ExecutionAmount,
+    pub(crate) price_encoding: PriceEncoding,
 }
 
 /// Configuration for wrapping the settlement in a flashloan or custom wrapper
@@ -328,6 +358,7 @@ impl Order {
             pre_interactions: vec![],
             post_interactions: vec![],
             executed_amount: ExecutionAmount::Remaining,
+            price_encoding: PriceEncoding::Exact,
         }
     }
 
@@ -347,8 +378,9 @@ impl Order {
         self
     }
 
-    pub fn with_executed_amount(mut self, amount: ExecutionAmount) -> Self {
-        self.executed_amount = amount;
+    pub fn fill_at(mut self, execution: ExecutionAmount, price: PriceEncoding) -> Self {
+        self.executed_amount = execution;
+        self.price_encoding = price;
         self
     }
 }
