@@ -16,7 +16,6 @@ use {
             MergeConflict,
             Order,
             PriceEncoding,
-            Prices,
             SimulationBuilder,
             Solver,
             WrapperConfig,
@@ -46,20 +45,18 @@ pub(crate) async fn encode(
 
     let executed_amount = executed_amount(&builder, order, block).await?;
 
-    let (tokens, clearing_prices) = match builder.prices {
-        Some(Prices::Explicit {
-            tokens,
-            clearing_prices,
-        }) => (tokens, clearing_prices),
-        // At limit price: price[sell_token] = buy_amount, price[buy_token] = sell_amount.
-        // This makes sell_amount * price[sell] / price[buy] = buy_amount exactly.
-        Some(Prices::Limit) => (
+    // At limit price: price[sell_token] = buy_amount, price[buy_token] =
+    // sell_amount. This makes sell_amount * price[sell] / price[buy] =
+    // buy_amount exactly.
+    let (tokens, clearing_prices) = match &order.price_encoding {
+        PriceEncoding::LimitPrice => (
             vec![order.data.sell_token, order.data.buy_token],
             vec![order.data.buy_amount, order.data.sell_amount],
         ),
-        None => {
-            return Err(BuildError::NoPriceEncoding);
-        }
+        PriceEncoding::Custom {
+            tokens,
+            clearing_prices,
+        } => (tokens.clone(), clearing_prices.clone()),
     };
 
     let sell_token_index = tokens
@@ -94,21 +91,8 @@ pub(crate) async fn encode(
         }
     }
 
-    let trade_data = match order.price_encoding {
-        PriceEncoding::Exact => std::borrow::Cow::Borrowed(&order.data),
-        PriceEncoding::Disadvantageous => {
-            let mut d = order.data.clone();
-            match d.kind {
-                model::order::OrderKind::Sell => d.buy_amount = U256::ZERO,
-                model::order::OrderKind::Buy => {
-                    d.sell_amount = d.sell_amount.max(U256::from(u128::MAX))
-                }
-            }
-            std::borrow::Cow::Owned(d)
-        }
-    };
     let trade = encode_trade(
-        &trade_data,
+        &order.data,
         &order.signature,
         order.owner,
         sell_token_index,

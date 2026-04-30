@@ -76,6 +76,18 @@ impl SettlementSimulator {
         self.0.native_token
     }
 
+    pub fn provider(&self) -> DynProvider {
+        self.0.provider.clone()
+    }
+
+    pub fn settlement_address(&self) -> Address {
+        *self.0.settlement.address()
+    }
+
+    pub fn authenticator_address(&self) -> Address {
+        self.0.authenticator
+    }
+
     pub fn new_simulation_builder(&self) -> SimulationBuilder {
         SimulationBuilder {
             simulator: self.clone(),
@@ -84,7 +96,6 @@ impl SettlementSimulator {
             main_interactions: vec![],
             post_interactions: vec![],
             wrapper: WrapperConfig::NoWrapper,
-            prices: None,
             solver: None,
             auction_id: None,
             account_override_requests: vec![],
@@ -115,7 +126,6 @@ pub struct SimulationBuilder {
     pub(crate) main_interactions: Vec<InteractionData>,
     pub(crate) post_interactions: Vec<InteractionData>,
     pub(crate) wrapper: WrapperConfig,
-    pub(crate) prices: Option<Prices>,
     pub(crate) solver: Option<Solver>,
     pub(crate) auction_id: Option<i64>,
     pub(crate) simulator: SettlementSimulator,
@@ -149,11 +159,6 @@ impl SimulationBuilder {
 
     pub fn with_wrapper(mut self, wrapper: WrapperConfig) -> Self {
         self.wrapper = wrapper;
-        self
-    }
-
-    pub fn with_prices(mut self, prices: Prices) -> Self {
-        self.prices = Some(prices);
         self
     }
 
@@ -276,23 +281,6 @@ pub enum Solver {
     Fake(Option<Address>),
 }
 
-/// How clearing prices are determined for the encoded settlement.
-pub enum Prices {
-    /// Derive clearing prices directly from the order's limit price.
-    ///
-    /// Sets `price[sell_token] = buy_amount` and `price[buy_token] =
-    /// sell_amount`, exactly satisfying the order's limit with no surplus.
-    /// This should NOT be used when encoding solutions you actually want
-    /// to submit.
-    Limit,
-    // TODO: check how this can be made nicer.
-    /// Explicit token list and matching clearing prices.
-    Explicit {
-        tokens: Vec<Address>,
-        clearing_prices: Vec<U256>,
-    },
-}
-
 /// How much of an order should be filled during simulation.
 pub enum ExecutionAmount {
     /// Fill the full order amount (sell_amount for sell orders, buy_amount for
@@ -306,17 +294,21 @@ pub enum ExecutionAmount {
     Explicit(U256),
 }
 
-/// How the limit price of an order's trade entry should be encoded.
+/// How clearing prices are determined for the encoded settlement.
 pub enum PriceEncoding {
-    /// Encode the exact sell_amount / buy_amount from the order as the limit
-    /// price. Default for production settlements.
-    Exact,
-    /// Set limit prices maximally permissive so the settlement always passes,
-    /// regardless of how many tokens the trader actually receives. Used for
-    /// quote verification so the actual out_amount can be measured afterward.
-    /// Sell orders: buy_amount = 0. Buy orders: sell_amount = max(sell_amount,
-    /// u128::MAX).
-    Disadvantageous,
+    /// Derive clearing prices directly from the order's limit price.
+    ///
+    /// Sets `price[sell_token] = buy_amount` and `price[buy_token] =
+    /// sell_amount`, exactly satisfying the order's limit with no surplus.
+    LimitPrice,
+    /// Explicit token list and matching clearing prices. Use this when the
+    /// clearing prices differ from the order's limit — e.g. in trade
+    /// verification where the order amounts are set to always pass the limit
+    /// check and the solver's quoted prices are supplied separately.
+    Custom {
+        tokens: Vec<Address>,
+        clearing_prices: Vec<U256>,
+    },
 }
 
 /// A simulator-specific order that bundles the data needed to encode a trade.
@@ -358,7 +350,7 @@ impl Order {
             pre_interactions: vec![],
             post_interactions: vec![],
             executed_amount: ExecutionAmount::Remaining,
-            price_encoding: PriceEncoding::Exact,
+            price_encoding: PriceEncoding::LimitPrice,
         }
     }
 
@@ -509,8 +501,6 @@ pub enum BuildError {
     MissingBuyToken,
     #[error("could not override token balances to fund settlement contract")]
     FailedToOverrideBalances,
-    #[error("no strategy to compute the price vector was chosen")]
-    NoPriceEncoding,
     #[error("failed to query filled amount from settlement contract: {0}")]
     FilledAmountQuery(#[source] anyhow::Error),
     #[error("failed to parse app data: {0}")]

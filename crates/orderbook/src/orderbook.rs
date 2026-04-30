@@ -644,7 +644,7 @@ impl Orderbook {
                     .with_signature(order.metadata.owner, order.signature)
                     .fill_at(
                         simulation_builder::ExecutionAmount::Remaining,
-                        simulation_builder::PriceEncoding::Exact,
+                        simulation_builder::PriceEncoding::LimitPrice,
                     ),
             )
             .parameters_from_app_data(&full_app_data)
@@ -654,7 +654,6 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_prices(simulation_builder::Prices::Limit)
             .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
@@ -704,7 +703,7 @@ impl Orderbook {
                 .with_signature(request.owner, request.signature)
                 .fill_at(
                     simulation_builder::ExecutionAmount::Full,
-                    simulation_builder::PriceEncoding::Exact,
+                    simulation_builder::PriceEncoding::LimitPrice,
                 ),
             )
             .parameters_from_app_data(&request.app_data)
@@ -715,7 +714,6 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_prices(simulation_builder::Prices::Limit)
             .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
