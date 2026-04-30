@@ -262,6 +262,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn eth_sentinel_prices_to_one_without_delegating() {
+        // Mock has no expectations set, so any call to the inner panics —
+        // this proves the sentinel short-circuits instead of delegating.
+        let inner = MockNativePriceEstimating::new();
+        let estimator = Eip4626::new(
+            Box::new(inner),
+            ethrpc::Web3::new_from_url("http://localhost:1").provider,
+        );
+        let price = estimator
+            .estimate_native_price(BUY_ETH_ADDRESS, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .unwrap();
+        assert_eq!(price, 1.0);
+    }
+
+    #[tokio::test]
     async fn non_vault_tokens_delegate_to_inner() {
         let mut inner = MockNativePriceEstimating::new();
         let token = Address::repeat_byte(0x42);
