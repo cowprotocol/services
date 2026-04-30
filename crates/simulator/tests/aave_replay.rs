@@ -132,10 +132,15 @@ async fn aave_debt_swap_replay_fails_when_flashloan_oversubscribed() {
 
     let inputs = build_replay_simulation(&rpc_url, &tampered_app_data).await;
 
-    inputs
+    let err = inputs
         .simulate()
         .await
         .expect_err("simulation must revert when the flashloan exceeds Aave liquidity");
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("execution reverted"),
+        "expected an EVM revert, got: {msg}",
+    );
 }
 
 /// Builds a simulation pinned to the block right before the Aave debt-swap
