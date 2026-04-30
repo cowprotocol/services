@@ -16,7 +16,7 @@ use {
         util,
     },
     chrono::Utc,
-    eth_domain_types as eth,
+    eth_domain_types::{self as eth, Address},
     std::collections::{HashMap, HashSet},
 };
 
@@ -118,6 +118,9 @@ pub struct Order {
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
+    pub owner: Address,
+    pub pre_interactions: Vec<domain::Interaction>,
+    pub post_interactions: Vec<domain::Interaction>,
 }
 
 impl Order {
@@ -177,7 +180,7 @@ impl Order {
         competition::Auction::new(
             None,
             vec![competition::Order {
-                uid: Default::default(),
+                uid: competition::order::Uid::from_parts(eth::B256::ZERO, self.owner, u32::MAX),
                 receiver: None,
                 created: u32::try_from(Utc::now().timestamp())
                     .unwrap_or(u32::MIN)
@@ -193,14 +196,14 @@ impl Order {
                 },
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
-                pre_interactions: Default::default(),
-                post_interactions: Default::default(),
+                pre_interactions: self.pre_interactions.clone(),
+                post_interactions: self.post_interactions.clone(),
                 sell_token_balance: competition::order::SellTokenBalance::Erc20,
                 buy_token_balance: competition::order::BuyTokenBalance::Erc20,
                 signature: competition::order::Signature {
                     scheme: competition::order::signature::Scheme::Eip1271,
                     data: Default::default(),
-                    signer: Default::default(),
+                    signer: self.owner,
                 },
                 protocol_fees: Default::default(),
                 quote: Default::default(),

@@ -65,12 +65,35 @@ impl ExternalTradeFinder {
     /// the result into a Quote or Trade.
     async fn shared_query(&self, query: &Query) -> Result<TradeKind, TradeError> {
         let fut = move |query: &Query| {
-            let order = dto::Order {
+            let order = dto::PostOrder {
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
                 amount: query.in_amount.get(),
                 kind: query.kind,
                 deadline: chrono::Utc::now() + query.timeout,
+                from: query.verification.from,
+                interactions: dto::Interactions {
+                    pre: query
+                        .verification
+                        .pre_interactions
+                        .iter()
+                        .map(|i| dto::Interaction {
+                            target: i.target,
+                            value: i.value,
+                            call_data: i.data.clone(),
+                        })
+                        .collect(),
+                    post: query
+                        .verification
+                        .post_interactions
+                        .iter()
+                        .map(|i| dto::Interaction {
+                            target: i.target,
+                            value: i.value,
+                            call_data: i.data.clone(),
+                        })
+                        .collect(),
+                },
             };
             let block_dependent = query.block_dependent;
             let id = observe::tracing::distributed::request_id::from_current_span();
@@ -81,11 +104,10 @@ impl ExternalTradeFinder {
 
             async move {
                 let mut request = client
-                    .get(quote_endpoint)
+                    .post(quote_endpoint)
                     .timeout(timeout)
-                    .query(&order)
+                    .json(&order)
                     .headers(tracing_headers())
-                    .header(header::CONTENT_TYPE, "application/json")
                     .header(header::ACCEPT, "application/json");
 
                 if block_dependent {
@@ -378,13 +400,23 @@ pub mod dto {
     #[serde_as]
     #[derive(Clone, Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct Order {
+    pub struct PostOrder {
         pub sell_token: Address,
         pub buy_token: Address,
         #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
+        pub from: Address,
+        pub interactions: Interactions,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Interactions {
+        pub pre: Vec<Interaction>,
+        pub post: Vec<Interaction>,
     }
 
     #[serde_as]
@@ -426,7 +458,7 @@ pub mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Interaction {
         pub target: Address,

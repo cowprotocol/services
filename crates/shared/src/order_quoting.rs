@@ -497,6 +497,8 @@ impl OrderQuoter {
             } => (trade_estimate.out_amount, buy_amount.get()),
         };
 
+        tracing::error!("Gas estimate for quote {}", trade_estimate.gas);
+
         let fee_parameters = FeeParameters {
             gas_amount: trade_estimate.gas as f64,
             gas_price: effective_gas_price as f64,
@@ -595,10 +597,12 @@ impl OrderQuoting for OrderQuoter {
         &self,
         parameters: QuoteParameters,
     ) -> Result<Quote, CalculateQuoteError> {
+        tracing::error!(?parameters, "computing quote");
         let data = self.compute_quote_data(&parameters).await?;
+        tracing::error!(?data, "quote data");
         let mut quote =
             Quote::new(Default::default(), data).with_additional_cost(parameters.additional_cost());
-
+        tracing::error!(?quote, "quote");
         // Make sure to scale the sell and buy amounts for quotes for sell
         // amounts before fees.
         if let OrderQuoteSide::Sell {

@@ -17,7 +17,6 @@ use {
     tokio::time::timeout,
 };
 
-static FAKE_SOLVER: Address = Address::with_last_byte(1);
 const ESTIMATION_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct TxGasEstimator {
@@ -54,9 +53,8 @@ impl TxGasEstimator {
         output: eth::Asset,
     ) -> Option<eth::Gas> {
         let sell_amount = NonZeroU256::new(input.amount)?;
-        let solver = FAKE_SOLVER;
+        let solver = Address::random();
         let owner = order.owner();
-
         let query = Query {
             sell_token: input.token.0,
             sell_amount,
@@ -90,6 +88,8 @@ impl TxGasEstimator {
             .await
             .ok()?;
 
+        tracing::error!("encoded swap");
+
         // Inject order hooks before/after existing interactions.
         let pre = order.pre_interactions.iter().map(encode_interaction);
         swap.settlement.interactions.pre = pre
@@ -100,8 +100,12 @@ impl TxGasEstimator {
             .post
             .extend(order.post_interactions.iter().map(encode_interaction));
 
-        let state_overrides = self.prepare_state_overrides(solver, owner, output).await?;
+        let state_overrides = self
+            .prepare_state_overrides(solver, owner, input, output)
+            .await?;
         swap.overrides.extend(state_overrides);
+
+        tracing::error!("added state overrides");
 
         // simulate_settle_call gives us back the encoded tx + overrides;
         // re-use those to call eth_estimateGas.
@@ -110,6 +114,8 @@ impl TxGasEstimator {
             .simulate_settle_call_on_latest(swap)
             .await
             .ok()?;
+
+        tracing::error!("simulated tx");
         let block = *self.simulator.current_block.borrow();
         let gas: u64 = self
             .simulator
@@ -119,8 +125,13 @@ impl TxGasEstimator {
             .overrides(sim.overrides)
             .block(block.number.into())
             .await
+            .map_err(|e| {
+                tracing::error!(?e, "tx gas estimation error");
+                e
+            })
             .ok()?;
 
+        tracing::error!(?gas, "Estimated tx gas");
         Some(eth::Gas(U256::from(gas)))
     }
 
@@ -128,6 +139,7 @@ impl TxGasEstimator {
         &self,
         solver: Address,
         owner: Address,
+        input: eth::Asset,
         output: eth::Asset,
     ) -> Option<StateOverride> {
         let mut overrides = StateOverride::default();
@@ -160,6 +172,18 @@ impl TxGasEstimator {
                 ..Default::default()
             },
         );
+        if let Some((token, balance_override)) = self
+            .simulator
+            .balance_overrides
+            .state_override(BalanceOverrideRequest {
+                token: input.token.0,
+                holder: owner,
+                amount: input.amount,
+            })
+            .await
+        {
+            overrides.insert(token, balance_override);
+        }
         if let Some((token, balance_override)) = self
             .simulator
             .balance_overrides

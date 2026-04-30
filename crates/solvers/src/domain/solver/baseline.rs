@@ -161,6 +161,8 @@ impl Inner {
             self.uni_v3_quoter_v2.clone(),
         );
 
+        tracing::error!(?auction, "Solving auction");
+
         for (i, order) in auction.orders.into_iter().enumerate() {
             let sell_token = order.sell.token;
             let sell_token_price = match auction.tokens.reference_price(&sell_token) {
@@ -197,6 +199,7 @@ impl Inner {
             };
 
             let compute_solution = async |request: Request| -> Option<Solution> {
+                tracing::error!(?request, ?order, "Computing solution");
                 let wrappers = request.wrappers.clone();
                 let solution = if order.sell.token == order.buy.token {
                     // When sell and buy tokens are the same, the solution does not require routing
@@ -214,6 +217,7 @@ impl Inner {
                     } else {
                         eth::Gas(U256::ZERO) + self.solution_gas_offset
                     };
+                    tracing::error!(?gas, "Calcualated gas for sell=buy");
                     solution::Single {
                         order: order.clone(),
                         input,
@@ -250,6 +254,7 @@ impl Inner {
                     } else {
                         route.gas() + self.solution_gas_offset
                     };
+                    tracing::error!(?gas, "Calculated gas");
                     let mut output = route_output;
 
                     // The baseline solver generates a path with swapping
