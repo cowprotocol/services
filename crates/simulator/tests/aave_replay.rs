@@ -17,6 +17,14 @@ use {
     std::{str::FromStr, sync::Arc},
 };
 
+/// Full `app_data` JSON the trader signed for the replayed Aave v3 debt-swap
+/// order.
+const APP_DATA: &str = r#"{"appCode":"aave-v3-interface-debt-swap","metadata":{"flashloan":{"amount":"4475596734006878742","liquidityProvider":"0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2","protocolAdapter":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","receiver":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","token":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"},"hooks":{"post":[{"callData":"0xad3da559000000000000000000000000000000000000000000000000444d51cbc68377680000000000000000000000000000000000000000000000000000000069f323f8000000000000000000000000000000000000000000000000000000000000001c445675473b3e0941842eb5405ec1d9cb93c7d64b513b30d928d7ea42067440cb00fbafa80085d754964d5d70f616d899049f4e75c240fda7c2f108a99c882e8b","dappId":"cow-sdk://flashloans/aave/v3/debt-swap","gasLimit":"1000000","target":"0xe58aCB86761699c1cBC665e6b7E0271503f6336C"}],"pre":[{"callData":"0xb1b6308b00000000000000000000000073e7af13ef172f13d8fefebfd90c7a65300963440000000000000000000000006276ac03090f2bb8be680178343ac368f713b4e8000000000000000000000000e58acb86761699c1cbc665e6b7e0271503f6336c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000040d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f0000000000000000000000000000000000000000000000003e14904047a25ee600000000000000000000000000000000000000000000021e4382edd5a86c00006ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc0000000000000000000000000000000000000000000000000000000069f323f80000000000000000000000000000000000000000000000003e1c83845060e2160000000000000000000000000000000000000000000000000007f34408be83300000000000000000000000000000000000000000000000003e1c83845060e21600000000000000000000000000000000000000000000021e4382edd5a86c0000","dappId":"cow-sdk://flashloans/aave/v3/debt-swap","gasLimit":"300000","target":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192"}]},"orderClass":{"orderClass":"market"},"partnerFee":{"recipient":"0x464C71f6c2F760DdA6093dCB91C24c39e5d6e18c","volumeBps":0},"quote":{"slippageBips":140,"smartSlippage":true},"utm":{"utmCampaign":"developer-cohort","utmContent":"","utmMedium":"cow-sdk@7.3.4","utmSource":"cowmunity","utmTerm":"js"}},"version":"1.14.0"}"#;
+
+/// Production EIP-1271 signature blob for the replayed order. The trader's
+/// signer contract decodes it and validates against the order hash.
+const SIGNATURE_HEX: &str = "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000040d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f000000000000000000000000e58acb86761699c1cbc665e6b7e0271503f6336c0000000000000000000000000000000000000000000000003e14904047a25ee600000000000000000000000000000000000000000000021e4382edd5a86c00000000000000000000000000000000000000000000000000000000000069f323f8a1435054976e030f531f620f051bbabe34ef387901808b8677cf7c9304c21f3c00000000000000000000000000000000000000000000000000000000000000006ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc00000000000000000000000000000000000000000000000000000000000000005a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc95a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc900000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000041bb5488854dd5149f8843514851b7e25499917ca742af77061d2355681f3b608157bb34a59f9632e2228ea869c6d571f822295ee2eb03904dd8dd874245478f3b1b00000000000000000000000000000000000000000000000000000000000000";
+
 /// Replay of a real Aave v3 debt-swap order against a historical mainnet
 /// block, exercising the prototype's `SettlementSimulator`-based simulation
 /// path end-to-end without involving the orderbook's wall-clock validity
@@ -44,8 +52,7 @@ async fn aave_debt_swap_replay() {
         return;
     };
 
-    let app_data = include_str!("fixtures/aave_replay_app_data.json").trim();
-    let inputs = build_replay_simulation(&rpc_url, app_data).await;
+    let inputs = build_replay_simulation(&rpc_url, APP_DATA).await;
 
     inputs
         .simulate()
@@ -69,13 +76,11 @@ async fn aave_debt_swap_replay_fails_when_flashloan_oversubscribed() {
         return;
     };
 
-    let original = include_str!("fixtures/aave_replay_app_data.json").trim();
     let mut value: serde_json::Value =
-        serde_json::from_str(original).expect("fixture must be valid JSON");
+        serde_json::from_str(APP_DATA).expect("APP_DATA must be valid JSON");
     // Way more WETH than Aave can lend. Aave reverts with insufficient
     // liquidity (or similar) before any settlement runs.
-    value["metadata"]["flashloan"]["amount"] =
-        serde_json::Value::String(U256::MAX.to_string());
+    value["metadata"]["flashloan"]["amount"] = serde_json::Value::String(U256::MAX.to_string());
     let tampered_app_data = serde_json::to_string(&value).unwrap();
 
     let inputs = build_replay_simulation(&rpc_url, &tampered_app_data).await;
@@ -102,7 +107,6 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
     let sell_amount = U256::from_str("4473358935639875302").unwrap();
     let buy_amount = U256::from_str("10003000000000000000000").unwrap();
     let valid_to = 1_777_542_136u32; // 2026-04-30 09:42:16 UTC
-    let signature_hex = include_str!("fixtures/aave_replay_signature.hex").trim();
 
     let web3 = ethrpc::Web3::new_from_url(rpc_url);
     let provider = web3.provider.clone();
@@ -131,8 +135,8 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
     .await
     .expect("failed to create SettlementSimulator");
 
-    let signature_bytes = hex::decode(signature_hex.trim_start_matches("0x"))
-        .expect("signature fixture must be valid hex");
+    let signature_bytes = hex::decode(SIGNATURE_HEX.trim_start_matches("0x"))
+        .expect("SIGNATURE_HEX must be valid hex");
     let app_data_hash = AppDataHash(hash_full_app_data(full_app_data.as_bytes()));
 
     let order_data = OrderData {
