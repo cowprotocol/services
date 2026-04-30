@@ -10,7 +10,9 @@ use {
     crate::{
         boundary,
         domain::{
-            auction, eth, liquidity,
+            auction,
+            eth,
+            liquidity,
             order::{self, Order, Side},
             solution,
         },

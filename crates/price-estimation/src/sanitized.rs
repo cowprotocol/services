@@ -1,6 +1,9 @@
 use {
     crate::{
-        Estimate, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
         gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP, SETTLEMENT_OVERHEAD},
     },
     alloy::primitives::Address,

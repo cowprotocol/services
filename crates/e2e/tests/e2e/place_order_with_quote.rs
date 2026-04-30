@@ -4,7 +4,6 @@ use {
     configs::{
         autopilot::Configuration,
         order_quoting::{ExternalSolver, OrderQuoting},
-        orderbook::order_validation::{OrderValidationConfig, SameTokensPolicy},
         shared::SharedConfig,
         test_util::TestDefault,
     },
