@@ -18,10 +18,58 @@ use {
 };
 
 /// Full `app_data` JSON the trader signed for the replayed Aave v3 debt-swap
-/// order. Do not edit: the EIP-1271 signature embeds `keccak256(APP_DATA)`
-/// and the signer contract validates against it, so any byte change here
-/// invalidates the signature.
-const APP_DATA: &str = r#"{"appCode":"aave-v3-interface-debt-swap","metadata":{"flashloan":{"amount":"4475596734006878742","liquidityProvider":"0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2","protocolAdapter":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","receiver":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","token":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"},"hooks":{"post":[{"callData":"0xad3da559000000000000000000000000000000000000000000000000444d51cbc68377680000000000000000000000000000000000000000000000000000000069f323f8000000000000000000000000000000000000000000000000000000000000001c445675473b3e0941842eb5405ec1d9cb93c7d64b513b30d928d7ea42067440cb00fbafa80085d754964d5d70f616d899049f4e75c240fda7c2f108a99c882e8b","dappId":"cow-sdk://flashloans/aave/v3/debt-swap","gasLimit":"1000000","target":"0xe58aCB86761699c1cBC665e6b7E0271503f6336C"}],"pre":[{"callData":"0xb1b6308b00000000000000000000000073e7af13ef172f13d8fefebfd90c7a65300963440000000000000000000000006276ac03090f2bb8be680178343ac368f713b4e8000000000000000000000000e58acb86761699c1cbc665e6b7e0271503f6336c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000040d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f0000000000000000000000000000000000000000000000003e14904047a25ee600000000000000000000000000000000000000000000021e4382edd5a86c00006ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc0000000000000000000000000000000000000000000000000000000069f323f80000000000000000000000000000000000000000000000003e1c83845060e2160000000000000000000000000000000000000000000000000007f34408be83300000000000000000000000000000000000000000000000003e1c83845060e21600000000000000000000000000000000000000000000021e4382edd5a86c0000","dappId":"cow-sdk://flashloans/aave/v3/debt-swap","gasLimit":"300000","target":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192"}]},"orderClass":{"orderClass":"market"},"partnerFee":{"recipient":"0x464C71f6c2F760DdA6093dCB91C24c39e5d6e18c","volumeBps":0},"quote":{"slippageBips":140,"smartSlippage":true},"utm":{"utmCampaign":"developer-cohort","utmContent":"","utmMedium":"cow-sdk@7.3.4","utmSource":"cowmunity","utmTerm":"js"}},"version":"1.14.0"}"#;
+/// order. Whitespace here is for readability only - tests canonicalise via
+/// `serde_json` (which sorts keys alphabetically and strips whitespace)
+/// before hashing or passing the JSON downstream, and the production order's
+/// field ordering is already alphabetical at every level so the canonical
+/// form matches the signed bytes.
+const APP_DATA: &str = r#"{
+    "appCode": "aave-v3-interface-debt-swap",
+    "metadata": {
+        "flashloan": {
+            "amount": "4475596734006878742",
+            "liquidityProvider": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+            "protocolAdapter": "0xdeCC46a4b09162F5369c5C80383AAa9159bCf192",
+            "receiver": "0xdeCC46a4b09162F5369c5C80383AAa9159bCf192",
+            "token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+        },
+        "hooks": {
+            "post": [{
+                "callData": "0xad3da559000000000000000000000000000000000000000000000000444d51cbc68377680000000000000000000000000000000000000000000000000000000069f323f8000000000000000000000000000000000000000000000000000000000000001c445675473b3e0941842eb5405ec1d9cb93c7d64b513b30d928d7ea42067440cb00fbafa80085d754964d5d70f616d899049f4e75c240fda7c2f108a99c882e8b",
+                "dappId": "cow-sdk://flashloans/aave/v3/debt-swap",
+                "gasLimit": "1000000",
+                "target": "0xe58aCB86761699c1cBC665e6b7E0271503f6336C"
+            }],
+            "pre": [{
+                "callData": "0xb1b6308b00000000000000000000000073e7af13ef172f13d8fefebfd90c7a65300963440000000000000000000000006276ac03090f2bb8be680178343ac368f713b4e8000000000000000000000000e58acb86761699c1cbc665e6b7e0271503f6336c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000040d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f0000000000000000000000000000000000000000000000003e14904047a25ee600000000000000000000000000000000000000000000021e4382edd5a86c00006ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc0000000000000000000000000000000000000000000000000000000069f323f80000000000000000000000000000000000000000000000003e1c83845060e2160000000000000000000000000000000000000000000000000007f34408be83300000000000000000000000000000000000000000000000003e1c83845060e21600000000000000000000000000000000000000000000021e4382edd5a86c0000",
+                "dappId": "cow-sdk://flashloans/aave/v3/debt-swap",
+                "gasLimit": "300000",
+                "target": "0xdeCC46a4b09162F5369c5C80383AAa9159bCf192"
+            }]
+        },
+        "orderClass": {"orderClass": "market"},
+        "partnerFee": {"recipient": "0x464C71f6c2F760DdA6093dCB91C24c39e5d6e18c", "volumeBps": 0},
+        "quote": {"slippageBips": 140, "smartSlippage": true},
+        "utm": {
+            "utmCampaign": "developer-cohort",
+            "utmContent": "",
+            "utmMedium": "cow-sdk@7.3.4",
+            "utmSource": "cowmunity",
+            "utmTerm": "js"
+        }
+    },
+    "version": "1.14.0"
+}"#;
+
+/// Re-serialises `app_data` JSON to its canonical (minified, alphabetically
+/// keyed) form. `serde_json`'s default `Map` is a `BTreeMap`, so the output
+/// is deterministic and matches the production payload byte-for-byte (which
+/// is itself alphabetically keyed at every level).
+fn canonicalise_app_data(app_data: &str) -> String {
+    let value: serde_json::Value =
+        serde_json::from_str(app_data).expect("APP_DATA must be valid JSON");
+    serde_json::to_string(&value).expect("re-serialising must succeed")
+}
 
 /// Production EIP-1271 signature blob for the replayed order. The trader's
 /// signer contract decodes it and validates against the order hash.
@@ -54,7 +102,8 @@ async fn aave_debt_swap_replay() {
         return;
     };
 
-    let inputs = build_replay_simulation(&rpc_url, APP_DATA).await;
+    let canonical_app_data = canonicalise_app_data(APP_DATA);
+    let inputs = build_replay_simulation(&rpc_url, &canonical_app_data).await;
 
     inputs
         .simulate()
