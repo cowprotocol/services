@@ -171,9 +171,11 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
         },
         ..Default::default()
     };
-    assert!(
-        matches!(services.submit_quote(&quote_request).await, Err((reqwest::StatusCode::BAD_REQUEST, response)) if response.contains("SameBuyAndSellToken"))
-    );
+    let Err((status, response)) = services.submit_quote(&quote_request).await else {
+        panic!("expected error response");
+    };
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert!(response.contains("SameBuyAndSellToken"));
 
     tracing::info!("Quoting selling same sell and buy token pair of native token");
     let quote_sell_amount = 1u64.eth();
@@ -188,9 +190,11 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
         },
         ..Default::default()
     };
-    assert!(
-        matches!(services.submit_quote(&quote_request).await, Err((reqwest::StatusCode::BAD_REQUEST, response)) if response.contains("SameBuyAndSellToken"))
-    );
+    let Err((status, response)) = services.submit_quote(&quote_request).await else {
+        panic!("expected error response");
+    };
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert!(response.contains("SameBuyAndSellToken"));
 }
 
 async fn fallback_native_price_estimator(web3: Web3) {
