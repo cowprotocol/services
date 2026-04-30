@@ -214,8 +214,8 @@ impl Configuration {
             !self.networks.is_empty(),
             "at least one [[network]] must be configured"
         );
-        let mut names = std::collections::HashSet::new();
-        let mut chain_ids = std::collections::HashSet::new();
+        let mut names = HashSet::new();
+        let mut chain_ids = HashSet::new();
         for n in &self.networks {
             assert!(
                 names.insert(n.name.as_str()),
@@ -232,7 +232,7 @@ impl Configuration {
                 "network {} must list at least one factory",
                 n.name,
             );
-            let mut seen = std::collections::HashSet::new();
+            let mut seen = hSet::new();
             for f in &n.factories {
                 assert!(
                     seen.insert(f.address),
