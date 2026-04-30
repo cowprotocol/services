@@ -391,8 +391,7 @@ pub async fn run(config: Configuration) {
                     )) as _
                 });
             let flash_loan_router_address =
-                contracts::FlashLoanRouter::deployment_address(&chain.id())
-                    .unwrap_or_default();
+                contracts::FlashLoanRouter::deployment_address(&chain.id()).unwrap_or_default();
             let order_simulator = simulator::simulation_builder::SettlementSimulator::new(
                 settlement_contract.clone(),
                 flash_loan_router_address,

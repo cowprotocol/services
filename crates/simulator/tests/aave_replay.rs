@@ -83,12 +83,12 @@ const SIGNATURE_HEX: &str = "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f2
 /// Why this test exists:
 ///
 /// - A full `OrderValidator::validate_and_construct_order` flow uses
-///   `SystemTime::now()` to bound `valid_to`, which makes any historical
-///   order replay non-deterministic (the test rots as the order expires).
-/// - The prototype's value lives in the simulation, not the validity check,
-///   so we exercise the simulation directly: build a `SettlementSimulator`
-///   against a real RPC, pin the simulation to the block right before
-///   settlement, and assert it does not revert.
+///   `SystemTime::now()` to bound `valid_to`, which makes any historical order
+///   replay non-deterministic (the test rots as the order expires).
+/// - The prototype's value lives in the simulation, not the validity check, so
+///   we exercise the simulation directly: build a `SettlementSimulator` against
+///   a real RPC, pin the simulation to the block right before settlement, and
+///   assert it does not revert.
 ///
 /// Order replayed: an `aave-v3-interface-debt-swap` order
 /// `0x7f5df255b55f5eba3034f74acb8e91a04aaf61a755b88c61ad7c61068856f3b2e58acb86761699c1cbc665e6b7e0271503f6336c69f323f8`,
