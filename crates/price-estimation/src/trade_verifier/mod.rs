@@ -34,7 +34,6 @@ use {
         nonzero::NonZeroU256,
     },
     simulator::{
-        encoding::{EncodedTrade, encode_trade},
         simulation_builder::{
             self as sim_builder,
             AccountOverrideRequest,
@@ -43,7 +42,7 @@ use {
             SettlementSimulator,
             Solver as SimSolver,
         },
-        tenderly::{self},
+        tenderly,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -214,20 +213,13 @@ impl TradeVerifier {
             .chain(map_interactions_data(verification.post_interactions.iter()))
             .collect();
 
-        let jit_trades = match trade {
-            TradeKind::Regular(t) => {
-                encode_jit_orders(&t.jit_orders, &tokens, &self.simulator.domain_separator())?
-            }
-            _ => vec![],
-        };
-
         // Set limit amounts to always pass the settlement check so the actual
         // out_amount can be measured via the storeBalance interactions.
         let (fake_sell_amount, fake_buy_amount) = match query.kind {
             OrderKind::Sell => (sell_amount.get(), U256::ZERO),
             OrderKind::Buy => (sell_amount.get().max(U256::from(u128::MAX)), buy_amount),
         };
-        let fake_order = OrderData {
+        let fake_order = sim_builder::Order::new(OrderData {
             sell_token: query.sell_token,
             sell_amount: fake_sell_amount,
             buy_token: query.buy_token,
@@ -240,30 +232,65 @@ impl TradeVerifier {
             partially_fillable: false,
             sell_token_balance: verification.sell_token_source,
             buy_token_balance: verification.buy_token_destination,
+        })
+        .with_signature(
+            verification.from,
+            Signature::default_with(SigningScheme::Eip1271),
+        )
+        .fill_at(
+            ExecutionAmount::Full,
+            PriceEncoding::Custom {
+                tokens: tokens.clone(),
+                clearing_prices,
+            },
+        );
+
+        let jit_orders: Vec<sim_builder::Order> = match trade {
+            TradeKind::Regular(t) => t
+                .jit_orders
+                .iter()
+                .map(|jit_order| {
+                    let order_data = OrderData {
+                        sell_token: jit_order.sell_token,
+                        buy_token: jit_order.buy_token,
+                        receiver: Some(jit_order.receiver),
+                        sell_amount: jit_order.sell_amount,
+                        buy_amount: jit_order.buy_amount,
+                        valid_to: jit_order.valid_to,
+                        app_data: jit_order.app_data,
+                        fee_amount: U256::ZERO,
+                        kind: match &jit_order.side {
+                            Side::Buy => OrderKind::Buy,
+                            Side::Sell => OrderKind::Sell,
+                        },
+                        partially_fillable: jit_order.partially_fillable,
+                        sell_token_balance: jit_order.sell_token_source,
+                        buy_token_balance: jit_order.buy_token_destination,
+                    };
+                    let (owner, signature) = recover_jit_order_owner(
+                        jit_order,
+                        &order_data,
+                        &self.simulator.domain_separator(),
+                    )?;
+                    Ok(sim_builder::Order::new(order_data)
+                        .with_signature(owner, signature)
+                        .fill_at(
+                            ExecutionAmount::Explicit(jit_order.executed_amount),
+                            PriceEncoding::LimitPrice,
+                        ))
+                })
+                .collect::<Result<_>>()?,
+            _ => vec![],
         };
 
         let mut builder = self
             .simulator
             .new_simulation_builder()
-            .add_order(
-                sim_builder::Order::new(fake_order)
-                    .with_signature(
-                        verification.from,
-                        Signature::default_with(SigningScheme::Eip1271),
-                    )
-                    .fill_at(
-                        ExecutionAmount::Full,
-                        PriceEncoding::Custom {
-                            tokens: tokens.clone(),
-                            clearing_prices,
-                        },
-                    ),
-            )
+            .add_orders(std::iter::once(fake_order).chain(jit_orders))
             .from_solver(SimSolver::Real(solver_address))
             .with_pre_interactions(pre_interactions)
             .with_main_interactions(main_interactions)
-            .with_post_interactions(post_interactions)
-            .add_extra_trades(jit_trades);
+            .with_post_interactions(post_interactions);
 
         for req in override_requests {
             builder = builder.with_override(req);
@@ -752,53 +779,6 @@ pub struct PriceQuery {
     pub buy_token: Address,
     pub kind: OrderKind,
     pub in_amount: NonZeroU256,
-}
-
-pub fn encode_jit_orders(
-    jit_orders: &[dto::JitOrder],
-    tokens: &[Address],
-    domain_separator: &DomainSeparator,
-) -> Result<Vec<EncodedTrade>> {
-    jit_orders
-        .iter()
-        .map(|jit_order| {
-            let order_data = OrderData {
-                sell_token: jit_order.sell_token,
-                buy_token: jit_order.buy_token,
-                receiver: Some(jit_order.receiver),
-                sell_amount: jit_order.sell_amount,
-                buy_amount: jit_order.buy_amount,
-                valid_to: jit_order.valid_to,
-                app_data: jit_order.app_data,
-                fee_amount: U256::ZERO,
-                kind: match &jit_order.side {
-                    Side::Buy => OrderKind::Buy,
-                    Side::Sell => OrderKind::Sell,
-                },
-                partially_fillable: jit_order.partially_fillable,
-                sell_token_balance: jit_order.sell_token_source,
-                buy_token_balance: jit_order.buy_token_destination,
-            };
-            let (owner, signature) =
-                recover_jit_order_owner(jit_order, &order_data, domain_separator)?;
-
-            Ok(encode_trade(
-                &order_data,
-                &signature,
-                owner,
-                // the tokens set length is small so the linear search is acceptable
-                tokens
-                    .iter()
-                    .position(|token| *token == jit_order.sell_token)
-                    .context("missing jit order sell token index")?,
-                tokens
-                    .iter()
-                    .position(|token| *token == jit_order.buy_token)
-                    .context("missing jit order buy token index")?,
-                jit_order.executed_amount,
-            ))
-        })
-        .collect::<Result<Vec<EncodedTrade>>>()
 }
 
 /// Recovers the owner and signature from a `JitOrder`.

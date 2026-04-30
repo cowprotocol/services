@@ -28,26 +28,38 @@ use {
     },
     alloy_sol_types::SolCall,
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
-    model::order::OrderKind,
+    model::{interaction::InteractionData, order::OrderKind},
 };
 
 pub(crate) async fn encode(mut builder: SimulationBuilder) -> Result<EthCallInputs, BuildError> {
-    let order = builder.order.as_ref().ok_or(BuildError::NoOrder)?;
+    if builder.orders.is_empty() {
+        return Err(BuildError::NoOrder);
+    }
 
     let block = match builder.block {
         Block::Latest => builder.simulator.0.current_block.borrow().number,
         Block::Number(n) => n,
     };
 
-    let executed_amount = executed_amount(&builder, order, block).await?;
+    let executed_amounts = futures::future::try_join_all(
+        builder
+            .orders
+            .iter()
+            .map(|o| executed_amount(&builder, o, block)),
+    )
+    .await?;
 
+    // The first order determines the settlement-level token list and clearing
+    // prices. Subsequent orders (e.g. JIT orders) must have their tokens
+    // present in that list.
     // At limit price: price[sell_token] = buy_amount, price[buy_token] =
     // sell_amount. This makes sell_amount * price[sell] / price[buy] =
     // buy_amount exactly.
-    let (tokens, clearing_prices) = match &order.price_encoding {
+    let first = &builder.orders[0];
+    let (tokens, clearing_prices) = match &first.price_encoding {
         PriceEncoding::LimitPrice => (
-            vec![order.data.sell_token, order.data.buy_token],
-            vec![order.data.buy_amount, order.data.sell_amount],
+            vec![first.data.sell_token, first.data.buy_token],
+            vec![first.data.buy_amount, first.data.sell_amount],
         ),
         PriceEncoding::Custom {
             tokens,
@@ -55,67 +67,76 @@ pub(crate) async fn encode(mut builder: SimulationBuilder) -> Result<EthCallInpu
         } => (tokens.clone(), clearing_prices.clone()),
     };
 
-    let sell_token_index = tokens
-        .iter()
-        .position(|t| *t == order.data.sell_token)
-        .ok_or(BuildError::MissingSellToken)?;
-    let buy_token_index = tokens
-        .iter()
-        .position(|t| *t == order.data.buy_token)
-        .ok_or(BuildError::MissingBuyToken)?;
+    // Replace BuyTokensForBuffers placeholders using the first order's data.
+    // Must happen before clearing_prices is moved into EncodedSettlement.
+    {
+        let first_exec = executed_amounts[0];
+        let sell_idx = tokens
+            .iter()
+            .position(|t| *t == first.data.sell_token)
+            .ok_or(BuildError::MissingSellToken)?;
+        let buy_idx = tokens
+            .iter()
+            .position(|t| *t == first.data.buy_token)
+            .ok_or(BuildError::MissingBuyToken)?;
+        for request in &mut builder.account_override_requests {
+            if matches!(request, AccountOverrideRequest::BuyTokensForBuffers) {
+                let amount = match first.data.kind {
+                    OrderKind::Sell => clearing_prices[sell_idx]
+                        .saturating_mul(first_exec)
+                        .checked_div(clearing_prices[buy_idx])
+                        .unwrap_or(U256::MAX),
+                    OrderKind::Buy => first_exec,
+                }
+                // give 1 wei extra to avoid issues with rounding divisions
+                .saturating_add(U256::ONE);
 
-    // Replace BuyTokensForBuffers placeholders with concrete Balance requests
-    // now that the required amounts are known. Must happen before clearing_prices
-    // is moved into EncodedSettlement.
-    for request in &mut builder.account_override_requests {
-        if matches!(request, AccountOverrideRequest::BuyTokensForBuffers) {
-            let amount = match order.data.kind {
-                OrderKind::Sell => clearing_prices[sell_token_index]
-                    .saturating_mul(executed_amount)
-                    .checked_div(clearing_prices[buy_token_index])
-                    .unwrap_or(U256::MAX),
-                OrderKind::Buy => executed_amount,
+                *request = AccountOverrideRequest::Balance {
+                    holder: *builder.simulator.0.settlement.address(),
+                    token: first.data.buy_token,
+                    amount,
+                };
             }
-            // give 1 wei extra to avoid issues with rounding divisions
-            .saturating_add(U256::ONE);
-
-            *request = AccountOverrideRequest::Balance {
-                holder: *builder.simulator.0.settlement.address(),
-                token: order.data.buy_token,
-                amount,
-            };
         }
     }
 
-    let trade = encode_trade(
-        &order.data,
-        &order.signature,
-        order.owner,
-        sell_token_index,
-        buy_token_index,
-        executed_amount,
-    );
+    // Encode every order as a trade, then collect all their interactions.
+    let mut trades = Vec::with_capacity(builder.orders.len());
+    let mut all_order_pre: Vec<InteractionData> = vec![];
+    let mut all_order_post: Vec<InteractionData> = vec![];
+    for (order, exec) in builder.orders.iter().zip(&executed_amounts) {
+        let sell_idx = tokens
+            .iter()
+            .position(|t| *t == order.data.sell_token)
+            .ok_or(BuildError::MissingSellToken)?;
+        let buy_idx = tokens
+            .iter()
+            .position(|t| *t == order.data.buy_token)
+            .ok_or(BuildError::MissingBuyToken)?;
+        trades.push(encode_trade(
+            &order.data,
+            &order.signature,
+            order.owner,
+            sell_idx,
+            buy_idx,
+            *exec,
+        ));
+        all_order_pre.extend_from_slice(&order.pre_interactions);
+        all_order_post.extend_from_slice(&order.post_interactions);
+    }
 
-    let order_pre = &order.pre_interactions;
-    let order_post = &order.post_interactions;
-
-    let mut trades = vec![trade];
-    trades.extend(builder.extra_trades);
-
-    let mut settlement = EncodedSettlement {
+    let settlement = EncodedSettlement {
         tokens,
         clearing_prices,
         trades,
         interactions: Interactions {
-            // order's pre-hooks run before any additional pre-interactions
-            pre: encode_interactions(order_pre.iter().chain(&builder.pre_interactions)),
+            // order pre-hooks run before any additional pre-interactions
+            pre: encode_interactions(all_order_pre.iter().chain(&builder.pre_interactions)),
             main: encode_interactions(&builder.main_interactions),
-            // additional post-interactions run before the order's post-hooks
-            post: encode_interactions(builder.post_interactions.iter().chain(order_post)),
+            // additional post-interactions run before order post-hooks
+            post: encode_interactions(builder.post_interactions.iter().chain(&all_order_post)),
         },
     };
-
-    customize(&mut settlement);
 
     let settle_calldata = {
         let mut bytes = settlement.into_settle_call().to_vec();

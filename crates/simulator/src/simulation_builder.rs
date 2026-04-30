@@ -1,8 +1,5 @@
 use {
-    crate::{
-        encoding::{EncodedSettlement, EncodedTrade, WrapperCall},
-        tenderly::dto::StateObject,
-    },
+    crate::{encoding::WrapperCall, tenderly::dto::StateObject},
     alloy_primitives::{Address, B256, Bytes, TxKind, U256},
     alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
@@ -91,7 +88,7 @@ impl SettlementSimulator {
     pub fn new_simulation_builder(&self) -> SimulationBuilder {
         SimulationBuilder {
             simulator: self.clone(),
-            order: None,
+            orders: vec![],
             pre_interactions: vec![],
             main_interactions: vec![],
             post_interactions: vec![],
@@ -99,7 +96,6 @@ impl SettlementSimulator {
             solver: None,
             auction_id: None,
             account_override_requests: vec![],
-            extra_trades: vec![],
             block: Block::Latest,
         }
     }
@@ -121,7 +117,7 @@ pub enum Block {
 ///
 /// Call [`SimulationBuilder::build`] when done to produce a [`SettlementCall`].
 pub struct SimulationBuilder {
-    pub(crate) order: Option<Order>,
+    pub(crate) orders: Vec<Order>,
     pub(crate) pre_interactions: Vec<InteractionData>,
     pub(crate) main_interactions: Vec<InteractionData>,
     pub(crate) post_interactions: Vec<InteractionData>,
@@ -130,15 +126,12 @@ pub struct SimulationBuilder {
     pub(crate) auction_id: Option<i64>,
     pub(crate) simulator: SettlementSimulator,
     pub(crate) account_override_requests: Vec<AccountOverrideRequest>,
-    pub(crate) extra_trades: Vec<EncodedTrade>,
     pub(crate) block: Block,
 }
 
 impl SimulationBuilder {
-    // TODO: support multiple orders to support use case of encoding solutions
-    // in the driver and the trade verification (requires JIT orders)
-    pub fn add_order(mut self, order: Order) -> Self {
-        self.order = Some(order);
+    pub fn add_orders(mut self, orders: impl IntoIterator<Item = Order>) -> Self {
+        self.orders.extend(orders);
         self
     }
 
@@ -240,13 +233,6 @@ impl SimulationBuilder {
     /// [`BuildError::ConflictingStateOverrides`].
     pub fn with_override(mut self, request: AccountOverrideRequest) -> Self {
         self.account_override_requests.push(request);
-        self
-    }
-
-    /// Appends pre-encoded trades (e.g. JIT orders) to the settlement.
-    /// These are appended after the primary order's trade entry.
-    pub fn add_extra_trades(mut self, trades: Vec<EncodedTrade>) -> Self {
-        self.extra_trades.extend(trades);
         self
     }
 
