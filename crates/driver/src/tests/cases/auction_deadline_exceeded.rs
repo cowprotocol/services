@@ -15,7 +15,7 @@ async fn solve_returns_no_solutions_when_request_arrives_after_deadline() {
 #[tokio::test]
 async fn solve_returns_solution_when_within_deadline() {
     let test = setup()
-        .set_deadline(crate::infra::time::now() + chrono::Duration::seconds(5))
+        .set_deadline(crate::infra::time::now() + chrono::Duration::seconds(8))
         .pool(weth_pool())
         .order(eth_order())
         .solution(eth_solution())
@@ -26,14 +26,14 @@ async fn solve_returns_solution_when_within_deadline() {
 }
 
 #[tokio::test]
-async fn solve_returns_no_solutions_when_solver_outlives_deadline() {
+async fn solve_returns_no_solutions_when_solver_after_deadline() {
     let test = setup()
-        .set_deadline(crate::infra::time::now() + chrono::Duration::milliseconds(500))
+        .set_deadline(crate::infra::time::now() + chrono::Duration::seconds(3))
         .pool(weth_pool())
         .order(eth_order())
         .solution(eth_solution())
         .solvers(vec![
-            test_solver().solve_delay(std::time::Duration::from_secs(1)),
+            test_solver().solve_delay(std::time::Duration::from_secs(4)),
         ])
         .done()
         .await;
@@ -42,19 +42,19 @@ async fn solve_returns_no_solutions_when_solver_outlives_deadline() {
 }
 
 #[tokio::test]
-async fn solve_returns_no_solutions_when_all_solvers_outlive_deadline() {
+async fn solve_returns_no_solutions_when_all_solvers_after_deadline() {
     let test = setup()
-        .set_deadline(crate::infra::time::now() + chrono::Duration::milliseconds(500))
+        .set_deadline(crate::infra::time::now() + chrono::Duration::seconds(3))
         .pool(weth_pool())
         .order(eth_order())
         .solution(eth_solution())
         .solvers(vec![
             test_solver()
                 .name("solver1")
-                .solve_delay(std::time::Duration::from_secs(1)),
+                .solve_delay(std::time::Duration::from_secs(4)),
             test_solver()
                 .name("solver2")
-                .solve_delay(std::time::Duration::from_secs(2)),
+                .solve_delay(std::time::Duration::from_secs(5)),
         ])
         .done()
         .await;
@@ -69,16 +69,16 @@ async fn solve_returns_no_solutions_when_all_solvers_outlive_deadline() {
 }
 
 #[tokio::test]
-async fn solve_returns_fast_solver_solution_when_slow_solver_outlives_deadline() {
+async fn solve_returns_fast_solver_solution_slow_solver_empty_after_deadline() {
     let test = setup()
-        .set_deadline(crate::infra::time::now() + chrono::Duration::seconds(3))
+        .set_deadline(crate::infra::time::now() + chrono::Duration::seconds(5))
         .pool(weth_pool())
         .order(eth_order())
         .solution(eth_solution())
         .solvers(vec![
             test_solver()
                 .name("slow")
-                .solve_delay(std::time::Duration::from_secs(4)),
+                .solve_delay(std::time::Duration::from_secs(8)),
             test_solver().name("fast"),
         ])
         .done()

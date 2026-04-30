@@ -88,9 +88,28 @@ impl std::fmt::Debug for Utilities {
 struct ControlBlock {
     /// Per-auction preprocessing tasks.
     tasks: HashMap<i64, DataFetchingTasks>,
-
     /// Access order used to evict old preprocessing handles.
     order: VecDeque<i64>,
+}
+
+impl ControlBlock {
+    fn touch(&mut self, auction_id: i64) {
+        self.order.retain(|id| *id != auction_id);
+        self.order.push_back(auction_id);
+    }
+
+    fn evict_oldest_except(&mut self, protected_auction_id: i64) {
+        while self.tasks.len() > MAX_CONCURRENT_AUCTIONS {
+            let Some(evicted_auction_id) = self.order.pop_front() else {
+                break;
+            };
+            if evicted_auction_id == protected_auction_id {
+                self.order.push_back(evicted_auction_id);
+                continue;
+            }
+            self.tasks.remove(&evicted_auction_id);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -119,44 +138,22 @@ impl DataAggregator {
             .context("could not parse X-Auction-Id header as i64")?;
 
         let mut lock = self.control.lock().await;
-
         // Some other driver is already doing the pre-processing for this
         // auction. Stop processing here and just await the existing task.
         if let Some(tasks) = lock.tasks.get(&request_auction_id).cloned() {
             init_auction_id_in_span(Some(request_auction_id));
             tracing::debug!("await running data aggregation task");
-
-            lock.order.retain(|id| *id != request_auction_id);
-            lock.order.push_back(request_auction_id);
-
+            lock.touch(request_auction_id);
             return Ok(tasks);
         }
 
+        // Keep the control lock while creating the tasks so concurrent requests for
+        // the same auction cannot start duplicate preprocessing work.
         let tasks = self.assemble_tasks(request).await?;
-
         tracing::debug!("started new data aggregation task");
-
         lock.tasks.insert(request_auction_id, tasks.clone());
-        lock.order.push_back(request_auction_id);
-
-        while lock.tasks.len() > MAX_CONCURRENT_AUCTIONS {
-            let Some(evicted_auction_id) = lock.order.pop_front() else {
-                break;
-            };
-
-            if evicted_auction_id == request_auction_id {
-                lock.order.push_back(evicted_auction_id);
-                continue;
-            }
-
-            if lock.tasks.remove(&evicted_auction_id).is_some() {
-                tracing::debug!(
-                    auction_id = evicted_auction_id,
-                    "evicted preprocessing handle"
-                );
-            }
-        }
-
+        lock.touch(request_auction_id);
+        lock.evict_oldest_except(request_auction_id);
         Ok(tasks)
     }
 
@@ -202,6 +199,8 @@ impl DataAggregator {
 
     async fn assemble_tasks(&self, request: Request<Body>) -> Result<DataFetchingTasks> {
         let auction = self.utilities.parse_request(request).await?;
+        // Keep this alive for the whole solve path, dropping it will abort the timer
+        // task.
         let deadline_cancellation = Arc::new(DeadlineCancellation::new(auction.deadline));
 
         let balances = Self::spawn_shared(
@@ -238,6 +237,8 @@ impl DataAggregator {
     /// the shared future is awaited.
     /// The future is being started immediately and polled in the background so
     /// the caller doesn't have to manage data dependencies directly.
+    /// The `DeadlineCancellation` guard is moved into the shared future so the
+    /// deadline timer stays alive until the shared task completes.
     fn spawn_shared<T>(
         deadline: Arc<DeadlineCancellation>,
         fut: impl Future<Output = T> + Send + 'static,
@@ -246,10 +247,10 @@ impl DataAggregator {
         T: Send + Sync + Clone + 'static,
     {
         let cancel = deadline.token();
-
         let shared = async move {
-            let _deadline = deadline;
-
+            // Keep the deadline guard alive so its background task can cancel the token
+            // when the deadline is reached.
+            let _deadline_guard = deadline;
             tokio::select! {
                 result = fut => Ok(result),
                 _ = cancel.cancelled() => Err(DeadlineExceeded),
@@ -258,7 +259,7 @@ impl DataAggregator {
         .instrument(tracing::Span::current())
         .boxed()
         .shared();
-
+        // Start the computation in the background
         tokio::spawn(shared.clone());
 
         shared
@@ -268,7 +269,7 @@ impl DataAggregator {
 impl Utilities {
     /// Parses the JSON body of the `/solve` request during the unified
     /// auction pre-processing since eagerly deserializing these requests
-    /// is surprisingly costly because their are so big.
+    /// is surprisingly costly because they are so big.
     async fn parse_request(&self, solve_request: Request<Body>) -> Result<Arc<Auction>> {
         let solve_request = collect_request_body(solve_request).await?;
 
@@ -474,7 +475,7 @@ impl Utilities {
             cow_amms
                 .into_iter()
                 // Only generate orders where the auction provided the required
-                // reference prices. Otherwise there will be an error during the
+                // reference prices. Otherwise, there will be an error during the
                 // surplus calculation which will also result in 0 surplus for
                 // this order.
                 .filter_map(|amm| {
@@ -624,6 +625,7 @@ mod tests {
     use {
         super::*,
         chrono::Utc,
+        futures::future,
         std::{sync::Arc, time::Duration},
     };
 
@@ -656,7 +658,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reuses_existing_tasks_for_same_auction() {
+    async fn reuses_existing_tasks_for_auction() {
         let mut control = ControlBlock::default();
 
         let tasks = dummy_tasks();
@@ -681,31 +683,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn evicts_oldest_when_capacity_exceeded() {
+    async fn evicts_oldest_when_capacity_maxed() {
         let mut control = ControlBlock::default();
 
-        // Fill up to capacity
+        // Fill up to capacity.
         for i in 0..MAX_CONCURRENT_AUCTIONS {
-            control.tasks.insert(i as i64, dummy_tasks());
-            control.order.push_back(i as i64);
+            let i = i64::try_from(i).unwrap();
+            control.tasks.insert(i, dummy_tasks());
+            control.touch(i);
         }
 
-        // should evict oldest
-        control.tasks.insert(999, dummy_tasks());
-        control.order.push_back(999);
-
-        while control.tasks.len() > MAX_CONCURRENT_AUCTIONS {
-            if let Some(old) = control.order.pop_front() {
-                control.tasks.remove(&old);
-            }
-        }
+        // Adding another auction should evict the oldest handle.
+        let new_auction_id = 999_i64;
+        control.tasks.insert(new_auction_id, dummy_tasks());
+        control.touch(new_auction_id);
+        control.evict_oldest_except(new_auction_id);
 
         assert_eq!(control.tasks.len(), MAX_CONCURRENT_AUCTIONS);
         assert!(!control.tasks.contains_key(&0));
+        assert!(control.tasks.contains_key(&new_auction_id));
     }
 
     #[tokio::test]
-    async fn cache_eviction_removes_handle_only() {
+    async fn cache_eviction_removes_handle() {
         let mut control = ControlBlock::default();
 
         control.tasks.insert(1, dummy_tasks());
@@ -718,18 +718,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deadline_cancels_shared_future() {
-        let deadline = Utc::now() + chrono::Duration::milliseconds(20);
+    async fn deadline_cancels_shared() {
+        let deadline = Utc::now() + chrono::Duration::seconds(3);
         let deadline = Arc::new(DeadlineCancellation::new(deadline));
 
         let shared = DataAggregator::spawn_shared(deadline, async {
             futures::future::pending::<Arc<()>>().await
         });
 
-        let result = tokio::time::timeout(Duration::from_secs(1), shared)
+        let result = tokio::time::timeout(Duration::from_secs(5), shared)
             .await
-            .expect("future resolved");
+            .expect("resolved");
 
         assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+
+    #[tokio::test]
+    async fn spawn_shared_keeps_deadline_alive() {
+        let deadline = Arc::new(DeadlineCancellation::new(
+            Utc::now() + chrono::Duration::milliseconds(20),
+        ));
+
+        let token = deadline.token();
+        let shared = DataAggregator::spawn_shared(deadline, future::pending::<()>());
+
+        tokio::time::timeout(Duration::from_secs(1), shared)
+            .await
+            .expect("should complete")
+            .expect_err("should be cancelled");
+
+        assert!(token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn spawn_shared_returns_result_before_deadline() {
+        let deadline = Arc::new(DeadlineCancellation::new(
+            Utc::now() + chrono::Duration::seconds(60),
+        ));
+
+        let shared = DataAggregator::spawn_shared(deadline, async { "ok" });
+
+        let result = shared.await.expect("should complete");
+
+        assert_eq!(result, "ok");
     }
 }

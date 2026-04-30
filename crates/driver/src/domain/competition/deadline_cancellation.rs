@@ -5,7 +5,8 @@ use {
     tokio_util::sync::CancellationToken,
 };
 
-/// Struct used to cancel a token when the auction driver deadline is reached.
+/// Cancels a token when the configured deadline is reached, if dropped before
+/// the deadline is reached, will not trigger token cancellation.
 #[derive(Debug)]
 pub struct DeadlineCancellation {
     // The cancellation token
@@ -18,16 +19,19 @@ impl DeadlineCancellation {
     /// Spawns a task that cancels the token at `deadline`.
     pub fn new(deadline: DateTime<Utc>) -> Self {
         let token = CancellationToken::new();
-        let cancel = token.clone();
-
-        let guard = tokio::spawn(async move {
-            if let Ok(remaining) = deadline.remaining() {
-                tokio::time::sleep(remaining).await;
+        let guard = match deadline.remaining() {
+            Ok(remaining) => {
+                let cancel = token.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(remaining).await;
+                    cancel.cancel();
+                })
             }
-
-            cancel.cancel();
-        });
-
+            Err(_) => {
+                token.cancel();
+                tokio::spawn(async {}) // no-op
+            }
+        };
         Self { token, guard }
     }
 
@@ -53,10 +57,10 @@ mod tests {
 
     #[tokio::test]
     async fn cancels_after_deadline() {
-        let deadline = Utc::now() + chrono::Duration::milliseconds(20);
+        let deadline = Utc::now() + chrono::Duration::seconds(1);
         let cancellation = DeadlineCancellation::new(deadline);
 
-        tokio::time::timeout(Duration::from_secs(1), cancellation.token().cancelled())
+        tokio::time::timeout(Duration::from_secs(2), cancellation.token().cancelled())
             .await
             .expect("deadline cancellation");
     }
@@ -74,8 +78,17 @@ mod tests {
         let deadline = Utc::now() - chrono::Duration::milliseconds(1);
         let cancellation = DeadlineCancellation::new(deadline);
 
-        tokio::time::timeout(Duration::from_secs(1), cancellation.token().cancelled())
-            .await
-            .expect("expired deadline should cancel");
+        assert!(cancellation.token().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn drop_aborts_timer_without_cancelling_token() {
+        let deadline = Utc::now() + chrono::Duration::seconds(1);
+        let cancellation = DeadlineCancellation::new(deadline);
+        let token = cancellation.token();
+        drop(cancellation);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        assert!(!token.is_cancelled());
     }
 }

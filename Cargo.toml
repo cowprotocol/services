@@ -136,8 +136,8 @@ tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_mall
 time = "0.3.47"
 token-info = { path = "crates/token-info" }
 tokio = { version = "1.38.0", features = ["tracing"] }
-tokio-util = { version = "0.7.18" }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
+tokio-util = { version = "0.7.18" }
 toml = "0.8.14"
 tower = "0.5"
 tower-http = "0.6"

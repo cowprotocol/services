@@ -148,21 +148,17 @@ pub fn sort_orders(
     }
 
     let now = chrono::Utc::now();
-
     let mut keyed = Vec::with_capacity(orders.len());
-
     for (index, order) in orders.iter().enumerate() {
         if cancel.is_cancelled() {
             return Err(DeadlineExceeded);
         }
-
         let key = std::cmp::Reverse(
             order_comparators
                 .iter()
                 .map(|cmp| cmp.key(order, tokens, solver, now))
                 .collect::<Vec<_>>(),
         );
-
         keyed.push((key, index));
     }
 
@@ -170,6 +166,8 @@ pub fn sort_orders(
         return Err(DeadlineExceeded);
     }
 
+    // Once this has started it runs to completion before cancellation can be
+    // observed again.
     keyed.sort_by_key(|(key, _)| key.clone());
 
     if cancel.is_cancelled() {
@@ -180,9 +178,7 @@ pub fn sort_orders(
         .into_iter()
         .map(|(_, index)| orders[index].clone())
         .collect::<Vec<_>>();
-
     orders.clone_from_slice(&sorted);
-
     Ok(())
 }
 
@@ -203,5 +199,19 @@ mod tests {
         let result = sort_orders(&mut orders, &tokens, &solver, &strategies, &cancel);
 
         assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+
+    #[test]
+    fn sort_orders_empty_input_succeeds_when_not_cancelled() {
+        let cancel = CancellationToken::new();
+
+        let mut orders = Vec::new();
+        let tokens = Tokens::default();
+        let solver = eth::Address::default();
+        let strategies = Vec::<Arc<dyn SortingStrategy>>::new();
+
+        let result = sort_orders(&mut orders, &tokens, &solver, &strategies, &cancel);
+
+        assert!(result.is_ok());
     }
 }

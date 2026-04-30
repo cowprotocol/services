@@ -6,20 +6,25 @@
 //! was simply built with a buggy compiler which makes it incompatible
 //! with the settlement contract (see <https://github.com/cowprotocol/services/pull/781>).
 //!
-//! Additionally there are some heuristics to detect when an
+//! Additionally, there are some heuristics to detect when an
 //! order itself is somehow broken or causes issues and slipped through
 //! other detection mechanisms. One big error case is orders adjusting
-//! debt postions in lending protocols. While pre-checks might correctly
+//! debt positions in lending protocols. While pre-checks might correctly
 //! detect that the EIP 1271 signature is valid the transfer of the token
 //! would fail because the user's debt position is not collateralized enough.
 //! In other words the bad order detection is a last fail safe in case
 //! we were not able to predict issues with orders and pre-emptively
 //! filter them out of the auction.
+
 use {
-    crate::domain::competition::{Auction, order::Uid},
+    crate::domain::{
+        competition::{Auction, order::Uid},
+        time::DeadlineExceeded,
+    },
     eth_domain_types as eth,
     futures::{StreamExt, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
+    tokio_util::sync::CancellationToken,
 };
 
 pub mod bad_orders;
@@ -81,7 +86,15 @@ impl Detector {
     }
 
     /// Removes all unsupported orders from the auction.
-    pub async fn filter_unsupported_orders_in_auction(&self, mut auction: Auction) -> Auction {
+    pub async fn filter_unsupported_orders_in_auction(
+        &self,
+        mut auction: Auction,
+        cancel: &CancellationToken,
+    ) -> Result<Auction, DeadlineExceeded> {
+        // Early exit before doing any work if already cancelled
+        if cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
         let now = Instant::now();
 
         // reuse the original allocation
@@ -128,11 +141,22 @@ impl Detector {
             })
             .collect();
 
-        while let Some((order, quality)) = token_quality_checks.next().await {
-            if quality == Quality::Supported {
-                supported_orders.push(order);
-            } else {
-                removed_uids.push(order.uid);
+        // Process async checks with cancellation
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    return Err(DeadlineExceeded);
+                }
+                result = token_quality_checks.next() => {
+                    let Some((order, quality)) = result else {
+                        break;
+                    };
+                    if quality == Quality::Supported {
+                        supported_orders.push(order);
+                    } else {
+                        removed_uids.push(order.uid);
+                    }
+                }
             }
         }
 
@@ -145,7 +169,7 @@ impl Detector {
             detector.evict_outdated_entries();
         }
 
-        auction
+        Ok(auction)
     }
 
     /// Updates the tokens quality metric for successful operation.
@@ -180,5 +204,41 @@ impl fmt::Debug for Detector {
         f.debug_struct("Detector")
             .field("hardcoded", &self.hardcoded)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::domain::competition::auction::{Auction, Tokens},
+        chrono::Utc,
+        std::collections::HashSet,
+    };
+
+    #[tokio::test]
+    async fn filter_unsupported_orders_in_auction_cancels() {
+        let detector = Detector::default();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let auction = Auction {
+            id: None,
+            orders: Default::default(),
+            tokens: Tokens::default(),
+            gas_price: eth::GasPrice::new(
+                alloy::primitives::U256::ZERO.into(),
+                alloy::primitives::U256::ZERO.into(),
+                0,
+            ),
+            deadline: Utc::now(),
+            surplus_capturing_jit_order_owners: HashSet::new(),
+        };
+
+        let result = detector
+            .filter_unsupported_orders_in_auction(auction, &cancel)
+            .await;
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
     }
 }

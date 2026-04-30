@@ -18,6 +18,7 @@ use {
     chrono::Utc,
     eth_domain_types as eth,
     std::collections::{HashMap, HashSet},
+    tokio_util::sync::CancellationToken,
 };
 
 /// A quote describing the expected outcome of an order.
@@ -145,9 +146,10 @@ impl Order {
         let auction = self
             .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
+        let cancel = CancellationToken::new(); // no deadline
         let auction = risk_detector
-            .filter_unsupported_orders_in_auction(auction)
-            .await;
+            .filter_unsupported_orders_in_auction(auction, &cancel)
+            .await?;
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());
         }

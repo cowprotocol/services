@@ -505,7 +505,6 @@ impl Solver {
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
                     check_solve_request(req, expected);
-
                     {
                         let mut state = state.0.lock().unwrap();
                         assert!(
@@ -514,11 +513,9 @@ impl Solver {
                         );
                         state.called = true;
                     }
-
                     if let Some(delay) = config.solver_delay {
                         tokio::time::sleep(delay).await;
                     }
-
                     axum::response::Json(json!({
                         "solutions": solutions_json,
                     }))

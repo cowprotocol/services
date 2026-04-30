@@ -1,10 +1,6 @@
 use {
     self::solution::settlement,
-    super::{
-        Mempools,
-        mempools::SubmissionMode,
-        time::{self, Remaining},
-    },
+    super::{Mempools, mempools::SubmissionMode},
     crate::{
         domain::{
             competition::{solution::Settlement, sorting::SortingStrategy},
@@ -326,24 +322,29 @@ impl Competition {
                 tracing::error!(?err, "pre-processing auction failed");
                 Error::MalformedRequest
             })?;
-
         let mut auction = match tasks.auction.await {
             Ok(auction) => Arc::unwrap_or_clone(auction),
+            // Infallible: Keep arm for same shared deadline result type as
+            // the other preprocessing tasks
             Err(DeadlineExceeded) => {
-                observe::auction_cancelled("auction", "deadline");
-                return Ok(vec![]);
+                observe::auction_cancelled("auction", "already_expired");
+                return Err(Error::DeadlineExceeded(DeadlineExceeded));
             }
         };
 
         let deadlines = auction.deadline(self.solver.timeouts());
-        if deadlines.auction() <= chrono::Utc::now() {
+        let auction_deadline = deadlines.auction();
+        let driver_deadline = deadlines.driver();
+        let effective_deadline = std::cmp::min(auction_deadline, driver_deadline);
+        if effective_deadline <= chrono::Utc::now() {
             observe::auction_cancelled("auction", "deadline");
             return Ok(vec![]);
         }
-        let driver_deadline = deadlines.driver();
 
+        // Keep this guard alive for the whole solve path. Dropping it aborts the timer
+        // so all clones and references of `deadline_cancel` depend on this value.
         let deadline_cancellation =
-            deadline_cancellation::DeadlineCancellation::new(driver_deadline);
+            deadline_cancellation::DeadlineCancellation::new(effective_deadline);
         let deadline_cancel = deadline_cancellation.token();
 
         let solver_address = self.solver.address();
@@ -351,80 +352,80 @@ impl Competition {
 
         // Add the CoW AMM orders to the auction
         let cow_amm_orders = tokio::select! {
-        result = tasks.cow_amm_orders => match result {
-            Ok(cow_amm_orders) => cow_amm_orders,
-            Err(DeadlineExceeded) => {
-            observe::auction_cancelled("cow_amm_orders", "deadline");
-            return Ok(vec![]);
-            }
-        },
-        _ = deadline_cancel.cancelled() => {
-            observe::auction_cancelled("cow_amm_orders", "deadline");
-            return Ok(vec![]);
+            result = tasks.cow_amm_orders => match result {
+                Ok(cow_amm_orders) => cow_amm_orders,
+                Err(DeadlineExceeded) => {
+                    observe::auction_cancelled("cow_amm_orders", "deadline");
+                    return Ok(vec![]);
+                }
+            },
+            _ = deadline_cancel.cancelled() => {
+                observe::auction_cancelled("cow_amm_orders", "deadline");
+                return Ok(vec![]);
             }
         };
         auction.orders.extend(cow_amm_orders.iter().cloned());
 
         let sort_cancel = deadline_cancel.clone();
-
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
             // Use spawn_blocking() because a lot of CPU bound computations are happening
             // and we don't want to block the runtime for too long.
+            if sort_cancel.is_cancelled() {
+                return Err(DeadlineExceeded);
+            }
+
             Self::sort_orders(
                 auction,
                 solver_address,
                 order_sorting_strategies,
-                sort_cancel,
+                &sort_cancel,
             )
         });
 
-        // We can sort the orders and fetch auction data in parallel
-        let (auction, balances, app_data) = tokio::select! {
+        // We can sort the orders and fetch auction data in parallel.
+        let (auction_result, balances_result, app_data_result) = tokio::select! {
             result = async {
                 tokio::join!(sort_orders_future, tasks.balances, tasks.app_data)
-            } => {
-                let (auction, balances, app_data) = result;
-
-                let auction = match auction {
-                    Ok(auction) => auction,
-                    Err(DeadlineExceeded) => {
-                        observe::auction_cancelled("sort_orders", "deadline");
-                        return Ok(vec![]);
-                    }
-                };
-
-                let balances = match balances {
-                    Ok(balances) => balances,
-                    Err(DeadlineExceeded) => {
-                        observe::auction_cancelled("balances", "deadline");
-                        return Ok(vec![]);
-                    }
-                };
-
-                let app_data = match app_data {
-                    Ok(app_data) => app_data,
-                    Err(DeadlineExceeded) => {
-                        observe::auction_cancelled("app_data", "deadline");
-                        return Ok(vec![]);
-                    }
-                };
-
-                (auction, balances, app_data)
-            }
+            } => result,
             _ = deadline_cancel.cancelled() => {
-                observe::auction_cancelled("pre_processing", "deadline");
+                observe::auction_cancelled("preprocessing", "deadline");
+                return Ok(vec![]);
+            }
+        };
+
+        let (auction, balances, app_data) = match (auction_result, balances_result, app_data_result)
+        {
+            (Ok(auction), Ok(balances), Ok(app_data)) => (auction, balances, app_data),
+            (Err(DeadlineExceeded), _, _) => {
+                observe::auction_cancelled("sort_orders", "deadline");
+                return Ok(vec![]);
+            }
+            (_, Err(DeadlineExceeded), _) => {
+                observe::auction_cancelled("balances", "deadline");
+                return Ok(vec![]);
+            }
+            (_, _, Err(DeadlineExceeded)) => {
+                observe::auction_cancelled("app_data", "deadline");
                 return Ok(vec![]);
             }
         };
 
         let update_cancel = deadline_cancel.clone();
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime
-            Self::update_orders(auction, balances, app_data, cow_amm_orders, update_cancel)
-        })
-        .await;
+        let auction = tokio::select! {
+            result = Self::run_blocking_with_timer("update_orders", move || {
+                // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
+                // bound computations are happening, and we want to avoid blocking
+                // the runtime.
+                if update_cancel.is_cancelled() {
+                    return Err(DeadlineExceeded);
+                }
+                Self::update_orders(auction, balances, app_data, cow_amm_orders, &update_cancel)
+            }) => result,
+            _ = deadline_cancel.cancelled() => {
+                observe::auction_cancelled("update_orders", "deadline");
+                return Ok(vec![]);
+            }
+        };
 
         let auction = match auction {
             Ok(auction) => auction,
@@ -444,7 +445,7 @@ impl Competition {
                             solver::Liquidity::Skip => Ok(Arc::new(Vec::new())),
                         }
                     },
-                    self.without_unsupported_orders(auction)
+                    self.without_unsupported_orders(auction, &deadline_cancel)
                 )
             } => {
                 let (liquidity, auction) = result;
@@ -453,6 +454,14 @@ impl Competition {
                     Ok(liquidity) => liquidity,
                     Err(DeadlineExceeded) => {
                         observe::auction_cancelled("liquidity", "deadline");
+                        return Ok(vec![]);
+                    }
+                };
+
+                let auction = match auction {
+                    Ok(auction) => auction,
+                    Err(DeadlineExceeded) => {
+                        observe::auction_cancelled("unsupported_order_filtering", "deadline");
                         return Ok(vec![]);
                     }
                 };
@@ -583,24 +592,23 @@ impl Competition {
         // Encode settlements as they arrive until there are no more new settlements or
         // timeout is reached.
         let mut settlements = Vec::new();
-        let mut postprocessing_cancelled = false;
-
         let mut encoded = std::pin::pin!(encoded);
+        'encoding: loop {
+            tokio::select! {
+                settlement = encoded.next() => {
+                    let Some(settlement) = settlement else {
+                        break 'encoding;
+                    };
 
-        while let Some(settlement) = tokio::select! {
-            settlement = encoded.next() => settlement,
-            _ = deadline_cancel.cancelled() => {
-                observe::auction_cancelled("encoding", "deadline");
-                postprocessing_cancelled = true;
-                None
+                    settlements.push(settlement);
+                }
+                _ = deadline_cancel.cancelled() => {
+                    observe::auction_cancelled("encoding", "deadline");
+                    observe::postprocessing_timed_out(&settlements);
+                    notify::postprocessing_timed_out(&self.solver, auction.id());
+                    break 'encoding;
+                }
             }
-        } {
-            settlements.push(settlement);
-        }
-
-        if postprocessing_cancelled {
-            observe::postprocessing_timed_out(&settlements);
-            notify::postprocessing_timed_out(&self.solver, auction.id())
         }
 
         // Score the settlements.
@@ -678,42 +686,47 @@ impl Competition {
         }
 
         if !deadline_cancel.is_cancelled() {
-            if let Ok(remaining) = driver_deadline.remaining() {
-                let _ = tokio::select! {
-                    result = tokio::time::timeout(
-                        remaining,
-                        self.resimulate_until_revert(&mut scored, auction),
-                    ) => result,
-                    _ = deadline_cancel.cancelled() => {
-                        observe::auction_cancelled("resimulation", "deadline");
-                        Ok(Ok(()))
-                    }
-                };
-            }
+            let _ = self
+                .resimulate_until_revert(&mut scored, auction, &deadline_cancel)
+                .await;
         }
 
         Ok(scored.into_iter().map(|(solved, _)| solved).collect())
     }
 
     /// Re-simulate all proposed solutions on every new block and drop any
-    /// that start reverting. Returns once every solution has reverted;
-    /// otherwise runs forever and the caller must impose a deadline.
+    /// that start reverting. Returns once every solution has reverted or
+    /// the `cancel` token is triggered
     /// Mutates `scored` and the cached settlements in place.
     async fn resimulate_until_revert(
         &self,
         scored: &mut Vec<(Solved, Settlement)>,
         auction: &Auction,
+        cancel: &CancellationToken,
     ) -> anyhow::Result<()> {
         let mut stream = ethrpc::block_stream::into_stream(self.eth.current_block().clone());
-        while let Some(block) = stream.next().await {
-            let voided_ids: HashSet<u64> =
-                futures::future::join_all(scored.iter().map(|(solved, settlement)| {
+        loop {
+            let Some(block) = tokio::select!(
+                block = stream.next() => block,
+                _ = cancel.cancelled() => {
+                    observe::auction_cancelled("resimulation", "deadline");
+                    return Ok(());
+                }
+            ) else {
+                return Ok(());
+            };
+
+            let voided_ids: HashSet<u64> = tokio::select! {
+                voided_ids = futures::future::join_all(scored.iter().map(|(solved, settlement)| {
                     self.reverts_on_block(block, solved, settlement, auction)
-                }))
-                .await
-                .into_iter()
-                .flatten()
-                .collect();
+                })) => {
+                    voided_ids.into_iter().flatten().collect()
+                }
+                _ = cancel.cancelled() => {
+                    observe::auction_cancelled("resimulation", "deadline");
+                    return Ok(());
+                }
+            };
 
             if voided_ids.is_empty() {
                 continue;
@@ -730,7 +743,6 @@ impl Competition {
                 return Ok(());
             }
         }
-        Ok(())
     }
 
     /// Re-simulate a single solution and return its id if it started
@@ -768,16 +780,15 @@ impl Competition {
         mut auction: Auction,
         solver: eth::Address,
         order_sorting_strategies: Vec<Arc<dyn SortingStrategy>>,
-        cancel: CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<Auction, DeadlineExceeded> {
         sorting::sort_orders(
             &mut auction.orders,
             &auction.tokens,
             &solver,
             &order_sorting_strategies,
-            &cancel,
+            cancel,
         )?;
-
         Ok(auction)
     }
 
@@ -791,7 +802,7 @@ impl Competition {
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
         cow_amm_orders: Arc<Vec<Order>>,
-        cancel: CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<Auction, DeadlineExceeded> {
         if cancel.is_cancelled() {
             return Err(DeadlineExceeded);
@@ -800,18 +811,10 @@ impl Competition {
         // Clone balances since we only aggregate data once but each solver needs
         // to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
-
-        if cancel.is_cancelled() {
-            return Err(DeadlineExceeded);
-        }
-
         let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
 
-        if cancel.is_cancelled() {
-            return Err(DeadlineExceeded);
-        }
-
-        let mut cancelled = false;
+        let orders = std::mem::take(&mut auction.orders);
+        let mut updated_orders = Vec::with_capacity(orders.len());
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -821,10 +824,9 @@ impl Competition {
         // to each order, and potentially scaling the order's `available` amount
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
-        auction.orders.retain_mut(|order| {
+        for mut order in orders {
             if cancel.is_cancelled() {
-                cancelled = true;
-                return false;
+                return Err(DeadlineExceeded);
             }
 
             if cow_amms.contains(&order.uid) {
@@ -833,7 +835,8 @@ impl Competition {
                 // Without this short circuiting logic they would get filtered
                 // out later because we don't bother fetching their balances
                 // for performance reasons.
-                return true;
+                updated_orders.push(order);
+                continue;
             }
 
             // Update order app data if it was fetched.
@@ -844,12 +847,14 @@ impl Competition {
             // Flashloan orders get their sell tokens from the flashloan at
             // settlement time, so skip the balance check.
             if order.app_data.flashloan().is_some() {
-                return true;
+                updated_orders.push(order);
+                continue;
             }
 
             // wrappers can produce the required funds at settlement time
             if !order.app_data.wrappers().is_empty() {
-                return true;
+                updated_orders.push(order);
+                continue;
             }
 
             let remaining_balance = match balances.get_mut(&(
@@ -860,8 +865,8 @@ impl Competition {
                 Some(balance) => balance,
                 None => {
                     let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance;
-                    observe::order_excluded_from_auction(order, reason);
-                    return false;
+                    observe::order_excluded_from_auction(&order, reason);
+                    continue;
                 }
             };
 
@@ -874,12 +879,11 @@ impl Competition {
             };
             if allocated_balance.0.is_zero() {
                 observe::order_excluded_from_auction(
-                    order,
+                    &order,
                     observe::OrderExcludedFromAuctionReason::InsufficientBalance,
                 );
-                return false;
+                continue;
             }
-
             // We need to scale the available amount in the order based on
             // allocated balance. We cannot naively just set the `available`
             // amount to equal the `allocated_balance` because of two reasons:
@@ -898,28 +902,28 @@ impl Competition {
                         .unwrap_or_default(),
                 );
             }
+
             if order.available().is_zero() {
                 observe::order_excluded_from_auction(
-                    order,
+                    &order,
                     observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
                 );
-                return false;
+                continue;
             }
 
             remaining_balance.0 -= allocated_balance.0;
-
-            true
-        });
-
-        if cancelled || cancel.is_cancelled() {
-            return Err(DeadlineExceeded);
+            updated_orders.push(order);
         }
-
+        auction.orders = updated_orders;
         Ok(auction)
     }
 
     /// Runs a blocking function on a background thread, timing it using the
-    /// given stage name.
+    /// given stage name. This helper does not cancel or abort the blocking
+    /// closure itself. Any deadline handling must be implemented by the
+    /// closure using a `CancellationToken`. If the async caller returns
+    /// early, it may still continue running until it reaches
+    /// its own cancellation check or completes.
     pub async fn run_blocking_with_timer<T, F>(stage: &'static str, f: F) -> T
     where
         F: FnOnce() -> T + Send + 'static,
@@ -1106,12 +1110,25 @@ impl Competition {
     }
 
     #[instrument(skip_all)]
-    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
+    async fn without_unsupported_orders(
+        &self,
+        mut auction: Auction,
+        cancel: &CancellationToken,
+    ) -> Result<Auction, DeadlineExceeded> {
+        if cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
+
         if !self.solver.config().flashloans_enabled {
             auction.orders.retain(|o| o.app_data.flashloan().is_none());
         }
+
+        if cancel.is_cancelled() {
+            return Err(DeadlineExceeded);
+        }
+
         self.risk_detector
-            .filter_unsupported_orders_in_auction(auction)
+            .filter_unsupported_orders_in_auction(auction, cancel)
             .await
     }
 }
@@ -1219,7 +1236,7 @@ pub enum Error {
     )]
     SolutionNotAvailable,
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] time::DeadlineExceeded),
+    DeadlineExceeded(#[from] DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]
@@ -1237,12 +1254,29 @@ mod deadline_cancellation_tests {
     use {
         super::*,
         crate::domain::time::DeadlineExceeded,
-        std::time::Duration,
+        std::{collections::HashMap, hint::spin_loop, sync::Arc},
+        tokio::sync::oneshot,
         tokio_util::sync::CancellationToken,
     };
 
+    // Helper to create a dummy auction purely for test
+    fn empty_auction() -> Auction {
+        Auction {
+            id: None,
+            orders: Vec::new(),
+            tokens: auction::Tokens::default(),
+            gas_price: eth::GasPrice::new(
+                alloy::primitives::U256::ZERO.into(),
+                alloy::primitives::U256::ZERO.into(),
+                0,
+            ),
+            deadline: chrono::Utc::now(),
+            surplus_capturing_jit_order_owners: Default::default(),
+        }
+    }
+
     #[tokio::test]
-    async fn run_blocking_with_deadline_exceeded() {
+    async fn blocking_with_deadline_exceeded() {
         let result =
             Competition::run_blocking_with_timer("deadline", || Err::<(), _>(DeadlineExceeded))
                 .await;
@@ -1251,39 +1285,153 @@ mod deadline_cancellation_tests {
     }
 
     #[tokio::test]
-    async fn run_blocking_returns_success() {
+    async fn blocking_returns_success() {
         let result =
             Competition::run_blocking_with_timer("success", || Ok::<_, DeadlineExceeded>("ok"))
                 .await;
 
-        assert_eq!(result.expect("blocking succeed"), "ok");
+        assert_eq!(result.expect("success"), "ok");
     }
 
     #[tokio::test]
-    async fn blocking_stage_cooperates_cancellation_token() {
+    async fn blocking_stage_cooperates_cancellation() {
         let cancel = CancellationToken::new();
         let cancel_for_blocking = cancel.clone();
+        let (entered_sender, entered_receiver) = oneshot::channel();
 
         let handle = tokio::spawn(async move {
             Competition::run_blocking_with_timer("cancel", move || {
+                let _ = entered_sender.send(());
+
                 loop {
                     if cancel_for_blocking.is_cancelled() {
                         return Err::<(), _>(DeadlineExceeded);
                     }
 
-                    std::thread::sleep(Duration::from_millis(5));
+                    spin_loop();
                 }
             })
             .await
         });
 
+        entered_receiver.await.expect("should start");
+
         cancel.cancel();
 
-        let result = tokio::time::timeout(Duration::from_secs(1), handle)
-            .await
-            .expect("blocking cancellation")
-            .expect("join succeeded");
+        let result = handle.await.expect("joined");
 
         assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+
+    #[tokio::test]
+    async fn blocking_returns_immediately_if_cancelled() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let result = Competition::run_blocking_with_timer("pre_cancelled", move || {
+            if cancel.is_cancelled() {
+                return Err::<(), _>(DeadlineExceeded);
+            }
+
+            unreachable!("it's cancelled");
+        })
+        .await;
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+
+    #[test]
+    fn sort_orders_returns_deadline_exceeded_when_cancelled() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let auction = empty_auction();
+
+        let result = Competition::sort_orders(
+            auction,
+            eth::Address::default(),
+            Vec::<Arc<dyn SortingStrategy>>::new(),
+            &cancel,
+        );
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+
+    #[test]
+    fn update_orders_returns_deadline_exceeded_when_cancelled() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let auction = empty_auction();
+
+        let result = Competition::update_orders(
+            auction,
+            Arc::new(HashMap::new()),
+            Arc::new(HashMap::new()),
+            Arc::new(Vec::new()),
+            &cancel,
+        );
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+    }
+
+    #[test]
+    fn update_orders_accepts_empty_auction_not_cancelled() {
+        let cancel = CancellationToken::new();
+
+        let auction = empty_auction();
+
+        let result = Competition::update_orders(
+            auction,
+            Arc::new(HashMap::new()),
+            Arc::new(HashMap::new()),
+            Arc::new(Vec::new()),
+            &cancel,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn blocking_stage_can_return_before_blocking_work_finishes() {
+        let cancel = CancellationToken::new();
+        let cancel_for_blocking = cancel.clone();
+
+        let (entered_sender, entered_receiver) = oneshot::channel();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+        let (finished_sender, mut finished_receiver) = oneshot::channel();
+
+        let handle = tokio::spawn(async move {
+            Competition::run_blocking_with_timer("slow", move || {
+                let _ = entered_sender.send(());
+
+                while !cancel_for_blocking.is_cancelled() {
+                    spin_loop();
+                }
+
+                release_receiver.recv().expect("should release");
+
+                let _ = finished_sender.send(());
+
+                Ok::<_, DeadlineExceeded>(())
+            })
+            .await
+        });
+
+        entered_receiver.await.expect("should start");
+
+        cancel.cancel();
+
+        let result = tokio::select! {
+            result = handle => result.expect("should not panic"),
+            _ = cancel.cancelled() => Err(DeadlineExceeded),
+        };
+
+        assert!(matches!(result, Err(DeadlineExceeded)));
+        assert!(finished_receiver.try_recv().is_err());
+
+        release_sender.send(()).expect("still be alive");
+
+        finished_receiver.await.expect("finish after released");
     }
 }
