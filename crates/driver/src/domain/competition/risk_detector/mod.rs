@@ -305,6 +305,7 @@ mod tests {
 
     struct TestSellQualityDetector {
         sell_detector_unsupported_uid: Uid,
+        #[allow(dead_code)]
         sell_detector_supported_uid: Uid,
     }
 
