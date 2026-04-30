@@ -537,11 +537,17 @@ components:
                       type: string
                       description: The effective amount the user received after all fees.
               clearingPrices:
+                deprecated: true
                 description: >
-                  Mapping of hex token address to price.
+                  Deprecated. The autopilot no longer consumes uniform clearing
+                  prices from the `/solve` response and ignores this field if
+                  present. It is still emitted by drivers for backward
+                  compatibility with autopilots running the previous code, and
+                  will be removed in a follow-up release.
 
-                  The prices of tokens for settled user orders as passed to the
-                  settlement contract.
+
+                  Mapping of hex token address to price. The prices of tokens
+                  for settled user orders as passed to the settlement contract.
                 type: object
                 additionalProperties:
                   $ref: "#/components/schemas/BigUint"

@@ -1015,7 +1015,6 @@ impl Metrics {
     fn solution_err(driver: &infra::Driver, err: &SolutionError) {
         let label = match err {
             SolutionError::ZeroScore(_) => "zero_score",
-            SolutionError::InvalidPrice(_) => "invalid_price",
             SolutionError::SolverDenyListed => "solver_deny_listed",
         };
         Self::get()
