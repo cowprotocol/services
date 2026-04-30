@@ -7,6 +7,7 @@ use {
     },
     simulator::simulation_builder::{
         self,
+        AccountOverrideRequest,
         Block,
         EthCallInputs,
         ExecutionAmount,
@@ -216,7 +217,7 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
         .expect("parameters_from_app_data should parse the app data")
         .with_prices(Prices::Limit)
         .from_solver(Solver::Fake(None))
-        .fund_settlement_contract_with_buy_tokens()
+        .with_override(AccountOverrideRequest::BuyTokensForBuffers)
         .at_block(Block::Number(fork_block_mainnet))
         .build()
         .await
