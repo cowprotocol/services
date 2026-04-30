@@ -16,7 +16,7 @@ use {
         IUniswapV3Factory::IUniswapV3Factory::PoolCreated,
         UniswapV3Pool::UniswapV3Pool::{Burn, Initialize, Mint, Swap},
     },
-    ethrpc::AlloyProvider,
+    ethrpc::{AlloyProvider, alloy::errors::ContractErrorExt},
     futures::{StreamExt, TryStreamExt},
     sqlx::PgPool,
     std::collections::HashMap,
@@ -415,7 +415,6 @@ impl UniswapV3Indexer {
 }
 
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
-    use ethrpc::alloy::errors::ContractErrorExt;
     match shared::retry::retry_with_sleep_if(
         || async move {
             contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
@@ -439,7 +438,6 @@ async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u6
 }
 
 async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> {
-    use ethrpc::alloy::errors::ContractErrorExt;
     // Retry transient transport errors before giving up. Contract reverts /
     // missing-selector failures bail out immediately.
     match shared::retry::retry_with_sleep_if(
