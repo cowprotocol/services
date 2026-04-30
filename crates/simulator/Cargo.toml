@@ -16,6 +16,7 @@ alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
+futures = { workspace = true }
 async-trait = { workspace = true }
 balance-overrides = { workspace = true }
 cached = { workspace = true }

@@ -80,7 +80,6 @@ impl SettlementSimulator {
             prices: None,
             solver: None,
             auction_id: None,
-            state_overrides: StateOverride::default(),
             account_override_requests: vec![],
             block: Block::Latest,
         }
@@ -111,7 +110,6 @@ pub struct SimulationBuilder {
     pub(crate) prices: Option<Prices>,
     pub(crate) solver: Option<Solver>,
     pub(crate) auction_id: Option<i64>,
-    pub(crate) state_overrides: StateOverride,
     pub(crate) simulator: SettlementSimulator,
     pub(crate) account_override_requests: Vec<AccountOverrideRequest>,
     pub(crate) block: Block,

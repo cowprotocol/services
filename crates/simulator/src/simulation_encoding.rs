@@ -27,8 +27,9 @@ use {
         state::{AccountOverride, StateOverride},
     },
     alloy_sol_types::SolCall,
-    balance_overrides::BalanceOverrideRequest,
+    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     model::order::OrderKind,
+    std::sync::Arc,
 };
 
 pub(crate) async fn encode(
@@ -166,59 +167,12 @@ pub(crate) async fn encode(
         }
         None => return Err(BuildError::NoSolver),
     };
-    let mut state_overrides = builder.state_overrides;
-    for request in builder.account_override_requests {
-        let (address, account_override) = match request {
-            AccountOverrideRequest::SufficientEthBalance(addr) => (
-                addr,
-                AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
-            ),
-            AccountOverrideRequest::AuthenticateAddress(addr) => {
-                // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
-                // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
-                // slot_padded).
-                let mut buf = [0u8; 64];
-                buf[12..32].copy_from_slice(addr.as_slice());
-                buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
-                let slot = keccak256(buf);
-                (
-                    builder.simulator.0.authenticator,
-                    AccountOverride::default()
-                        .with_state_diff(std::iter::once((slot, B256::with_last_byte(1)))),
-                )
-            }
-            AccountOverrideRequest::Balance {
-                holder,
-                token,
-                amount,
-            } => builder
-                .simulator
-                .0
-                .balance_overrides
-                .state_override(BalanceOverrideRequest {
-                    token,
-                    holder,
-                    amount,
-                })
-                .await
-                .ok_or(BuildError::FailedToOverrideBalances)?,
-            AccountOverrideRequest::BuyTokensForBuffers => {
-                unreachable!(
-                    "replaced with specific Balance requests before state overrides get computed"
-                )
-            }
-            AccountOverrideRequest::Code { account, code } => (
-                account,
-                AccountOverride {
-                    code: Some(code),
-                    ..Default::default()
-                },
-            ),
-            AccountOverrideRequest::Custom { account, state } => (account, state),
-        };
-        apply_account_override(&mut state_overrides, address, account_override)
-            .map_err(BuildError::ConflictingStateOverrides)?;
-    }
+    let state_overrides = build_final_state_overrides(
+        builder.account_override_requests,
+        Arc::clone(&builder.simulator.0.balance_overrides),
+        builder.simulator.0.authenticator,
+    )
+    .await?;
 
     Ok(EthCallInputs {
         request: TransactionRequest {
@@ -262,6 +216,74 @@ async fn executed_amount(
             full.saturating_sub(filled_amount)
         }
     })
+}
+
+/// Resolves all [`AccountOverrideRequest`]s concurrently, merges them
+/// and returns the final [`StateOverride`].
+async fn build_final_state_overrides(
+    requests: Vec<AccountOverrideRequest>,
+    balance_overrides: Arc<dyn BalanceOverriding>,
+    authenticator: Address,
+) -> Result<StateOverride, BuildError> {
+    let futures = requests.into_iter().map(|request| {
+        let balance_overrides = Arc::clone(&balance_overrides);
+        async move {
+            match request {
+                AccountOverrideRequest::SufficientEthBalance(addr) => Ok((
+                    addr,
+                    AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
+                )),
+                AccountOverrideRequest::AuthenticateAddress(addr) => {
+                    // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
+                    // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
+                    // slot_padded).
+                    let mut buf = [0u8; 64];
+                    buf[12..32].copy_from_slice(addr.as_slice());
+                    buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
+                    let slot = keccak256(buf);
+                    Ok((
+                        authenticator,
+                        AccountOverride::default()
+                            .with_state_diff(std::iter::once((slot, B256::with_last_byte(1)))),
+                    ))
+                }
+                AccountOverrideRequest::Balance {
+                    holder,
+                    token,
+                    amount,
+                } => balance_overrides
+                    .state_override(BalanceOverrideRequest {
+                        token,
+                        holder,
+                        amount,
+                    })
+                    .await
+                    .ok_or(BuildError::FailedToOverrideBalances),
+                AccountOverrideRequest::BuyTokensForBuffers => {
+                    unreachable!(
+                        "replaced with specific Balance requests before state overrides get \
+                         computed"
+                    )
+                }
+                AccountOverrideRequest::Code { account, code } => Ok((
+                    account,
+                    AccountOverride {
+                        code: Some(code),
+                        ..Default::default()
+                    },
+                )),
+                AccountOverrideRequest::Custom { account, state } => Ok((account, state)),
+            }
+        }
+    });
+    let resolved_overrides = futures::future::try_join_all(futures).await?;
+
+    let mut state_overrides = StateOverride::default();
+    for (address, account_override) in resolved_overrides {
+        apply_account_override(&mut state_overrides, address, account_override)
+            .map_err(BuildError::ConflictingStateOverrides)?;
+    }
+    Ok(state_overrides)
 }
 
 /// Merges `new` into `existing` field by field.
