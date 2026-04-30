@@ -423,7 +423,6 @@ impl EthCallInputs {
             block_number: Some(self.block + 1),
             network_id: self.simulator.0.chain_id.to_string(),
             from: self.request.from.unwrap_or_default(),
-            // TODO: error handling
             to: match &self.request.to.ok_or(ConversionError::MissingTo)? {
                 TxKind::Create => Default::default(),
                 TxKind::Call(to) => *to,
@@ -436,7 +435,6 @@ impl EthCallInputs {
                 .map(|bytes| bytes.to_vec())
                 .unwrap_or_default(),
             gas: self.request.gas,
-            gas_price: None, // use tenderly default for now
             value: self.request.value,
             simulation_type: Some(crate::tenderly::dto::SimulationType::Full),
             state_objects: Some(
@@ -453,8 +451,10 @@ impl EthCallInputs {
             ),
             access_list: self.request.access_list.as_ref().map(Into::into),
             save: Some(true),
+            gas_price: None, // use tenderly default for now
             save_if_fails: Some(true),
-            ..Default::default()
+            transaction_index: None,
+            generate_access_list: None,
         })
     }
 }
