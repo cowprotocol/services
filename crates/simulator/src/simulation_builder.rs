@@ -252,19 +252,9 @@ impl SimulationBuilder {
 
     /// Finishes the simulation struct based on the configuration thus far.
     pub async fn build(self) -> Result<EthCallInputs, BuildError> {
-        self.build_with_modifications(|_| {}).await
-    }
-
-    /// Same as `build()` but allows the caller to alter the simulation
-    /// before it gets finalized. This should only be used for very specific
-    /// setups.
-    pub async fn build_with_modifications(
-        self,
-        customize: impl FnOnce(&mut EncodedSettlement),
-    ) -> Result<EthCallInputs, BuildError> {
         // Forward to a helper function to split the boring repetitive builder
         // code from the non-trivial code that actually does the encoding.
-        crate::simulation_encoding::encode(self, customize).await
+        crate::simulation_encoding::encode(self).await
     }
 }
 

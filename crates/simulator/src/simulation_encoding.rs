@@ -31,10 +31,7 @@ use {
     model::order::OrderKind,
 };
 
-pub(crate) async fn encode(
-    mut builder: SimulationBuilder,
-    customize: impl FnOnce(&mut EncodedSettlement),
-) -> Result<EthCallInputs, BuildError> {
+pub(crate) async fn encode(mut builder: SimulationBuilder) -> Result<EthCallInputs, BuildError> {
     let order = builder.order.as_ref().ok_or(BuildError::NoOrder)?;
 
     let block = match builder.block {
