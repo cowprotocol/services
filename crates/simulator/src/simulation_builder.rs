@@ -237,7 +237,10 @@ impl SimulationBuilder {
     }
 
     /// Queues [`AccountOverrideRequest`]s to be resolved and applied during
-    /// [`build`](Self::build). Multiple requests may target the same address.
+    /// [`build`](Self::build). Multiple requests may target the same address
+    /// and will be applied on a best-effort basis (failure to compute balance
+    /// overrides or conflicting state overrides will get logged but do not
+    /// lead to an error).
     pub fn with_overrides(
         mut self,
         requests: impl IntoIterator<Item = AccountOverrideRequest>,
@@ -288,14 +291,11 @@ pub enum PriceEncoding {
     /// Sets `price[sell_token] = buy_amount` and `price[buy_token] =
     /// sell_amount`, exactly satisfying the order's limit with no surplus.
     LimitPrice,
-    /// Explicit token list and matching clearing prices. Use this when the
-    /// clearing prices differ from the order's limit — e.g. in trade
+    /// Explicit clearing prices for the order's sell and buy token. Use this
+    /// when the prices differ from the order's limit — e.g. in trade
     /// verification where the order amounts are set to always pass the limit
     /// check and the solver's quoted prices are supplied separately.
-    Custom {
-        tokens: Vec<Address>,
-        clearing_prices: Vec<U256>,
-    },
+    Custom { sell_price: U256, buy_price: U256 },
 }
 
 /// A simulator-specific order that bundles the data needed to encode a trade.
@@ -488,10 +488,6 @@ pub enum BuildError {
     NoOrder,
     #[error("no solver was set")]
     NoSolver,
-    #[error("sell token not found in token list")]
-    MissingSellToken,
-    #[error("buy token not found in token list")]
-    MissingBuyToken,
     #[error("failed to query filled amount from settlement contract: {0}")]
     FilledAmountQuery(#[source] anyhow::Error),
     #[error("failed to parse app data: {0}")]

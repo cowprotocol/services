@@ -136,20 +136,29 @@ impl TradeVerifier {
         // the simulation to pass. Otherwise just use the solver address.
         let solver_address = trade.tx_origin().unwrap_or(trade.solver());
 
-        let (tokens, clearing_prices) = match trade {
-            TradeKind::Legacy(_) => {
-                let tokens = vec![query.sell_token, query.buy_token];
-                let prices = match query.kind {
-                    OrderKind::Sell => {
-                        vec![*out_amount, query.in_amount.get()]
-                    }
-                    OrderKind::Buy => {
-                        vec![query.in_amount.get(), *out_amount]
-                    }
-                };
-                (tokens, prices)
-            }
-            TradeKind::Regular(trade) => trade.clearing_prices.iter().unzip(),
+        // `tokens` is passed to `Solver::swap` so it can measure balance changes;
+        // it is independent of the settlement's token/price vectors.
+        let tokens: Vec<Address> = match trade {
+            TradeKind::Legacy(_) => vec![query.sell_token, query.buy_token],
+            TradeKind::Regular(trade) => trade.clearing_prices.keys().copied().collect(),
+        };
+        let (fake_sell_price, fake_buy_price) = match trade {
+            TradeKind::Legacy(_) => match query.kind {
+                OrderKind::Sell => (*out_amount, query.in_amount.get()),
+                OrderKind::Buy => (query.in_amount.get(), *out_amount),
+            },
+            TradeKind::Regular(trade) => (
+                trade
+                    .clearing_prices
+                    .get(&query.sell_token)
+                    .copied()
+                    .unwrap_or(U256::ONE),
+                trade
+                    .clearing_prices
+                    .get(&query.buy_token)
+                    .copied()
+                    .unwrap_or(U256::ONE),
+            ),
         };
 
         let (sell_amount, buy_amount) = match query.kind {
@@ -240,8 +249,8 @@ impl TradeVerifier {
         .fill_at(
             ExecutionAmount::Full,
             PriceEncoding::Custom {
-                tokens: tokens.clone(),
-                clearing_prices,
+                sell_price: fake_sell_price,
+                buy_price: fake_buy_price,
             },
         );
 
