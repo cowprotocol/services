@@ -521,7 +521,6 @@ impl TradeVerifier {
             settlementContract: *self.settlement.address(),
             sellToken: query.sell_token,
             sellAmount: sell_amount,
-            nativeToken: self.simulator.native_token,
             spardose: Self::SPARDOSE,
         }
         .abi_encode();
