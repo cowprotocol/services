@@ -3,6 +3,7 @@ use {
     anyhow::{Context, Result},
     serde::Deserialize,
     std::{
+        collections::HashSet,
         fmt,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         num::NonZeroU32,
@@ -232,7 +233,7 @@ impl Configuration {
                 "network {} must list at least one factory",
                 n.name,
             );
-            let mut seen = hSet::new();
+            let mut seen = HashSet::new();
             for f in &n.factories {
                 assert!(
                     seen.insert(f.address),
