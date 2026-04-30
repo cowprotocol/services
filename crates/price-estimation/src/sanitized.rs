@@ -4,7 +4,7 @@ use {
         PriceEstimating,
         PriceEstimationError,
         Query,
-        gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
+        gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP, SETTLEMENT_OVERHEAD},
     },
     alloy::primitives::Address,
     anyhow::anyhow,
@@ -79,10 +79,11 @@ impl PriceEstimating for SanitizedPriceEstimator {
             }
 
             // sell WETH for ETH => 1 to 1 conversion with cost for unwrapping
+            // The resulting gas is the sum of unwrap and the settlement itself
             if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
-                    gas: GAS_PER_WETH_UNWRAP,
+                    gas: GAS_PER_WETH_UNWRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
                     execution: Default::default(),
@@ -92,10 +93,11 @@ impl PriceEstimating for SanitizedPriceEstimator {
             }
 
             // sell ETH for WETH => 1 to 1 conversion with cost for wrapping
+            // The resulting gas is the sum of unwrap and the settlement itself
             if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
-                    gas: GAS_PER_WETH_WRAP,
+                    gas: GAS_PER_WETH_WRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
                     execution: Default::default(),
@@ -299,7 +301,7 @@ mod tests {
                 Ok(Estimate {
                     out_amount: AlloyU256::ONE,
                     // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
-                    gas: GAS_PER_WETH_UNWRAP,
+                    gas: GAS_PER_WETH_UNWRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
                     execution: Default::default(),
@@ -319,7 +321,7 @@ mod tests {
                 Ok(Estimate {
                     out_amount: AlloyU256::ONE,
                     // Sanitized estimator will report a 1:1 estimate when wrapping native token.
-                    gas: GAS_PER_WETH_WRAP,
+                    gas: GAS_PER_WETH_WRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
                     execution: Default::default(),
