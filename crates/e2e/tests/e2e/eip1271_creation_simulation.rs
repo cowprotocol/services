@@ -1,15 +1,15 @@
 //! Local-node tests for the EIP-1271 creation-time simulation.
 //!
-//! Two cases:
-//!
-//! - With the orderbook in `Eip1271SimulationMode::Enforce`, an order whose
-//!   simulated settlement reverts must be rejected at creation with HTTP 400
-//!   `Eip1271SimulationFailed`. We trigger this by routing the simulation
-//!   through a tiny always-revert wrapper contract referenced from
-//!   `app_data.protocol.wrappers`. Reverts coming from a wrapper bypass the
-//!   `HooksTrampoline` revert-swallow, so the simulation actually fails.
-//! - A well-formed Safe-signed order with no wrapper must be accepted (HTTP
-//!   200), proving the adapter wiring lets healthy orders through.
+//! - Negative: a Safe-signed order whose `app_data.protocol.wrappers` points
+//!   at a custom always-revert wrapper. With the orderbook in
+//!   `Eip1271SimulationMode::Enforce`, the simulation drives `settle()`
+//!   through the wrapper, the wrapper reverts, and the API rejects with
+//!   HTTP 400 `Eip1271SimulationFailed`. A wrapper is used rather than a
+//!   buggy pre-hook because `HooksTrampoline.execute` deliberately swallows
+//!   hook reverts, so a buggy hook would not surface as a simulation
+//!   failure.
+//! - Positive: a Safe-signed order with empty app_data is accepted, proving
+//!   the adapter wiring lets healthy orders through.
 
 use {
     alloy::{
