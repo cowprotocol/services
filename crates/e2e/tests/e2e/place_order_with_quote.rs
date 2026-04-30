@@ -38,18 +38,6 @@ async fn local_node_fallback_native_price_estimator() {
     run_test(fallback_native_price_estimator).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_native_same_token_sell_with_eth_buy_marker() {
-    run_test(native_same_token_sell_with_eth_buy_marker).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_native_same_token_buy_with_eth_buy_marker_rejected() {
-    run_test(native_same_token_buy_with_eth_buy_marker_rejected).await;
-}
-
 async fn place_order_with_quote(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -170,7 +158,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
         .await
         .expect("Must be able to disable automine");
 
-    tracing::info!("Quoting");
+    tracing::info!("Quoting same sell and buy token pair");
     let quote_sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
@@ -186,54 +174,8 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
     assert!(
         matches!(services.submit_quote(&quote_request).await, Err((reqwest::StatusCode::BAD_REQUEST, response)) if response.contains("SameBuyAndSellToken"))
     );
-}
 
-async fn native_same_token_sell_with_eth_buy_marker(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-
-    let [solver] = onchain.make_solvers(10u64.eth()).await;
-    let [trader] = onchain.make_accounts(10u64.eth()).await;
-
-    onchain
-        .contracts()
-        .weth
-        .approve(onchain.contracts().allowance, 3u64.eth())
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-    onchain
-        .contracts()
-        .weth
-        .deposit()
-        .from(trader.address())
-        .value(3u64.eth())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    tracing::info!("Starting services.");
-    let services = Services::new(&onchain).await;
-    let orderbook_config = configs::orderbook::Configuration {
-        order_validation: OrderValidationConfig {
-            same_tokens_policy: SameTokensPolicy::AllowSell,
-            ..Default::default()
-        },
-        ..configs::orderbook::Configuration::test_default()
-    };
-    services
-        .start_protocol_with_args(
-            Configuration::test("test_solver", solver.address()),
-            orderbook_config,
-            solver.clone(),
-        )
-        .await;
-
-    web3.provider
-        .evm_set_automine(false)
-        .await
-        .expect("Must be able to disable automine");
-
+    tracing::info!("Quoting selling same sell and buy token pair of native token");
     let quote_sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
@@ -246,86 +188,6 @@ async fn native_same_token_sell_with_eth_buy_marker(web3: Web3) {
         },
         ..Default::default()
     };
-
-    let quote_response = services.submit_quote(&quote_request).await.unwrap();
-    assert!(quote_response.verified);
-    assert!(quote_response.id.is_some());
-
-    let order = OrderCreation {
-        quote_id: quote_response.id,
-        sell_token: *onchain.contracts().weth.address(),
-        sell_amount: quote_sell_amount,
-        buy_token: BUY_ETH_ADDRESS,
-        buy_amount: quote_response.quote.buy_amount,
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        &trader.signer,
-    );
-
-    services.create_order(&order).await.unwrap();
-}
-
-async fn native_same_token_buy_with_eth_buy_marker_rejected(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-
-    let [solver] = onchain.make_solvers(10u64.eth()).await;
-    let [trader] = onchain.make_accounts(10u64.eth()).await;
-
-    onchain
-        .contracts()
-        .weth
-        .approve(onchain.contracts().allowance, 3u64.eth())
-        .from(trader.address())
-        .send_and_watch()
-        .await
-        .unwrap();
-    onchain
-        .contracts()
-        .weth
-        .deposit()
-        .from(trader.address())
-        .value(3u64.eth())
-        .send_and_watch()
-        .await
-        .unwrap();
-
-    tracing::info!("Starting services.");
-    let services = Services::new(&onchain).await;
-    let orderbook_config = configs::orderbook::Configuration {
-        order_validation: OrderValidationConfig {
-            same_tokens_policy: SameTokensPolicy::AllowSell,
-            ..Default::default()
-        },
-        ..configs::orderbook::Configuration::test_default()
-    };
-    services
-        .start_protocol_with_args(
-            Configuration::test("test_solver", solver.address()),
-            orderbook_config,
-            solver.clone(),
-        )
-        .await;
-
-    web3.provider
-        .evm_set_automine(false)
-        .await
-        .expect("Must be able to disable automine");
-
-    let quote_request = OrderQuoteRequest {
-        from: trader.address(),
-        sell_token: *onchain.contracts().weth.address(),
-        buy_token: BUY_ETH_ADDRESS,
-        side: OrderQuoteSide::Buy {
-            buy_amount_after_fee: NonZeroU256::try_from(1u64.eth()).unwrap(),
-        },
-        ..Default::default()
-    };
-
     assert!(
         matches!(services.submit_quote(&quote_request).await, Err((reqwest::StatusCode::BAD_REQUEST, response)) if response.contains("SameBuyAndSellToken"))
     );

@@ -8,7 +8,8 @@ use {
         },
     },
     configs::{
-        autopilot::Configuration, orderbook::order_validation::OrderValidationConfig,
+        autopilot::Configuration,
+        orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
     e2e::setup::*,
