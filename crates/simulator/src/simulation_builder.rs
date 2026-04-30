@@ -499,18 +499,15 @@ pub enum BuildError {
     MissingSellToken,
     #[error("buy token not found in token list")]
     MissingBuyToken,
-    #[error("could not override token balances to fund settlement contract")]
-    FailedToOverrideBalances,
     #[error("failed to query filled amount from settlement contract: {0}")]
     FilledAmountQuery(#[source] anyhow::Error),
     #[error("failed to parse app data: {0}")]
     AppDataParse(#[source] serde_json::Error),
     #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
     FlashloanWrappersIncompatible,
-    #[error("conflicting state overrides for the same account: {0}")]
-    ConflictingStateOverrides(#[source] MergeConflict),
 }
 
+#[derive(Debug)]
 pub enum AccountOverrideRequest {
     /// Gives the address a huge amount of ETH.
     SufficientEthBalance(Address),
@@ -538,7 +535,7 @@ pub enum AccountOverrideRequest {
 /// Error returned when two [`AccountOverride`]s set the same field for the same
 /// address and cannot be merged.
 #[derive(Debug, thiserror::Error)]
-pub enum MergeConflict {
+pub(crate) enum MergeConflict {
     #[error("both overrides set the ETH balance")]
     Balance,
     #[error("both overrides set the nonce")]

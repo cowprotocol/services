@@ -29,7 +29,6 @@ use {
     alloy_sol_types::SolCall,
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     model::order::OrderKind,
-    std::sync::Arc,
 };
 
 pub(crate) async fn encode(
@@ -170,10 +169,10 @@ pub(crate) async fn encode(
     };
     let state_overrides = build_final_state_overrides(
         builder.account_override_requests,
-        Arc::clone(&builder.simulator.0.balance_overrides),
+        builder.simulator.0.balance_overrides.as_ref(),
         builder.simulator.0.authenticator,
     )
-    .await?;
+    .await;
 
     Ok(EthCallInputs {
         request: TransactionRequest {
@@ -219,72 +218,79 @@ async fn executed_amount(
     })
 }
 
-/// Resolves all [`AccountOverrideRequest`]s concurrently, merges them
-/// and returns the final [`StateOverride`].
+/// Resolves all [`AccountOverrideRequest`]s concurrently on a best-effort
+/// basis. Failures are logged and the corresponding override is skipped rather
+/// than aborting the whole build.
 async fn build_final_state_overrides(
     requests: Vec<AccountOverrideRequest>,
-    balance_overrides: Arc<dyn BalanceOverriding>,
+    balance_overrides: &dyn BalanceOverriding,
     authenticator: Address,
-) -> Result<StateOverride, BuildError> {
-    let futures = requests.into_iter().map(|request| {
-        let balance_overrides = Arc::clone(&balance_overrides);
-        async move {
-            match request {
-                AccountOverrideRequest::SufficientEthBalance(addr) => Ok((
-                    addr,
-                    AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
-                )),
-                AccountOverrideRequest::AuthenticateAsSolver(addr) => {
-                    // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
-                    // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
-                    // slot_padded).
-                    let mut buf = [0u8; 64];
-                    buf[12..32].copy_from_slice(addr.as_slice());
-                    buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
-                    let slot = keccak256(buf);
-                    Ok((
-                        authenticator,
-                        AccountOverride::default()
-                            .with_state_diff(std::iter::once((slot, B256::with_last_byte(1)))),
-                    ))
-                }
-                AccountOverrideRequest::Balance {
-                    holder,
-                    token,
-                    amount,
-                } => balance_overrides
+) -> StateOverride {
+    let futures = requests.into_iter().map(|request| async move {
+        match request {
+            AccountOverrideRequest::SufficientEthBalance(addr) => Some((
+                addr,
+                AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
+            )),
+            AccountOverrideRequest::AuthenticateAsSolver(addr) => {
+                // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
+                // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
+                // slot_padded).
+                let mut buf = [0u8; 64];
+                buf[12..32].copy_from_slice(addr.as_slice());
+                buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
+                let slot = keccak256(buf);
+                Some((
+                    authenticator,
+                    AccountOverride::default()
+                        .with_state_diff(std::iter::once((slot, B256::with_last_byte(1)))),
+                ))
+            }
+            AccountOverrideRequest::Balance {
+                holder,
+                token,
+                amount,
+            } => {
+                let result = balance_overrides
                     .state_override(BalanceOverrideRequest {
                         token,
                         holder,
                         amount,
                     })
-                    .await
-                    .ok_or(BuildError::FailedToOverrideBalances),
-                AccountOverrideRequest::BuyTokensForBuffers => {
-                    unreachable!(
-                        "replaced with specific Balance requests before state overrides get \
-                         computed"
-                    )
+                    .await;
+                if result.is_none() {
+                    tracing::warn!(%token, %holder, "failed to compute balance state override, skipping");
                 }
-                AccountOverrideRequest::Code { account, code } => Ok((
-                    account,
-                    AccountOverride {
-                        code: Some(code),
-                        ..Default::default()
-                    },
-                )),
-                AccountOverrideRequest::Custom { account, state } => Ok((account, state)),
+                result
             }
+            AccountOverrideRequest::BuyTokensForBuffers => {
+                unreachable!(
+                    "replaced with specific Balance requests before state overrides get \
+                     computed"
+                )
+            }
+            AccountOverrideRequest::Code { account, code } => Some((
+                account,
+                AccountOverride {
+                    code: Some(code),
+                    ..Default::default()
+                },
+            )),
+            AccountOverrideRequest::Custom { account, state } => Some((account, state)),
         }
     });
-    let resolved_overrides = futures::future::try_join_all(futures).await?;
 
     let mut state_overrides = StateOverride::default();
-    for (address, account_override) in resolved_overrides {
-        apply_account_override(&mut state_overrides, address, account_override)
-            .map_err(BuildError::ConflictingStateOverrides)?;
+    for (address, account_override) in futures::future::join_all(futures)
+        .await
+        .into_iter()
+        .flatten()
+    {
+        if let Err(err) = apply_account_override(&mut state_overrides, address, account_override) {
+            tracing::warn!(?err, %address, "conflicting state overrides for address, skipping");
+        }
     }
-    Ok(state_overrides)
+    state_overrides
 }
 
 /// Merges `new` into `existing` field by field.
@@ -350,7 +356,7 @@ fn merge_account_override(
 ///
 /// If `address` already has an entry, the overrides are merged via
 /// [`merge_account_override`]. Returns an error on conflict.
-pub fn apply_account_override(
+pub(crate) fn apply_account_override(
     overrides: &mut StateOverride,
     address: Address,
     new: AccountOverride,
