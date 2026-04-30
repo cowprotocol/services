@@ -16,7 +16,6 @@ alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 app-data = { workspace = true }
-futures = { workspace = true }
 async-trait = { workspace = true }
 balance-overrides = { workspace = true }
 cached = { workspace = true }
@@ -27,6 +26,7 @@ contracts = { workspace = true }
 derive_more = { workspace = true }
 eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
+futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 http-client = { workspace = true }
