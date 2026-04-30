@@ -652,7 +652,7 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
+            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
@@ -710,7 +710,7 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
+            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await

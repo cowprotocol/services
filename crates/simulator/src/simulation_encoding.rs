@@ -172,7 +172,7 @@ pub(crate) async fn encode(mut builder: SimulationBuilder) -> Result<EthCallInpu
     };
 
     let from = match builder.solver {
-        Some(Solver::Real(addr)) => addr,
+        Some(Solver::OriginUnaltered(addr)) => addr,
         Some(Solver::Fake(opt)) => {
             let addr = opt.unwrap_or_else(Address::random);
             builder

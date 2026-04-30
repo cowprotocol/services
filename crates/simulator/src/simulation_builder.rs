@@ -227,12 +227,13 @@ impl SimulationBuilder {
         Ok(self)
     }
 
-    /// Queues an [`AccountOverrideRequest`] to be resolved and applied during
-    /// [`build`](Self::build). Multiple requests may target the same address;
-    /// non-conflicting fields are merged and conflicts produce
-    /// [`BuildError::ConflictingStateOverrides`].
-    pub fn with_override(mut self, request: AccountOverrideRequest) -> Self {
-        self.account_override_requests.push(request);
+    /// Queues [`AccountOverrideRequest`]s to be resolved and applied during
+    /// [`build`](Self::build). Multiple requests may target the same address.
+    pub fn with_overrides(
+        mut self,
+        requests: impl IntoIterator<Item = AccountOverrideRequest>,
+    ) -> Self {
+        self.account_override_requests.extend(requests);
         self
     }
 
@@ -248,9 +249,10 @@ pub enum Solver {
     /// Simulation assumes this is an actual solver so no state overrides will
     /// be applied to allow list it explicitly.
     /// If you need a very specific solver setup for your simulation consider
-    /// using this and explicitly add the necessary state overrides yourself
-    /// with `Simulation::build_with_modifications()`.
-    Real(Address),
+    /// using this and explicitly adding the necessary
+    /// [`AccountOverrideRequest`]s using with
+    /// [`SimulationBuilder::with_overrides()`].
+    OriginUnaltered(Address),
     /// A fake solver for simulation. Uses the provided address or generates a
     /// random one. The simulation builder will automatically set the required
     /// state overrides to give it enough ETH and allow list it as a solver.

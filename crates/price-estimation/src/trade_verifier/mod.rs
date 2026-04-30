@@ -40,7 +40,7 @@ use {
             ExecutionAmount,
             PriceEncoding,
             SettlementSimulator,
-            Solver as SimSolver,
+            Solver as SimulationSolver,
         },
         tenderly,
     },
@@ -283,20 +283,15 @@ impl TradeVerifier {
             _ => vec![],
         };
 
-        let mut builder = self
+        let eth_call_inputs = self
             .simulator
             .new_simulation_builder()
             .add_orders(std::iter::once(fake_order).chain(jit_orders))
-            .from_solver(SimSolver::Real(solver_address))
+            .from_solver(SimulationSolver::OriginUnaltered(solver_address))
             .with_pre_interactions(pre_interactions)
             .with_main_interactions(main_interactions)
-            .with_post_interactions(post_interactions);
-
-        for req in override_requests {
-            builder = builder.with_override(req);
-        }
-
-        let eth_call_inputs = builder
+            .with_post_interactions(post_interactions)
+            .with_overrides(override_requests)
             .build()
             .await
             .map_err(|e| Error::SimulationFailed(anyhow::anyhow!("{e}")))?;
