@@ -414,8 +414,30 @@ impl UniswapV3Indexer {
     }
 }
 
+/// Wraps an alloy contract call with the indexer's standard retry policy:
+/// retry only on transient transport errors (`is_node_error`); contract
+/// reverts and missing-selector failures bail out immediately. On giveup,
+/// invokes `on_giveup` with the accumulated errors and returns `None`.
+async fn retry_node_call<T, Fut>(
+    f: impl Fn() -> Fut,
+    on_giveup: impl FnOnce(&[alloy::contract::Error]),
+) -> Option<T>
+where
+    Fut: std::future::Future<Output = Result<T, alloy::contract::Error>>,
+{
+    match shared::retry::retry_with_sleep_if(f, |err: &alloy::contract::Error| err.is_node_error())
+        .await
+    {
+        Ok(v) => Some(v),
+        Err(errors) => {
+            on_giveup(&errors);
+            None
+        }
+    }
+}
+
 async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
-    match shared::retry::retry_with_sleep_if(
+    retry_node_call(
         || async move {
             contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
                 .liquidity()
@@ -423,40 +445,22 @@ async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u6
                 .call()
                 .await
         },
-        // Retry only on transient transport errors. Contract reverts and
-        // missing-selector failures are permanent — no point sleeping.
-        |err: &alloy::contract::Error| err.is_node_error(),
+        |errors| tracing::warn!(%pool, block, ?errors, "fetch_pool_liquidity gave up"),
     )
     .await
-    {
-        Ok(liq) => Some(liq),
-        Err(errors) => {
-            tracing::warn!(%pool, block, ?errors, "fetch_pool_liquidity gave up");
-            None
-        }
-    }
 }
 
 async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> {
-    // Retry transient transport errors before giving up. Contract reverts /
-    // missing-selector failures bail out immediately.
-    match shared::retry::retry_with_sleep_if(
+    retry_node_call(
         || async move {
             ERC20::Instance::new(token, provider.clone())
                 .decimals()
                 .call()
                 .await
         },
-        |err: &alloy::contract::Error| err.is_node_error(),
+        |errors| tracing::warn!(%token, ?errors, "fetch_decimals gave up"),
     )
     .await
-    {
-        Ok(d) => Some(d),
-        Err(errors) => {
-            tracing::warn!(%token, ?errors, "fetch_decimals gave up");
-            None
-        }
-    }
 }
 
 /// Periodically fills in missing `token{0,1}_symbol` values on
