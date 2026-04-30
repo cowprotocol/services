@@ -428,6 +428,11 @@ pub struct Gas {
 }
 
 impl Gas {
+    /// EIP-7825 per-transaction gas cap (2^24 - 1) introduced in Fusaka.
+    /// Any transaction exceeding this will be rejected by the mempool, so a
+    /// solution requiring more gas can never be settled on chain.
+    pub const EIP_7825_TX_GAS_CAP: u64 = (1 << 24) - 1;
+
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
     pub fn new(estimate: eth::Gas, block_limit: eth::Gas) -> Result<Self, solution::Error> {
@@ -441,7 +446,13 @@ impl Gas {
         // will not exceed the remaining space in the block next and ignore transactions
         // whose gas limit exceed the remaining space (without simulating the actual
         // gas required).
-        let max_gas = eth::Gas(block_limit.0 / eth::U256::from(2));
+        // Additionally cap by the EIP-7825 per-tx gas limit: even if half the
+        // block limit is higher, the mempool will reject any tx above the cap,
+        // so the settlement could never be mined.
+        let max_gas = std::cmp::min(
+            eth::Gas(block_limit.0 / eth::U256::from(2)),
+            eth::Gas(eth::U256::from(Self::EIP_7825_TX_GAS_CAP)),
+        );
         if estimate > max_gas {
             return Err(solution::Error::GasLimitExceeded(estimate, max_gas));
         }
@@ -465,5 +476,51 @@ impl Gas {
     /// parameters.
     pub fn required_balance(&self, max_fee_per_gas: U256) -> eth::Ether {
         self.limit * max_fee_per_gas.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gas(value: u64) -> eth::Gas {
+        eth::Gas(eth::U256::from(value))
+    }
+
+    #[test]
+    fn rejects_solution_above_eip_7825_cap() {
+        // 120M block (well above the EIP-7825 cap of 16,777,215). Half the
+        // block is 60M, but the per-tx cap must still apply.
+        let block_limit = gas(120_000_000);
+        let estimate = gas(20_000_000);
+        let err = Gas::new(estimate, block_limit).unwrap_err();
+        match err {
+            solution::Error::GasLimitExceeded(used, limit) => {
+                assert_eq!(used, estimate);
+                assert_eq!(limit, gas(Gas::EIP_7825_TX_GAS_CAP));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accepts_solution_at_eip_7825_cap() {
+        let block_limit = gas(120_000_000);
+        let estimate = gas(Gas::EIP_7825_TX_GAS_CAP);
+        let result = Gas::new(estimate, block_limit).unwrap();
+        assert_eq!(result.estimate, estimate);
+    }
+
+    #[test]
+    fn small_block_limit_still_caps_at_half() {
+        // On chains with a low block gas limit, the half-block cap is tighter
+        // than the EIP-7825 cap and must keep applying.
+        let block_limit = gas(10_000_000);
+        let estimate = gas(6_000_000);
+        let err = Gas::new(estimate, block_limit).unwrap_err();
+        match err {
+            solution::Error::GasLimitExceeded(_, limit) => assert_eq!(limit, gas(5_000_000)),
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }
