@@ -18,8 +18,48 @@ use {
 };
 
 /// Full `app_data` JSON the trader signed for the replayed Aave v3 debt-swap
-/// order.
-const APP_DATA: &str = r#"{"appCode":"aave-v3-interface-debt-swap","metadata":{"flashloan":{"amount":"4475596734006878742","liquidityProvider":"0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2","protocolAdapter":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","receiver":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","token":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"},"hooks":{"post":[{"callData":"0xad3da559000000000000000000000000000000000000000000000000444d51cbc68377680000000000000000000000000000000000000000000000000000000069f323f8000000000000000000000000000000000000000000000000000000000000001c445675473b3e0941842eb5405ec1d9cb93c7d64b513b30d928d7ea42067440cb00fbafa80085d754964d5d70f616d899049f4e75c240fda7c2f108a99c882e8b","dappId":"cow-sdk://flashloans/aave/v3/debt-swap","gasLimit":"1000000","target":"0xe58aCB86761699c1cBC665e6b7E0271503f6336C"}],"pre":[{"callData":"0xb1b6308b00000000000000000000000073e7af13ef172f13d8fefebfd90c7a65300963440000000000000000000000006276ac03090f2bb8be680178343ac368f713b4e8000000000000000000000000e58acb86761699c1cbc665e6b7e0271503f6336c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000040d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f0000000000000000000000000000000000000000000000003e14904047a25ee600000000000000000000000000000000000000000000021e4382edd5a86c00006ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc0000000000000000000000000000000000000000000000000000000069f323f80000000000000000000000000000000000000000000000003e1c83845060e2160000000000000000000000000000000000000000000000000007f34408be83300000000000000000000000000000000000000000000000003e1c83845060e21600000000000000000000000000000000000000000000021e4382edd5a86c0000","dappId":"cow-sdk://flashloans/aave/v3/debt-swap","gasLimit":"300000","target":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192"}]},"orderClass":{"orderClass":"market"},"partnerFee":{"recipient":"0x464C71f6c2F760DdA6093dCB91C24c39e5d6e18c","volumeBps":0},"quote":{"slippageBips":140,"smartSlippage":true},"utm":{"utmCampaign":"developer-cohort","utmContent":"","utmMedium":"cow-sdk@7.3.4","utmSource":"cowmunity","utmTerm":"js"}},"version":"1.14.0"}"#;
+/// order. Byte-equivalent to the production payload, broken up via `concat!`
+/// for readability. Do not change the bytes: the EIP-1271 signature embeds
+/// `keccak256(APP_DATA)` and the signer contract validates against it.
+const APP_DATA: &str = concat!(
+    r#"{"#,
+        r#""appCode":"aave-v3-interface-debt-swap","#,
+        r#""metadata":{"#,
+            r#""flashloan":{"#,
+                r#""amount":"4475596734006878742","#,
+                r#""liquidityProvider":"0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2","#,
+                r#""protocolAdapter":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","#,
+                r#""receiver":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","#,
+                r#""token":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2""#,
+            r#"},"#,
+            r#""hooks":{"#,
+                r#""post":[{"#,
+                    r#""callData":"0xad3da559000000000000000000000000000000000000000000000000444d51cbc68377680000000000000000000000000000000000000000000000000000000069f323f8000000000000000000000000000000000000000000000000000000000000001c445675473b3e0941842eb5405ec1d9cb93c7d64b513b30d928d7ea42067440cb00fbafa80085d754964d5d70f616d899049f4e75c240fda7c2f108a99c882e8b","#,
+                    r#""dappId":"cow-sdk://flashloans/aave/v3/debt-swap","#,
+                    r#""gasLimit":"1000000","#,
+                    r#""target":"0xe58aCB86761699c1cBC665e6b7E0271503f6336C""#,
+                r#"}],"#,
+                r#""pre":[{"#,
+                    r#""callData":"0xb1b6308b00000000000000000000000073e7af13ef172f13d8fefebfd90c7a65300963440000000000000000000000006276ac03090f2bb8be680178343ac368f713b4e8000000000000000000000000e58acb86761699c1cbc665e6b7e0271503f6336c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000040d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f0000000000000000000000000000000000000000000000003e14904047a25ee600000000000000000000000000000000000000000000021e4382edd5a86c00006ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc0000000000000000000000000000000000000000000000000000000069f323f80000000000000000000000000000000000000000000000003e1c83845060e2160000000000000000000000000000000000000000000000000007f34408be83300000000000000000000000000000000000000000000000003e1c83845060e21600000000000000000000000000000000000000000000021e4382edd5a86c0000","#,
+                    r#""dappId":"cow-sdk://flashloans/aave/v3/debt-swap","#,
+                    r#""gasLimit":"300000","#,
+                    r#""target":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192""#,
+                r#"}]"#,
+            r#"},"#,
+            r#""orderClass":{"orderClass":"market"},"#,
+            r#""partnerFee":{"recipient":"0x464C71f6c2F760DdA6093dCB91C24c39e5d6e18c","volumeBps":0},"#,
+            r#""quote":{"slippageBips":140,"smartSlippage":true},"#,
+            r#""utm":{"#,
+                r#""utmCampaign":"developer-cohort","#,
+                r#""utmContent":"","#,
+                r#""utmMedium":"cow-sdk@7.3.4","#,
+                r#""utmSource":"cowmunity","#,
+                r#""utmTerm":"js""#,
+            r#"}"#,
+        r#"},"#,
+        r#""version":"1.14.0""#,
+    r#"}"#,
+);
 
 /// Production EIP-1271 signature blob for the replayed order. The trader's
 /// signer contract decodes it and validates against the order hash.
@@ -85,11 +125,10 @@ async fn aave_debt_swap_replay_fails_when_flashloan_oversubscribed() {
 
     let inputs = build_replay_simulation(&rpc_url, &tampered_app_data).await;
 
-    let err = inputs
+    inputs
         .simulate()
         .await
         .expect_err("simulation must revert when the flashloan exceeds Aave liquidity");
-    tracing::info!(?err, "expected simulation revert observed");
 }
 
 /// Builds a simulation pinned to the block right before the Aave debt-swap
