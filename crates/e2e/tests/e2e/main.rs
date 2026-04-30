@@ -16,7 +16,6 @@ mod cow_amm;
 mod database;
 mod debug_order;
 mod deprecated_endpoints;
-mod eip1271_aave_replay;
 mod eip1271_creation_simulation;
 mod eip4626;
 mod eth_integration;
