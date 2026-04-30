@@ -12,7 +12,7 @@ use {
     alloy_sol_types::SolCall,
     alloy_transport::RpcError,
     anyhow::{Context, Result},
-    balance_overrides::BalanceOverriding,
+    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     ethrpc::block_stream::CurrentBlockWatcher,
     model::{
         DomainSeparator,
@@ -82,8 +82,13 @@ impl SettlementSimulator {
             auction_id: None,
             state_overrides: StateOverride::default(),
             fund_settlement_contract: false,
+            fund_requests: vec![],
             block: Block::Latest,
         }
+    }
+
+    pub fn domain_separator(&self) -> DomainSeparator {
+        self.0.domain_separator
     }
 }
 
@@ -110,6 +115,7 @@ pub struct SimulationBuilder {
     pub(crate) state_overrides: StateOverride,
     pub(crate) simulator: SettlementSimulator,
     pub(crate) fund_settlement_contract: bool,
+    pub(crate) fund_requests: Vec<BalanceOverrideRequest>,
     pub(crate) block: Block,
 }
 
@@ -233,6 +239,23 @@ impl SimulationBuilder {
     /// from the order's executed amount and clearing prices at `build()` time.
     pub fn fund_settlement_contract_with_buy_tokens(mut self) -> Self {
         self.fund_settlement_contract = true;
+        self
+    }
+
+    /// Override the token balance of an arbitrary address. Useful for seeding
+    /// an intermediate funding contract (e.g. Spardose) with sell tokens before
+    /// the simulation runs.
+    pub fn fund_address_with_tokens(
+        mut self,
+        holder: Address,
+        token: Address,
+        amount: U256,
+    ) -> Self {
+        self.fund_requests.push(BalanceOverrideRequest {
+            token,
+            holder,
+            amount,
+        });
         self
     }
 

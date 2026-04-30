@@ -167,6 +167,17 @@ pub(crate) async fn encode(
         state_overrides.insert(address, state_override);
     }
 
+    for request in builder.fund_requests {
+        let (address, account_override) = builder
+            .simulator
+            .0
+            .balance_overrides
+            .state_override(request)
+            .await
+            .ok_or(BuildError::FailedToOverrideBalances)?;
+        state_overrides.insert(address, account_override);
+    }
+
     Ok(EthCallInputs {
         request: TransactionRequest {
             from: Some(from),
