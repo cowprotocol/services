@@ -5,6 +5,7 @@ use {
         config::{Configuration, NetworkConfig},
         indexer::uniswap_v3::UniswapV3Indexer,
     },
+    alloy::providers::Provider,
     clap::Parser,
     ethrpc::{AlloyProvider, Config as EthRpcConfig, web3},
     sqlx::{PgPool, postgres::PgPoolOptions},
@@ -90,7 +91,6 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
     // deployment (e.g. chain_id = 1 pointed at an Arbitrum RPC) would
     // otherwise silently index Arbitrum events into the mainnet partition
     // of the shared DB.
-    use alloy::providers::Provider;
     let actual_chain_id = provider
         .get_chain_id()
         .await
