@@ -135,18 +135,27 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn with_pre_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
-        self.pre_interactions = interactions;
+    pub fn with_pre_interactions(
+        mut self,
+        interactions: impl IntoIterator<Item = InteractionData>,
+    ) -> Self {
+        self.pre_interactions = interactions.into_iter().collect();
         self
     }
 
-    pub fn with_main_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
-        self.main_interactions = interactions;
+    pub fn with_main_interactions(
+        mut self,
+        interactions: impl IntoIterator<Item = InteractionData>,
+    ) -> Self {
+        self.main_interactions = interactions.into_iter().collect();
         self
     }
 
-    pub fn with_post_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
-        self.post_interactions = interactions;
+    pub fn with_post_interactions(
+        mut self,
+        interactions: impl IntoIterator<Item = InteractionData>,
+    ) -> Self {
+        self.post_interactions = interactions.into_iter().collect();
         self
     }
 
@@ -338,13 +347,19 @@ impl Order {
         self
     }
 
-    pub fn with_pre_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
-        self.pre_interactions = interactions;
+    pub fn with_pre_interactions(
+        mut self,
+        interactions: impl IntoIterator<Item = InteractionData>,
+    ) -> Self {
+        self.pre_interactions = interactions.into_iter().collect();
         self
     }
 
-    pub fn with_post_interactions(mut self, interactions: Vec<InteractionData>) -> Self {
-        self.post_interactions = interactions;
+    pub fn with_post_interactions(
+        mut self,
+        interactions: impl IntoIterator<Item = InteractionData>,
+    ) -> Self {
+        self.post_interactions = interactions.into_iter().collect();
         self
     }
 
