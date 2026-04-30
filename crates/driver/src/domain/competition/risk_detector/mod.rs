@@ -313,8 +313,6 @@ mod tests {
         async fn determine_sell_token_quality(&self, order: &Order, _: Instant) -> Quality {
             if order.uid == self.sell_detector_unsupported_uid {
                 Quality::Unsupported
-            } else if order.uid == self.sell_detector_supported_uid {
-                Quality::Supported
             } else {
                 Quality::Supported
             }
