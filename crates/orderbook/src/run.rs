@@ -390,9 +390,12 @@ pub async fn run(config: Configuration) {
                         chain.id().to_string(),
                     )) as _
                 });
+            let flash_loan_router_address =
+                contracts::FlashLoanRouter::deployment_address(&chain.id())
+                    .unwrap_or_default();
             let order_simulator = simulator::simulation_builder::SettlementSimulator::new(
                 settlement_contract.clone(),
-                Default::default(),
+                flash_loan_router_address,
                 hooks_trampoline_address,
                 balance_overrider.clone(),
                 current_block_stream.clone(),
