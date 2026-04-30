@@ -3,7 +3,7 @@ use {
         encoding::{EncodedSettlement, WrapperCall},
         tenderly::dto::StateObject,
     },
-    alloy_primitives::{Address, Bytes, TxKind, U256},
+    alloy_primitives::{Address, B256, Bytes, TxKind, U256},
     alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
         TransactionRequest,
@@ -80,10 +80,13 @@ impl SettlementSimulator {
             prices: None,
             solver: None,
             auction_id: None,
-            state_overrides: StateOverride::default(),
-            fund_settlement_contract: false,
+            account_override_requests: vec![],
             block: Block::Latest,
         }
+    }
+
+    pub fn domain_separator(&self) -> DomainSeparator {
+        self.0.domain_separator
     }
 }
 
@@ -107,9 +110,8 @@ pub struct SimulationBuilder {
     pub(crate) prices: Option<Prices>,
     pub(crate) solver: Option<Solver>,
     pub(crate) auction_id: Option<i64>,
-    pub(crate) state_overrides: StateOverride,
     pub(crate) simulator: SettlementSimulator,
-    pub(crate) fund_settlement_contract: bool,
+    pub(crate) account_override_requests: Vec<AccountOverrideRequest>,
     pub(crate) block: Block,
 }
 
@@ -153,16 +155,6 @@ impl SimulationBuilder {
 
     pub fn with_auction_id(mut self, id: i64) -> Self {
         self.auction_id = Some(id);
-        self
-    }
-
-    pub fn state_override(
-        mut self,
-        address: Address,
-        account_override: impl Into<AccountOverride>,
-    ) -> Self {
-        self.state_overrides
-            .insert(address, account_override.into());
         self
     }
 
@@ -228,11 +220,12 @@ impl SimulationBuilder {
         Ok(self)
     }
 
-    /// Override the settlement contract's buy token balance so it can pay out
-    /// the order without any external liquidity. The required amount is derived
-    /// from the order's executed amount and clearing prices at `build()` time.
-    pub fn fund_settlement_contract_with_buy_tokens(mut self) -> Self {
-        self.fund_settlement_contract = true;
+    /// Queues an [`AccountOverrideRequest`] to be resolved and applied during
+    /// [`build`](Self::build). Multiple requests may target the same address;
+    /// non-conflicting fields are merged and conflicts produce
+    /// [`BuildError::ConflictingStateOverrides`].
+    pub fn with_override(mut self, request: AccountOverrideRequest) -> Self {
+        self.account_override_requests.push(request);
         self
     }
 
@@ -492,4 +485,48 @@ pub enum BuildError {
     AppDataParse(#[source] serde_json::Error),
     #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
     FlashloanWrappersIncompatible,
+    #[error("conflicting state overrides for the same account: {0}")]
+    ConflictingStateOverrides(#[source] MergeConflict),
+}
+
+pub enum AccountOverrideRequest {
+    /// Gives the address a huge amount of ETH.
+    SufficientEthBalance(Address),
+    /// Allowlists an address as a solver to let it settle orders.
+    AuthenticateAddress(Address),
+    /// Computes necessary state overrides for the requested balance.
+    Balance {
+        holder: Address,
+        token: Address,
+        amount: U256,
+    },
+    /// Gives the settlement contract enough buy tokens to pay for all
+    /// orders.
+    BuyTokensForBuffers,
+    /// Deploys the provided code at the requested address.
+    Code { account: Address, code: Bytes },
+    /// Allows to build fully custom overrides for the most exotic use cases.
+    Custom {
+        account: Address,
+        state: AccountOverride,
+    },
+    // TODO: add Allowance
+}
+
+/// Error returned when two [`AccountOverride`]s set the same field for the same
+/// address and cannot be merged.
+#[derive(Debug, thiserror::Error)]
+pub enum MergeConflict {
+    #[error("both overrides set the ETH balance")]
+    Balance,
+    #[error("both overrides set the nonce")]
+    Nonce,
+    #[error("both overrides set the contract code")]
+    Code,
+    #[error("both overrides replace the full storage state")]
+    State,
+    #[error("overrides use incompatible storage strategies (state vs state_diff)")]
+    StateAndStateDiff,
+    #[error("both overrides write storage slot {0}")]
+    StateDiffSlot(B256),
 }

@@ -55,33 +55,14 @@ contract Trader layout at 0x02565dba7d68dcbed629110024b7b5e785bfc1a484602045eea5
     /// a stable address in tests.
     /// @param sellToken - token being sold by the trade
     /// @param sellAmount - expected amount to be sold according to the quote
-    /// @param nativeToken - ERC20 version of the chain's native token
     /// @param spardose - piggy bank for requesting additional funds
     function ensureTradePreconditions(
         ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
-        address nativeToken,
         address spardose
     ) external {
         require(!triggerInitialization(), "prepareSwap can only be called once");
-
-        if (sellToken == nativeToken) {
-            uint256 availableNativeToken = IERC20(sellToken).balanceOf(address(this));
-            if (availableNativeToken < sellAmount) {
-                uint256 amountToWrap = sellAmount - availableNativeToken;
-                // If the user has sufficient balance, simulate the wrapping the missing
-                // `ETH` so the user doesn't have to spend gas on that just to get a quote.
-                // If they are happy with the quote and want to create an order they will
-                // actually have to do the wrapping, though. Note that we don't attempt to
-                // wrap if the user doesn't have sufficient `ETH` balance, since that would
-                // revert. Instead, we fall-through so that we handle insufficient sell
-                // token balances uniformly for all tokens.
-                if (address(this).balance >= amountToWrap) {
-                    INativeERC20(nativeToken).deposit{value: amountToWrap}();
-                }
-            }
-        }
 
         address vaultRelayer = settlementContract.vaultRelayer();
         uint256 currentAllowance = IERC20(sellToken).allowance(address(this), vaultRelayer);

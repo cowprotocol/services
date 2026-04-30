@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import { IERC20, INativeERC20 } from "./interfaces/IERC20.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
 import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";
@@ -117,7 +117,6 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
-        address nativeToken,
         address spardose
     ) external {
         uint256 gasStart = gasleft();
@@ -125,7 +124,6 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
             settlementContract,
             sellToken,
             sellAmount,
-            nativeToken,
             spardose
         );
         // Account for costs of gas used outside of metered section.

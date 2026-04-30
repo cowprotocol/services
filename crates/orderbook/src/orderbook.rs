@@ -652,7 +652,7 @@ impl Orderbook {
                     .unwrap_or(simulation_builder::Block::Latest),
             )
             .with_prices(simulation_builder::Prices::Limit)
-            .fund_settlement_contract_with_buy_tokens()
+            .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
@@ -710,7 +710,7 @@ impl Orderbook {
                     .unwrap_or(simulation_builder::Block::Latest),
             )
             .with_prices(simulation_builder::Prices::Limit)
-            .fund_settlement_contract_with_buy_tokens()
+            .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
