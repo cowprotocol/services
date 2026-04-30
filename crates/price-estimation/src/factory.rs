@@ -113,6 +113,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             Default::default(),
             Default::default(),
             network.native_token,
+            args.max_gas_per_tx,
             balance_overrides,
             network.block_stream.clone(),
             tenderly.clone(),
@@ -121,7 +122,6 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let verifier = TradeVerifier::new(
             simulator,
-            args.max_gas_per_tx,
             tenderly,
             components.code_fetcher.clone(),
             args.quote_inaccuracy_limit.clone(),

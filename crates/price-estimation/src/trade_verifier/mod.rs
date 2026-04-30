@@ -71,7 +71,6 @@ pub trait TradeVerifying: Send + Sync + 'static {
 pub struct TradeVerifier {
     tenderly: Option<Arc<dyn tenderly::Api>>,
     simulator: SettlementSimulator,
-    gas_limit: u64,
     code_fetcher: Arc<dyn CodeFetching>,
     quote_inaccuracy_limit: BigRational,
     tokens_without_verification: HashSet<Address>,
@@ -86,7 +85,6 @@ impl TradeVerifier {
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         simulator: SettlementSimulator,
-        gas_limit: u64,
         tenderly: Option<Arc<dyn tenderly::Api>>,
         code_fetcher: Arc<dyn CodeFetching>,
         quote_inaccuracy_limit: BigDecimal,
@@ -102,7 +100,6 @@ impl TradeVerifier {
         Self {
             tenderly,
             simulator,
-            gas_limit,
             code_fetcher,
             quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
             tokens_without_verification,
@@ -328,7 +325,7 @@ impl TradeVerifier {
                 calldata,
             )
             .from(solver_address)
-            .gas(self.gas_limit);
+            .gas(self.simulator.max_gas_limit());
 
         let tx = swap_call.clone().into_transaction_request();
         let result = swap_call

@@ -32,6 +32,7 @@ pub(crate) struct Inner {
     pub(crate) flash_loan_router: Address,
     pub(crate) hooks_trampoline: Address,
     pub(crate) native_token: Address,
+    pub(crate) max_gas_limit: u64,
     pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
     pub(crate) provider: DynProvider,
     pub(crate) domain_separator: DomainSeparator,
@@ -46,6 +47,7 @@ impl SettlementSimulator {
         flash_loan_router: Address,
         hooks_trampoline: Address,
         native_token: Address,
+        max_gas_limit: u64,
         balance_overrides: Arc<dyn BalanceOverriding>,
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn crate::tenderly::Api>>,
@@ -60,6 +62,7 @@ impl SettlementSimulator {
             flash_loan_router,
             hooks_trampoline,
             native_token,
+            max_gas_limit,
             balance_overrides,
             provider,
             domain_separator,
@@ -71,6 +74,10 @@ impl SettlementSimulator {
 
     pub fn native_token(&self) -> Address {
         self.0.native_token
+    }
+
+    pub fn max_gas_limit(&self) -> u64 {
+        self.0.max_gas_limit
     }
 
     pub fn provider(&self) -> DynProvider {

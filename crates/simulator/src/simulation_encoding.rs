@@ -193,6 +193,7 @@ pub(crate) async fn encode(mut builder: SimulationBuilder) -> Result<EthCallInpu
             from: Some(from),
             to: Some(to.into()),
             input: input.into(),
+            gas: Some(builder.simulator.0.max_gas_limit),
             ..Default::default()
         },
         state_overrides,
@@ -370,7 +371,7 @@ fn merge_account_override(
 ///
 /// If `address` already has an entry, the overrides are merged via
 /// [`merge_account_override`]. Returns an error on conflict.
-pub(crate) fn apply_account_override(
+fn apply_account_override(
     overrides: &mut StateOverride,
     address: Address,
     new: AccountOverride,

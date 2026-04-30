@@ -199,6 +199,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         Default::default(),
         Default::default(),
         *onchain.contracts().weth.address(),
+        gas_limit,
         balance_overrides,
         block_stream.clone(),
         None,
@@ -208,7 +209,6 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
 
     let verifier = TradeVerifier::new(
         simulator,
-        gas_limit,
         None,
         Arc::new(web3.clone()),
         BigDecimal::zero(),

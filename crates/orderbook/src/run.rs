@@ -410,7 +410,7 @@ pub async fn run(config: Configuration) {
         ipfs,
     ));
 
-    let order_simulator2 = if let Some(config) = config.order_simulation {
+    let order_simulator = if let Some(config) = config.order_simulation {
         let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
             config.tenderly.as_ref().map(|tenderly_config| {
                 Arc::new(simulator::tenderly::TenderlyApi::new(
@@ -425,6 +425,7 @@ pub async fn run(config: Configuration) {
                 Default::default(),
                 hooks_trampoline_address,
                 *native_token.address(),
+                config.gas_limit.saturating_to(),
                 balance_overrider.clone(),
                 current_block_stream.clone(),
                 tenderly,
@@ -444,7 +445,7 @@ pub async fn run(config: Configuration) {
         order_validator.clone(),
         app_data.clone(),
         config.active_order_competition_threshold,
-        order_simulator2,
+        order_simulator,
     ));
 
     check_database_connection(orderbook.as_ref()).await;
