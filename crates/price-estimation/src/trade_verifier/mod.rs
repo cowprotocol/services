@@ -10,16 +10,12 @@ use {
         trade_verifier::code_fetching::CodeFetching,
     },
     ::alloy::sol_types::SolCall,
-    alloy::{
-        primitives::{Address, Bytes, U256, address, aliases::I512},
-        rpc::types::state::AccountOverride,
-    },
+    alloy::primitives::{Address, Bytes, U256, address, aliases::I512},
     anyhow::{Context, Result},
-    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
     bigdecimal::BigDecimal,
     contracts::{
         WETH9,
-        support::{AnyoneAuthenticator, Solver, Spardose, Trader},
+        support::{Solver, Spardose, Trader},
     },
     model::{
         DomainSeparator,
@@ -41,6 +37,7 @@ use {
         encoding::{EncodedTrade, encode_trade},
         simulation_builder::{
             self as sim_builder,
+            AccountOverrideRequest,
             ExecutionAmount,
             PriceEncoding,
             SettlementSimulator,
@@ -77,7 +74,6 @@ pub struct TradeVerifier {
     simulator: SettlementSimulator,
     gas_limit: u64,
     code_fetcher: Arc<dyn CodeFetching>,
-    balance_overrides: Arc<dyn BalanceOverriding>,
     quote_inaccuracy_limit: BigRational,
     tokens_without_verification: HashSet<Address>,
     min_gas_amount_for_unverified_quotes: u32,
@@ -94,7 +90,6 @@ impl TradeVerifier {
         gas_limit: u64,
         tenderly: Option<Arc<dyn tenderly::Api>>,
         code_fetcher: Arc<dyn CodeFetching>,
-        balance_overrides: Arc<dyn BalanceOverriding>,
         quote_inaccuracy_limit: BigDecimal,
         tokens_without_verification: HashSet<Address>,
         min_gas_amount_for_unverified_quotes: u32,
@@ -110,7 +105,6 @@ impl TradeVerifier {
             simulator,
             gas_limit,
             code_fetcher,
-            balance_overrides,
             quote_inaccuracy_limit: big_decimal_to_big_rational(&quote_inaccuracy_limit),
             tokens_without_verification,
             min_gas_amount_for_unverified_quotes,
@@ -126,8 +120,17 @@ impl TradeVerifier {
         out_amount: &U256,
     ) -> Result<Estimate, Error> {
         let start = std::time::Instant::now();
-        let overrides = self
-            .prepare_state_overrides(&mut verification, query, trade)
+
+        if verification.from.is_zero() {
+            verification.from = Address::random();
+            tracing::debug!(
+                trader = ?verification.from,
+                "use random trader address with fake balances"
+            );
+        }
+
+        let override_requests = self
+            .prepare_state_overrides(&verification, query, trade)
             .await?;
 
         // Use `tx_origin` if response indicates that a special address is needed for
@@ -239,7 +242,7 @@ impl TradeVerifier {
             buy_token_balance: verification.buy_token_destination,
         };
 
-        let mut eth_call_inputs = self
+        let mut builder = self
             .simulator
             .new_simulation_builder()
             .add_order(
@@ -260,12 +263,16 @@ impl TradeVerifier {
             .with_pre_interactions(pre_interactions)
             .with_main_interactions(main_interactions)
             .with_post_interactions(post_interactions)
-            .add_extra_trades(jit_trades)
+            .add_extra_trades(jit_trades);
+
+        for req in override_requests {
+            builder = builder.with_override(req);
+        }
+
+        let eth_call_inputs = builder
             .build()
             .await
             .map_err(|e| Error::SimulationFailed(anyhow::anyhow!("{e}")))?;
-
-        eth_call_inputs.state_overrides.extend(overrides);
 
         let settlement_target = eth_call_inputs
             .request
@@ -436,12 +443,20 @@ impl TradeVerifier {
     /// trade.
     async fn prepare_state_overrides(
         &self,
-        verification: &mut Verification,
+        verification: &Verification,
         query: &PriceQuery,
         trade: &TradeKind,
-    ) -> Result<alloy::rpc::types::eth::state::StateOverride> {
-        let mut overrides = alloy::primitives::map::AddressMap::default();
+    ) -> Result<Vec<AccountOverrideRequest>> {
+        let mut requests: Vec<AccountOverrideRequest> = Vec::new();
 
+        // Setup the funding contract override. Regardless of whether or not the
+        // contract has funds, it needs to exist in order to not revert
+        // simulations (Solidity reverts on attempts to call addresses without
+        // any code).
+        requests.push(AccountOverrideRequest::Code {
+            account: Self::SPARDOSE,
+            code: Spardose::Spardose::DEPLOYED_BYTECODE.clone(),
+        });
         // Provide mocked balances if possible to the spardose to allow it to
         // give some balances to the trader in order to verify trades even for
         // owners without balances. Note that we use a separate account for
@@ -460,47 +475,17 @@ impl TradeVerifier {
                 &query.kind,
             )?,
         };
-        match self
-            .balance_overrides
-            .state_override(BalanceOverrideRequest {
-                token: query.sell_token,
-                holder: Self::SPARDOSE,
-                amount: spardose_amount_with_buffer(needed),
-            })
-            .await
-        {
-            Some((token, solver_balance_override)) => {
-                tracing::trace!(?solver_balance_override, "solver balance override enabled");
-                overrides.insert(token, solver_balance_override);
-
-                if verification.from.is_zero() {
-                    verification.from = Address::random();
-                    tracing::debug!(
-                        trader = ?verification.from,
-                        "use random trader address with fake balances"
-                    );
-                }
-            }
-            _ => {
-                tracing::warn!(
-                    sell_token = ?query.sell_token,
-                    "could not set spardose balance override for sell token; trade \
-                     verification will rely on the trader's real balance"
-                );
-                if verification.from.is_zero() {
-                    anyhow::bail!("trader is zero address and balances can not be faked");
-                }
-            }
-        }
+        requests.push(AccountOverrideRequest::Balance {
+            holder: Self::SPARDOSE,
+            token: query.sell_token,
+            amount: spardose_amount_with_buffer(needed),
+        });
 
         // Set up mocked trader.
-        overrides.insert(
-            verification.from,
-            AccountOverride {
-                code: Some(Trader::Trader::DEPLOYED_BYTECODE.clone()),
-                ..Default::default()
-            },
-        );
+        requests.push(AccountOverrideRequest::Code {
+            account: verification.from,
+            code: Trader::Trader::DEPLOYED_BYTECODE.clone(),
+        });
 
         // If the trader is a smart contract we also need to store its implementation
         // to proxy into it during the simulation.
@@ -510,56 +495,30 @@ impl TradeVerifier {
             .await
             .context("failed to fetch trader code")?;
         if !trader_impl.0.is_empty() {
-            overrides.insert(
-                Self::TRADER_IMPL,
-                AccountOverride {
-                    code: Some(trader_impl),
-                    ..Default::default()
-                },
-            );
+            requests.push(AccountOverrideRequest::Code {
+                account: Self::TRADER_IMPL,
+                code: trader_impl,
+            });
         }
 
-        // Setup the funding contract override. Regardless of whether or not the
-        // contract has funds, it needs to exist in order to not revert
-        // simulations (Solidity reverts on attempts to call addresses without
-        // any code).
-        overrides.insert(
-            Self::SPARDOSE,
-            AccountOverride {
-                code: Some(Spardose::Spardose::DEPLOYED_BYTECODE.clone()),
-                ..Default::default()
-            },
-        );
+        // Set up mocked solver with enough ETH to proceed even if the real account
+        // holds none.
+        let solver = trade.tx_origin().unwrap_or(trade.solver());
+        requests.push(AccountOverrideRequest::Code {
+            account: solver,
+            code: Solver::Solver::DEPLOYED_BYTECODE.clone(),
+        });
+        requests.push(AccountOverrideRequest::SufficientEthBalance(solver));
 
-        // Set up mocked solver.
-        let solver_override = AccountOverride {
-            code: Some(Solver::Solver::DEPLOYED_BYTECODE.clone()),
-            // Allow solver simulations to proceed even if the real account holds no ETH.
-            // The number is obscenely large, but not max to avoid potential overflows.
-            // We had this set to eth(1), but some simulations require more than that on non-ETH
-            // netowrks e.g. polygon so it led to reverts.
-            balance: Some(U256::MAX / U256::from(2)),
-            ..Default::default()
-        };
-
-        // If the trade requires a special tx.origin we also need to fake the
-        // authenticator.
-        if trade
-            .tx_origin()
-            .is_some_and(|origin| origin != trade.solver())
+        // If the trade requires a special tx.origin we also need to allow list
+        // it in the authenticator
+        if let Some(custom_origin) = trade.tx_origin()
+            && custom_origin != trade.solver()
         {
-            overrides.insert(
-                self.simulator.authenticator_address(),
-                AccountOverride {
-                    code: Some(AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone()),
-                    ..Default::default()
-                },
-            );
+            requests.push(AccountOverrideRequest::AuthenticateAsSolver(custom_origin))
         }
 
-        overrides.insert(trade.tx_origin().unwrap_or(trade.solver()), solver_override);
-
-        Ok(overrides)
+        Ok(requests)
     }
 
     /// Create interaction that sets up the trade right before transfering

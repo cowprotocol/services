@@ -199,7 +199,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         Default::default(),
         Default::default(),
         *onchain.contracts().weth.address(),
-        balance_overrides.clone(),
+        balance_overrides,
         block_stream.clone(),
         None,
     )
@@ -211,7 +211,6 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         gas_limit,
         None,
         Arc::new(web3.clone()),
-        balance_overrides,
         BigDecimal::zero(),
         Default::default(),
         0,

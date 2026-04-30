@@ -113,7 +113,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             Default::default(),
             Default::default(),
             network.native_token,
-            balance_overrides.clone(),
+            balance_overrides,
             network.block_stream.clone(),
             tenderly.clone(),
         )
@@ -124,7 +124,6 @@ impl<'a> PriceEstimatorFactory<'a> {
             args.max_gas_per_tx,
             tenderly,
             components.code_fetcher.clone(),
-            balance_overrides,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
             args.min_gas_amount_for_unverified_quotes,

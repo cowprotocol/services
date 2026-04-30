@@ -163,7 +163,7 @@ pub(crate) async fn encode(
                 .push(AccountOverrideRequest::SufficientEthBalance(addr));
             builder
                 .account_override_requests
-                .push(AccountOverrideRequest::AuthenticateAddress(addr));
+                .push(AccountOverrideRequest::AuthenticateAsSolver(addr));
             addr
         }
         None => return Err(BuildError::NoSolver),
@@ -234,7 +234,7 @@ async fn build_final_state_overrides(
                     addr,
                     AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
                 )),
-                AccountOverrideRequest::AuthenticateAddress(addr) => {
+                AccountOverrideRequest::AuthenticateAsSolver(addr) => {
                     // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
                     // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
                     // slot_padded).

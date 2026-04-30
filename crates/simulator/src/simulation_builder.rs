@@ -515,7 +515,7 @@ pub enum AccountOverrideRequest {
     /// Gives the address a huge amount of ETH.
     SufficientEthBalance(Address),
     /// Allowlists an address as a solver to let it settle orders.
-    AuthenticateAddress(Address),
+    AuthenticateAsSolver(Address),
     /// Computes necessary state overrides for the requested balance.
     Balance {
         holder: Address,
