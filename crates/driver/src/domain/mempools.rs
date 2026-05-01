@@ -4,7 +4,7 @@ use {
         domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
+    alloy::{eips::eip1559::Eip1559Estimation, sol_types::SolCall},
     anyhow::Context,
     contracts::CowSettlementForwarder::CowSettlementForwarder,
     eth_domain_types::{self as eth, BlockNo, TxId},
@@ -337,9 +337,12 @@ impl Mempools {
             .await
     }
 
-    /// Computes minimum price to replace the last tx that was submitted
-    /// with the given nonce. Returns `None` if no tx was submitted with
-    /// that nonce yet.
+    /// Computes the minimum gas price required to replace any tx currently
+    /// pending at `(signer, next_nonce)`. If the in-memory cache has no entry
+    /// for `signer` or the cached nonce differs from `next_nonce`, queries the
+    /// node directly via `txpool_content_from`. The in-memory map is
+    /// per-signer only and overwrites on every `submit()`, so a cached nonce
+    /// that differs from `next_nonce` does not imply nothing is pending.
     #[tracing::instrument(skip_all)]
     async fn minimum_replacement_gas_price(
         &self,
@@ -347,33 +350,26 @@ impl Mempools {
         signer: eth::Address,
         next_nonce: u64,
     ) -> Option<Eip1559Estimation> {
-        if let Some(last_submission) = mempool.last_submission(signer) {
-            if last_submission.nonce == next_nonce {
-                Some(last_submission.gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
-            } else {
-                None
-            }
-        } else {
-            // If we don't have the last submission in-memory (i.e. first submission
-            // attempt after a restart) we try to inspect the nodes transaction mempool.
-            // This is only done as a backup since it can incur significant latency and
-            // is generally not very widely supported.
-            let pending_tx = mempool
-                .find_pending_tx_in_mempool(signer, next_nonce)
-                .await
-                .inspect_err(|err| tracing::debug!(?err, "could not inspect tx mempool"))
-                .ok()??;
-
-            let pending_tx_gas_price = Eip1559Estimation {
-                max_fee_per_gas: pending_tx.max_fee_per_gas(),
-                max_priority_fee_per_gas: pending_tx.max_priority_fee_per_gas().or_else(|| {
-                    tracing::error!(tx = ?pending_tx.inner.tx_hash(), "pending tx is not EIP 1559");
-                    None
-                })?,
-            };
-
-            Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
+        if let Some(last_submission) = mempool.last_submission(signer)
+            && last_submission.nonce == next_nonce
+        {
+            return Some(last_submission.gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT));
         }
+
+        let pending_gas = mempool.probe_pending_gas(signer, next_nonce).await?;
+
+        tracing::info!(
+            ?signer,
+            nonce = next_nonce,
+            gas = ?pending_gas,
+            "probed pending tx from mempool"
+        );
+
+        // Promote the probed gas into the fast-path lookup so subsequent
+        // `/settle` calls for the same `(signer, nonce)` skip the RPC probe.
+        mempool.record_observed(signer, next_nonce, pending_gas);
+
+        Some(pending_gas.scaled_by_pct(GAS_PRICE_BUMP_PCT))
     }
 }
 

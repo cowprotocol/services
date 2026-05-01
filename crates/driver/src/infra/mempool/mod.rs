@@ -14,7 +14,13 @@ use {
     anyhow::Context,
     dashmap::DashMap,
     eth_domain_types as eth,
-    std::sync::Arc,
+    std::{
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    },
     url::Url,
 };
 
@@ -67,6 +73,11 @@ pub enum RevertProtection {
 pub struct Mempool {
     transport: Web3,
     config: Config,
+    /// Best-known gas floor per signer at their currently-pending nonce.
+    /// Source may be a prior `submit()` or a `txpool_content_from` probe
+    /// ([`Mempool::record_observed`]). Updates are gated by
+    /// [`Submission::supersedes`] so an out-of-order or stale write cannot
+    /// regress a fresher entry under intra-process races.
     last_submissions: Arc<DashMap<Address, Submission>>,
 }
 
@@ -74,6 +85,23 @@ pub struct Mempool {
 pub struct Submission {
     pub nonce: u64,
     pub gas_price: Eip1559Estimation,
+}
+
+impl Submission {
+    /// Returns `true` if `self` should replace `other` in `last_submissions`.
+    ///
+    /// Ordering is tuple-monotonic on `(nonce, max_priority_fee_per_gas)`:
+    /// - a higher nonce always wins;
+    /// - same nonce with a higher priority fee wins (meaning a speed-up);
+    /// - otherwise no-op.
+    ///
+    /// The ordering is safe against intra-process races where two `submit()`
+    /// or `record_observed()` calls arrive out of order: only a higher nonce
+    /// or a higher priority fee can overwrite an existing entry.
+    fn supersedes(&self, other: &Submission) -> bool {
+        (self.nonce, self.gas_price.max_priority_fee_per_gas)
+            > (other.nonce, other.gas_price.max_priority_fee_per_gas)
+    }
 }
 
 impl std::fmt::Display for Mempool {
@@ -158,8 +186,7 @@ impl Mempool {
                     ?signer,
                     "successfully submitted tx to mempool"
                 );
-                self.last_submissions
-                    .insert(signer, Submission { nonce, gas_price });
+                self.update_submission(signer, Submission { nonce, gas_price });
                 Ok(eth::TxId(*tx.tx_hash()))
             }
             Err(err) => {
@@ -204,11 +231,91 @@ impl Mempool {
         Ok(pending_tx)
     }
 
+    /// Probes the node for a pending tx at `(signer, nonce)` and returns its
+    /// gas price. Returns `None` if no pending tx exists at that nonce or if
+    /// the probe times out, errors, or encounters a non-EIP-1559 tx.
+    ///
+    /// A slow node cannot block `/settle` — the probe has a 500ms hard
+    /// deadline. If the probe fails (timeout or RPC error), a process-wide
+    /// cooldown skips further probes for 30 seconds; `Ok(None)` (no pending
+    /// tx at that nonce) is not a failure and does not trigger the cooldown.
+    pub async fn probe_pending_gas(
+        &self,
+        signer: eth::Address,
+        nonce: u64,
+    ) -> Option<Eip1559Estimation> {
+        /// Hard latency cap on the probe so a slow node cannot block `/settle`.
+        const TIMEOUT: Duration = Duration::from_millis(500);
+        /// How long to suppress probes after a failure (timeout / RPC error).
+        /// `txpool_*` support is an RPC-level property, so a single
+        /// process-wide cooldown stops us paying the timeout cost on every
+        /// `/settle` against an endpoint that doesn't expose the namespace.
+        const COOLDOWN: Duration = Duration::from_secs(30);
+        /// Unix-ms of the last probe failure; `0` means none recorded yet.
+        static LAST_FAILURE_MS: AtomicU64 = AtomicU64::new(0);
+
+        let now_ms = now_unix_ms();
+        let last_failure_ms = LAST_FAILURE_MS.load(Ordering::Relaxed);
+        if last_failure_ms != 0
+            && now_ms.saturating_sub(last_failure_ms) < COOLDOWN.as_millis() as u64
+        {
+            tracing::debug!("skipping mempool probe due to recent failure");
+            return None;
+        }
+
+        let pending_tx =
+            match tokio::time::timeout(TIMEOUT, self.find_pending_tx_in_mempool(signer, nonce))
+                .await
+            {
+                Err(_) => {
+                    LAST_FAILURE_MS.store(now_unix_ms(), Ordering::Relaxed);
+                    tracing::debug!("mempool probe timed out");
+                    return None;
+                }
+                Ok(Err(err)) => {
+                    LAST_FAILURE_MS.store(now_unix_ms(), Ordering::Relaxed);
+                    tracing::debug!(?err, "could not inspect tx mempool");
+                    return None;
+                }
+                Ok(Ok(None)) => return None,
+                Ok(Ok(Some(tx))) => tx,
+            };
+
+        Some(Eip1559Estimation {
+            max_fee_per_gas: pending_tx.max_fee_per_gas(),
+            max_priority_fee_per_gas: pending_tx.max_priority_fee_per_gas().or_else(|| {
+                tracing::error!(tx = ?pending_tx.inner.tx_hash(), "pending tx is not EIP 1559");
+                None
+            })?,
+        })
+    }
+
     /// Looks up the last tx that was submitted for that signer.
     pub fn last_submission(&self, signer: eth::Address) -> Option<Submission> {
         self.last_submissions
             .get(&signer)
             .map(|entry| entry.value().clone())
+    }
+
+    /// Records a pending tx observed externally (from a `txpool_content_from`
+    /// probe) so subsequent lookups for `(signer, nonce)` skip the RPC probe.
+    /// The map tracks the best-known gas floor for each signer at their
+    /// current pending nonce, regardless of source.
+    pub fn record_observed(&self, signer: eth::Address, nonce: u64, gas_price: Eip1559Estimation) {
+        self.update_submission(signer, Submission { nonce, gas_price });
+    }
+
+    /// Updates `last_submissions[signer]` to `new` only if `new` is fresher
+    /// than the existing entry, per [`Submission::supersedes`].
+    fn update_submission(&self, signer: eth::Address, new: Submission) {
+        self.last_submissions
+            .entry(signer)
+            .and_modify(|cur| {
+                if new.supersedes(cur) {
+                    *cur = new.clone();
+                }
+            })
+            .or_insert(new);
     }
 
     pub fn config(&self) -> &Config {
@@ -220,5 +327,112 @@ impl Mempool {
             self.config.revert_protection,
             infra::mempool::RevertProtection::Disabled
         )
+    }
+}
+
+fn now_unix_ms() -> u64 {
+    // `Err` only when the system clock is before 1970 — unreachable in
+    // practice. `0` is the sentinel for \"no failure recorded\", so a broken
+    // clock degrades to \"throttle disabled\" rather than panic.
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gas(max_priority_fee_per_gas: u128, max_fee_per_gas: u128) -> Eip1559Estimation {
+        Eip1559Estimation {
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+        }
+    }
+
+    fn sub(nonce: u64, prio: u128) -> Submission {
+        Submission {
+            nonce,
+            gas_price: gas(prio, prio * 10),
+        }
+    }
+
+    #[test]
+    fn supersedes() {
+        assert!(sub(11, 100).supersedes(&sub(10, 200)), "higher nonce wins");
+        assert!(
+            sub(10, 200).supersedes(&sub(10, 100)),
+            "same nonce, higher priority fee wins"
+        );
+        assert!(
+            !sub(9, 1_000).supersedes(&sub(10, 100)),
+            "lower nonce never wins"
+        );
+        assert!(
+            !sub(10, 50).supersedes(&sub(10, 100)),
+            "same nonce, lower priority fee never wins"
+        );
+        assert!(
+            !sub(10, 100).supersedes(&sub(10, 100)),
+            "identical is a no-op"
+        );
+    }
+
+    fn empty_mempool() -> Mempool {
+        let url = Url::parse("http://localhost:0").unwrap();
+        Mempool::new(Config::test_config(url), Vec::new())
+    }
+
+    #[test]
+    fn update_submission_speed_up() {
+        let mempool = empty_mempool();
+        let signer = Address::repeat_byte(0xab);
+
+        mempool.update_submission(signer, sub(10, 100));
+        mempool.update_submission(signer, sub(10, 200));
+
+        let stored = mempool.last_submission(signer).unwrap();
+        assert_eq!(stored.nonce, 10);
+        assert_eq!(stored.gas_price.max_priority_fee_per_gas, 200);
+    }
+
+    #[test]
+    fn update_submission_advances_to_higher_nonce() {
+        let mempool = empty_mempool();
+        let signer = Address::repeat_byte(0xab);
+
+        mempool.update_submission(signer, sub(10, 500));
+        mempool.update_submission(signer, sub(11, 100));
+
+        let stored = mempool.last_submission(signer).unwrap();
+        assert_eq!(stored.nonce, 11);
+        assert_eq!(stored.gas_price.max_priority_fee_per_gas, 100);
+    }
+
+    #[test]
+    fn update_submission_rejects_stale_arrivals() {
+        let mempool = empty_mempool();
+        let signer = Address::repeat_byte(0xab);
+
+        mempool.update_submission(signer, sub(11, 100));
+        // Stale insert from an out-of-order submit lands later.
+        mempool.update_submission(signer, sub(10, 9_999));
+
+        let stored = mempool.last_submission(signer).unwrap();
+        assert_eq!(stored.nonce, 11);
+        assert_eq!(stored.gas_price.max_priority_fee_per_gas, 100);
+    }
+
+    #[test]
+    fn update_submission_rejects_same_nonce_lower_fee() {
+        let mempool = empty_mempool();
+        let signer = Address::repeat_byte(0xab);
+
+        mempool.update_submission(signer, sub(10, 200));
+        mempool.update_submission(signer, sub(10, 100));
+
+        let stored = mempool.last_submission(signer).unwrap();
+        assert_eq!(stored.gas_price.max_priority_fee_per_gas, 200);
     }
 }
