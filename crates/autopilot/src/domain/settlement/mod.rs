@@ -400,7 +400,7 @@ mod tests {
                 .collect(),
             native_prices: prices.clone(),
         };
-        let solution = ws::Solution::new(0, ws::Address::ZERO, vec![order]);
+        let solution = ws::Solution::new(0, ws::Address::ZERO, vec![order], Default::default());
         let arbitrator = ws::Arbitrator {
             max_winners: 1,
             weth: ws::Address::ZERO,

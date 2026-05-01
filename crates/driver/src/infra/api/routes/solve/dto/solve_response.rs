@@ -7,7 +7,6 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::HashMap,
-    winner_selection::solution_hash::{HashableOrder, HashableSolution},
 };
 
 impl SolveResponse {
@@ -108,41 +107,4 @@ pub struct TradedOrder {
 pub enum Side {
     Buy,
     Sell,
-}
-
-impl Solution {
-    /// Builds the canonical view used by `winner_selection::solution_hash`.
-    pub fn as_hashable(&self) -> HashableSolution<'_> {
-        HashableSolution {
-            solution_id: self.solution_id,
-            solver_address: self.submission_address.as_slice(),
-            orders: self
-                .orders
-                .iter()
-                .map(|(uid, order)| (uid.as_slice(), order.as_hashable()))
-                .collect(),
-            prices: self
-                .clearing_prices
-                .iter()
-                .map(|(token, price)| (token.as_slice(), price.to_be_bytes()))
-                .collect(),
-        }
-    }
-}
-
-impl TradedOrder {
-    fn as_hashable(&self) -> HashableOrder<'_> {
-        HashableOrder {
-            side: match self.side {
-                Side::Buy => 0,
-                Side::Sell => 1,
-            },
-            sell_token: self.sell_token.as_slice(),
-            sell_amount: self.limit_sell.to_be_bytes(),
-            buy_token: self.buy_token.as_slice(),
-            buy_amount: self.limit_buy.to_be_bytes(),
-            executed_sell: self.executed_sell.to_be_bytes(),
-            executed_buy: self.executed_buy.to_be_bytes(),
-        }
-    }
 }

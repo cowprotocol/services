@@ -58,21 +58,25 @@ impl Arbitrator {
 
     /// Runs the entire auction mechanism on the passed in solutions.
     #[instrument(skip_all)]
-    pub fn arbitrate(&self, mut bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
-        // Sort by solution hash so independent observers (autopilot, drivers,
-        // third-party verifiers) all process bids in the same order, making
-        // tie-breaking deterministic across runs.
-        bids.sort_by_cached_key(|b| {
-            winsel::solution_hash::hash_solution(b.solution().as_hashable())
-        });
-
+    pub fn arbitrate(&self, bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
         let context = auction.into();
         let mut bid_by_key = HashMap::with_capacity(bids.len());
-        let mut solutions = Vec::with_capacity(bids.len());
+        // Pair each bid with its converted winsel solution so we can sort by
+        // canonical_hash without re-converting. Sorting deterministically is
+        // what lets independent observers (autopilot, drivers, third-party
+        // verifiers) reach the same tie-breaking decision.
+        let mut paired: Vec<(Bid<Unscored>, winsel::Solution<winsel::Unscored>)> = bids
+            .into_iter()
+            .map(|bid| {
+                let solution: winsel::Solution<winsel::Unscored> = bid.solution().into();
+                (bid, solution)
+            })
+            .collect();
+        paired.sort_by_cached_key(|(_, s)| s.canonical_hash());
 
-        for bid in bids {
+        let mut solutions = Vec::with_capacity(paired.len());
+        for (bid, solution) in paired {
             let key = SolutionKey::from(bid.solution());
-            let solution = bid.solution().into();
             bid_by_key.insert(key, bid);
             solutions.push(solution);
         }
@@ -161,6 +165,11 @@ impl From<&Solution> for winsel::Solution<winsel::Unscored> {
                 .orders()
                 .iter()
                 .map(|(uid, order)| to_winsel_order(*uid, order))
+                .collect(),
+            solution
+                .prices()
+                .iter()
+                .map(|(token, price)| (Address::from(*token), price.get().0))
                 .collect(),
         )
     }

@@ -8,7 +8,6 @@ use {
                 order,
                 risk_detector,
                 solution::{self, Solution},
-                solver_winner_selection::{self, SolverArbitrator},
             },
             liquidity,
             time::Remaining,
@@ -18,13 +17,13 @@ use {
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
-            pod,
+            pod::{self, PodManager},
         },
         util,
     },
     alloy::{
         consensus::SignableTransaction,
-        network::{EthereumWallet, TxSigner},
+        network::TxSigner,
         primitives::Address,
         signers::{Signature, aws::AwsSigner, local::PrivateKeySigner},
     },
@@ -33,10 +32,6 @@ use {
     eth_domain_types as eth,
     num::BigRational,
     observe::tracing::distributed::headers::tracing_headers,
-    pod_sdk::{
-        Provider,
-        provider::{PodProvider, PodProviderBuilder},
-    },
     reqwest::header::HeaderName,
     std::{
         collections::HashMap,
@@ -112,8 +107,10 @@ pub struct Solver {
     config: Config,
     eth: Ethereum,
     persistence: Persistence,
-    pod_provider: Option<PodProvider>,
-    arbitrator: solver_winner_selection::SolverArbitrator,
+    /// Pod-network shadow-mode flow. `None` when pod is unconfigured for this
+    /// solver; the auction contract handle and the local arbitrator only exist
+    /// when pod does, so they're paired structurally.
+    pod_manager: Option<PodManager>,
 }
 
 impl std::fmt::Debug for Solver {
@@ -261,12 +258,14 @@ impl Solver {
 
         let persistence = Persistence::build(&config).await;
 
-        let pod_provider = Self::build_pod_provider(&config).await;
+        let pod_manager = match config.pod.as_ref() {
+            Some(pod_config) => {
+                PodManager::try_new(&config.account, pod_config, eth.contracts().weth_address())
+                    .await
+            }
+            None => None,
+        };
 
-        let arbitrator = SolverArbitrator::new(
-            10, // TODO: make max_winners configurable
-            eth.contracts().weth_address(),
-        );
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
@@ -275,8 +274,7 @@ impl Solver {
             config,
             eth,
             persistence,
-            pod_provider,
-            arbitrator,
+            pod_manager,
         })
     }
 
@@ -361,55 +359,8 @@ impl Solver {
         self.config.max_solutions_to_propose.get()
     }
 
-    pub fn pod(&self) -> Option<(&PodProvider, Address)> {
-        let pod = self.pod_provider.as_ref()?;
-        let auction_contract = self.config.pod.as_ref()?.auction_contract_address;
-        Some((pod, auction_contract))
-    }
-
-    pub fn arbitrator(&self) -> &SolverArbitrator {
-        &self.arbitrator
-    }
-
-    async fn build_pod_provider(config: &Config) -> Option<PodProvider> {
-        let pod_config = config.pod.as_ref()?;
-        match Self::try_build_pod_provider(&config.account, pod_config).await {
-            Ok(provider) => Some(provider),
-            Err(e) => {
-                tracing::error!(error = %e, "failed to initialize pod provider");
-                None
-            }
-        }
-    }
-
-    async fn try_build_pod_provider(
-        account: &Account,
-        pod_config: &pod::config::Config,
-    ) -> Result<PodProvider> {
-        let wallet = match account {
-            Account::PrivateKey(s) => EthereumWallet::from(s.clone()),
-            Account::Kms(s) => EthereumWallet::from(s.clone()),
-            Account::Address(addr) => {
-                anyhow::bail!("address-only account ({addr:?}) cannot sign pod transactions")
-            }
-        };
-        let signer_address = account.address();
-        let provider = PodProviderBuilder::with_recommended_settings()
-            .wallet(wallet)
-            .on_url(pod_config.endpoint.clone())
-            .await?;
-
-        // Diagnostic info for debugging pending-TX issues; don't fail provider
-        // creation if these RPCs hiccup.
-        let balance = provider.get_balance(signer_address).await.ok();
-        let nonce = provider.get_transaction_count(signer_address).await.ok();
-        tracing::info!(
-            %signer_address,
-            ?balance,
-            ?nonce,
-            "pod provider initialized",
-        );
-        Ok(provider)
+    pub fn pod_manager(&self) -> Option<&PodManager> {
+        self.pod_manager.as_ref()
     }
 
     /// Make a POST request instructing the solver to solve an auction.

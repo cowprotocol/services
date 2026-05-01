@@ -15,7 +15,6 @@ use {
             blockchain::Ethereum,
             notify,
             observe::{self, metrics},
-            pod::recovery::{self, is_account_locked_error},
             solver::{self, Account, SolutionMerging, Solver},
         },
         util::math,
@@ -26,7 +25,6 @@ use {
     eth_domain_types as eth,
     futures::{FutureExt, StreamExt, stream::FuturesUnordered},
     itertools::Itertools,
-    pod_sdk::{Address, auctions::client::AuctionClient, provider::PodProvider},
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
@@ -47,12 +45,9 @@ pub mod solver_winner_selection;
 pub mod sorting;
 
 use {
-    crate::infra::{api::routes::solve::dto, notify::liquidity_sources::LiquiditySourceNotifying},
-    auction::Id,
+    crate::infra::notify::liquidity_sources::LiquiditySourceNotifying,
     eth_domain_types::BlockNo,
     ethrpc::block_stream::BlockInfo,
-    solver_winner_selection::{Bid, SolverArbitrator, Unscored},
-    winner_selection::state::RankedItem,
 };
 pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
 
@@ -569,12 +564,10 @@ impl Competition {
 
         // Shadow-mode submission to the pod network. Failures must never affect
         // the response we return to the autopilot.
-        if let (Some((pod, contract)), Some(auction_id), Some((best, _))) =
-            (self.solver.pod(), auction.id, scored.first())
+        if let (Some(pm), Some(auction_id), Some((best, _))) =
+            (self.solver.pod_manager(), auction.id, scored.first())
         {
-            Self::spawn_pod_flow(
-                pod.clone(),
-                contract,
+            pm.spawn(
                 auction_id,
                 auction.clone(),
                 deadline,
@@ -661,180 +654,6 @@ impl Competition {
             );
         }
         Some(solved.id.get())
-    }
-
-    /// Spawns the shadow-mode pod flow: submits the best bid, waits for the
-    /// auction to end, fetches all bids, and runs local arbitration. The
-    /// caller is not blocked and any error is logged but never surfaced.
-    fn spawn_pod_flow(
-        pod_provider: PodProvider,
-        pod_auction_contract: Address,
-        auction_id: Id,
-        auction: Auction,
-        deadline: chrono::DateTime<chrono::Utc>,
-        best: Solved,
-        solver: Solver,
-    ) {
-        let span =
-            tracing::info_span!("pod_flow", auction_id = %auction_id.0, solver = %solver.name());
-        tokio::spawn(
-            async move {
-                let client = AuctionClient::new(pod_provider.clone(), pod_auction_contract);
-
-                if let Err(e) = Self::pod_submit_bid(
-                    &pod_provider,
-                    &client,
-                    auction_id,
-                    deadline,
-                    best,
-                    &solver,
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, "pod bid submission failed (shadow mode)");
-                    return;
-                }
-
-                let participants = match Self::pod_fetch_bids(&client, auction_id, deadline).await {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "pod fetch bids failed (shadow mode)");
-                        return;
-                    }
-                };
-
-                if let Err(e) = Self::pod_local_arbitration(
-                    &auction,
-                    auction_id,
-                    participants,
-                    solver.arbitrator(),
-                ) {
-                    tracing::warn!(error = %e, "pod local arbitration failed (shadow mode)");
-                }
-            }
-            .instrument(span),
-        );
-    }
-
-    #[instrument(name = "pod_submit_bid", skip_all, fields(auction_id = %auction_id.0))]
-    async fn pod_submit_bid(
-        pod_provider: &PodProvider,
-        client: &AuctionClient,
-        auction_id: Id,
-        deadline: chrono::DateTime<chrono::Utc>,
-        best: Solved,
-        solver: &Solver,
-    ) -> anyhow::Result<()> {
-        let pod_auction_id =
-            pod_sdk::U256::from(u64::try_from(auction_id.0).context("auction id")?);
-        let value = best.score.0;
-        let data = serde_json::to_vec(&dto::SolveResponse::new(vec![best], solver))
-            .context("serialize bid payload")?;
-
-        tracing::info!(score = %value, payload_len = data.len(), "submitting bid");
-        let submit = || async {
-            client
-                .submit_bid(pod_auction_id, deadline.into(), value, data.clone())
-                .await
-        };
-
-        match submit().await {
-            Ok(_) => {
-                tracing::info!("bid submitted");
-                return Ok(());
-            }
-            Err(e) if is_account_locked_error(&e.to_string()) => {
-                tracing::warn!(error = %e, "locked account detected, attempting recovery");
-            }
-            Err(e) => return Err(e.context("submit bid")),
-        }
-
-        if !recovery::recover_locked_account(pod_provider, solver.address())
-            .await
-            .context("recover locked account")?
-        {
-            anyhow::bail!("submission failed but account was not locked");
-        }
-
-        submit().await.context("submit bid after recovery")?;
-        tracing::info!("bid submitted after recovery");
-        Ok(())
-    }
-
-    #[instrument(name = "pod_fetch_bids", skip_all, fields(auction_id = %auction_id.0))]
-    async fn pod_fetch_bids(
-        client: &AuctionClient,
-        auction_id: Id,
-        deadline: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Vec<Bid<Unscored>>> {
-        let pod_auction_id =
-            pod_sdk::U256::from(u64::try_from(auction_id.0).context("auction id")?);
-
-        client
-            .wait_for_auction_end(deadline.into())
-            .await
-            .context("wait for auction end")?;
-
-        let bids = client
-            .fetch_bids(pod_auction_id)
-            .await
-            .context("fetch bids")?;
-
-        let mut participants = Vec::with_capacity(bids.len());
-        let mut malformed = 0;
-        for bid in bids {
-            match serde_json::from_slice::<dto::SolveResponse>(&bid.data) {
-                Ok(resp) => participants.extend(resp.solutions.into_iter().map(Bid::new)),
-                Err(e) => {
-                    malformed += 1;
-                    tracing::warn!(error = %e, bidder = %bid.bidder, "skipping malformed bid");
-                }
-            }
-        }
-        if malformed > 0 {
-            tracing::warn!(malformed, "some bids were malformed and skipped");
-        }
-        tracing::info!(num_participants = participants.len(), "fetched bids");
-        Ok(participants)
-    }
-
-    #[instrument(
-        name = "pod_local_arbitration",
-        skip_all,
-        fields(auction_id = %auction_id.0, num_participants = participants.len()),
-    )]
-    fn pod_local_arbitration(
-        auction: &Auction,
-        auction_id: Id,
-        participants: Vec<Bid<Unscored>>,
-        arbitrator: &SolverArbitrator,
-    ) -> anyhow::Result<()> {
-        let ranked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            arbitrator.arbitrate(participants, auction)
-        }))
-        .map_err(|e| {
-            let msg = e
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_owned())
-                .or_else(|| e.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "unknown panic payload".to_owned());
-            anyhow::anyhow!("panic during arbitration: {msg}")
-        })?;
-
-        let (winners, non_winners): (Vec<_>, Vec<_>) = ranked.iter().partition(|b| b.is_winner());
-        tracing::info!(
-            num_winners = winners.len(),
-            num_non_winners = non_winners.len(),
-            "local arbitration completed",
-        );
-        for winner in winners {
-            tracing::info!(
-                submission_address = %winner.submission_address(),
-                computed_score = ?winner.score(),
-                "winner selected",
-            );
-        }
-        Ok(())
     }
 
     // Oders already need to be sorted from most relevant to least relevant so that

@@ -3949,7 +3949,6 @@ dependencies = [
  "anyhow",
  "app-data",
  "async-trait",
- "autopilot",
  "axum 0.8.8",
  "bad-tokens",
  "balance-overrides",

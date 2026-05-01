@@ -37,23 +37,27 @@ impl SolverArbitrator {
     /// Runs the entire auction mechanism on the passed in solutions.
     pub fn arbitrate(
         &self,
-        mut bids: Vec<Bid<Unscored>>,
+        bids: Vec<Bid<Unscored>>,
         auction: &crate::domain::competition::Auction,
     ) -> Vec<Bid> {
-        // Sort by solution hash so every observer (driver, autopilot, third-party
-        // verifier) processes bids in the same deterministic order — required for
-        // tie-breaking to agree across independent runs.
-        bids.sort_by_cached_key(|b| {
-            winsel::solution_hash::hash_solution(b.solution().as_hashable())
-        });
-
         let context = auction.into();
         let mut bid_by_key = HashMap::with_capacity(bids.len());
-        let mut solutions = Vec::with_capacity(bids.len());
+        // Pair each bid with its converted winsel solution so we can sort by
+        // canonical_hash without re-converting. Sorting deterministically is
+        // what lets every observer (driver, autopilot, third-party verifier)
+        // reach the same tie-breaking decision.
+        let mut paired: Vec<(Bid<Unscored>, winsel::Solution<winsel::Unscored>)> = bids
+            .into_iter()
+            .map(|bid| {
+                let solution: winsel::Solution<winsel::Unscored> = bid.solution().into();
+                (bid, solution)
+            })
+            .collect();
+        paired.sort_by_cached_key(|(_, s)| s.canonical_hash());
 
-        for bid in bids {
+        let mut solutions = Vec::with_capacity(paired.len());
+        for (bid, solution) in paired {
             let key = SolutionKey::from(bid.solution());
-            let solution = bid.solution().into();
             bid_by_key.insert(key, bid);
             solutions.push(solution);
         }
@@ -201,6 +205,7 @@ impl From<&crate::infra::api::routes::solve::dto::solve_response::Solution>
                     },
                 })
                 .collect(),
+            solution.clearing_prices.clone(),
         )
     }
 }

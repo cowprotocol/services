@@ -1,5 +1,18 @@
 //! Pod network account recovery for locked accounts.
-//! See: https://docs.v2.pod.network/guides-references/guides/recover-locked-account
+//!
+//! Pod accepts at most one in-flight transaction per submitter address.
+//! Submitting a second transaction before the first is mined causes pod to
+//! mark the account as *locked*; subsequent submissions fail until the
+//! account is recovered via `pod_getRecoveryTargetTx` + the recovery
+//! precompile. See:
+//! <https://docs.v2.pod.network/guides-references/guides/recover-locked-account>
+//!
+//! TODO(production-pod): the fire-and-forget submit + best-effort recovery
+//! shape is shadow-mode-only. Before pod runs the auction for real this must
+//! be reworked: queueing semantics for concurrent submissions per solver
+//! EOA, retry/backoff policy, observability + alerting on locked-account
+//! streaks, and propagation of arbitration results for cross-validation
+//! against the autopilot's ranking.
 
 use {
     alloy::{primitives::address, providers::Provider, sol},
@@ -77,6 +90,20 @@ async fn get_recovery_target(
     }
 }
 
+/// Detects the "account is locked" condition in an error returned by
+/// `AuctionClient::submit_bid`.
+///
+/// Pod limits each submitter to one in-flight transaction; when a second
+/// submission arrives before the first is mined, pod returns an RPC error
+/// containing the substrings matched below. The matcher is brittle by
+/// nature — pod-sdk 0.5.1 wraps this as a stringly RPC error with no typed
+/// variant, so we can only match on the wire format. Pinning the SDK
+/// version here gives a future bump a fair chance to break the test and
+/// force re-evaluation.
+///
+/// On a hit we attempt recovery so the next bid in the auction's hot path
+/// can proceed; failing the whole submission would lose the bid for an
+/// otherwise-recoverable transient.
 pub fn is_account_locked_error(error: &str) -> bool {
     error.contains("Another transaction") && error.contains("is still pending")
 }

@@ -82,7 +82,6 @@ url = { workspace = true, features = ["serde"] }
 # TODO These either need to be removed or changed to be direct
 # dependencies rather than workspace dependencies
 anyhow = { workspace = true }
-autopilot = { workspace = true }
 clap = { workspace = true }
 contracts = { workspace = true }
 model = { workspace = true }

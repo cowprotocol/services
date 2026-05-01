@@ -11,7 +11,6 @@ use {
 mod bid;
 pub mod winner_selection;
 
-use ::winner_selection::solution_hash::{HashableOrder, HashableSolution};
 pub use bid::{Bid, RankType, Ranked, Scored, Unscored};
 
 type SolutionId = u64;
@@ -63,26 +62,6 @@ impl Solution {
     }
 }
 
-impl Solution {
-    /// Builds the canonical view used by `winner_selection::solution_hash`.
-    pub fn as_hashable(&self) -> HashableSolution<'_> {
-        HashableSolution {
-            solution_id: self.id,
-            solver_address: self.solver.as_slice(),
-            orders: self
-                .orders
-                .iter()
-                .map(|(uid, order)| (uid.0.as_slice(), order.as_hashable()))
-                .collect(),
-            prices: self
-                .prices
-                .iter()
-                .map(|(token, price)| (token.0.as_slice(), price.get().0.to_be_bytes()))
-                .collect(),
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct TradedOrder {
     pub side: order::Side,
@@ -94,23 +73,6 @@ pub struct TradedOrder {
     pub executed_sell: eth::TokenAmount,
     /// The effective amount the user received after all fees.
     pub executed_buy: eth::TokenAmount,
-}
-
-impl TradedOrder {
-    fn as_hashable(&self) -> HashableOrder<'_> {
-        HashableOrder {
-            side: match self.side {
-                order::Side::Buy => 0,
-                order::Side::Sell => 1,
-            },
-            sell_token: self.sell.token.0.as_slice(),
-            sell_amount: self.sell.amount.0.to_be_bytes(),
-            buy_token: self.buy.token.0.as_slice(),
-            buy_amount: self.buy.amount.0.to_be_bytes(),
-            executed_sell: self.executed_sell.0.to_be_bytes(),
-            executed_buy: self.executed_buy.0.to_be_bytes(),
-        }
-    }
 }
 
 #[derive(
