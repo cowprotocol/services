@@ -46,13 +46,14 @@ Apply these as the default lens for every change. Pull in CoW-specific siblings 
 Steps run in this order. `diff` mode skips PR-metadata steps; `pr-ci` swaps the report sink at the end.
 
 1. Fetch PR metadata and linked issue(s) — [§2](#2-metadata-fetch). *(`pr-local` / `pr-ci` only.)*
-2. Classify diff paths and load conditional context — [§3](#3-conditional-context).
-3. Build a targeted codemap — [§4](#4-codemap-phase).
-4. Synthesize the context block — [§5](#5-context-synthesis).
-5. Review and produce findings — [§6](#6-review-and-severity).
-6. Emit the report — [§7](#7-report-templates). Sink depends on mode.
-7. Offer verification (background) — [§8](#8-verification-offer). *(Local modes only.)*
-8. Print cleanup hint — [§9](#9-cleanup). *(`pr-local` only.)*
+2. Triage prior review comments — [§2.5](#25-prior-comment-follow-up). *(`pr-local` / `pr-ci` only; further skip conditions in the sibling skill.)*
+3. Classify diff paths and load conditional context — [§3](#3-conditional-context).
+4. Build a targeted codemap — [§4](#4-codemap-phase).
+5. Synthesize the context block — [§5](#5-context-synthesis).
+6. Review and produce findings — [§6](#6-review-and-severity).
+7. Emit the report — [§7](#7-report-templates). Sink depends on mode.
+8. Offer verification (background) — [§8](#8-verification-offer). *(Local modes only.)*
+9. Print cleanup hint — [§9](#9-cleanup). *(`pr-local` only.)*
 
 Error behaviour is consolidated in [§10](#10-error-playbook).
 
@@ -91,6 +92,20 @@ If no linked issue is referenced, proceed without one. Do not manufacture one.
 
 - `state == "CLOSED"` or `"MERGED"` → proceed; prepend a one-line warning to the report.
 - `isDraft == true` → proceed; prepend `Draft — author may still be iterating.`
+
+---
+
+## 2.5 Prior-comment follow-up
+
+*(Skip in `diff` mode — there is no PR yet.)*
+
+When a PR has prior inline review comments and the author has pushed new commits since, the reviewer's first question is *"did the author address what I asked last round?"* — not *"is this PR sound from scratch?"*. Surfacing that delta up front lets the reviewer resolve threads (or push back) without re-reading the whole conversation cold.
+
+Follow the [`pr-followup-triage`](skills/pr-followup-triage.md) skill with `<PR_NUMBER>`, `<owner>`, `<repo>` from [§2](#2-metadata-fetch), and `<head_sha>` = `commits[-1].oid` from the same metadata.
+
+The skill's own [When to skip](skills/pr-followup-triage.md#when-to-skip) gates apply — most PRs (no prior reviews, or no commits since) will produce no output and the section is omitted from the report. Do not synthesise a follow-up block for a first-pass review.
+
+The output is the "Prior-comment follow-up" section in [§7](#7-report-templates). Findings raised in this PR may reference a prior comment by its bracketed identifier with `Re: [A]` to chain context.
 
 ---
 
@@ -237,6 +252,10 @@ Codemap
 ───────────────────────────────────────────────────────────
 <from §4 — omit if skipped>
 
+Prior-comment follow-up — @<reviewer> at <prior_sha_short>
+───────────────────────────────────────────────────────────
+<from §2.5 — omit entirely if the sibling skill skipped>
+
 ───────────────────────────────────────────────────────────
 CONTEXT
 ───────────────────────────────────────────────────────────
@@ -350,6 +369,7 @@ The NEXT STEPS footer names the current branch and the `git switch` to return to
 | Working tree dirty (pr-local) | Print `git status --porcelain`, instruct stash/commit, abort. **No auto-stash.** |
 | `gh pr checkout` fails (fork permission) | Degrade to static-diff mode, flag in report header. |
 | Optional skill not installed | Continue using `rg` / general Rust knowledge. Do **not** abort. |
+| Follow-up triage fails (5xx, rate-limit on `/reviews` or `/comments`) | Skip the section, append `follow-up triage skipped: <reason>` to the report header's `Mode:` line, continue with the rest of the review. |
 | `diff` mode but no diff (branch == main) | Print `No diff vs main — nothing to review.`, exit clean. |
 | Verification command fails | Surface output in VERIFICATION block; raise findings only for issues inside changed files. |
 
