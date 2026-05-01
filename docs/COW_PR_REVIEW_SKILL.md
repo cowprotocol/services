@@ -46,7 +46,7 @@ Apply these as the default lens for every change. Pull in CoW-specific siblings 
 Steps run in this order. `diff` mode skips PR-metadata steps; `pr-ci` swaps the report sink at the end.
 
 1. Fetch PR metadata and linked issue(s) — [§2](#2-metadata-fetch). *(`pr-local` / `pr-ci` only.)*
-2. Triage prior review comments — [§2.5](#25-prior-comment-follow-up). *(`pr-local` / `pr-ci` only; further skip conditions in the sibling skill.)*
+2. Triage prior review comments — [§2.5](#25-prior-comment-follow-up). *(`pr-local` / `pr-ci` only; further skip conditions in §2.5.)*
 3. Classify diff paths and load conditional context — [§3](#3-conditional-context).
 4. Build a targeted codemap — [§4](#4-codemap-phase).
 5. Synthesize the context block — [§5](#5-context-synthesis).
@@ -97,15 +97,17 @@ If no linked issue is referenced, proceed without one. Do not manufacture one.
 
 ## 2.5 Prior-comment follow-up
 
-*(Skip in `diff` mode — there is no PR yet.)*
+Skip when any of these holds — no output, the section is omitted from the report:
 
-When a PR has prior inline review comments and the author has pushed new commits since, the reviewer's first question is *"did the author address what I asked last round?"* — not *"is this PR sound from scratch?"*. Surfacing that delta up front lets the reviewer resolve threads (or push back) without re-reading the whole conversation cold.
+- `mode == diff` (no PR yet).
+- No prior human inline reviews on the PR.
+- For every human reviewer, their latest review's `commit_id` already equals `<head_sha>` — no new commits since their last round.
 
-Follow the [`pr-followup-triage`](skills/pr-followup-triage.md) skill with `<PR_NUMBER>`, `<owner>`, `<repo>` from [§2](#2-metadata-fetch), and `<head_sha>` = `commits[-1].oid` from the same metadata.
+Otherwise, for each prior inline comment from a human reviewer (use `gh api repos/<owner>/<repo>/pulls/<PR_NUMBER>/reviews` and `/comments`, GET only), surface one entry in the "Prior-comment follow-up" block ([§7](#7-report-templates)). Cite the new code at `<path>:<line>` that addresses it, the author's reply, or note that nothing has changed since `<prior_sha>`. Use stable identifiers `[A]`, `[B]`, ... so findings raised in this review can chain context with `Re: [A]`.
 
-The skill's own [When to skip](skills/pr-followup-triage.md#when-to-skip) gates apply — most PRs (no prior reviews, or no commits since) will produce no output and the section is omitted from the report. Do not synthesise a follow-up block for a first-pass review.
+**Be conservative.** When the diff doesn't make the answer obvious, say so explicitly — false *"addressed"* tricks the reviewer into closing a thread that should stay open. Don't infer satisfaction from emoji reactions or short acknowledgements; the reviewer makes that call.
 
-The output is the "Prior-comment follow-up" section in [§7](#7-report-templates). Findings raised in this PR may reference a prior comment by its bracketed identifier with `Re: [A]` to chain context.
+**Read-only.** No `gh pr review`, no `gh api` mutating verbs (`POST`/`PATCH`/`DELETE`), no comment-resolution endpoints. The reviewer resolves threads, not you.
 
 ---
 
@@ -254,7 +256,17 @@ Codemap
 
 Prior-comment follow-up — @<reviewer> at <prior_sha_short>
 ───────────────────────────────────────────────────────────
-<from §2.5 — omit entirely if the sibling skill skipped>
+[A] <path>:<original_line>
+    Asked:   <≤12-word recap of what was asked>
+    Status:  ✓ Addressed  |  💬 Discussion needed  |  ⏳ Pending
+             ⚠ Silently dropped  |  🚫 Moot  |  ❓ Unclear
+    Cite:    <path>:<line at HEAD>, or "Author replied: ...", or
+             "No change since <prior_sha_short>"
+
+Sort what-needs-attention first: Discussion needed → Pending →
+Silently dropped → Unclear → Addressed → Moot.
+
+(Omit the whole block if §2.5 skipped.)
 
 ───────────────────────────────────────────────────────────
 CONTEXT
