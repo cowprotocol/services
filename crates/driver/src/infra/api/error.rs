@@ -29,6 +29,7 @@ enum Kind {
     TokenTemporarilySuspended,
     InsufficientLiquidity,
     CustomSolverError,
+    PreparationFailed,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,6 +70,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::TokenTemporarilySuspended => "Token is temporarily suspended from trading",
             Kind::InsufficientLiquidity => "Insufficient liquidity for the requested trade size",
             Kind::CustomSolverError => "Solver returned a custom error",
+            Kind::PreparationFailed => "Preparation failed",
         };
         (
             axum::http::StatusCode::BAD_REQUEST,
@@ -146,6 +148,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::NoValidOrdersFound => Kind::NoValidOrders,
             competition::Error::MalformedRequest => Kind::MalformedRequest,
+            competition::Error::PreparationError => Kind::PreparationFailed,
         };
         error.into()
     }

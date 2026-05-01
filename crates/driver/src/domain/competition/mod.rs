@@ -351,23 +351,34 @@ impl Competition {
         })
         .await;
 
-        // We can run bad token filtering and liquidity fetching in parallel
-        let (_, liquidity) = tokio::join!(
-            async {
-                self.risk_detector
-                    .filter_unsupported_orders_in_auction(
-                        &mut auction,
-                        self.solver.config().flashloans_enabled,
-                    )
-                    .await
-            },
-            async {
-                match self.solver.liquidity() {
-                    solver::Liquidity::Fetch => tasks.liquidity.await,
-                    solver::Liquidity::Skip => Arc::new(Vec::new()),
-                }
+        // Run bad token filtering and liquidity fetching in separate tasks so they can
+        // make progress independently and may execute in parallel.
+        let risk_detector = self.risk_detector.clone();
+        let flashloans_enabled = self.solver.config().flashloans_enabled;
+        let filter_auction = tokio::spawn(async move {
+            risk_detector
+                .filter_unsupported_orders_in_auction(&mut auction, flashloans_enabled)
+                .await;
+            auction
+        });
+
+        let fetch_liquidity = match self.solver.liquidity() {
+            solver::Liquidity::Fetch => {
+                let liquidity = tasks.liquidity;
+                tokio::spawn(liquidity)
             }
-        );
+            solver::Liquidity::Skip => tokio::spawn(async { Arc::new(Vec::new()) }),
+        };
+
+        let (auction, liquidity) = tokio::join!(filter_auction, fetch_liquidity);
+        let auction = auction.map_err(|err| {
+            tracing::error!(?err, "unsupported order filtering task failed");
+            Error::PreparationError
+        })?;
+        let liquidity = liquidity.map_err(|err| {
+            tracing::error!(?err, "liquidity fetching task failed");
+            Error::PreparationError
+        })?;
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -1074,4 +1085,6 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
+    #[error("Preparation task failed")]
+    PreparationError,
 }
