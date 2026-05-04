@@ -3939,6 +3939,7 @@ dependencies = [
  "liquidity-sources",
  "maplit",
  "mimalloc",
+ "mockall",
  "model",
  "moka",
  "num",

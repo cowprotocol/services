@@ -351,34 +351,32 @@ impl Competition {
         })
         .await;
 
-        // Run bad token filtering and liquidity fetching in separate tasks so they can
-        // make progress independently and may execute in parallel.
         let risk_detector = self.risk_detector.clone();
         let flashloans_enabled = self.solver.config().flashloans_enabled;
-        let filter_auction = tokio::spawn(async move {
-            risk_detector
-                .filter_unsupported_orders_in_auction(&mut auction, flashloans_enabled)
-                .await;
-            auction
-        });
+        let liquidity_mode = self.solver.liquidity();
 
-        let fetch_liquidity = match self.solver.liquidity() {
-            solver::Liquidity::Fetch => {
-                let liquidity = tasks.liquidity;
-                tokio::spawn(liquidity)
-            }
-            solver::Liquidity::Skip => tokio::spawn(async { Arc::new(Vec::new()) }),
-        };
-
-        let (auction, liquidity) = tokio::join!(filter_auction, fetch_liquidity);
-        let auction = auction.map_err(|err| {
-            tracing::error!(?err, "unsupported order filtering task failed");
-            Error::PreparationError
-        })?;
-        let liquidity = liquidity.map_err(|err| {
-            tracing::error!(?err, "liquidity fetching task failed");
-            Error::PreparationError
-        })?;
+        // We can run bad token filtering and liquidity fetching in parallel
+        let (auction, liquidity) = tokio::try_join!(
+            tokio::spawn(
+                async move {
+                    risk_detector
+                        .without_unsupported_orders(&mut auction.orders, flashloans_enabled)
+                        .await;
+                    auction
+                }
+                .in_current_span(),
+            ),
+            tokio::spawn(
+                async move {
+                    match liquidity_mode {
+                        solver::Liquidity::Fetch => tasks.liquidity.await,
+                        solver::Liquidity::Skip => Arc::new(Vec::new()),
+                    }
+                }
+                .in_current_span(),
+            ),
+        )
+        .inspect_err(|err| tracing::error!(?err, "auction preparation task failed"))?;
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -1085,6 +1083,6 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
-    #[error("Preparation task failed")]
-    PreparationError,
+    #[error("task join error: {0}")]
+    Join(#[from] task::JoinError),
 }

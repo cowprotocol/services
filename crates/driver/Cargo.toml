@@ -97,6 +97,7 @@ app-data = { workspace = true, features = ["test_helpers"] }
 contracts = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
+mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
 

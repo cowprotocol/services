@@ -459,7 +459,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::TooManyPendingSettlements => "TooManyPendingSettlements",
         competition::Error::NoValidOrdersFound => "NoValidOrdersFound",
         competition::Error::MalformedRequest => "MalformedRequest",
-        competition::Error::PreparationError => "PreparationFailed",
+        competition::Error::Join(_) => "Join",
     }
 }
 
