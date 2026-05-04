@@ -5,7 +5,7 @@ use {
     },
     alloy::primitives::{Address, U256},
     base64::prelude::*,
-    bigdecimal::BigDecimal,
+    bigdecimal::{BigDecimal, RoundingMode},
     ethrpc::block_stream::CurrentBlockWatcher,
     hmac::{Hmac, Mac},
     number::conversions::{big_decimal_to_u256, u256_to_big_uint},
@@ -23,15 +23,34 @@ fn wei_to_decimal(amount: U256, decimals: u8) -> BigDecimal {
     BigDecimal::new(u256_to_big_uint(&amount).into(), i64::from(decimals)).normalized()
 }
 
-/// Convert a decimal amount (from API response) to U256 wei.
-/// e.g., "1964.365496" with 6 decimals → 1964365496.
+/// Rounding direction for converting Bitget's decimal responses to wei.
 ///
-/// `with_scale(0)` rounds away digits past the token's precision. Bitget
-/// sometimes returns more (e.g. `"1.1234567"` for 6-decimal USDC), and
-/// `big_decimal_to_u256` rejects non-integer values.
-fn decimal_to_wei(amount: &BigDecimal, decimals: u8) -> Result<U256, Error> {
+/// Bitget can return more decimal digits than the token has (e.g.
+/// `"1.1234567"` for 6-decimal USDC), so we have to round to the nearest
+/// base unit. The right direction depends on what the value represents:
+/// pick the side that produces positive (not negative) imbalance in the
+/// settlement buffer.
+#[derive(Clone, Copy)]
+enum Round {
+    /// For input amounts (what we pay/approve). Round away from zero so
+    /// the allowance and pulled funds always cover the swap's actual
+    /// input. Under-pulling causes a settlement revert.
+    Up,
+    /// For output amounts (what we report as received). Round toward zero
+    /// so we never claim more buy tokens than the swap delivered.
+    /// Over-claiming causes a settlement revert.
+    Down,
+}
+
+/// Convert a decimal amount (from API response) to U256 wei using the given
+/// rounding direction. e.g., "1964.365496" with 6 decimals → 1964365496.
+fn decimal_to_wei(amount: &BigDecimal, decimals: u8, round: Round) -> Result<U256, Error> {
     let scaled = amount * BigDecimal::new(1.into(), -i64::from(decimals));
-    big_decimal_to_u256(&scaled.with_scale(0)).ok_or(Error::AmountConversionFailed)
+    let mode = match round {
+        Round::Up => RoundingMode::Up,
+        Round::Down => RoundingMode::Down,
+    };
+    big_decimal_to_u256(&scaled.with_scale_round(0, mode)).ok_or(Error::AmountConversionFailed)
 }
 
 mod dto;
@@ -187,7 +206,7 @@ impl Bitget {
             .checked_add(gas_limit / U256::from(2))
             .ok_or(Error::GasCalculationFailed)?;
 
-        let output_amount = decimal_to_wei(&response.out_amount, buy_decimals)?;
+        let output_amount = decimal_to_wei(&response.out_amount, buy_decimals, Round::Down)?;
 
         Ok(dex::Swap {
             calls: vec![dex::Call {
@@ -243,8 +262,9 @@ impl Bitget {
             .checked_add(gas_limit / U256::from(2))
             .ok_or(Error::GasCalculationFailed)?;
 
-        let input_amount = decimal_to_wei(&response.amount_in, sell_decimals)?;
-        let expected_out = decimal_to_wei(&response.expected_amount_out, buy_decimals)?;
+        let input_amount = decimal_to_wei(&response.amount_in, sell_decimals, Round::Up)?;
+        let expected_out =
+            decimal_to_wei(&response.expected_amount_out, buy_decimals, Round::Down)?;
 
         // CoW buy orders require the executed buy amount to equal the order's
         // buy amount exactly. BitGet's reverse-quote enforces a *minimum*
