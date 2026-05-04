@@ -260,13 +260,7 @@ impl Bitget {
         // responses in the wild, only handle the single-swap case.
         let tx = match response.txs.as_slice() {
             [tx] => tx,
-            txs => {
-                tracing::warn!(
-                    count = txs.len(),
-                    "Bitget reverse-quote returned multi-tx response, skipping",
-                );
-                return Err(Error::NotFound);
-            }
+            txs => return Err(Error::MultiTxResponse(txs.len())),
         };
         let calldata = tx.decode_calldata().map_err(|_| Error::InvalidCalldata)?;
         let contract = tx.to;
@@ -278,18 +272,13 @@ impl Bitget {
             .ok_or(Error::GasCalculationFailed)?;
 
         let input_amount = decimal_to_wei(&response.amount_in, sell_decimals, Round::Up)?;
-        let expected_out =
-            decimal_to_wei(&response.expected_amount_out, buy_decimals, Round::Down)?;
 
         // CoW buy orders require the executed buy amount to equal the order's
-        // buy amount exactly. BitGet's reverse-quote enforces a *minimum*
-        // output on chain, so the swap may deliver slightly more, but we
-        // report the exact buy amount here so `Fulfillment::new` accepts the
-        // solution. The slight on-chain overshoot accrues to the settlement
-        // contract buffer as positive surplus.
-        if expected_out < order.amount.get() {
-            return Err(Error::NotFound);
-        }
+        // buy amount exactly. The calldata's on-chain `minAmountOut` check
+        // enforces this, with any overshoot accruing to the settlement
+        // buffer as positive surplus. We don't second-guess `expected_out`
+        // here: it's an estimate, and a strict comparison against
+        // `order.amount.get()` runs into base-unit rounding noise.
         let output_amount = order.amount.get();
 
         Ok(dex::Swap {
@@ -439,6 +428,8 @@ pub enum Error {
     GasCalculationFailed,
     #[error("unable to find a quote")]
     NotFound,
+    #[error("expected single tx in reverse-quote response, got {0}")]
+    MultiTxResponse(usize),
     #[error("order type is not supported")]
     OrderNotSupported,
     #[error("rate limited")]
