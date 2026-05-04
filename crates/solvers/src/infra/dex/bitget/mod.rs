@@ -56,6 +56,7 @@ pub struct Bitget {
     partner_code: String,
     chain_name: dto::ChainName,
     settlement_contract: Address,
+    enable_buy_orders: bool,
 }
 
 pub struct Config {
@@ -74,6 +75,12 @@ pub struct Config {
 
     /// The stream that yields every new block.
     pub block_stream: Option<CurrentBlockWatcher>,
+
+    /// Whether buy orders should be served via the reverse-quote endpoint.
+    /// Disabled by default since the on-chain overshoot accrues to the
+    /// settlement buffer rather than to the user, costing up to the
+    /// configured slippage in user surplus.
+    pub enable_buy_orders: bool,
 }
 
 pub struct BitgetCredentialsConfig {
@@ -101,6 +108,7 @@ impl Bitget {
             partner_code: config.partner_code,
             chain_name,
             settlement_contract: config.settlement_contract,
+            enable_buy_orders: config.enable_buy_orders,
         })
     }
 
@@ -110,6 +118,10 @@ impl Bitget {
         slippage: &dex::Slippage,
         tokens: &auction::Tokens,
     ) -> Result<dex::Swap, Error> {
+        if order.side == order::Side::Buy && !self.enable_buy_orders {
+            return Err(Error::OrderNotSupported);
+        }
+
         let sell_decimals = tokens
             .get(&order.sell)
             .and_then(|t| t.decimals)
