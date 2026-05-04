@@ -145,35 +145,87 @@ async fn swap_sell_all_chains() {
     }
 }
 
+#[ignore]
 #[tokio::test]
-async fn swap_buy_not_supported() {
-    let config = bitget_dex::Config {
-        endpoint: reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap(),
-        chain_id: crate::domain::eth::ChainId::Mainnet,
-        credentials: bitget_dex::BitgetCredentialsConfig {
-            api_key: String::new(),
-            api_secret: String::new(),
-        },
-        partner_code: "cowswap".to_string(),
-        settlement_contract: address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
-        block_stream: None,
-    };
+// To run this test, set the following environment variables accordingly to your
+// Bitget setup: BITGET_API_KEY, BITGET_API_SECRET
+async fn swap_buy_all_chains() {
+    let api_key = env::var("BITGET_API_KEY").unwrap();
+    let api_secret = env::var("BITGET_API_SECRET").unwrap();
 
-    let order = Order {
-        buy: TokenAddress::from(address!("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
-        sell: TokenAddress::from(address!("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")),
-        side: crate::domain::order::Side::Buy,
-        amount: Amount::new(U256::from(1000000000_u128)),
-        owner: address!("0x6f9ffea7370310cd0f890dfde5e0e061059dcfb8"),
-    };
+    for tc in TEST_CASES {
+        let config = bitget_dex::Config {
+            endpoint: reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap(),
+            chain_id: tc.chain_id,
+            credentials: bitget_dex::BitgetCredentialsConfig {
+                api_key: api_key.clone(),
+                api_secret: api_secret.clone(),
+            },
+            partner_code: "cowswap".to_string(),
+            settlement_contract: address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            block_stream: None,
+        };
 
-    let slippage = Slippage::one_percent();
-    let tokens = auction::Tokens(HashMap::new());
+        // Flip sell/buy so that we probe `buy_token = WETH` for a fixed amount,
+        // mirroring the native-price probe shape.
+        let buy_amount = tc.sell_amount;
+        let order = Order {
+            sell: TokenAddress::from(tc.buy_token),
+            buy: TokenAddress::from(tc.sell_token),
+            side: crate::domain::order::Side::Buy,
+            amount: Amount::new(U256::from(buy_amount)),
+            owner: address!("0x6f9ffea7370310cd0f890dfde5e0e061059dcfb8"),
+        };
 
-    let bitget = bitget_dex::Bitget::try_new(config).unwrap();
-    let swap_response = bitget.swap(&order, &slippage, &tokens).await;
-    assert!(matches!(
-        swap_response.unwrap_err(),
-        bitget_dex::Error::OrderNotSupported
-    ));
+        let slippage = Slippage::one_percent();
+
+        let mut token_map = HashMap::new();
+        token_map.insert(
+            order.sell,
+            auction::Token {
+                decimals: Some(tc.buy_decimals),
+                symbol: None,
+                reference_price: None,
+                available_balance: U256::ZERO,
+                trusted: false,
+            },
+        );
+        token_map.insert(
+            order.buy,
+            auction::Token {
+                decimals: Some(tc.sell_decimals),
+                symbol: None,
+                reference_price: None,
+                available_balance: U256::ZERO,
+                trusted: false,
+            },
+        );
+        let tokens = auction::Tokens(token_map);
+
+        let bitget = bitget_dex::Bitget::try_new(config).unwrap();
+        let swap = bitget
+            .swap(&order, &slippage, &tokens)
+            .await
+            .unwrap_or_else(|e| panic!("[{}] swap failed: {e}", tc.name));
+
+        assert_eq!(
+            swap.input.token, order.sell,
+            "[{}] input token mismatch",
+            tc.name
+        );
+        assert_eq!(
+            swap.output.token, order.buy,
+            "[{}] output token mismatch",
+            tc.name
+        );
+        // Reverse-quote should produce a swap whose expected output meets or
+        // exceeds the requested buy amount.
+        assert!(
+            swap.output.amount >= order.amount().amount,
+            "[{}] expected output {} < requested {}",
+            tc.name,
+            swap.output.amount,
+            order.amount().amount
+        );
+    }
 }

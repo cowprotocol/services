@@ -40,8 +40,12 @@ pub const DEFAULT_ENDPOINT: &str = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro
 /// expects in the signature.
 const SIGNATURE_API_PATH: &str = "/bgw-pro/swapx/pro/";
 
-/// Bitget API path for getting swap calldata.
+/// Bitget API path for getting swap calldata (sell orders, exact-in).
 const SWAP_PATH: &str = "swap";
+
+/// Bitget API path for the reverse-quote swap endpoint (buy orders,
+/// `requestMode = "minAmountOut"`).
+const SWAP_REVERSE_PATH: &str = "swapr";
 
 /// Bindings to the Bitget swap API.
 pub struct Bitget {
@@ -106,11 +110,6 @@ impl Bitget {
         slippage: &dex::Slippage,
         tokens: &auction::Tokens,
     ) -> Result<dex::Swap, Error> {
-        // Bitget only supports sell orders (exactIn).
-        if order.side == order::Side::Buy {
-            return Err(Error::OrderNotSupported);
-        }
-
         let sell_decimals = tokens
             .get(&order.sell)
             .and_then(|t| t.decimals)
@@ -123,17 +122,47 @@ impl Bitget {
         // Set up a tracing span to make debugging of API requests easier.
         static ID: AtomicU64 = AtomicU64::new(0);
         let id = ID.fetch_add(1, atomic::Ordering::Relaxed);
+        let span = tracing::trace_span!("swap", id = %id);
 
-        let response = self
-            .handle_sell_order(order, slippage, sell_decimals)
-            .instrument(tracing::trace_span!("swap", id = %id))
-            .await?;
+        match order.side {
+            order::Side::Sell => {
+                self.handle_sell_order(order, slippage, sell_decimals, buy_decimals)
+                    .instrument(span)
+                    .await
+            }
+            order::Side::Buy => {
+                self.handle_buy_order(order, slippage, sell_decimals, buy_decimals)
+                    .instrument(span)
+                    .await
+            }
+        }
+    }
+
+    /// Handle sell orders with a single enriched swap API call.
+    ///
+    /// Uses `requestMod = "rich"` so the swap endpoint returns both quote
+    /// data (output amount, gas) and calldata in a single response,
+    /// eliminating the race condition window of the previous two-call flow.
+    async fn handle_sell_order(
+        &self,
+        order: &dex::Order,
+        slippage: &dex::Slippage,
+        sell_decimals: u8,
+        buy_decimals: u8,
+    ) -> Result<dex::Swap, Error> {
+        let swap_request = dto::SwapRequest::from_order(
+            order,
+            self.chain_name,
+            self.settlement_contract,
+            slippage,
+            sell_decimals,
+        );
+        let response: dto::SwapResponse = self.send_post_request(SWAP_PATH, &swap_request).await?;
 
         let calldata = response
             .swap_transaction
             .decode_calldata()
             .map_err(|_| Error::InvalidCalldata)?;
-
         let contract = response.swap_transaction.to;
 
         // Increase gas estimate by 50% for safety margin, similar to OKX.
@@ -165,26 +194,72 @@ impl Bitget {
         })
     }
 
-    /// Handle sell orders with a single enriched swap API call.
+    /// Handle buy orders via the reverse-quote endpoint.
     ///
-    /// Uses `requestMod = "rich"` so the swap endpoint returns both quote
-    /// data (output amount, gas) and calldata in a single response,
-    /// eliminating the race condition window of the previous two-call flow.
-    async fn handle_sell_order(
+    /// Bitget computes the required input amount server-side using a recursive
+    /// search on top of sell quotes. The response calldata enforces
+    /// `minAmountOut` on chain, so the swap reverts if it underdelivers.
+    async fn handle_buy_order(
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
         sell_decimals: u8,
-    ) -> Result<dto::SwapResponse, Error> {
-        let swap_request = dto::SwapRequest::from_order(
+        buy_decimals: u8,
+    ) -> Result<dex::Swap, Error> {
+        let swap_request = dto::ReverseSwapRequest::from_order(
             order,
             self.chain_name,
             self.settlement_contract,
             slippage,
-            sell_decimals,
+            buy_decimals,
         );
+        let response: dto::ReverseSwapResponse = self
+            .send_post_request(SWAP_REVERSE_PATH, &swap_request)
+            .await?;
 
-        self.send_post_request(SWAP_PATH, &swap_request).await
+        let tx = response.txs.first().ok_or(Error::NotFound)?;
+        let calldata = tx.decode_calldata().map_err(|_| Error::InvalidCalldata)?;
+        let contract = tx.to;
+
+        // Increase gas estimate by 50% for safety margin, similar to OKX.
+        let gas_limit = U256::from(tx.gas_limit);
+        let gas = gas_limit
+            .checked_add(gas_limit / U256::from(2))
+            .ok_or(Error::GasCalculationFailed)?;
+
+        let input_amount = decimal_to_wei(&response.amount_in, sell_decimals)?;
+        let expected_out = decimal_to_wei(&response.expected_amount_out, buy_decimals)?;
+
+        // CoW buy orders require the executed buy amount to equal the order's
+        // buy amount exactly. BitGet's reverse-quote enforces a *minimum*
+        // output on chain, so the swap may deliver slightly more, but we
+        // report the exact buy amount here so `Fulfillment::new` accepts the
+        // solution. The slight on-chain overshoot accrues to the settlement
+        // contract buffer as positive surplus.
+        if expected_out < order.amount.get() {
+            return Err(Error::NotFound);
+        }
+        let output_amount = order.amount.get();
+
+        Ok(dex::Swap {
+            calls: vec![dex::Call {
+                to: contract,
+                calldata,
+            }],
+            input: eth::Asset {
+                token: order.sell,
+                amount: input_amount,
+            },
+            output: eth::Asset {
+                token: order.buy,
+                amount: output_amount,
+            },
+            allowance: dex::Allowance {
+                spender: contract,
+                amount: dex::Amount::new(input_amount),
+            },
+            gas: eth::Gas(gas),
+        })
     }
 
     /// Generate HMAC-SHA256 signature for the Bitget API.
