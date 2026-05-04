@@ -145,7 +145,7 @@ impl<'a> Solver<'a> {
                     token: eth::TokenAddress(buy_token),
                     amount: buy_amount,
                 },
-                gas: eth::Gas(U256::from(liquidity.gas_cost().await)),
+                gas: reference_liquidity.gas,
             });
 
             sell_token = buy_token;

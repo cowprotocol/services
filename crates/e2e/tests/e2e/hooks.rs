@@ -4,6 +4,7 @@ use {
         providers::Provider,
     },
     app_data::Hook,
+    price_estimation::trade_finding::external::dto,
     configs::{
         autopilot::native_price::NativePriceConfig as AutopilotNativePriceConfig,
         native_price_estimators::{NativePriceEstimator, NativePriceEstimators},
@@ -660,23 +661,24 @@ async fn tx_gas_simulation(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-
-    let counter = contracts::test::Counter::Instance::deploy(web3.provider.clone())
+    let gas_amount = 1_000_000;
+    let gas_hog = contracts::test::GasHog::Instance::deploy(web3.provider.clone())
         .await
         .unwrap();
-    let pre_call = counter.incrementCounter("pre".to_string());
-    let pre_gas = pre_call.estimate_gas().await.unwrap();
+    let call = gas_hog.isValidSignature(
+        Default::default(),
+        U256::from(gas_amount).to_be_bytes::<32>().to_vec().into(),
+    );
+    let gas = call.estimate_gas().await.unwrap();
     let pre_hook = Hook {
-        target: *counter.address(),
-        call_data: pre_call.calldata().to_vec(),
-        gas_limit: pre_gas,
+        target: *gas_hog.address(),
+        call_data: call.calldata().to_vec(),
+        gas_limit: gas,
     };
-    let post_call = counter.incrementCounter("post".to_string());
-    let post_gas = post_call.estimate_gas().await.unwrap();
     let post_hook = Hook {
-        target: *counter.address(),
-        call_data: post_call.calldata().to_vec(),
-        gas_limit: post_gas,
+        target: *gas_hog.address(),
+        call_data: call.calldata().to_vec(),
+        gas_limit: gas,
     };
 
     let quote_request = OrderQuoteRequest {
@@ -799,6 +801,36 @@ async fn tx_gas_simulation(web3: Web3) {
     .await
     .expect("driver (with sim) did not start in time");
 
+    let post_order = dto::PostOrder {
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
+        amount: 5u64.eth(),
+        kind: OrderKind::Sell,
+        deadline: chrono::Utc::now() + std::time::Duration::from_secs(30),
+        from: trader.address(),
+        interactions: dto::Interactions {
+            pre: vec![dto::Interaction {
+                target: pre_hook.target,
+                value: U256::ZERO,
+                call_data: pre_hook.call_data.clone(),
+            }],
+            post: vec![dto::Interaction {
+                target: post_hook.target,
+                value: U256::ZERO,
+                call_data: post_hook.call_data.clone(),
+            }],
+        },
+    };
+    let _quote_response = reqwest::Client::new()
+        .post("http://localhost:11088/test_quoter/quote")
+        .json(&post_order)
+        .send()
+        .await
+        .unwrap()
+        .json::<dto::QuoteKind>()
+        .await
+        .unwrap();
+
     let gas_with_sim = services
         .submit_quote(&quote_request)
         .await
@@ -810,7 +842,7 @@ async fn tx_gas_simulation(web3: Web3) {
         gas_with_sim > gas_no_sim,
         "simulated gas {gas_with_sim} should exceed static estimate {gas_no_sim}"
     );
-    let hooks_gas = bigdecimal::BigDecimal::from(pre_gas + post_gas);
+    let hooks_gas = bigdecimal::BigDecimal::from(gas * 2);
     assert!(
         gas_with_sim >= hooks_gas,
         "simulated gas {gas_with_sim} should be at least the sum of hook gas limits"

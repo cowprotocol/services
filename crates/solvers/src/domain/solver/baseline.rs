@@ -250,6 +250,7 @@ impl Inner {
                         est.estimate(&order, route_input, route_output)
                             .await
                             .filter(|g| !g.0.is_zero())
+                            .map(|gas| gas + route.gas())
                             .unwrap_or_else(|| route.gas() + self.solution_gas_offset)
                     } else {
                         route.gas() + self.solution_gas_offset
