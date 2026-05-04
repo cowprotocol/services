@@ -198,6 +198,7 @@ impl Cache {
     fn updated_at_percentage(max_age: Duration, now: Instant, percentage: u32) -> Instant {
         let percentage = std::cmp::min(percentage, 100);
         max_age
+            // Duration stores secs in u64, so overflow happens at u64::MAX
             .checked_mul(percentage)
             .and_then(|age| age.checked_div(100))
             .and_then(|age| now.checked_sub(age))
@@ -1156,7 +1157,7 @@ mod tests {
     }
 
     #[test]
-    fn updated_at_percentage_underflow_check() {
+    fn updated_at_percentage_overflow_check() {
         let now = Instant::now();
         let age = Duration::MAX;
         let updated_at = Cache::updated_at_percentage(age, now, 90);
