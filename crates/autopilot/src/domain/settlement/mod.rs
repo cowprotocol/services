@@ -51,6 +51,13 @@ pub struct Settlement {
     trades: Vec<Trade>,
 }
 
+#[derive(Debug, Default)]
+pub struct SettlementMetrics {
+    pub surplus: eth::Ether,
+    pub fee: eth::Ether,
+    pub fee_breakdown: HashMap<domain::OrderUid, trade::FeeBreakdown>,
+}
+
 impl Settlement {
     pub fn auction_id(&self) -> i64 {
         self.auction.id
@@ -75,22 +82,26 @@ impl Settlement {
         self.solution_uid
     }
 
+    /// Settlement-wide metrics collected in a single pass over all trades.
+    pub fn metrics(&self) -> SettlementMetrics {
+        self.trades
+            .iter()
+            .fold(SettlementMetrics::default(), |mut metrics, trade| {
+                let trade_metrics = self.trade_metrics(trade);
+                metrics.surplus = metrics.surplus + trade_metrics.surplus;
+                metrics.fee = metrics.fee + trade_metrics.fee;
+                metrics
+                    .fee_breakdown
+                    .insert(*trade.uid(), trade_metrics.fee_breakdown);
+                metrics
+            })
+    }
+
     /// Total surplus for all trades in the settlement.
     pub fn surplus_in_ether(&self) -> eth::Ether {
         self.trades
             .iter()
-            .map(|trade| {
-                trade
-                    .surplus_in_ether(&self.auction.prices)
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            ?err,
-                            trade = %trade.uid(),
-                            "possible incomplete surplus calculation",
-                        );
-                        num::zero()
-                    })
-            })
+            .map(|trade| self.trade_surplus_in_ether(trade))
             .sum()
     }
 
@@ -98,18 +109,7 @@ impl Settlement {
     pub fn fee_in_ether(&self) -> eth::Ether {
         self.trades
             .iter()
-            .map(|trade| {
-                trade
-                    .fee_in_ether(&self.auction.prices)
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            ?err,
-                            trade = %trade.uid(),
-                            "possible incomplete fee calculation",
-                        );
-                        num::zero()
-                    })
-            })
+            .map(|trade| self.trade_fee_in_ether(trade))
             .sum()
     }
 
@@ -117,24 +117,7 @@ impl Settlement {
     pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, trade::FeeBreakdown> {
         self.trades
             .iter()
-            .map(|trade| {
-                let fee_breakdown = trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
-                    tracing::warn!(
-                        ?err,
-                        trade = %trade.uid(),
-                        "possible incomplete fee breakdown calculation",
-                    );
-                    trade::FeeBreakdown {
-                        total: eth::Asset {
-                            // TODO surplus token
-                            token: trade.sell_token(),
-                            amount: num::zero(),
-                        },
-                        protocol: vec![],
-                    }
-                });
-                (*trade.uid(), fee_breakdown)
-            })
+            .map(|trade| (*trade.uid(), self.trade_fee_breakdown(trade)))
             .collect()
     }
 
@@ -144,6 +127,136 @@ impl Settlement {
             .iter()
             .filter_map(|trade| trade.as_jit())
             .collect()
+    }
+
+    fn trade_surplus_in_ether(&self, trade: &Trade) -> eth::Ether {
+        trade
+            .surplus_in_ether(&self.auction.prices)
+            .unwrap_or_else(|err| {
+                tracing::warn!(
+                    ?err,
+                    trade = %trade.uid(),
+                    "possible incomplete surplus calculation",
+                );
+                num::zero()
+            })
+    }
+
+    fn trade_fee_in_ether(&self, trade: &Trade) -> eth::Ether {
+        trade
+            .fee_in_ether(&self.auction.prices)
+            .unwrap_or_else(|err| {
+                tracing::warn!(
+                    ?err,
+                    trade = %trade.uid(),
+                    "possible incomplete fee calculation",
+                );
+                num::zero()
+            })
+    }
+
+    fn trade_fee_breakdown(&self, trade: &Trade) -> trade::FeeBreakdown {
+        trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
+            tracing::warn!(
+                ?err,
+                trade = %trade.uid(),
+                "possible incomplete fee breakdown calculation",
+            );
+            trade::FeeBreakdown {
+                total: eth::Asset {
+                    // TODO surplus token
+                    token: trade.sell_token(),
+                    amount: num::zero(),
+                },
+                protocol: vec![],
+            }
+        })
+    }
+
+    fn trade_metrics(&self, trade: &Trade) -> trade::Metrics {
+        let math_trade = trade::math::Trade::from(trade);
+        let raw_metrics = match math_trade.raw_metrics() {
+            Ok(raw_metrics) => Some(raw_metrics),
+            Err(err) => {
+                tracing::warn!(
+                    ?err,
+                    trade = %trade.uid(),
+                    "possible incomplete settlement metrics calculation",
+                );
+                None
+            }
+        };
+        let fee_breakdown = match raw_metrics.as_ref() {
+            Some(raw_metrics) => match math_trade.fee_into_sell_token(raw_metrics.fee) {
+                Ok(fee_in_sell_token) => match math_trade.protocol_fees(&self.auction.orders) {
+                    Ok(protocol_fees) => trade::FeeBreakdown {
+                        total: eth::Asset {
+                            token: trade.sell_token(),
+                            amount: fee_in_sell_token.into(),
+                        },
+                        protocol: protocol_fees,
+                    },
+                    Err(err) => {
+                        tracing::warn!(
+                            ?err,
+                            trade = %trade.uid(),
+                            "possible incomplete fee breakdown calculation",
+                        );
+                        trade::FeeBreakdown {
+                            total: eth::Asset {
+                                token: trade.sell_token(),
+                                amount: num::zero(),
+                            },
+                            protocol: vec![],
+                        }
+                    }
+                },
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        trade = %trade.uid(),
+                        "possible incomplete fee breakdown calculation",
+                    );
+                    trade::FeeBreakdown {
+                        total: eth::Asset {
+                            token: trade.sell_token(),
+                            amount: num::zero(),
+                        },
+                        protocol: vec![],
+                    }
+                }
+            },
+            None => trade::FeeBreakdown {
+                total: eth::Asset {
+                    token: trade.sell_token(),
+                    amount: num::zero(),
+                },
+                protocol: vec![],
+            },
+        };
+        let trade::math::RawMetrics { surplus, fee, .. } = raw_metrics.unwrap_or_default();
+        let surplus_token = math_trade.surplus_token();
+        let Some(price) = self.auction.prices.get(&surplus_token) else {
+            tracing::warn!(
+                err = ?trade::math::Error::MissingPrice(surplus_token),
+                trade = %trade.uid(),
+                "possible incomplete settlement metrics calculation",
+            );
+            return trade::Metrics {
+                surplus: num::zero(),
+                fee: num::zero(),
+                fee_breakdown,
+            };
+        };
+
+        trade::Metrics {
+            surplus: match trade {
+                Trade::Jit(trade) if !trade.surplus_capturing => num::zero(),
+                _ => price.in_eth(eth::TokenAmount(surplus.0)),
+            },
+            fee: price.in_eth(eth::TokenAmount(fee.0)),
+            fee_breakdown,
+        }
     }
 
     pub async fn new(
@@ -351,9 +464,7 @@ pub struct ExecutionEnded {
 mod tests {
     use {
         crate::domain::{
-            self,
-            auction,
-            blockchain,
+            self, auction, blockchain,
             settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
@@ -376,6 +487,199 @@ mod tests {
         ) -> Result<bool, super::transaction::Error> {
             return Ok(true);
         }
+    }
+
+    fn settlement_from_transaction(
+        transaction: super::transaction::Transaction,
+        auction: super::Auction,
+    ) -> super::Settlement {
+        let timestamp = transaction.timestamp;
+        let trades = transaction
+            .trades
+            .into_iter()
+            .map(|trade| super::Trade::new(trade, &auction, timestamp))
+            .collect();
+
+        super::Settlement {
+            gas: transaction.gas,
+            gas_price: transaction.gas_price,
+            block: transaction.block,
+            solver: transaction.solver,
+            solution_uid: 0,
+            auction,
+            trades,
+        }
+    }
+
+    fn assert_fee_breakdown_eq(
+        actual: &HashMap<domain::OrderUid, super::trade::FeeBreakdown>,
+        expected: &HashMap<domain::OrderUid, super::trade::FeeBreakdown>,
+    ) {
+        assert_eq!(actual.len(), expected.len());
+
+        for (order_uid, expected_breakdown) in expected {
+            let actual_breakdown = actual.get(order_uid).unwrap();
+            assert_eq!(actual_breakdown.total, expected_breakdown.total);
+            assert_eq!(
+                actual_breakdown.protocol.len(),
+                expected_breakdown.protocol.len()
+            );
+
+            for (actual_fee, expected_fee) in actual_breakdown
+                .protocol
+                .iter()
+                .zip(expected_breakdown.protocol.iter())
+            {
+                assert_eq!(actual_fee.policy, expected_fee.policy);
+                assert_eq!(actual_fee.fee, expected_fee.fee);
+            }
+        }
+    }
+
+    fn assert_trade_metrics_eq(trade: &super::trade::Trade, auction: &super::Auction) {
+        let metrics = trade.metrics(auction).unwrap();
+        assert_eq!(
+            metrics.surplus,
+            trade.surplus_in_ether(&auction.prices).unwrap()
+        );
+        assert_eq!(metrics.fee, trade.fee_in_ether(&auction.prices).unwrap());
+        assert_eq!(
+            metrics.fee_breakdown.total,
+            trade.fee_breakdown(auction).unwrap().total
+        );
+        assert_eq!(
+            metrics.fee_breakdown.protocol.len(),
+            trade.fee_breakdown(auction).unwrap().protocol.len()
+        );
+
+        for (actual_fee, expected_fee) in metrics
+            .fee_breakdown
+            .protocol
+            .iter()
+            .zip(trade.fee_breakdown(auction).unwrap().protocol.iter())
+        {
+            assert_eq!(actual_fee.policy, expected_fee.policy);
+            assert_eq!(actual_fee.fee, expected_fee.fee);
+        }
+    }
+
+    async fn protocol_fee_fixture() -> (super::transaction::Transaction, auction::Prices) {
+        let calldata = hex!(
+            "
+        13d79a0b
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000120
+        00000000000000000000000000000000000000000000000000000000000001c0
+        00000000000000000000000000000000000000000000000000000000000003e0
+        0000000000000000000000000000000000000000000000000000000000000004
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
+        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
+        0000000000000000000000000000000000000000000000000000000000000004
+        00000000000000000000000000000000000000000000000000000019b743b945
+        0000000000000000000000000000000000000000000000000000000000a87cf3
+        0000000000000000000000000000000000000000000000000000000000a87c7c
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000001
+        0000000000000000000000000000000000000000000000000000000000000020
+        0000000000000000000000000000000000000000000000000000000000000002
+        0000000000000000000000000000000000000000000000000000000000000003
+        000000000000000000000000f87da2093abee9b13a6f89671e4c3a3f80b42767
+        0000000000000000000000000000000000000000000000000000006d6e2edc00
+        0000000000000000000000000000000000000000000000000000000002cccdff
+        000000000000000000000000000000000000000000000000000000006799c219
+        2d365e5affcfa62cf1067b845add9c01bedcb2fc5d7a37442d2177262af26a0c
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000002
+        00000000000000000000000000000000000000000000000000000019b8b69873
+        0000000000000000000000000000000000000000000000000000000000000160
+        0000000000000000000000000000000000000000000000000000000000000041
+        e2ef661343676f9f4371ce809f728bb39a406f47835ee2b0104a8a1f340409ae
+        742dfe47fe469c024dc2fb7f80b99878b35985d66312856a8b5dcf5de4b069ee
+        1c00000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000080
+        0000000000000000000000000000000000000000000000000000000000000520
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000003
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000140
+        00000000000000000000000000000000000000000000000000000000000002e0
+        000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000044
+        095ea7b3000000000000000000000000e592427a0aece92de3edee1f18e0157c
+        05861564ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        ffffffff00000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000dac17f958d2ee523a2206206994597c1
+        3d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb4800000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000019
+        b4b64b9b00000000000000000000000000000000000000000000000000000019
+        bdd90a1800000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000060
+        0000000000000000000000000000000000000000000000000000000000000104
+        db3e2198000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
+        3606eb48000000000000000000000000056fd409e1d7a124bd7017459dfea2f3
+        87b6d5cd00000000000000000000000000000000000000000000000000000000
+        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
+        0560ab4100000000000000000000000000000000000000000000000000000000
+        66abb94e00000000000000000000000000000000000000000000000000000000
+        00a87cf300000000000000000000000000000000000000000000000000000019
+        bb4af52700000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        00000000008c912c"
+        )
+        .to_vec();
+
+        let domain_separator = eth::DomainSeparator(hex!(
+            "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
+        ));
+        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
+        let transaction = super::transaction::Transaction::try_new(
+            &blockchain::Transaction {
+                trace_calls: blockchain::CallFrame {
+                    to: Some(settlement_contract),
+                    input: calldata.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            &domain_separator,
+            settlement_contract,
+            &MockAuthenticator,
+        )
+        .await
+        .unwrap();
+
+        let prices: auction::Prices = From::from([
+            (
+                eth::TokenAddress::from(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
+                auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
+                    .unwrap(),
+            ),
+            (
+                eth::TokenAddress::from(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
+                auction::Price::try_new(
+                    eth::U256::from(3177764302250520038326415654912u128).into(),
+                )
+                .unwrap(),
+            ),
+        ]);
+
+        (transaction, prices)
     }
 
     fn score_trade_with_winner_selection(
@@ -862,125 +1166,19 @@ mod tests {
             trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(6752697350740628u128)
         );
+        assert_trade_metrics_eq(&trade, &auction);
+
+        let settlement = settlement_from_transaction(transaction, auction);
+        let metrics = settlement.metrics();
+        assert_eq!(metrics.surplus, settlement.surplus_in_ether());
+        assert_eq!(metrics.fee, settlement.fee_in_ether());
+        assert_fee_breakdown_eq(&metrics.fee_breakdown, &settlement.fee_breakdown());
     }
 
     // https://etherscan.io/tx/0x688508eb59bd20dc8c0d7c0c0b01200865822c889f0fcef10113e28202783243
     #[tokio::test]
     async fn settlement_with_protocol_fee() {
-        let calldata = hex!(
-            "
-        13d79a0b
-        0000000000000000000000000000000000000000000000000000000000000080
-        0000000000000000000000000000000000000000000000000000000000000120
-        00000000000000000000000000000000000000000000000000000000000001c0
-        00000000000000000000000000000000000000000000000000000000000003e0
-        0000000000000000000000000000000000000000000000000000000000000004
-        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
-        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
-        000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7
-        000000000000000000000000056fd409e1d7a124bd7017459dfea2f387b6d5cd
-        0000000000000000000000000000000000000000000000000000000000000004
-        00000000000000000000000000000000000000000000000000000019b743b945
-        0000000000000000000000000000000000000000000000000000000000a87cf3
-        0000000000000000000000000000000000000000000000000000000000a87c7c
-        00000000000000000000000000000000000000000000000000000019b8b69873
-        0000000000000000000000000000000000000000000000000000000000000001
-        0000000000000000000000000000000000000000000000000000000000000020
-        0000000000000000000000000000000000000000000000000000000000000002
-        0000000000000000000000000000000000000000000000000000000000000003
-        000000000000000000000000f87da2093abee9b13a6f89671e4c3a3f80b42767
-        0000000000000000000000000000000000000000000000000000006d6e2edc00
-        0000000000000000000000000000000000000000000000000000000002cccdff
-        000000000000000000000000000000000000000000000000000000006799c219
-        2d365e5affcfa62cf1067b845add9c01bedcb2fc5d7a37442d2177262af26a0c
-        0000000000000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000002
-        00000000000000000000000000000000000000000000000000000019b8b69873
-        0000000000000000000000000000000000000000000000000000000000000160
-        0000000000000000000000000000000000000000000000000000000000000041
-        e2ef661343676f9f4371ce809f728bb39a406f47835ee2b0104a8a1f340409ae
-        742dfe47fe469c024dc2fb7f80b99878b35985d66312856a8b5dcf5de4b069ee
-        1c00000000000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000060
-        0000000000000000000000000000000000000000000000000000000000000080
-        0000000000000000000000000000000000000000000000000000000000000520
-        0000000000000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000003
-        0000000000000000000000000000000000000000000000000000000000000060
-        0000000000000000000000000000000000000000000000000000000000000140
-        00000000000000000000000000000000000000000000000000000000000002e0
-        000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
-        0000000000000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000060
-        0000000000000000000000000000000000000000000000000000000000000044
-        095ea7b3000000000000000000000000e592427a0aece92de3edee1f18e0157c
-        05861564ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-        ffffffff00000000000000000000000000000000000000000000000000000000
-        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
-        0000000000000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000060
-        0000000000000000000000000000000000000000000000000000000000000104
-        db3e2198000000000000000000000000dac17f958d2ee523a2206206994597c1
-        3d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
-        3606eb4800000000000000000000000000000000000000000000000000000000
-        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
-        0560ab4100000000000000000000000000000000000000000000000000000000
-        66abb94e00000000000000000000000000000000000000000000000000000019
-        b4b64b9b00000000000000000000000000000000000000000000000000000019
-        bdd90a1800000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000000
-        000000000000000000000000e592427a0aece92de3edee1f18e0157c05861564
-        0000000000000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000060
-        0000000000000000000000000000000000000000000000000000000000000104
-        db3e2198000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce
-        3606eb48000000000000000000000000056fd409e1d7a124bd7017459dfea2f3
-        87b6d5cd00000000000000000000000000000000000000000000000000000000
-        000001f40000000000000000000000009008d19f58aabd9ed0d60971565aa851
-        0560ab4100000000000000000000000000000000000000000000000000000000
-        66abb94e00000000000000000000000000000000000000000000000000000000
-        00a87cf300000000000000000000000000000000000000000000000000000019
-        bb4af52700000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000000
-        0000000000000000000000000000000000000000000000000000000000000000
-        00000000008c912c"
-        )
-        .to_vec();
-
-        let domain_separator = eth::DomainSeparator(hex!(
-            "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
-        ));
-        let settlement_contract = address!("9008d19f58aabd9ed0d60971565aa8510560ab41");
-        let transaction = super::transaction::Transaction::try_new(
-            &blockchain::Transaction {
-                trace_calls: blockchain::CallFrame {
-                    to: Some(settlement_contract),
-                    input: calldata.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            &domain_separator,
-            settlement_contract,
-            &MockAuthenticator,
-        )
-        .await
-        .unwrap();
-
-        let prices: auction::Prices = From::from([
-            (
-                eth::TokenAddress::from(address!("dac17f958d2ee523a2206206994597c13d831ec7")),
-                auction::Price::try_new(eth::U256::from(321341140475275961528483840u128).into())
-                    .unwrap(),
-            ),
-            (
-                eth::TokenAddress::from(address!("056fd409e1d7a124bd7017459dfea2f387b6d5cd")),
-                auction::Price::try_new(
-                    eth::U256::from(3177764302250520038326415654912u128).into(),
-                )
-                .unwrap(),
-            ),
-        ]);
+        let (transaction, prices) = protocol_fee_fixture().await;
 
         let order_uid = transaction.trades[0].uid;
         let auction = super::Auction {
@@ -1007,6 +1205,148 @@ mod tests {
             score_trade_with_winner_selection(&trade, &auction),
             eth::U256::from(769018961144625u128) // 2 x surplus
         );
+        assert_trade_metrics_eq(&trade, &auction);
+
+        let settlement = settlement_from_transaction(transaction, auction);
+        let metrics = settlement.metrics();
+        assert_eq!(metrics.surplus, settlement.surplus_in_ether());
+        assert_eq!(metrics.fee, settlement.fee_in_ether());
+        assert_fee_breakdown_eq(&metrics.fee_breakdown, &settlement.fee_breakdown());
+    }
+
+    #[tokio::test]
+    async fn settlement_with_stacked_protocol_fees() {
+        let (transaction, prices) = protocol_fee_fixture().await;
+
+        let order_uid = transaction.trades[0].uid;
+        let auction = super::Auction {
+            block: eth::BlockNo(0),
+            prices,
+            surplus_capturing_jit_order_owners: Default::default(),
+            id: 0,
+            orders: HashMap::from([(
+                order_uid,
+                vec![
+                    domain::fee::Policy::Surplus {
+                        factor: 0.5f64.try_into().unwrap(),
+                        max_volume_factor: 0.01.try_into().unwrap(),
+                    },
+                    domain::fee::Policy::Volume {
+                        factor: 0.001f64.try_into().unwrap(),
+                    },
+                ],
+            )]),
+        };
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let metrics = trade.metrics(&auction).unwrap();
+
+        assert_eq!(metrics.fee_breakdown.protocol.len(), 2);
+        assert_trade_metrics_eq(&trade, &auction);
+    }
+
+    #[tokio::test]
+    async fn settlement_metrics_preserve_fee_breakdown_when_native_price_is_missing() {
+        let (transaction, mut prices) = protocol_fee_fixture().await;
+
+        let order_uid = transaction.trades[0].uid;
+        let missing_price_token = match transaction.trades[0].side {
+            auction::order::Side::Buy => transaction.trades[0].sell.token,
+            auction::order::Side::Sell => transaction.trades[0].buy.token,
+        };
+        prices.remove(&missing_price_token);
+
+        let auction = super::Auction {
+            block: eth::BlockNo(0),
+            prices,
+            surplus_capturing_jit_order_owners: Default::default(),
+            id: 0,
+            orders: HashMap::from([(
+                order_uid,
+                vec![domain::fee::Policy::Surplus {
+                    factor: 0.5f64.try_into().unwrap(),
+                    max_volume_factor: 0.01.try_into().unwrap(),
+                }],
+            )]),
+        };
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let expected_breakdown = trade.fee_breakdown(&auction).unwrap();
+        assert!(matches!(
+            trade.metrics(&auction),
+            Err(super::math::Error::MissingPrice(token)) if token == missing_price_token
+        ));
+
+        let settlement = settlement_from_transaction(transaction, auction);
+        let metrics = settlement.metrics();
+
+        assert_eq!(metrics.surplus, settlement.surplus_in_ether());
+        assert_eq!(metrics.fee, settlement.fee_in_ether());
+        assert_eq!(
+            metrics.fee_breakdown.get(&order_uid).unwrap().total,
+            expected_breakdown.total
+        );
+        assert_eq!(
+            metrics
+                .fee_breakdown
+                .get(&order_uid)
+                .unwrap()
+                .protocol
+                .len(),
+            expected_breakdown.protocol.len()
+        );
+        for (actual_fee, expected_fee) in metrics
+            .fee_breakdown
+            .get(&order_uid)
+            .unwrap()
+            .protocol
+            .iter()
+            .zip(expected_breakdown.protocol.iter())
+        {
+            assert_eq!(actual_fee.policy, expected_fee.policy);
+            assert_eq!(actual_fee.fee, expected_fee.fee);
+        }
+        assert_fee_breakdown_eq(&metrics.fee_breakdown, &settlement.fee_breakdown());
+    }
+
+    #[tokio::test]
+    async fn settlement_metrics_preserve_surplus_and_fee_when_fee_breakdown_fails() {
+        let (mut transaction, prices) = protocol_fee_fixture().await;
+        let mut encoded_trade = transaction
+            .trades
+            .iter()
+            .find(|trade| matches!(trade.side, auction::order::Side::Sell))
+            .cloned()
+            .expect("protocol fee fixture should contain a sell-side trade");
+        encoded_trade.buy.amount = eth::TokenAmount::default();
+        encoded_trade.prices.uniform.sell = eth::U256::ZERO;
+        encoded_trade.prices.custom.sell = eth::U256::ZERO;
+        let order_uid = encoded_trade.uid;
+        transaction.trades = vec![encoded_trade.clone()];
+
+        let auction = super::Auction {
+            block: eth::BlockNo(0),
+            prices,
+            surplus_capturing_jit_order_owners: Default::default(),
+            id: 0,
+            orders: HashMap::from([(
+                order_uid,
+                vec![domain::fee::Policy::Volume {
+                    factor: 0.0f64.try_into().unwrap(),
+                }],
+            )]),
+        };
+        let trade = super::trade::Trade::new(encoded_trade, &auction, 0);
+
+        assert!(trade.surplus_in_ether(&auction.prices).is_ok());
+        assert!(trade.fee_in_ether(&auction.prices).is_ok());
+        assert!(trade.fee_breakdown(&auction).is_err());
+        assert!(trade.metrics(&auction).is_err());
+
+        let settlement = settlement_from_transaction(transaction, auction);
+        let metrics = settlement.metrics();
+
+        assert_eq!(metrics.surplus, settlement.surplus_in_ether());
+        assert_eq!(metrics.fee, settlement.fee_in_ether());
+        assert_fee_breakdown_eq(&metrics.fee_breakdown, &settlement.fee_breakdown());
     }
 
     // https://etherscan.io/tx/0x24ea2ea3d70db3e864935008d14170389bda124c786ca90dfb745278db9d24ee
@@ -1366,6 +1706,13 @@ mod tests {
                 .protocol
                 .is_empty()
         );
+        assert_trade_metrics_eq(&jit_trade, &auction);
+
+        let settlement = settlement_from_transaction(transaction, auction);
+        let metrics = settlement.metrics();
+        assert_eq!(metrics.surplus, settlement.surplus_in_ether());
+        assert_eq!(metrics.fee, settlement.fee_in_ether());
+        assert_fee_breakdown_eq(&metrics.fee_breakdown, &settlement.fee_breakdown());
     }
 
     // https://gnosisscan.io/tx/0xf4556c35d421623c63571d1006fd1888932c1b78a6e0f3b9b9590bb9781b02af

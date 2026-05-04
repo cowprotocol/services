@@ -20,15 +20,13 @@ use {
         order_events::{OrderEventLabel, OrderFilterReason},
         order_execution::Asset,
         orders::{
-            BuyTokenDestination as DbBuyTokenDestination,
-            SellTokenSource as DbSellTokenSource,
+            BuyTokenDestination as DbBuyTokenDestination, SellTokenSource as DbSellTokenSource,
             SigningScheme as DbSigningScheme,
         },
         solver_competition_v2::{self, Order, Solution},
     },
     domain::auction::order::{
-        BuyTokenDestination as DomainBuyTokenDestination,
-        SellTokenSource as DomainSellTokenSource,
+        BuyTokenDestination as DomainBuyTokenDestination, SellTokenSource as DomainSellTokenSource,
         SigningScheme as DomainSigningScheme,
     },
     eth_domain_types as eth,
@@ -797,9 +795,10 @@ impl Persistence {
         if let Some(settlement) = settlement {
             let gas = settlement.gas();
             let gas_price = settlement.gas_price();
-            let surplus = settlement.surplus_in_ether();
-            let fee = settlement.fee_in_ether();
-            let fee_breakdown = settlement.fee_breakdown();
+            let metrics = settlement.metrics();
+            let surplus = metrics.surplus;
+            let fee = metrics.fee;
+            let fee_breakdown = metrics.fee_breakdown;
             let jit_orders = settlement.jit_orders();
             let solver: database::Address = ByteArray(settlement.solver().0.0);
 

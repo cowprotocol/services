@@ -23,6 +23,13 @@ pub enum Trade {
     Jit(Jit),
 }
 
+#[derive(Debug, Clone)]
+pub struct Metrics {
+    pub surplus: eth::Ether,
+    pub fee: eth::Ether,
+    pub fee_breakdown: FeeBreakdown,
+}
+
 impl Trade {
     /// UID of the order that was settled in this trade.
     pub fn uid(&self) -> &domain::OrderUid {
@@ -65,14 +72,35 @@ impl Trade {
     /// All fees broke down into protocol fees per policy and total fee.
     pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
         let trade = math::Trade::from(self);
-        let total = trade.fee_in_sell_token()?;
+        let metrics = trade.raw_metrics()?;
+        let fee_in_sell_token = trade.fee_into_sell_token(metrics.fee)?;
         let protocol = trade.protocol_fees(&auction.orders)?;
         Ok(FeeBreakdown {
             total: eth::Asset {
                 token: self.sell_token(),
-                amount: total.into(),
+                amount: fee_in_sell_token.into(),
             },
             protocol,
+        })
+    }
+
+    /// All trade metrics collected with shared intermediate calculations.
+    pub fn metrics(&self, auction: &super::Auction) -> Result<Metrics, math::Error> {
+        let trade = math::Trade::from(self);
+        let metrics = trade.metrics(&auction.prices, &auction.orders)?;
+        Ok(Metrics {
+            surplus: match self {
+                Self::Jit(trade) if !trade.surplus_capturing => eth::Ether::zero(),
+                _ => metrics.surplus,
+            },
+            fee: metrics.fee,
+            fee_breakdown: FeeBreakdown {
+                total: eth::Asset {
+                    token: self.sell_token(),
+                    amount: metrics.fee_in_sell_token.into(),
+                },
+                protocol: metrics.protocol_fees,
+            },
         })
     }
 

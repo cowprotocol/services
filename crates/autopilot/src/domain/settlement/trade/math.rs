@@ -3,10 +3,10 @@ use {
     super::ExecutedProtocolFee,
     crate::domain::{
         self,
-        OrderUid,
         auction::{self, order},
         fee,
         settlement::transaction::{ClearingPrices, Prices},
+        OrderUid,
     },
     error::Math,
     eth_domain_types as eth,
@@ -25,6 +25,29 @@ pub struct Trade {
     pub side: order::Side,
     pub executed: order::TargetAmount,
     pub prices: Prices,
+}
+
+#[derive(Debug, Clone)]
+pub struct Metrics {
+    pub surplus: eth::Ether,
+    pub fee: eth::Ether,
+    pub fee_in_sell_token: eth::SellTokenAmount,
+    pub protocol_fees: Vec<ExecutedProtocolFee>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RawMetrics {
+    pub surplus: eth::SurplusTokenAmount,
+    pub fee: eth::SurplusTokenAmount,
+}
+
+impl Default for RawMetrics {
+    fn default() -> Self {
+        Self {
+            surplus: eth::SurplusTokenAmount::default(),
+            fee: eth::SurplusTokenAmount::default(),
+        }
+    }
 }
 
 impl Trade {
@@ -105,8 +128,43 @@ impl Trade {
         Ok(price.in_eth(eth::TokenAmount(fee.0)))
     }
 
+    /// Calculates all trade metrics while reusing shared intermediate values.
+    pub fn metrics(
+        &self,
+        prices: &auction::Prices,
+        fee_policies: &HashMap<OrderUid, impl AsRef<[fee::Policy]>>,
+    ) -> Result<Metrics, Error> {
+        let RawMetrics {
+            surplus,
+            fee,
+        } = self.raw_metrics()?;
+        let fee_in_sell_token = self.fee_into_sell_token(fee)?;
+        let protocol_fees = self.protocol_fees(fee_policies)?;
+        let token = self.surplus_token();
+        let price = prices.get(&token).ok_or(Error::MissingPrice(token))?;
+
+        Ok(Metrics {
+            surplus: price.in_eth(eth::TokenAmount(surplus.0)),
+            fee: price.in_eth(eth::TokenAmount(fee.0)),
+            fee_in_sell_token,
+            protocol_fees,
+        })
+    }
+
+    pub fn raw_metrics(&self) -> Result<RawMetrics, Error> {
+        let surplus = self.surplus_over_limit_price()?;
+        let fee = self
+            .surplus_over_limit_price_before_fee()?
+            .0
+            .checked_sub(surplus.0)
+            .ok_or(error::Math::Negative)
+            .map(eth::SurplusTokenAmount)?;
+
+        Ok(RawMetrics { surplus, fee })
+    }
+
     /// Converts given surplus fee into sell token fee.
-    fn fee_into_sell_token(
+    pub fn fee_into_sell_token(
         &self,
         fee: eth::SurplusTokenAmount,
     ) -> Result<eth::SellTokenAmount, Error> {
@@ -404,7 +462,7 @@ impl Trade {
         ))
     }
 
-    fn surplus_token(&self) -> eth::TokenAddress {
+    pub fn surplus_token(&self) -> eth::TokenAddress {
         match self.side {
             order::Side::Buy => self.sell.token,
             order::Side::Sell => self.buy.token,
