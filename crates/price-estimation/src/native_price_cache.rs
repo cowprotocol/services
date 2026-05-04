@@ -196,7 +196,7 @@ impl Cache {
     /// Returns a timestamp that is a `percentage` of `max_age`
     /// in the past. Clamps to `now` if an underflow occurs.
     fn updated_at_percentage(max_age: Duration, now: Instant, percentage: u32) -> Instant {
-        let percentage = if percentage > 100 { 100 } else { percentage };
+        let percentage = std::cmp::min(percentage, 100);
         max_age
             .checked_mul(percentage)
             .and_then(|age| age.checked_div(100))
