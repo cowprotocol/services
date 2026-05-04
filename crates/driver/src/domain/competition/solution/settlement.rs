@@ -431,7 +431,7 @@ impl Gas {
     /// EIP-7825 per-transaction gas cap (2^24 - 1) introduced in Fusaka.
     /// Any transaction exceeding this will be rejected by the mempool, so a
     /// solution requiring more gas can never be settled on chain.
-    pub const EIP_7825_TX_GAS_CAP: u64 = (1 << 24) - 1;
+    const EIP_7825_TX_GAS_CAP: u64 = (1 << 24) - 1;
 
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
@@ -489,8 +489,8 @@ mod tests {
 
     #[test]
     fn rejects_solution_above_eip_7825_cap() {
-        // 120M block (well above the EIP-7825 cap of 16,777,215). Half the
-        // block is 60M, but the per-tx cap must still apply.
+        // Block limit (120M) is high enough that half the block (60M) exceeds
+        // the EIP-7825 per-tx cap (16,777,215). The per-tx cap must win.
         let block_limit = gas(120_000_000);
         let estimate = gas(20_000_000);
         let err = Gas::new(estimate, block_limit).unwrap_err();
