@@ -252,18 +252,18 @@ impl Bitget {
             .send_post_request(SWAP_REVERSE_PATH, &swap_request)
             .await?;
 
-        // Bitget's reverse-quote builds an EOA-style flow: any setup txs
-        // (typically `approve(router, amount)`) come first and the final
-        // tx is the actual swap. The CoW settlement contract handles its
-        // own approvals via `dex::Allowance`, so we drop the prefix and
-        // execute only the last tx.
-        let tx = response.txs.last().ok_or(Error::NotFound)?;
-        if response.txs.len() > 1 {
-            tracing::debug!(
-                count = response.txs.len(),
-                "Bitget reverse-quote returned multi-tx response, using last as the swap"
-            );
-        }
+        // Bitget's reverse-quote builds an EOA-style flow: a typical
+        // multi-tx response is `[approve(router, amountIn), swap(...)]`.
+        // The CoW settlement contract handles its own approvals via
+        // `dex::Allowance`, so we drop any `approve` entries and execute
+        // only the actual swap. Iterate in reverse so we pick the last
+        // non-approve tx in case the array order changes.
+        let tx = response
+            .txs
+            .iter()
+            .rev()
+            .find(|tx| !tx.function.eq_ignore_ascii_case("approve"))
+            .ok_or(Error::NotFound)?;
         let calldata = tx.decode_calldata().map_err(|_| Error::InvalidCalldata)?;
         let contract = tx.to;
 

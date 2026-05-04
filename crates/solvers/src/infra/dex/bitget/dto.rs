@@ -238,6 +238,12 @@ pub struct ReverseSwapTx {
     /// Hex-encoded calldata with "0x" prefix.
     pub calldata: String,
 
+    /// Function name. Observed values include `"swap"`. Other values
+    /// (e.g. `"approve"`) likely appear for setup transactions in
+    /// multi-tx responses.
+    #[serde(default)]
+    pub function: String,
+
     /// Gas limit estimate.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub gas_limit: u64,
