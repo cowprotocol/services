@@ -10,7 +10,7 @@ use {
     e2e::setup::{colocation, wait_for_condition, *},
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
-        order::{OrderCreation, OrderKind},
+        order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
@@ -157,7 +157,7 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
         .await
         .expect("Must be able to disable automine");
 
-    tracing::info!("Quoting");
+    tracing::info!("Quoting same sell and buy token pair");
     let quote_sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
@@ -170,9 +170,30 @@ async fn disabled_same_sell_and_buy_token_order_feature(web3: Web3) {
         },
         ..Default::default()
     };
-    assert!(
-        matches!(services.submit_quote(&quote_request).await, Err((reqwest::StatusCode::BAD_REQUEST, response)) if response.contains("SameBuyAndSellToken"))
-    );
+    let Err((status, response)) = services.submit_quote(&quote_request).await else {
+        panic!("expected error response");
+    };
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert!(response.contains("SameBuyAndSellToken"));
+
+    tracing::info!("Quoting selling same sell and buy token pair of native token");
+    let quote_sell_amount = 1u64.eth();
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: BUY_ETH_ADDRESS,
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(quote_sell_amount).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+    let Err((status, response)) = services.submit_quote(&quote_request).await else {
+        panic!("expected error response");
+    };
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert!(response.contains("SameBuyAndSellToken"));
 }
 
 async fn fallback_native_price_estimator(web3: Web3) {
