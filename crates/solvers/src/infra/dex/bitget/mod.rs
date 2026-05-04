@@ -252,7 +252,22 @@ impl Bitget {
             .send_post_request(SWAP_REVERSE_PATH, &swap_request)
             .await?;
 
-        let tx = response.txs.first().ok_or(Error::NotFound)?;
+        // Bitget can return a sequence of txs (approve + swap + ...). The
+        // CoW settlement contract already handles approvals via
+        // `dex::Allowance`, and executing unknown setup calls as raw
+        // interactions is risky (wrong spender, double-approve, native
+        // value transfers). Until we observe and classify multi-tx
+        // responses in the wild, only handle the single-swap case.
+        let tx = match response.txs.as_slice() {
+            [tx] => tx,
+            txs => {
+                tracing::warn!(
+                    count = txs.len(),
+                    "Bitget reverse-quote returned multi-tx response, skipping",
+                );
+                return Err(Error::NotFound);
+            }
+        };
         let calldata = tx.decode_calldata().map_err(|_| Error::InvalidCalldata)?;
         let contract = tx.to;
 
