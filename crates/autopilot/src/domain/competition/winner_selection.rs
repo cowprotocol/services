@@ -59,63 +59,45 @@ impl Arbitrator {
     /// Runs the entire auction mechanism on the passed in solutions.
     #[instrument(skip_all)]
     pub fn arbitrate(&self, bids: Vec<Bid<Unscored>>, auction: &domain::Auction) -> Ranking {
-        let context = auction.into();
-        let mut bid_by_key = HashMap::with_capacity(bids.len());
-        // Pair each bid with its converted winsel solution so we can sort by
-        // canonical_hash without re-converting. Sorting deterministically is
-        // what lets independent observers (autopilot, drivers, third-party
-        // verifiers) reach the same tie-breaking decision.
-        let mut paired: Vec<(Bid<Unscored>, winsel::Solution<winsel::Unscored>)> = bids
+        let paired = bids
             .into_iter()
             .map(|bid| {
                 let solution: winsel::Solution<winsel::Unscored> = bid.solution().into();
                 (bid, solution)
             })
             .collect();
-        paired.sort_by_cached_key(|(_, s)| s.canonical_hash());
+        let (ws_ranking, mut by_key) = self.0.arbitrate_paired(paired, &auction.into());
 
-        let mut solutions = Vec::with_capacity(paired.len());
-        for (bid, solution) in paired {
-            let key = SolutionKey::from(bid.solution());
-            bid_by_key.insert(key, bid);
-            solutions.push(solution);
-        }
-
-        let ws_ranking = self.0.arbitrate(solutions, &context);
-
-        // Compute reference scores while we still have ws_ranking
-        let reference_scores: HashMap<eth::Address, Score> = self
+        let reference_scores = self
             .0
             .compute_reference_scores(&ws_ranking)
             .into_iter()
             .map(|(solver, score)| (solver, Score(eth::Ether(score))))
             .collect();
 
-        let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
-        for ws_solution in ws_ranking.filtered_out {
-            let key = SolutionKey::from(&ws_solution);
-            let bid = bid_by_key
-                .remove(&key)
-                .expect("every ranked solution has a matching bid");
-            let score = ws_solution.score();
-            filtered_out.push(
-                bid.with_score(Score(eth::Ether(score)))
-                    .with_rank(RankType::FilteredOut),
-            );
-        }
+        let filtered_out = ws_ranking
+            .filtered_out
+            .into_iter()
+            .map(|ws_solution| {
+                let bid = by_key
+                    .remove(&winsel::SolutionKey::from(&ws_solution))
+                    .expect("every filtered-out solution has a matching bid");
+                bid.with_score(Score(eth::Ether(ws_solution.score())))
+                    .with_rank(RankType::FilteredOut)
+            })
+            .collect();
 
-        let mut ranked = Vec::with_capacity(ws_ranking.ranked.len());
-        for ranked_solution in ws_ranking.ranked {
-            let key = SolutionKey::from(&ranked_solution);
-            let bid = bid_by_key
-                .remove(&key)
-                .expect("every ranked solution has a matching bid");
-            let score = ranked_solution.score();
-            ranked.push(
-                bid.with_score(Score(eth::Ether(score)))
-                    .with_rank(ranked_solution.state().rank_type),
-            );
-        }
+        let ranked = ws_ranking
+            .ranked
+            .into_iter()
+            .map(|ws_solution| {
+                let bid = by_key
+                    .remove(&winsel::SolutionKey::from(&ws_solution))
+                    .expect("every ranked solution has a matching bid");
+                bid.with_score(Score(eth::Ether(ws_solution.score())))
+                    .with_rank(ws_solution.state().rank_type)
+            })
+            .collect();
 
         Ranking {
             filtered_out,
@@ -218,30 +200,6 @@ impl From<fee::Policy> for winsel::primitives::FeePolicy {
             fee::Policy::Volume { factor } => Self::Volume {
                 factor: factor.get(),
             },
-        }
-    }
-}
-
-#[derive(Clone, Copy, Hash, Eq, PartialEq)]
-struct SolutionKey {
-    solver: eth::Address,
-    solution_id: u64,
-}
-
-impl From<&Solution> for SolutionKey {
-    fn from(solution: &Solution) -> Self {
-        Self {
-            solver: solution.solver(),
-            solution_id: solution.id(),
-        }
-    }
-}
-
-impl<S> From<&winsel::Solution<S>> for SolutionKey {
-    fn from(solution: &winsel::Solution<S>) -> Self {
-        Self {
-            solver: solution.solver(),
-            solution_id: solution.id(),
         }
     }
 }

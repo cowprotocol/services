@@ -2,11 +2,9 @@ pub use winner_selection::Unscored;
 use {
     crate::domain::competition::order::FeePolicy,
     eth_domain_types::{self as eth, Address, Ether, WrappedNativeToken},
-    std::collections::HashMap,
     winner_selection::{
         self as winsel,
         OrderUid,
-        RankType,
         state::{self, HasState, RankedItem, ScoredItem, UnscoredItem},
     },
 };
@@ -40,57 +38,26 @@ impl SolverArbitrator {
         bids: Vec<Bid<Unscored>>,
         auction: &crate::domain::competition::Auction,
     ) -> Vec<Bid> {
-        let context = auction.into();
-        let mut bid_by_key = HashMap::with_capacity(bids.len());
-        // Pair each bid with its converted winsel solution so we can sort by
-        // canonical_hash without re-converting. Sorting deterministically is
-        // what lets every observer (driver, autopilot, third-party verifier)
-        // reach the same tie-breaking decision.
-        let mut paired: Vec<(Bid<Unscored>, winsel::Solution<winsel::Unscored>)> = bids
+        let paired = bids
             .into_iter()
             .map(|bid| {
                 let solution: winsel::Solution<winsel::Unscored> = bid.solution().into();
                 (bid, solution)
             })
             .collect();
-        paired.sort_by_cached_key(|(_, s)| s.canonical_hash());
+        let (ws_ranking, mut by_key) = self.0.arbitrate_paired(paired, &auction.into());
 
-        let mut solutions = Vec::with_capacity(paired.len());
-        for (bid, solution) in paired {
-            let key = SolutionKey::from(bid.solution());
-            bid_by_key.insert(key, bid);
-            solutions.push(solution);
-        }
-
-        let ws_ranking = self.0.arbitrate(solutions, &context);
-
-        let mut filtered_out = Vec::with_capacity(ws_ranking.filtered_out.len());
-        for ws_solution in ws_ranking.filtered_out {
-            let key = SolutionKey::from(&ws_solution);
-            let bid = bid_by_key
-                .remove(&key)
-                .expect("every ranked solution has a matching bid");
-            let score = ws_solution.score();
-            filtered_out.push(
-                bid.with_score(Score(eth::Ether(score)))
-                    .with_rank(RankType::FilteredOut),
-            );
-        }
-
-        let mut ranked = Vec::with_capacity(ws_ranking.ranked.len());
-        for ranked_solution in ws_ranking.ranked {
-            let key = SolutionKey::from(&ranked_solution);
-            let bid = bid_by_key
-                .remove(&key)
-                .expect("every ranked solution has a matching bid");
-            let score = ranked_solution.score();
-            ranked.push(
-                bid.with_score(Score(eth::Ether(score)))
-                    .with_rank(ranked_solution.state().rank_type),
-            );
-        }
-
-        ranked
+        ws_ranking
+            .ranked
+            .into_iter()
+            .map(|ws_solution| {
+                let bid = by_key
+                    .remove(&winsel::SolutionKey::from(&ws_solution))
+                    .expect("every ranked solution has a matching bid");
+                bid.with_score(Score(eth::Ether(ws_solution.score())))
+                    .with_rank(ws_solution.state().rank_type)
+            })
+            .collect()
     }
 }
 
@@ -149,30 +116,6 @@ impl From<&crate::domain::competition::order::fees::FeePolicy> for winsel::primi
                 },
             },
             FeePolicy::Volume { factor } => Self::Volume { factor: *factor },
-        }
-    }
-}
-
-#[derive(Clone, Copy, Hash, Eq, PartialEq)]
-struct SolutionKey {
-    solver: eth::Address,
-    solution_id: u64,
-}
-
-impl From<&crate::infra::api::routes::solve::dto::solve_response::Solution> for SolutionKey {
-    fn from(solution: &crate::infra::api::routes::solve::dto::solve_response::Solution) -> Self {
-        Self {
-            solver: solution.submission_address,
-            solution_id: solution.solution_id,
-        }
-    }
-}
-
-impl<S> From<&winsel::Solution<S>> for SolutionKey {
-    fn from(solution: &winsel::Solution<S>) -> Self {
-        Self {
-            solver: solution.solver(),
-            solution_id: solution.id(),
         }
     }
 }

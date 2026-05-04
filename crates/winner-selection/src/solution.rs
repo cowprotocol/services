@@ -1,7 +1,9 @@
-//! Minimal solution and order data structures.
+//! Solution and order types for winner selection.
 //!
-//! These structs contain only the data needed for winner selection,
-//! making them small enough to efficiently send to/from the Pod Service.
+//! `Solution<S>` carries both the inputs read by the arbitrator and the
+//! data covered by `canonical_hash`, so independent observers (autopilot,
+//! driver, third-party verifiers) tie-break identically on the same
+//! solution.
 
 pub use state::{RankType, Unscored};
 use {
@@ -30,11 +32,8 @@ pub struct Solution<State> {
     /// Orders executed in this solution.
     orders: Vec<Order>,
 
-    /// Clearing prices proposed by the solver, keyed by token address.
-    ///
-    /// Not consumed by the arbitration algorithm — kept on the solution
-    /// because they are part of the canonical hash used for tie-breaking
-    /// across independent observers.
+    /// Clearing prices keyed by token address. Not used by arbitration;
+    /// included so `canonical_hash` fingerprints them.
     prices: HashMap<Address, U256>,
 
     /// State marker (score and ranking information).

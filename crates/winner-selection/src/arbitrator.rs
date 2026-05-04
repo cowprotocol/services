@@ -600,6 +600,30 @@ impl Arbitrator {
         winners
     }
 
+    /// Pairs each item with its winsel solution, sorts deterministically by
+    /// `canonical_hash`, runs arbitration, and returns the ranking together
+    /// with a `SolutionKey -> T` map so callers can rejoin their domain bids
+    /// with the ranked output.
+    ///
+    /// Sorting before arbitration is what lets independent observers
+    /// (autopilot, driver, third-party verifiers) reach the same
+    /// tie-breaking decision on the same logical solution set.
+    pub fn arbitrate_paired<T>(
+        &self,
+        items: Vec<(T, Solution<Unscored>)>,
+        context: &AuctionContext,
+    ) -> (Ranking, HashMap<SolutionKey, T>) {
+        let mut paired = items;
+        paired.sort_by_cached_key(|(_, solution)| solution.canonical_hash());
+        let mut by_key = HashMap::with_capacity(paired.len());
+        let mut solutions = Vec::with_capacity(paired.len());
+        for (item, solution) in paired {
+            by_key.insert(SolutionKey::from(&solution), item);
+            solutions.push(solution);
+        }
+        (self.arbitrate(solutions, context), by_key)
+    }
+
     /// Compute reference scores for winning solvers.
     #[instrument(skip_all)]
     pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<Address, U256> {
@@ -714,11 +738,24 @@ struct PriceLimits {
     buy: U256,
 }
 
-/// Key to uniquely identify every solution.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct SolutionKey {
-    solver: Address,
-    solution_id: u64,
+/// Key to uniquely identify every solution within an auction.
+///
+/// Two solutions submitted by the same solver share an `auction-scoped` id
+/// (`solution_id`); two solutions from different solvers may collide on
+/// `solution_id` but never on `(solver, solution_id)`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct SolutionKey {
+    pub solver: Address,
+    pub solution_id: u64,
+}
+
+impl<S> From<&Solution<S>> for SolutionKey {
+    fn from(solution: &Solution<S>) -> Self {
+        Self {
+            solver: solution.solver(),
+            solution_id: solution.id(),
+        }
+    }
 }
 
 /// Scores of all trades in a solution aggregated by the directional

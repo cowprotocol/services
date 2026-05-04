@@ -13,7 +13,7 @@ pub mod state;
 
 // Re-export key types for convenience
 pub use {
-    arbitrator::{Arbitrator, Ranking},
+    arbitrator::{Arbitrator, Ranking, SolutionKey},
     auction::AuctionContext,
     primitives::{Address, DirectedTokenPair, OrderUid, Side, U256},
     solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
