@@ -16,6 +16,7 @@ use {
         },
     },
     clap::Parser,
+    eth_domain_types as eth,
     futures::future::join_all,
     http_client::HttpClientFactory,
     shared::arguments::tracing_config,
@@ -195,7 +196,14 @@ async fn ethereum(
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts.clone(), gas, current_block_args).await
+    Ethereum::new(
+        ethrpc,
+        config.contracts.clone(),
+        gas,
+        current_block_args,
+        eth::Gas(config.tx_gas_limit),
+    )
+    .await
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
