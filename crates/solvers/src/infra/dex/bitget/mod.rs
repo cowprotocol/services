@@ -24,10 +24,14 @@ fn wei_to_decimal(amount: U256, decimals: u8) -> BigDecimal {
 }
 
 /// Convert a decimal amount (from API response) to U256 wei.
-/// e.g., "1964.365496" with 6 decimals → 1964365496
+/// e.g., "1964.365496" with 6 decimals → 1964365496.
+///
+/// `with_scale(0)` rounds away digits past the token's precision. Bitget
+/// sometimes returns more (e.g. `"1.1234567"` for 6-decimal USDC), and
+/// `big_decimal_to_u256` rejects non-integer values.
 fn decimal_to_wei(amount: &BigDecimal, decimals: u8) -> Result<U256, Error> {
     let scaled = amount * BigDecimal::new(1.into(), -i64::from(decimals));
-    big_decimal_to_u256(&scaled).ok_or(Error::AmountConversionFailed)
+    big_decimal_to_u256(&scaled.with_scale(0)).ok_or(Error::AmountConversionFailed)
 }
 
 mod dto;

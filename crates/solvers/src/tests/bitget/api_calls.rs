@@ -4,8 +4,11 @@ use {
         infra::dex::bitget as bitget_dex,
     },
     alloy::primitives::{Address, address},
-    std::{collections::HashMap, env},
+    std::{collections::HashMap, env, time::Duration},
 };
+
+/// Pause between chain iterations to stay under Bitget's per-IP rate limit.
+const RATE_LIMIT_PAUSE: Duration = Duration::from_secs(1);
 
 struct TestCase {
     name: &'static str,
@@ -143,6 +146,8 @@ async fn swap_sell_all_chains() {
             "[{}] output token mismatch",
             tc.name
         );
+
+        tokio::time::sleep(RATE_LIMIT_PAUSE).await;
     }
 }
 
@@ -229,6 +234,8 @@ async fn swap_buy_all_chains() {
             swap.output.amount,
             order.amount().amount
         );
+
+        tokio::time::sleep(RATE_LIMIT_PAUSE).await;
     }
 }
 
