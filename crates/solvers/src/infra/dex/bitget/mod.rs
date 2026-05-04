@@ -255,14 +255,15 @@ impl Bitget {
         // Bitget's reverse-quote builds an EOA-style flow: a typical
         // multi-tx response is `[approve(router, amountIn), swap(...)]`.
         // The CoW settlement contract handles its own approvals via
-        // `dex::Allowance`, so we drop any `approve` entries and execute
-        // only the actual swap. Iterate in reverse so we pick the last
-        // non-approve tx in case the array order changes.
+        // `dex::Allowance`, so we pick the actual swap tx by function
+        // name and ignore everything else. Positive match on `"swap"` so
+        // that any future setup tx types (`permit`, `wrap`, etc.) are
+        // dropped automatically instead of silently picked up.
         let tx = response
             .txs
             .iter()
             .rev()
-            .find(|tx| !tx.function.eq_ignore_ascii_case("approve"))
+            .find(|tx| tx.function.eq_ignore_ascii_case("swap"))
             .ok_or(Error::NotFound)?;
         let calldata = tx.decode_calldata().map_err(|_| Error::InvalidCalldata)?;
         let contract = tx.to;
