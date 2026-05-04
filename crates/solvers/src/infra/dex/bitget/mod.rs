@@ -252,16 +252,18 @@ impl Bitget {
             .send_post_request(SWAP_REVERSE_PATH, &swap_request)
             .await?;
 
-        // Bitget can return a sequence of txs (approve + swap + ...). The
-        // CoW settlement contract already handles approvals via
-        // `dex::Allowance`, and executing unknown setup calls as raw
-        // interactions is risky (wrong spender, double-approve, native
-        // value transfers). Until we observe and classify multi-tx
-        // responses in the wild, only handle the single-swap case.
-        let tx = match response.txs.as_slice() {
-            [tx] => tx,
-            txs => return Err(Error::MultiTxResponse(txs.len())),
-        };
+        // Bitget's reverse-quote builds an EOA-style flow: any setup txs
+        // (typically `approve(router, amount)`) come first and the final
+        // tx is the actual swap. The CoW settlement contract handles its
+        // own approvals via `dex::Allowance`, so we drop the prefix and
+        // execute only the last tx.
+        let tx = response.txs.last().ok_or(Error::NotFound)?;
+        if response.txs.len() > 1 {
+            tracing::debug!(
+                count = response.txs.len(),
+                "Bitget reverse-quote returned multi-tx response, using last as the swap"
+            );
+        }
         let calldata = tx.decode_calldata().map_err(|_| Error::InvalidCalldata)?;
         let contract = tx.to;
 
@@ -437,8 +439,6 @@ pub enum Error {
     GasCalculationFailed,
     #[error("unable to find a quote")]
     NotFound,
-    #[error("expected single tx in reverse-quote response, got {0}")]
-    MultiTxResponse(usize),
     #[error("order type is not supported")]
     OrderNotSupported,
     #[error("rate limited")]
