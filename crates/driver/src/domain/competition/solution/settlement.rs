@@ -446,7 +446,7 @@ impl Gas {
         // whose gas limit exceed the remaining space (without simulating the actual
         // gas required).
         // Additionally cap by the configured per-tx gas limit. Operators set
-        // this per chain (e.g. to EIP-7825's 16,777,215 cap on Fusaka chains)
+        // this per chain (e.g. to EIP-7825's 16,777,215 cap on Mainnet Fusaka)
         // so the mempool can't reject the settlement for exceeding the per-tx
         // ceiling.
         let max_gas = std::cmp::min(eth::Gas(block_limit.0 / eth::U256::from(2)), tx_gas_limit);
@@ -484,10 +484,10 @@ mod tests {
         eth::Gas(eth::U256::from(value))
     }
 
-    /// EIP-7825 per-transaction gas cap (2^24 - 1) introduced in Fusaka.
-    /// Used in tests as a representative value for the configurable
-    /// `tx_gas_limit` knob on Fusaka chains.
-    const EIP_7825_TX_GAS_CAP: u64 = (1 << 24) - 1;
+    /// EIP-7825 per-transaction gas cap (2^24 - 1) introduced in Mainnet's
+    /// Fusaka hardfork. Used in tests as a representative value for the
+    /// configurable `tx_gas_limit` knob on Mainnet.
+    const EIP_7825_MAINNET_TX_GAS_CAP: u64 = (1 << 24) - 1;
 
     #[test]
     fn rejects_solution_above_tx_gas_limit() {
@@ -495,7 +495,7 @@ mod tests {
         // the configured per-tx limit (EIP-7825 cap, 16,777,215). The per-tx
         // limit must win.
         let block_limit = gas(120_000_000);
-        let tx_gas_limit = gas(EIP_7825_TX_GAS_CAP);
+        let tx_gas_limit = gas(EIP_7825_MAINNET_TX_GAS_CAP);
         let estimate = gas(20_000_000);
         let err = Gas::new(estimate, block_limit, tx_gas_limit).unwrap_err();
         match err {
@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn accepts_solution_at_tx_gas_limit() {
         let block_limit = gas(120_000_000);
-        let tx_gas_limit = gas(EIP_7825_TX_GAS_CAP);
+        let tx_gas_limit = gas(EIP_7825_MAINNET_TX_GAS_CAP);
         let result = Gas::new(tx_gas_limit, block_limit, tx_gas_limit).unwrap();
         assert_eq!(result.estimate, tx_gas_limit);
     }
@@ -520,7 +520,7 @@ mod tests {
         // On chains with a low block gas limit, the half-block cap is tighter
         // than the configured per-tx limit and must keep applying.
         let block_limit = gas(10_000_000);
-        let tx_gas_limit = gas(EIP_7825_TX_GAS_CAP);
+        let tx_gas_limit = gas(EIP_7825_MAINNET_TX_GAS_CAP);
         let estimate = gas(6_000_000);
         let err = Gas::new(estimate, block_limit, tx_gas_limit).unwrap_err();
         match err {
