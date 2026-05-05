@@ -416,14 +416,16 @@ impl EthCallInputs {
         let tenderly_request = self
             .to_tenderly_request()
             .context("failed to convert to tenderly request")?;
-        let tenderly_url = match &self.simulator.0.tenderly {
-            Some(api) => Some(
-                api.simulate_and_share(tenderly_request.clone())
-                    .await
-                    .context("tenderly failed")?,
-            ),
-            None => None,
+
+        let tenderly_url = if let Some(api) = &self.simulator.0.tenderly {
+            api.simulate_and_share(tenderly_request.clone())
+                .await
+                .inspect_err(|err| tracing::warn!(?err, "failed to simulate via tenderly"))
+                .ok()
+        } else {
+            None
         };
+
         let simulation_result = self.simulate().await;
 
         Ok(TenderlyReport {
