@@ -21,14 +21,14 @@ use {
     anyhow::{Context as _, Result},
     bad_tokens::list_based::DenyListedTokens,
     configs::price_estimation::PriceEstimation,
-    contracts::WETH9,
+    contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::GasPriceEstimating,
     http_client::HttpClientFactory,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     reqwest::Url,
-    simulator::{swap_simulator::SwapSimulator, tenderly},
+    simulator::{simulation_builder::SettlementSimulator, tenderly},
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
     token_info::TokenInfoFetching,
 };
@@ -106,29 +106,29 @@ impl<'a> PriceEstimatorFactory<'a> {
                 network.chain.id().to_string(),
             )) as Arc<dyn tenderly::Api>
         });
-        let simulator = SwapSimulator::new(
-            balance_overrides.clone(),
-            network.settlement,
+        let settlement_contract =
+            GPv2Settlement::GPv2Settlement::new(network.settlement, web3.provider.clone());
+        let simulator = SettlementSimulator::new(
+            settlement_contract,
+            Default::default(),
+            Default::default(),
             network.native_token,
-            network.block_stream.clone(),
-            web3.clone(),
             args.max_gas_per_tx,
+            balance_overrides,
+            network.block_stream.clone(),
+            tenderly.clone(),
         )
         .await?;
 
         let verifier = TradeVerifier::new(
-            web3,
-            tenderly,
             simulator,
+            tenderly,
             components.code_fetcher.clone(),
-            balance_overrides,
-            network.settlement,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
             args.min_gas_amount_for_unverified_quotes,
             args.max_gas_amount_for_unverified_quotes,
-        )
-        .await?;
+        );
         Ok(Some(Arc::new(verifier)))
     }
 

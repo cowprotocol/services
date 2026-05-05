@@ -639,11 +639,12 @@ impl Orderbook {
 
         let sim = order_simulator
             .new_simulation_builder()
-            .add_order(
-                simulation_builder::Order::new(order.data)
-                    .with_signature(order.metadata.owner, order.signature)
-                    .with_executed_amount(simulation_builder::ExecutionAmount::Remaining),
-            )
+            .add_orders([simulation_builder::Order::new(order.data)
+                .with_signature(order.metadata.owner, order.signature)
+                .fill_at(
+                    simulation_builder::ExecutionAmount::Remaining,
+                    simulation_builder::PriceEncoding::LimitPrice,
+                )])
             .parameters_from_app_data(&full_app_data)
             .context("failed to parse app data")?
             .at_block(
@@ -651,8 +652,7 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_prices(simulation_builder::Prices::Limit)
-            .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
+            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
@@ -683,24 +683,25 @@ impl Orderbook {
 
         let sim = order_simulator
             .new_simulation_builder()
-            .add_order(
-                simulation_builder::Order::new(OrderData {
-                    sell_token: request.sell_token,
-                    buy_token: request.buy_token,
-                    sell_amount: request.sell_amount.into(),
-                    buy_amount: request.buy_amount,
-                    kind: request.kind,
-                    receiver: request.receiver,
-                    sell_token_balance: request.sell_token_balance,
-                    buy_token_balance: request.buy_token_balance,
-                    fee_amount: request.fee_amount,
-                    valid_to: request.valid_to,
-                    app_data: AppDataHash(app_data_hash.into()),
-                    partially_fillable: request.partially_fillable,
-                })
-                .with_signature(request.owner, request.signature)
-                .with_executed_amount(simulation_builder::ExecutionAmount::Full),
-            )
+            .add_orders([simulation_builder::Order::new(OrderData {
+                sell_token: request.sell_token,
+                buy_token: request.buy_token,
+                sell_amount: request.sell_amount.into(),
+                buy_amount: request.buy_amount,
+                kind: request.kind,
+                receiver: request.receiver,
+                sell_token_balance: request.sell_token_balance,
+                buy_token_balance: request.buy_token_balance,
+                fee_amount: request.fee_amount,
+                valid_to: request.valid_to,
+                app_data: AppDataHash(app_data_hash.into()),
+                partially_fillable: request.partially_fillable,
+            })
+            .with_signature(request.owner, request.signature)
+            .fill_at(
+                simulation_builder::ExecutionAmount::Full,
+                simulation_builder::PriceEncoding::LimitPrice,
+            )])
             .parameters_from_app_data(&request.app_data)
             .context("failed to parse app data")?
             .at_block(
@@ -709,8 +710,7 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_prices(simulation_builder::Prices::Limit)
-            .with_override(simulation_builder::AccountOverrideRequest::BuyTokensForBuffers)
+            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await

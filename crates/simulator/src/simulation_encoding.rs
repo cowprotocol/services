@@ -15,7 +15,7 @@ use {
             ExecutionAmount,
             MergeConflict,
             Order,
-            Prices,
+            PriceEncoding,
             SimulationBuilder,
             Solver,
             WrapperConfig,
@@ -28,97 +28,111 @@ use {
     },
     alloy_sol_types::SolCall,
     balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
-    model::order::OrderKind,
-    std::sync::Arc,
+    model::{interaction::InteractionData, order::OrderKind},
 };
 
-pub(crate) async fn encode(
-    mut builder: SimulationBuilder,
-    customize: impl FnOnce(&mut EncodedSettlement),
-) -> Result<EthCallInputs, BuildError> {
-    let order = builder.order.as_ref().ok_or(BuildError::NoOrder)?;
+pub(crate) async fn encode(mut builder: SimulationBuilder) -> Result<EthCallInputs, BuildError> {
+    if builder.orders.is_empty() {
+        return Err(BuildError::NoOrder);
+    }
 
     let block = match builder.block {
         Block::Latest => builder.simulator.0.current_block.borrow().number,
         Block::Number(n) => n,
     };
 
-    let executed_amount = executed_amount(&builder, order, block).await?;
+    let executed_amounts = futures::future::try_join_all(
+        builder
+            .orders
+            .iter()
+            .map(|o| executed_amount(&builder, o, block)),
+    )
+    .await?;
 
-    let (tokens, clearing_prices) = match builder.prices {
-        Some(Prices::Explicit {
-            tokens,
-            clearing_prices,
-        }) => (tokens, clearing_prices),
-        // At limit price: price[sell_token] = buy_amount, price[buy_token] = sell_amount.
-        // This makes sell_amount * price[sell] / price[buy] = buy_amount exactly.
-        Some(Prices::Limit) => (
-            vec![order.data.sell_token, order.data.buy_token],
-            vec![order.data.buy_amount, order.data.sell_amount],
-        ),
-        None => {
-            return Err(BuildError::NoPriceEncoding);
-        }
-    };
+    // Each order occupies exactly 2 consecutive slots in the token/price
+    // vectors: [2*i] = sell_token, [2*i+1] = buy_token.
+    // This lets every order be encoded independently without requiring a shared
+    // global token list.
+    let n = builder.orders.len();
+    let mut tokens = Vec::with_capacity(n * 2);
+    let mut clearing_prices = Vec::with_capacity(n * 2);
+    for order in &builder.orders {
+        let (sell_price, buy_price) = match &order.price_encoding {
+            PriceEncoding::LimitPrice => (order.data.buy_amount, order.data.sell_amount),
+            PriceEncoding::Custom {
+                sell_price,
+                buy_price,
+            } => (*sell_price, *buy_price),
+        };
+        tokens.push(order.data.sell_token);
+        tokens.push(order.data.buy_token);
+        clearing_prices.push(sell_price);
+        clearing_prices.push(buy_price);
+    }
 
-    let sell_token_index = tokens
+    // Expand any BuyTokensForBuffers request into one Balance override per
+    // order, then remove all BuyTokensForBuffers entries so duplicates are
+    // impossible.
+    if builder
+        .account_override_requests
         .iter()
-        .position(|t| *t == order.data.sell_token)
-        .ok_or(BuildError::MissingSellToken)?;
-    let buy_token_index = tokens
-        .iter()
-        .position(|t| *t == order.data.buy_token)
-        .ok_or(BuildError::MissingBuyToken)?;
-
-    // Replace BuyTokensForBuffers placeholders with concrete Balance requests
-    // now that the required amounts are known. Must happen before clearing_prices
-    // is moved into EncodedSettlement.
-    for request in &mut builder.account_override_requests {
-        if matches!(request, AccountOverrideRequest::BuyTokensForBuffers) {
+        .any(|r| matches!(r, AccountOverrideRequest::BuyTokensForBuffers))
+    {
+        builder
+            .account_override_requests
+            .retain(|r| !matches!(r, AccountOverrideRequest::BuyTokensForBuffers));
+        let settlement = *builder.simulator.0.settlement.address();
+        for (i, (order, &exec)) in builder.orders.iter().zip(&executed_amounts).enumerate() {
+            let sell_price = clearing_prices[2 * i];
+            let buy_price = clearing_prices[2 * i + 1];
             let amount = match order.data.kind {
-                OrderKind::Sell => clearing_prices[sell_token_index]
-                    .saturating_mul(executed_amount)
-                    .checked_div(clearing_prices[buy_token_index])
+                OrderKind::Sell => sell_price
+                    .saturating_mul(exec)
+                    .checked_div(buy_price)
                     .unwrap_or(U256::MAX),
-                OrderKind::Buy => executed_amount,
+                OrderKind::Buy => exec,
             }
             // give 1 wei extra to avoid issues with rounding divisions
             .saturating_add(U256::ONE);
-
-            *request = AccountOverrideRequest::Balance {
-                holder: *builder.simulator.0.settlement.address(),
-                token: order.data.buy_token,
-                amount,
-            };
+            builder
+                .account_override_requests
+                .push(AccountOverrideRequest::Balance {
+                    holder: settlement,
+                    token: order.data.buy_token,
+                    amount,
+                });
         }
     }
 
-    let trade = encode_trade(
-        &order.data,
-        &order.signature,
-        order.owner,
-        sell_token_index,
-        buy_token_index,
-        executed_amount,
-    );
+    // Encode every order as a trade, then collect all their interactions.
+    let mut trades = Vec::with_capacity(n);
+    let mut all_order_pre: Vec<InteractionData> = vec![];
+    let mut all_order_post: Vec<InteractionData> = vec![];
+    for (i, (order, exec)) in builder.orders.iter().zip(&executed_amounts).enumerate() {
+        trades.push(encode_trade(
+            &order.data,
+            &order.signature,
+            order.owner,
+            2 * i,
+            2 * i + 1,
+            *exec,
+        ));
+        all_order_pre.extend_from_slice(&order.pre_interactions);
+        all_order_post.extend_from_slice(&order.post_interactions);
+    }
 
-    let order_pre = &order.pre_interactions;
-    let order_post = &order.post_interactions;
-
-    let mut settlement = EncodedSettlement {
+    let settlement = EncodedSettlement {
         tokens,
         clearing_prices,
-        trades: vec![trade],
+        trades,
         interactions: Interactions {
-            // order's pre-hooks run before any additional pre-interactions
-            pre: encode_interactions(order_pre.iter().chain(&builder.pre_interactions)),
+            // order pre-hooks run before any additional pre-interactions
+            pre: encode_interactions(all_order_pre.iter().chain(&builder.pre_interactions)),
             main: encode_interactions(&builder.main_interactions),
-            // additional post-interactions run before the order's post-hooks
-            post: encode_interactions(builder.post_interactions.iter().chain(order_post)),
+            // additional post-interactions run before order post-hooks
+            post: encode_interactions(builder.post_interactions.iter().chain(&all_order_post)),
         },
     };
-
-    customize(&mut settlement);
 
     let settle_calldata = {
         let mut bytes = settlement.into_settle_call().to_vec();
@@ -154,7 +168,7 @@ pub(crate) async fn encode(
     };
 
     let from = match builder.solver {
-        Some(Solver::Real(addr)) => addr,
+        Some(Solver::OriginUnaltered(addr)) => addr,
         Some(Solver::Fake(opt)) => {
             let addr = opt.unwrap_or_else(Address::random);
             builder
@@ -162,23 +176,24 @@ pub(crate) async fn encode(
                 .push(AccountOverrideRequest::SufficientEthBalance(addr));
             builder
                 .account_override_requests
-                .push(AccountOverrideRequest::AuthenticateAddress(addr));
+                .push(AccountOverrideRequest::AuthenticateAsSolver(addr));
             addr
         }
         None => return Err(BuildError::NoSolver),
     };
     let state_overrides = build_final_state_overrides(
         builder.account_override_requests,
-        Arc::clone(&builder.simulator.0.balance_overrides),
+        builder.simulator.0.balance_overrides.as_ref(),
         builder.simulator.0.authenticator,
     )
-    .await?;
+    .await;
 
     Ok(EthCallInputs {
         request: TransactionRequest {
             from: Some(from),
             to: Some(to.into()),
             input: input.into(),
+            gas: Some(builder.simulator.0.max_gas_limit),
             ..Default::default()
         },
         state_overrides,
@@ -218,72 +233,79 @@ async fn executed_amount(
     })
 }
 
-/// Resolves all [`AccountOverrideRequest`]s concurrently, merges them
-/// and returns the final [`StateOverride`].
+/// Resolves all [`AccountOverrideRequest`]s concurrently on a best-effort
+/// basis. Failures are logged and the corresponding override is skipped rather
+/// than aborting the whole build.
 async fn build_final_state_overrides(
     requests: Vec<AccountOverrideRequest>,
-    balance_overrides: Arc<dyn BalanceOverriding>,
+    balance_overrides: &dyn BalanceOverriding,
     authenticator: Address,
-) -> Result<StateOverride, BuildError> {
-    let futures = requests.into_iter().map(|request| {
-        let balance_overrides = Arc::clone(&balance_overrides);
-        async move {
-            match request {
-                AccountOverrideRequest::SufficientEthBalance(addr) => Ok((
-                    addr,
-                    AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
-                )),
-                AccountOverrideRequest::AuthenticateAddress(addr) => {
-                    // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
-                    // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
-                    // slot_padded).
-                    let mut buf = [0u8; 64];
-                    buf[12..32].copy_from_slice(addr.as_slice());
-                    buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
-                    let slot = keccak256(buf);
-                    Ok((
-                        authenticator,
-                        AccountOverride::default()
-                            .with_state_diff(std::iter::once((slot, B256::with_last_byte(1)))),
-                    ))
-                }
-                AccountOverrideRequest::Balance {
-                    holder,
-                    token,
-                    amount,
-                } => balance_overrides
+) -> StateOverride {
+    let futures = requests.into_iter().map(|request| async move {
+        match request {
+            AccountOverrideRequest::SufficientEthBalance(addr) => Some((
+                addr,
+                AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
+            )),
+            AccountOverrideRequest::AuthenticateAsSolver(addr) => {
+                // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
+                // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
+                // slot_padded).
+                let mut buf = [0u8; 64];
+                buf[12..32].copy_from_slice(addr.as_slice());
+                buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
+                let slot = keccak256(buf);
+                Some((
+                    authenticator,
+                    AccountOverride::default()
+                        .with_state_diff(std::iter::once((slot, B256::with_last_byte(1)))),
+                ))
+            }
+            AccountOverrideRequest::Balance {
+                holder,
+                token,
+                amount,
+            } => {
+                let result = balance_overrides
                     .state_override(BalanceOverrideRequest {
                         token,
                         holder,
                         amount,
                     })
-                    .await
-                    .ok_or(BuildError::FailedToOverrideBalances),
-                AccountOverrideRequest::BuyTokensForBuffers => {
-                    unreachable!(
-                        "replaced with specific Balance requests before state overrides get \
-                         computed"
-                    )
+                    .await;
+                if result.is_none() {
+                    tracing::warn!(%token, %holder, "failed to compute balance state override, skipping");
                 }
-                AccountOverrideRequest::Code { account, code } => Ok((
-                    account,
-                    AccountOverride {
-                        code: Some(code),
-                        ..Default::default()
-                    },
-                )),
-                AccountOverrideRequest::Custom { account, state } => Ok((account, state)),
+                result
             }
+            AccountOverrideRequest::BuyTokensForBuffers => {
+                unreachable!(
+                    "replaced with specific Balance requests before state overrides get \
+                     computed"
+                )
+            }
+            AccountOverrideRequest::Code { account, code } => Some((
+                account,
+                AccountOverride {
+                    code: Some(code),
+                    ..Default::default()
+                },
+            )),
+            AccountOverrideRequest::Custom { account, state } => Some((account, state)),
         }
     });
-    let resolved_overrides = futures::future::try_join_all(futures).await?;
 
     let mut state_overrides = StateOverride::default();
-    for (address, account_override) in resolved_overrides {
-        apply_account_override(&mut state_overrides, address, account_override)
-            .map_err(BuildError::ConflictingStateOverrides)?;
+    for (address, account_override) in futures::future::join_all(futures)
+        .await
+        .into_iter()
+        .flatten()
+    {
+        if let Err(err) = apply_account_override(&mut state_overrides, address, account_override) {
+            tracing::warn!(?err, %address, "conflicting state overrides for address, skipping");
+        }
     }
-    Ok(state_overrides)
+    state_overrides
 }
 
 /// Merges `new` into `existing` field by field.
@@ -349,7 +371,7 @@ fn merge_account_override(
 ///
 /// If `address` already has an entry, the overrides are merged via
 /// [`merge_account_override`]. Returns an error on conflict.
-pub fn apply_account_override(
+fn apply_account_override(
     overrides: &mut StateOverride,
     address: Address,
     new: AccountOverride,

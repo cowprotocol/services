@@ -12,7 +12,7 @@ use {
         price_estimation::BalanceOverridesConfig,
         test_util::TestDefault,
     },
-    contracts::ERC20,
+    contracts::{ERC20, GPv2Settlement},
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
@@ -28,7 +28,7 @@ use {
         trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
     },
     serde_json::json,
-    simulator::swap_simulator::SwapSimulator,
+    simulator::simulation_builder::SettlementSimulator,
     std::{collections::HashMap, sync::Arc},
 };
 
@@ -189,32 +189,33 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
     let balance_overrides = Arc::new(BalanceOverrides::default());
-    let gas_limit = 12_000_000;
-    let simulator = SwapSimulator::new(
-        balance_overrides.clone(),
+    let gas_limit = 12_000_000u64;
+    let settlement_contract = GPv2Settlement::GPv2Settlement::new(
         *onchain.contracts().gp_settlement.address(),
+        web3.provider.clone(),
+    );
+    let simulator = SettlementSimulator::new(
+        settlement_contract,
+        Default::default(),
+        Default::default(),
         *onchain.contracts().weth.address(),
-        block_stream.clone(),
-        web3.clone(),
         gas_limit,
+        balance_overrides,
+        block_stream.clone(),
+        None,
     )
     .await
     .unwrap();
 
     let verifier = TradeVerifier::new(
-        web3.clone(),
-        None,
         simulator,
+        None,
         Arc::new(web3.clone()),
-        balance_overrides,
-        *onchain.contracts().gp_settlement.address(),
         BigDecimal::zero(),
         Default::default(),
         0,
         u32::MAX,
-    )
-    .await
-    .unwrap();
+    );
 
     let verify_trade = |tx_origin| {
         let verifier = verifier.clone();

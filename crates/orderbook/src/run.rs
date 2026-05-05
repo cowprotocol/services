@@ -463,6 +463,33 @@ pub async fn run(config: Configuration) {
         ipfs,
     ));
 
+    let order_simulator = if let Some(config) = config.order_simulation {
+        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
+            config.tenderly.as_ref().map(|tenderly_config| {
+                Arc::new(simulator::tenderly::TenderlyApi::new(
+                    tenderly_config,
+                    &http_factory,
+                    chain.id().to_string(),
+                )) as _
+            });
+        Some(
+            simulator::simulation_builder::SettlementSimulator::new(
+                settlement_contract.clone(),
+                Default::default(),
+                hooks_trampoline_address,
+                *native_token.address(),
+                config.gas_limit.saturating_to(),
+                balance_overrider.clone(),
+                current_block_stream.clone(),
+                tenderly,
+            )
+            .await
+            .unwrap(),
+        )
+    } else {
+        None
+    };
+
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         *settlement_contract.address(),

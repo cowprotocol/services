@@ -6,7 +6,6 @@ pub mod dto;
 mod eip1271_simulation;
 mod ipfs;
 mod ipfs_app_data;
-pub mod order_simulator;
 pub mod orderbook;
 mod quoter;
 pub mod run;
