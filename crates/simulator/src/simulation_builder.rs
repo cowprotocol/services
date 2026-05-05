@@ -138,8 +138,8 @@ pub struct SimulationBuilder {
 }
 
 impl SimulationBuilder {
-    pub fn add_orders(mut self, orders: impl IntoIterator<Item = Order>) -> Self {
-        self.orders.extend(orders);
+    pub fn with_orders(mut self, orders: impl IntoIterator<Item = Order>) -> Self {
+        self.orders = orders.into_iter().collect();
         self
     }
 

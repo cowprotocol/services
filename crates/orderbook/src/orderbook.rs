@@ -639,7 +639,7 @@ impl Orderbook {
 
         let sim = order_simulator
             .new_simulation_builder()
-            .add_orders([simulation_builder::Order::new(order.data)
+            .with_orders([simulation_builder::Order::new(order.data)
                 .with_signature(order.metadata.owner, order.signature)
                 .fill_at(
                     simulation_builder::ExecutionAmount::Remaining,
@@ -685,7 +685,7 @@ impl Orderbook {
 
         let sim = order_simulator
             .new_simulation_builder()
-            .add_orders([simulation_builder::Order::new(OrderData {
+            .with_orders([simulation_builder::Order::new(OrderData {
                 sell_token: request.sell_token,
                 buy_token: request.buy_token,
                 sell_amount: request.sell_amount.into(),

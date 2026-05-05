@@ -291,7 +291,7 @@ impl TradeVerifier {
         let eth_call_inputs = self
             .simulator
             .new_simulation_builder()
-            .add_orders(std::iter::once(fake_order).chain(jit_orders))
+            .with_orders(std::iter::once(fake_order).chain(jit_orders))
             .from_solver(SimulationSolver::OriginUnaltered(solver_address))
             .with_pre_interactions(pre_interactions)
             .with_main_interactions(main_interactions)
