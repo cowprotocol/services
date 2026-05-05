@@ -25,14 +25,14 @@ pub struct Detector(Arc<Inner>);
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait SellQualityDetector: Send + Sync {
+pub trait DetectorApi: Send + Sync {
     async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality;
     fn get_quality(&self, token: &eth::TokenAddress, now: Instant) -> Quality;
     fn evict_outdated_entries(&self);
 }
 
 #[async_trait::async_trait]
-impl SellQualityDetector for Detector {
+impl DetectorApi for Detector {
     async fn determine_sell_token_quality(&self, order: &Order, now: Instant) -> Quality {
         self.determine_sell_token_quality(order, now).await
     }

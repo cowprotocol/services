@@ -20,7 +20,7 @@ use {
     crate::domain::competition::{
         Order,
         order::Uid,
-        risk_detector::bad_tokens::simulation::SellQualityDetector,
+        risk_detector::bad_tokens::simulation::DetectorApi,
     },
     eth_domain_types as eth,
     futures::{StreamExt, stream::FuturesUnordered},
@@ -60,7 +60,7 @@ pub struct Detector {
     /// tokens that get detected incorrectly by the automatic detectors get
     /// listed here and therefore have a higher precedence.
     hardcoded: HashMap<eth::TokenAddress, Quality>,
-    simulation_detector: Option<Box<dyn SellQualityDetector>>,
+    simulation_detector: Option<Box<dyn DetectorApi>>,
     metrics: Option<bad_orders::metrics::Detector>,
 }
 
@@ -76,10 +76,7 @@ impl Detector {
 
     /// Enables detection of unsupported tokens via simulation based detection
     /// methods.
-    pub fn with_simulation_detector(
-        &mut self,
-        detector: impl SellQualityDetector + 'static,
-    ) -> &mut Self {
+    pub fn with_simulation_detector(&mut self, detector: impl DetectorApi + 'static) -> &mut Self {
         self.simulation_detector = Some(Box::new(detector));
         self
     }
@@ -90,93 +87,87 @@ impl Detector {
         self
     }
 
-    #[instrument(skip_all)]
     /// Performs flashloan filtering and removes all unsupported orders from the
     /// auction.
+    #[instrument(skip_all)]
     pub async fn without_unsupported_orders(
         &self,
         orders: &mut Vec<Order>,
         flashloans_enabled: bool,
     ) {
-        if !flashloans_enabled {
-            orders.retain(|o| o.app_data.flashloan().is_none());
-        }
-        self.filter_unsupported_orders_in_auction_orders(orders)
-            .await
-    }
-
-    /// Removes all unsupported orders from the auction.
-    pub async fn filter_unsupported_orders_in_auction_orders(&self, orders: &mut Vec<Order>) {
-        let unsupported_uids = self.unsupported_order_uids(orders).await;
-        // Filter out unsupported orders
-        if !unsupported_uids.is_empty() {
-            orders.retain(|order| !unsupported_uids.contains(&order.uid));
-        }
-    }
-
-    /// Returns a set of orders uids for orders that are found to be
-    /// unsupported.
-    pub async fn unsupported_order_uids(&self, orders: &[Order]) -> HashSet<Uid> {
         let now = Instant::now();
         let mut token_quality_checks = FuturesUnordered::new();
 
-        let mut removed_uids: HashSet<Uid> = orders
-            .iter()
-            .filter_map(|order| {
-                // Check if uid is unsupported in metrics
-                if matches!(
-                    self.metrics
-                        .as_ref()
-                        .map(|m| m.get_quality(&order.uid, now)),
-                    Some(Quality::Unsupported)
-                ) {
-                    return Some(order.uid);
-                }
-                let sell = self.get_token_quality(order.sell.token, now);
-                let buy = self.get_token_quality(order.buy.token, now);
-                match (sell, buy) {
-                    // both tokens supported => keep order
-                    (Quality::Supported, Quality::Supported) => None,
-                    // at least 1 token unsupported => drop order
-                    (Quality::Unsupported, _) | (_, Quality::Unsupported) => Some(order.uid),
-                    // sell token quality is unknown => keep order if token is supported
-                    (Quality::Unknown, _) => {
-                        let Some(detector) = &self.simulation_detector else {
-                            // we can't determine quality => assume order is good
-                            return None;
-                        };
-                        let check_tokens_fut = async move {
-                            let quality = detector.determine_sell_token_quality(order, now).await;
-                            (order.uid, quality)
-                        };
-                        token_quality_checks.push(check_tokens_fut);
-                        None
-                    }
-                    // buy token quality is unknown => keep order (because we can't
-                    // determine quality and assume it's good)
-                    (_, Quality::Unknown) => None,
-                }
-            })
-            .collect();
+        // List of orders that have been removed
+        let mut removed_uids: HashSet<Uid> = HashSet::new();
+        // List of orders that will be retained
+        let mut supported_orders = Vec::new();
+        // Zero-copy allocation re-use
+        let original_orders = std::mem::take(orders);
+        for order in original_orders {
+            // Flashloans are disabled => drop order
+            if !flashloans_enabled && order.app_data.flashloan().is_some() {
+                removed_uids.insert(order.uid);
+                continue;
+            }
 
-        while let Some((uid, quality)) = token_quality_checks.next().await {
-            if quality != Quality::Supported {
-                removed_uids.insert(uid);
+            // Metrics determined quality is unsupported => drop order
+            if self
+                .metrics
+                .as_ref()
+                .map(|metrics| metrics.get_quality(&order.uid, now))
+                .is_some_and(|q| q == Quality::Unsupported)
+            {
+                removed_uids.insert(order.uid);
+                continue;
+            }
+
+            let sell = self.get_token_quality(order.sell.token, now);
+            let buy = self.get_token_quality(order.buy.token, now);
+            match (sell, buy) {
+                // both tokens supported => keep order
+                (Quality::Supported, Quality::Supported) => supported_orders.push(order),
+                // at least 1 token unsupported => drop order
+                (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
+                    removed_uids.insert(order.uid);
+                }
+                // sell token quality is unknown => keep order if token is supported,
+                // if simulation detector is unavailable assume it is good
+                (Quality::Unknown, _) => {
+                    let Some(detector) = &self.simulation_detector else {
+                        // We can't determine quality => assume order is good
+                        supported_orders.push(order);
+                        continue;
+                    };
+                    // Add to quality checks to determine if supported or unsupported
+                    token_quality_checks.push(async move {
+                        let quality = detector.determine_sell_token_quality(&order, now).await;
+                        (order, quality)
+                    });
+                }
+                // buy token quality is unknown => keep order (because we can't
+                // determine quality and assume it's good)
+                (_, Quality::Unknown) => supported_orders.push(order),
             }
         }
+        // Wait for all quality checks to complete
+        while let Some((order, quality)) = token_quality_checks.next().await {
+            if quality == Quality::Supported {
+                supported_orders.push(order);
+            } else {
+                removed_uids.insert(order.uid);
+            }
+        }
+        // Replace the original orders in the auction with supported orders
+        *orders = supported_orders;
 
         if !removed_uids.is_empty() {
-            tracing::debug!(
-                orders = ?removed_uids,
-                "ignored orders with unsupported tokens"
-            );
+            tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
         }
 
         if let Some(detector) = &self.simulation_detector {
             detector.evict_outdated_entries();
         }
-
-        removed_uids
     }
 
     /// Updates the tokens quality metric for successful operation.
@@ -232,7 +223,7 @@ mod tests {
                     app_data::AppData,
                     signature,
                 },
-                risk_detector::bad_tokens::simulation::MockSellQualityDetector,
+                risk_detector::bad_tokens::simulation::MockDetectorApi,
             },
             infra::solver,
             util,
@@ -246,12 +237,22 @@ mod tests {
             hash_full_app_data,
         },
         eth_domain_types::{Asset, TokenAmount, U256},
-        std::{sync::Arc, time::Duration},
+        std::{
+            collections::{HashMap, HashSet},
+            sync::Arc,
+            time::Duration,
+        },
     };
 
     // Helper to create a mock eth:Address purely for test
     fn addr(n: u8) -> eth::Address {
         eth::Address::from_slice(&[n; 20])
+    }
+
+    // Helper to create a mock UID purely for test
+    fn uid(n: u8, signer: eth::Address, valid_to: u32) -> Uid {
+        let order_hash = eth::B256::from([n; 32]);
+        Uid::from_parts(order_hash, signer, valid_to)
     }
 
     // Helper to create a mock order purely for test
@@ -317,19 +318,40 @@ mod tests {
         }
     }
 
-    // Helper to create a mock UID purely for test
-    fn uid(n: u8, signer: eth::Address, valid_to: u32) -> Uid {
-        let order_hash = eth::B256::from([n; 32]);
-        Uid::from_parts(order_hash, signer, valid_to)
+    // Helper to create a mock detector purely for test
+    fn detector(
+        hardcoded_tokens: HashMap<eth_domain_types::TokenAddress, Quality>,
+        metrics_bad_uids: HashSet<Uid>,
+    ) -> Detector {
+        let metrics_detector = bad_orders::metrics::Detector::new(
+            0.5,
+            2,
+            false,
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            solver::Name("test_solver".into()),
+        );
+
+        let mut detector = Detector::new(hardcoded_tokens);
+        detector.with_metrics_detector(metrics_detector);
+        // Simulate
+        for uid in metrics_bad_uids {
+            detector.encoding_failed(&[uid]);
+            detector.encoding_failed(&[uid]);
+            detector.encoding_failed(&[uid]);
+        }
+
+        detector
     }
 
-    // Helper to create a mock sell quality detector purely for test
-    fn sell_quality_detector(unsupported_uid: Uid) -> MockSellQualityDetector {
-        let mut detector = MockSellQualityDetector::new();
+    // Helper to create a mock simulation detector purely for test
+    fn simulation_detector(unsupported_uids: HashSet<Uid>) -> MockDetectorApi {
+        let mut detector = MockDetectorApi::new();
         detector
             .expect_determine_sell_token_quality()
-            .returning(move |order, _now| {
-                if order.uid == unsupported_uid {
+            .returning(move |order, _| {
+                if unsupported_uids.contains(&order.uid) {
                     Quality::Unsupported
                 } else {
                     Quality::Supported
@@ -345,178 +367,204 @@ mod tests {
     #[tokio::test]
     async fn without_unsupported_orders_returns_empty() {
         let mut orders = vec![];
-        let detector = Detector::new(Default::default());
+        let detector = detector(HashMap::new(), HashSet::new());
         detector.without_unsupported_orders(&mut orders, true).await;
         assert!(orders.is_empty());
     }
 
     #[tokio::test]
-    async fn without_unsupported_orders_all_supported_orders_are_kept() {
-        let signer = addr(1);
-        let sell_token = addr(2).into();
-        let buy_token = addr(3).into();
-        let order_uid = uid(1, signer, u32::MAX);
+    async fn without_unsupported_orders_flashloan_disabled_returns_empty() {
         let mut orders = vec![order(
-            order_uid,
-            signer,
-            sell_token,
-            buy_token,
+            uid(1, addr(1), u32::MAX),
+            addr(1),
+            addr(1).into(),
+            addr(2).into(),
             u32::MAX,
-            false,
+            true,
         )];
-        let detector = Detector::new(Default::default());
-        detector.without_unsupported_orders(&mut orders, true).await;
-        assert_eq!(orders.len(), 1);
-        assert_eq!(orders[0].uid, order_uid);
+        let detector = detector(HashMap::new(), HashSet::new());
+        detector
+            .without_unsupported_orders(&mut orders, false)
+            .await;
+        assert!(orders.is_empty());
     }
 
     #[tokio::test]
-    async fn without_unsupported_orders_filters_unsupported_orders_and_flashloans() {
-        let valid_to = u32::MAX;
-        let metrics_bad_uid = uid(1, addr(6), valid_to);
-        let token_bad_uid = uid(2, addr(7), valid_to);
-        let supported_uid = uid(3, addr(8), valid_to);
-        let unknown_sell_uid = uid(4, addr(9), valid_to);
-        let unknown_buy_uid = uid(5, addr(10), valid_to);
-        let sell_detector_unsupported_uid = uid(6, addr(11), valid_to);
-        let sell_detector_supported_uid = uid(7, addr(12), valid_to);
-        let flashloan_uid = uid(8, addr(13), valid_to);
-        let metrics_quality_unsupported_address = addr(3).into();
+    async fn without_unsupported_orders_flashloan_enabled_kept() {
+        let id = uid(1, addr(1), u32::MAX);
+        let mut orders = vec![order(
+            id,
+            addr(1),
+            addr(1).into(),
+            addr(2).into(),
+            u32::MAX,
+            true,
+        )];
+        let detector = detector(HashMap::new(), HashSet::new());
 
-        let orders = vec![
+        // Note: This could be filtered out for other reasons later in reality
+        // but is contained to be true for this test
+        detector.without_unsupported_orders(&mut orders, true).await;
+        assert_eq!(orders[0].uid, id);
+    }
+
+    #[tokio::test]
+    async fn without_unsupported_orders_metrics_bad_returns_empty() {
+        let unsupported_uid = uid(1, addr(1), u32::MAX);
+        let mut orders = vec![order(
+            unsupported_uid,
+            addr(1),
+            addr(1).into(),
+            addr(2).into(),
+            u32::MAX,
+            false,
+        )];
+        let detector = detector(HashMap::new(), HashSet::from([unsupported_uid]));
+
+        detector.without_unsupported_orders(&mut orders, true).await;
+        assert!(orders.is_empty());
+    }
+
+    #[tokio::test]
+    async fn without_unsupported_orders_supported_kept() {
+        let uid = uid(1, addr(1), u32::MAX);
+        let sell_token = addr(1).into();
+        let buy_token = addr(2).into();
+        let mut orders = vec![order(uid, addr(1), sell_token, buy_token, u32::MAX, false)];
+        let detector = detector(
+            HashMap::from([
+                (sell_token, Quality::Supported),
+                (buy_token, Quality::Supported),
+            ]),
+            HashSet::new(),
+        );
+
+        detector.without_unsupported_orders(&mut orders, true).await;
+        assert_eq!(orders[0].uid, uid);
+    }
+
+    #[tokio::test]
+    async fn without_unsupported_orders_buy_unsupported_empty() {
+        let uid = uid(1, addr(1), u32::MAX);
+        let sell_token = addr(1).into();
+        let buy_token = addr(9).into();
+        let mut orders = vec![order(uid, addr(1), sell_token, buy_token, u32::MAX, false)];
+        let mut detector = detector(
+            HashMap::from([(buy_token, Quality::Unsupported)]),
+            HashSet::new(),
+        );
+        detector.with_simulation_detector(simulation_detector(HashSet::new()));
+
+        detector.without_unsupported_orders(&mut orders, true).await;
+        assert!(orders.is_empty());
+    }
+
+    #[tokio::test]
+    async fn without_unsupported_orders_mixed_orders_filters_correctly() {
+        let supported_uid = uid(1, addr(1), u32::MAX);
+        let bad_token_uid = uid(2, addr(2), u32::MAX);
+        let flashloan_uid = uid(3, addr(3), u32::MAX);
+        let metrics_bad_uid = uid(4, addr(4), u32::MAX);
+        let simulation_bad_uid = uid(5, addr(5), u32::MAX);
+
+        let sell_token_supported = addr(1).into();
+        let buy_token_supported = addr(2).into();
+        let token_unsupported = addr(9).into();
+
+        // For tracking and reasoning about orders in this test:
+        //
+        // order(
+        //     // description -> expected outcome
+        //     uid,        // if in metrics_bad_uids → discard
+        //                 // can also be used to verify order
+        //                 // inclusion/exclusion for the expected result.
+        //     signer,     // unused
+        //     sell_token, // checked in hardcoded map in detector:
+        //                 //   Supported → continue
+        //                 //   Unsupported → discard
+        //                 //   Unknown → may trigger simulation if detector is set
+        //     buy_token,  // checked in hardcoded map in detector:
+        //                 //   Unsupported → discard
+        //     valid_to,   // unused
+        //     flashloan,  // if true and flashloans disabled → discard
+        // )
+        //
+        // detector(
+        //     HashMap::from([
+        //         (sell_token_supported, Quality::Supported),
+        //         (buy_token_supported, Quality::Supported),
+        //         (token_unsupported, Quality::Unsupported),
+        //     ]),
+        //     HashSet::from([metrics_bad_uid]),
+        // )
+        //
+        // simulation_detector(HashSet::from([simulation_bad_uid]))
+        //     Runs only when sell_token quality is Unknown and a simulation detector
+        //     is set. If uid is in provided set → discard.
+
+        let mut orders = vec![
+            order(
+                // token supported -> keep
+                supported_uid,
+                addr(1),
+                sell_token_supported,
+                buy_token_supported,
+                u32::MAX,
+                false,
+            ),
+            order(
+                // token unsupported -> discard
+                bad_token_uid,
+                addr(2),
+                token_unsupported,
+                buy_token_supported,
+                u32::MAX,
+                false,
+            ),
+            order(
+                // flashloan -> discard, disabled
+                flashloan_uid,
+                addr(3),
+                sell_token_supported,
+                buy_token_supported,
+                u32::MAX,
+                true,
+            ),
             order(
                 // metrics bad -> discard
                 metrics_bad_uid,
-                addr(6),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                // token bad -> discard
-                token_bad_uid,
-                addr(7),
-                metrics_quality_unsupported_address,
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                // token good -> keep
-                supported_uid,
-                addr(8),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                // unknown sell -> keep
-                unknown_sell_uid,
-                addr(9),
-                addr(4).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                // unknown buy -> keep
-                unknown_buy_uid,
-                addr(10),
-                addr(1).into(),
-                addr(5).into(),
-                valid_to,
+                addr(4),
+                sell_token_supported,
+                buy_token_supported,
+                u32::MAX,
                 false,
             ),
             order(
                 // unsupported on quality check -> discard
-                sell_detector_unsupported_uid,
-                addr(11),
-                addr(6).into(),
-                addr(2).into(),
-                valid_to,
+                simulation_bad_uid,
+                addr(5),
+                addr(5).into(),
+                buy_token_supported,
+                u32::MAX,
                 false,
-            ),
-            order(
-                // supported on quality check -> keep
-                sell_detector_supported_uid,
-                addr(12),
-                addr(7).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                // flashloan -> keep if flashloans is enabled, else discard
-                flashloan_uid,
-                addr(13),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                true,
             ),
         ];
 
-        let mut orders_flashloans_disabled = orders.clone();
-        let mut orders_flashloans_enabled = orders.clone();
-
-        let metrics_detector = bad_orders::metrics::Detector::new(
-            0.5,
-            2,
-            false,
-            Duration::from_secs(60),
-            Duration::from_secs(60),
-            Duration::from_secs(60),
-            solver::Name("test_solver".into()),
+        let mut detector = detector(
+            HashMap::from([
+                (sell_token_supported, Quality::Supported),
+                (buy_token_supported, Quality::Supported),
+                (token_unsupported, Quality::Unsupported),
+            ]),
+            HashSet::from([metrics_bad_uid]),
         );
-        let mut detector_config = HashMap::new();
-        detector_config.insert(metrics_quality_unsupported_address, Quality::Unsupported);
-        let mut detector = Detector::new(detector_config);
-        detector.with_metrics_detector(metrics_detector);
-        // Simulate repeated metrics failure for order with metrics_bad_uid
-        detector.encoding_failed(&[metrics_bad_uid]);
-        detector.encoding_failed(&[metrics_bad_uid]);
-        detector.encoding_failed(&[metrics_bad_uid]);
-        detector.with_simulation_detector(sell_quality_detector(sell_detector_unsupported_uid));
+        detector.with_simulation_detector(simulation_detector(HashSet::from([simulation_bad_uid])));
 
-        // Test with flashloans disabled
         detector
-            .without_unsupported_orders(&mut orders_flashloans_disabled, false)
+            .without_unsupported_orders(&mut orders, false)
             .await;
-        let remaining_uids = orders_flashloans_disabled
-            .iter()
-            .map(|order| order.uid)
-            .collect::<Vec<_>>();
 
-        assert_eq!(
-            remaining_uids,
-            vec![
-                supported_uid,
-                unknown_sell_uid,
-                unknown_buy_uid,
-                sell_detector_supported_uid,
-            ]
-        );
-
-        // Test with flashloans enabled
-        detector
-            .without_unsupported_orders(&mut orders_flashloans_enabled, true)
-            .await;
-        let remaining_uids = orders_flashloans_enabled
-            .iter()
-            .map(|order| order.uid)
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            remaining_uids,
-            vec![
-                supported_uid,
-                unknown_sell_uid,
-                unknown_buy_uid,
-                sell_detector_supported_uid,
-                flashloan_uid,
-            ]
-        );
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].uid, supported_uid);
     }
 }

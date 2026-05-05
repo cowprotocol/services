@@ -356,7 +356,7 @@ impl Competition {
         let liquidity_mode = self.solver.liquidity();
 
         // We can run bad token filtering and liquidity fetching in parallel
-        let (auction, liquidity) = tokio::try_join!(
+        let (auction, liquidity) = tokio::join!(
             tokio::spawn(
                 async move {
                     risk_detector
@@ -375,8 +375,15 @@ impl Competition {
                 }
                 .in_current_span(),
             ),
-        )
-        .inspect_err(|err| tracing::error!(?err, "auction preparation task failed"))?;
+        );
+        let auction = auction.map_err(|err| {
+            tracing::error!(?err, "auction preparation task failed");
+            Error::InternalError(err.to_string())
+        })?;
+        let liquidity = liquidity.map_err(|err| {
+            tracing::error!(?err, "liquidity fetch task failed");
+            Error::InternalError(err.to_string())
+        })?;
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -1083,6 +1090,6 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
-    #[error("task join error: {0}")]
-    Join(#[from] task::JoinError),
+    #[error("internal error: {0}")]
+    InternalError(String),
 }
