@@ -29,17 +29,17 @@ and abort.
 Fetch in parallel:
 
 ```bash
-gh pr view <N> -R <owner>/<repo> --json title,body,files,labels,baseRefName,headRefName
+gh pr view <N> -R <owner>/<repo> --json title,body,files,labels,baseRefName,headRefName,closingIssuesReferences
 gh pr diff <N> -R <owner>/<repo>
 ```
 
-Parse the PR body for `Fixes #N` / `Closes #N` / `Resolves #N` (case-insensitive) and fetch each linked issue:
+For each entry in `closingIssuesReferences` (GitHub's own parsing of `Fixes #N` / `Closes #N` / `Resolves #N`, more reliable than regexing the body), fetch the issue:
 
 ```bash
-gh issue view <N> -R <owner>/<repo> --json title,body,labels,state
+gh issue view <issue.number> -R <issue.repository.owner>/<issue.repository.name> --json title,body,labels,state
 ```
 
-If no linked issue is referenced, proceed without one — never invent one.
+If `closingIssuesReferences` is empty, proceed without a linked issue — never invent one.
 
 Build:
 
