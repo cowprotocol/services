@@ -460,7 +460,7 @@ async fn http_validation(web3: Web3) {
         "zero sellAmount should return 422"
     );
 
-    // Invalid kind enum value → 422
+    // some fields missing → 422
     let response = client
         .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({
@@ -492,10 +492,12 @@ async fn http_validation(web3: Web3) {
             "kind": "sell",
             "owner": VALID_ADDRESS,
             "appData": bad_app_data,
-            "signingScheme": "presign",
-            "signature": "0x",
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "signingScheme": "eip1271",
+            "signature": "0x000000",
             "feeAmount": "0",
-            "validTo": u32::MAX,
+            "validTo": 12341234,
             "partiallyFillable": false,
         }))
         .send()
@@ -564,10 +566,12 @@ async fn simulation_not_enabled(web3: Web3) {
             "kind": "sell",
             "owner": VALID_ADDRESS,
             "appData": "{}",
-            "signingScheme": "presign",
-            "signature": "0x",
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "signingScheme": "eip1271",
+            "signature": "0x000000",
             "feeAmount": "0",
-            "validTo": u32::MAX,
+            "validTo": 12341234,
             "partiallyFillable": false,
         }))
         .send()

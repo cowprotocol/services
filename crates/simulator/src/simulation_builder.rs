@@ -104,6 +104,7 @@ impl SettlementSimulator {
             solver: None,
             auction_id: None,
             account_override_requests: vec![],
+            provide_buy_tokens: false,
             block: Block::Latest,
         }
     }
@@ -134,12 +135,13 @@ pub struct SimulationBuilder {
     pub(crate) auction_id: Option<i64>,
     pub(crate) simulator: SettlementSimulator,
     pub(crate) account_override_requests: Vec<AccountOverrideRequest>,
+    pub(crate) provide_buy_tokens: bool,
     pub(crate) block: Block,
 }
 
 impl SimulationBuilder {
-    pub fn add_orders(mut self, orders: impl IntoIterator<Item = Order>) -> Self {
-        self.orders.extend(orders);
+    pub fn with_orders(mut self, orders: impl IntoIterator<Item = Order>) -> Self {
+        self.orders = orders.into_iter().collect();
         self
     }
 
@@ -244,6 +246,15 @@ impl SimulationBuilder {
         Ok(self)
     }
 
+    /// Instructs the builder to override the settlement contract's buy-token
+    /// balances so it can pay out every order. The exact amounts are derived
+    /// from the clearing prices and executed amounts once
+    /// [`build`](Self::build) is called.
+    pub fn provide_sufficient_buy_tokens(mut self) -> Self {
+        self.provide_buy_tokens = true;
+        self
+    }
+
     /// Queues [`AccountOverrideRequest`]s to be resolved and applied during
     /// [`build`](Self::build). Multiple requests may target the same address
     /// and will be applied on a best-effort basis (failure to compute balance
@@ -261,7 +272,7 @@ impl SimulationBuilder {
     pub async fn build(self) -> Result<EthCallInputs, BuildError> {
         // Forward to a helper function to split the boring repetitive builder
         // code from the non-trivial code that actually does the encoding.
-        crate::simulation_encoding::encode(self).await
+        crate::encoding::finish_simulation_builder(self).await
     }
 }
 
@@ -416,14 +427,16 @@ impl EthCallInputs {
         let tenderly_request = self
             .to_tenderly_request()
             .context("failed to convert to tenderly request")?;
-        let tenderly_url = match &self.simulator.0.tenderly {
-            Some(api) => Some(
-                api.simulate_and_share(tenderly_request.clone())
-                    .await
-                    .context("tenderly failed")?,
-            ),
-            None => None,
+
+        let tenderly_url = if let Some(api) = &self.simulator.0.tenderly {
+            api.simulate_and_share(tenderly_request.clone())
+                .await
+                .inspect_err(|err| tracing::warn!(?err, "failed to simulate via tenderly"))
+                .ok()
+        } else {
+            None
         };
+
         let simulation_result = self.simulate().await;
 
         Ok(TenderlyReport {
@@ -516,9 +529,6 @@ pub enum AccountOverrideRequest {
         token: Address,
         amount: U256,
     },
-    /// Gives the settlement contract enough buy tokens to pay for all
-    /// orders.
-    BuyTokensForBuffers,
     /// Deploys the provided code at the requested address.
     Code { account: Address, code: Bytes },
     /// Allows to build fully custom overrides for the most exotic use cases.

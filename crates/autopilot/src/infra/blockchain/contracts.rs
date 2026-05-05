@@ -3,6 +3,7 @@ use {
     chain::Chain,
     contracts::{
         ChainalysisOracle,
+        FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
@@ -21,6 +22,7 @@ pub struct Contracts {
     balances: Balances::Instance,
     chainalysis_oracle: Option<ChainalysisOracle::Instance>,
     trampoline: HooksTrampoline::Instance,
+    flashloan_router: Address,
 
     /// The authenticator contract that decides which solver is allowed to
     /// submit settlements.
@@ -36,6 +38,7 @@ pub struct Addresses {
     pub weth: Option<Address>,
     pub balances: Option<Address>,
     pub trampoline: Option<Address>,
+    pub flashloan_router: Option<Address>,
 }
 
 impl Contracts {
@@ -80,6 +83,11 @@ impl Contracts {
             web3.provider.clone(),
         );
 
+        let flashloan_router = addresses
+            .flashloan_router
+            .or_else(|| FlashLoanRouter::deployment_address(&chain.id()))
+            .unwrap();
+
         let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
             .await
             .ok();
@@ -111,6 +119,7 @@ impl Contracts {
             settlement_domain_separator,
             authenticator,
             trampoline,
+            flashloan_router,
         }
     }
 
@@ -150,5 +159,9 @@ impl Contracts {
 
     pub fn authenticator(&self) -> &GPv2AllowListAuthentication::Instance {
         &self.authenticator
+    }
+
+    pub fn flashloan_router(&self) -> Address {
+        self.flashloan_router
     }
 }

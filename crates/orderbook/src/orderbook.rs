@@ -639,29 +639,33 @@ impl Orderbook {
 
         let sim = order_simulator
             .new_simulation_builder()
-            .add_orders([simulation_builder::Order::new(order.data)
+            .with_orders([simulation_builder::Order::new(order.data)
                 .with_signature(order.metadata.owner, order.signature)
                 .fill_at(
                     simulation_builder::ExecutionAmount::Remaining,
                     simulation_builder::PriceEncoding::LimitPrice,
                 )])
             .parameters_from_app_data(&full_app_data)
-            .context("failed to parse app data")?
+            .map_err(|err| {
+                OrderSimulationError::MalformedInput(anyhow!("app_data `{}`: {err}", full_app_data))
+            })?
             .at_block(
                 block_number
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
+            .provide_sufficient_buy_tokens()
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
-            .context("failed to finalize simulation")?;
+            .context("failed to finalize simulation")
+            .map_err(OrderSimulationError::Other)?;
 
         let simulation_result = sim
             .simulate_with_tenderly_report()
             .await
-            .context("failed to execute simulation")?;
+            .context("failed to execute simulation")
+            .map_err(OrderSimulationError::Other)?;
 
         Ok(Some(OrderSimulationResult {
             tenderly_url: simulation_result.tenderly_url,
@@ -683,7 +687,7 @@ impl Orderbook {
 
         let sim = order_simulator
             .new_simulation_builder()
-            .add_orders([simulation_builder::Order::new(OrderData {
+            .with_orders([simulation_builder::Order::new(OrderData {
                 sell_token: request.sell_token,
                 buy_token: request.buy_token,
                 sell_amount: request.sell_amount.into(),
@@ -703,14 +707,19 @@ impl Orderbook {
                 simulation_builder::PriceEncoding::LimitPrice,
             )])
             .parameters_from_app_data(&request.app_data)
-            .context("failed to parse app data")?
+            .map_err(|err| {
+                OrderSimulationError::MalformedInput(anyhow!(
+                    "app_data `{}`: {err}",
+                    request.app_data
+                ))
+            })?
             .at_block(
                 request
                     .block_number
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
+            .provide_sufficient_buy_tokens()
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
@@ -753,7 +762,7 @@ pub enum OrderSimulationError {
     #[error("order simulation is not enabled")]
     NotEnabled,
     #[error("malformed input")]
-    MalformedInput(#[from] anyhow::Error),
+    MalformedInput(anyhow::Error),
     #[error("simulation could not be created for order")]
     Other(anyhow::Error),
 }

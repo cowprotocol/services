@@ -49,6 +49,8 @@ pub struct Network {
     pub settlement: Address,
     pub authenticator: Address,
     pub block_stream: CurrentBlockWatcher,
+    pub flash_loan_router: Address,
+    pub hooks_trampoline: Address,
 }
 
 /// The shared components needed for creating price estimators.
@@ -110,8 +112,8 @@ impl<'a> PriceEstimatorFactory<'a> {
             GPv2Settlement::GPv2Settlement::new(network.settlement, web3.provider.clone());
         let simulator = SettlementSimulator::new(
             settlement_contract,
-            Default::default(),
-            Default::default(),
+            network.flash_loan_router,
+            network.hooks_trampoline,
             network.native_token,
             args.max_gas_per_tx,
             balance_overrides,

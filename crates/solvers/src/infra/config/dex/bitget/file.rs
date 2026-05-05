@@ -26,6 +26,12 @@ struct Config {
     /// Partner code sent in the `Partner-Code` header.
     #[serde(default = "default_partner_code")]
     partner_code: String,
+
+    /// Whether buy orders should be served via the reverse-quote endpoint.
+    /// Off by default, see [`bitget::Config::enable_buy_orders`] for
+    /// caveats.
+    #[serde(default)]
+    enable_buy_orders: bool,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +78,7 @@ pub async fn load(path: &Path) -> super::Config {
             partner_code: config.partner_code,
             block_stream: base.block_stream.clone(),
             settlement_contract: base.contracts.settlement,
+            enable_buy_orders: config.enable_buy_orders,
         },
         base,
     }

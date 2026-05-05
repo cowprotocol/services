@@ -221,6 +221,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         weth: config.shared.contracts.native_token,
         balances: config.shared.contracts.balances,
         trampoline: config.shared.contracts.hooks,
+        flashloan_router: config.shared.contracts.flashloan_router,
     };
     let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
     let eth = ethereum(
@@ -314,6 +315,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 .await
                 .expect("failed to query solver authenticator address"),
             block_stream: eth.current_block().clone(),
+            flash_loan_router: eth.contracts().flashloan_router(),
+            hooks_trampoline: *eth.contracts().trampoline().address(),
         },
         factory::Components {
             http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
@@ -472,6 +475,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         balance_fetcher.clone(),
         config.price_estimation.quote_verification,
         config.price_estimation.quote_timeout,
+        config.price_estimation.max_quote_timeout,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
