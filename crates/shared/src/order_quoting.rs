@@ -438,6 +438,10 @@ impl OrderQuoter {
         default_quote_timeout: std::time::Duration,
         max_quote_timeout: std::time::Duration,
     ) -> Self {
+        assert!(
+            max_quote_timeout >= default_quote_timeout,
+            "max-quote-timeout needs to be greater or equal quote-timeout"
+        );
         Self {
             price_estimator,
             native_price_estimator,
