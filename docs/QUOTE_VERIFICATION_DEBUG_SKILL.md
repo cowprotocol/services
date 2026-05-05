@@ -1,6 +1,7 @@
-# CoW Protocol Quote-Verification Debug Skill
-
-Debug why a CoW Protocol price quote failed verification (or returned `verified: false`). One quote spawns ~25 estimators in parallel; each one that runs verification (`tsolver`, `kipseli`, `bitget-quote`, `helixbox-quote-native`, `fractal`, `baseline`, `rizzolver`, `wraxyn-quote-native`, `balancer-quote`, `sector`, …) emits a Tenderly resimulate-curl log line. This skill walks through pulling those, replaying them three different ways, and root-causing per-estimator failures.
+---
+name: debug-quote
+description: Debugs why the backend returned a given quote. It does that by inspecting the quote competition as a whole and re-simulating individual quotes when it makes sense.
+---
 
 ## When to use
 
@@ -56,11 +57,11 @@ If the user gave a *symbol* (e.g. `tGLD`):
 1. **First stop: cowprotocol/token-lists** — https://github.com/cowprotocol/token-lists is the canonical CoW Swap UI token list. Each chain has its own JSON; grep by `"symbol"`. Symbols are not unique (e.g. `tGLD` resolves to both Tenbin Gold *and* TempleGold on mainnet), so confirm against the address the user actually used if known.
 2. Verify any candidate against the chain by probing `name()`/`symbol()`/`decimals()`:
    ```bash
-   RETH=https://ovh-mainnet-reth-02.nodes.batch.exchange/reth
+   ETH_MAINNET_RPC=...
    ADDR=0x...
    for sel in 0x06fdde03 0x95d89b41 0x313ce567; do
      curl -s -X POST -H 'Content-Type: application/json' \
-       --data '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"'$ADDR'","data":"'$sel'"},"latest"],"id":1}' $RETH
+       --data '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"'$ADDR'","data":"'$sel'"},"latest"],"id":1}' $ETH_MAINNET_RPC
    done
    ```
    ABI-decode each result (string for `name`/`symbol`, uint8 for `decimals`).
@@ -88,7 +89,7 @@ container:="mainnet-api-prod"
   AND parsed.trace_id:"<CANDIDATE_TRACE_ID>"
 ```
 
-A given UI usually fires both `priceQuality: optimal` *and* `priceQuality: fast` in parallel for the same pair, so expect two trace_ids per user attempt with the same sell/buy. Either is fine for the per-estimator analysis; pick the most recent.
+A given UI usually fires both `priceQuality: optimal` *and* `priceQuality: fast` in parallel for the same pair, so expect two trace_ids per user attempt with the same sell/buy. The ones with optimal quality are preferred for the per-estimator analysis; pick the most recent.
 
 ### Narrow by wallet (optional)
 
@@ -172,7 +173,7 @@ Drop this at `/tmp/cow-trace/run_sim.py`:
 #!/usr/bin/env python3
 """Replay a Tenderly /simulate payload via debug_traceCall.
 Usage: run_sim.py <payload.json> [gas-decimal-override]
-Env: RETH_URL (default: cow public proxy); ALL_CALLS=1 to show non-failing branches.
+Env: ETH_MAINNET_RPC (default: cow public proxy); ALL_CALLS=1 to show non-failing branches.
 """
 import json, os, sys, urllib.request
 
@@ -241,7 +242,7 @@ def deepest(c, path=None):
 if __name__ == "__main__":
     p = json.load(open(sys.argv[1]))
     g = int(sys.argv[2]) if len(sys.argv) > 2 else None
-    url = os.environ.get("RETH_URL", "https://ovh-mainnet-reth-02.nodes.batch.exchange/reth")
+    url = os.environ.get("ETH_MAINNET_RPC")
     print(f"# block={p.get('block_number','latest')} gas={'override='+str(g) if g else hex(p.get('gas',0))}")
     res = post(p, url, g)
     if "error" in res and "result" not in res:
@@ -337,7 +338,7 @@ The goal is not to match the deepest selector against a lookup table — the goa
 
 9. **Form a hypothesis, then *test* it.** Useful experiments cheap enough to run:
    - Re-run with `gas=100000000` — if it now passes, the failure was the verifier's gas cap, not a real revert.
-   - Decode `interactions[3]` — if `intra.length == 0`, you've found an empty-solution bug.
+   - Decode `interactions[]` — if `interactions[1].length == 0`, you've found an empty-solution bug.
    - Re-run with the storage override removed/extended — confirms whether a balance/allowance gap is real on chain or a verifier-setup artifact.
    - Search VictoriaLogs for the same solver across recent quotes (`stats by selector count`) to see if the failure is a one-off or systemic.
 
@@ -365,15 +366,7 @@ Empty-interactions bugs (recently common in tsolver) are best confirmed by decod
 
 ### Step 5d — OOG: bump gas, then binary search
 
-```bash
-python3 /tmp/cow-trace/run_sim.py /tmp/cow-trace/<est>.json 100000000
-for gas in 18000000 20000000 25000000 30000000 50000000; do
-  echo -n "gas=$gas: "; python3 /tmp/cow-trace/run_sim.py /tmp/cow-trace/<est>.json $gas \
-    | grep -E '✅|^# DEEPEST'
-done
-```
-
-Compare the solver's self-reported `gas` (from the `new price estimate` log) to actual `gasUsed`. A 10×+ underestimate is a strong tell that the solver's gas heuristic is wrong AND that the verifier's 16.78M cap is biting.
+If the simualtion fails due to "out of gas", try to resimulate it with the maximum gas limit for the chain and compare the solver's self-reported `gas` (from the `new price estimate` log) to actual `gasUsed`. Keep in mind potential maximum block gas limits as well as maximum transaction gas limits for the given chain.
 
 ### Step 5e — Balance/allowance forensics for silent reverts
 
