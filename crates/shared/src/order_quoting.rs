@@ -49,6 +49,7 @@ impl QuoteParameters {
     fn to_price_query(
         &self,
         default_quote_timeout: std::time::Duration,
+        max_quote_timeout: std::time::Duration,
     ) -> price_estimation::Query {
         let (kind, in_amount) = match self.side {
             OrderQuoteSide::Sell {
@@ -64,7 +65,7 @@ impl QuoteParameters {
         let timeout = self
             .timeout
             .unwrap_or(default_quote_timeout)
-            .min(default_quote_timeout);
+            .min(max_quote_timeout);
 
         price_estimation::Query {
             verification: self.verification.clone(),
@@ -421,6 +422,7 @@ pub struct OrderQuoter {
     balance_fetcher: Arc<dyn BalanceFetching>,
     quote_verification: QuoteVerificationMode,
     default_quote_timeout: std::time::Duration,
+    max_quote_timeout: std::time::Duration,
 }
 
 impl OrderQuoter {
@@ -434,7 +436,12 @@ impl OrderQuoter {
         balance_fetcher: Arc<dyn BalanceFetching>,
         quote_verification: QuoteVerificationMode,
         default_quote_timeout: std::time::Duration,
+        max_quote_timeout: std::time::Duration,
     ) -> Self {
+        assert!(
+            max_quote_timeout >= default_quote_timeout,
+            "max-quote-timeout needs to be greater or equal quote-timeout"
+        );
         Self {
             price_estimator,
             native_price_estimator,
@@ -445,6 +452,7 @@ impl OrderQuoter {
             balance_fetcher,
             quote_verification,
             default_quote_timeout,
+            max_quote_timeout,
         }
     }
 
@@ -463,7 +471,8 @@ impl OrderQuoter {
             _ => self.now.now() + self.validity.standard_quote,
         };
 
-        let trade_query = Arc::new(parameters.to_price_query(self.default_quote_timeout));
+        let trade_query =
+            Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
         let (effective_gas_price, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
                 .effective_gas_price()
@@ -940,6 +949,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1080,6 +1090,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1215,6 +1226,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1313,6 +1325,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(
@@ -1386,6 +1399,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(
@@ -1447,6 +1461,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert_eq!(
@@ -1530,6 +1545,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert_eq!(
@@ -1615,6 +1631,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert_eq!(
@@ -1688,6 +1705,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(
@@ -1719,6 +1737,7 @@ mod tests {
             quote_verification: QuoteVerificationMode::Unverified,
             balance_fetcher: mock_balance_fetcher(),
             default_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+            max_quote_timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         };
 
         assert!(matches!(
