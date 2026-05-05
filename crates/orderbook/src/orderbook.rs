@@ -658,12 +658,14 @@ impl Orderbook {
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
-            .context("failed to finalize simulation")?;
+            .context("failed to finalize simulation")
+            .map_err(OrderSimulationError::Other)?;
 
         let simulation_result = sim
             .simulate_with_tenderly_report()
             .await
-            .context("failed to execute simulation")?;
+            .context("failed to execute simulation")
+            .map_err(OrderSimulationError::Other)?;
 
         Ok(Some(OrderSimulationResult {
             tenderly_url: simulation_result.tenderly_url,
@@ -760,7 +762,7 @@ pub enum OrderSimulationError {
     #[error("order simulation is not enabled")]
     NotEnabled,
     #[error("malformed input")]
-    MalformedInput(#[from] anyhow::Error),
+    MalformedInput(anyhow::Error),
     #[error("simulation could not be created for order")]
     Other(anyhow::Error),
 }
