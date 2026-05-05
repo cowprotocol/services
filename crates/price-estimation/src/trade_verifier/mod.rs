@@ -171,7 +171,7 @@ impl TradeVerifier {
             verification.receiver
         };
 
-        // storeBalance interactions bracket the settlement to measure the actual
+        // storeBalance interactions surrounding the settlement to measure the actual
         // out_amount
         let (tracked_token, tracked_owner) = match query.kind {
             OrderKind::Sell => (query.buy_token, effective_receiver),
@@ -188,13 +188,6 @@ impl TradeVerifier {
             .abi_encode(),
         };
 
-        // WETH unwrap so ETH buy orders can pay out native tokens
-        let weth_unwrap = (query.buy_token == BUY_ETH_ADDRESS).then(|| InteractionData {
-            target: self.simulator.native_token(),
-            value: U256::ZERO,
-            call_data: WETH9::WETH9::withdrawCall { wad: buy_amount }.abi_encode(),
-        });
-
         // pre: [verification.pre, trade.pre, trade_setup, storeBalance_before]
         let pre_interactions: Vec<InteractionData> = map_interactions_data(
             verification
@@ -207,6 +200,12 @@ impl TradeVerifier {
         .chain([store_balance.clone()])
         .collect();
 
+        // WETH unwrap so ETH buy orders can pay out native tokens
+        let weth_unwrap = (query.buy_token == BUY_ETH_ADDRESS).then(|| InteractionData {
+            target: self.simulator.native_token(),
+            value: U256::ZERO,
+            call_data: WETH9::WETH9::withdrawCall { wad: buy_amount }.abi_encode(),
+        });
         // main: [trade.main, weth_unwrap]
         let main_interactions: Vec<InteractionData> = map_interactions_data(trade.interactions())
             .into_iter()
@@ -301,6 +300,8 @@ impl TradeVerifier {
             .await
             .map_err(|e| Error::SimulationFailed(anyhow::anyhow!("{e}")))?;
 
+        // after assembling the state overrides and settlement call data we need to
+        // craft a call that takes the settle call data as an argument.
         let settlement_target = eth_call_inputs
             .request
             .to
