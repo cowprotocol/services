@@ -19,6 +19,7 @@ use {
     contracts::{
         BalancerV2Vault,
         ChainalysisOracle,
+        FlashLoanRouter,
         GPv2Settlement,
         HooksTrampoline,
         WETH9,
@@ -171,6 +172,13 @@ pub async fn run(config: Configuration) {
     };
     let hooks_trampoline_address = *hooks_contract.address();
 
+    let flashloan_router_address = config
+        .shared
+        .contracts
+        .flashloan_router
+        .or_else(|| FlashLoanRouter::deployment_address(&chain_id))
+        .expect("no flashloan router deployment for this chain");
+
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
@@ -247,6 +255,8 @@ pub async fn run(config: Configuration) {
                 .await
                 .expect("failed to query solver authenticator address"),
             block_stream: current_block_stream.clone(),
+            flash_loan_router: flashloan_router_address,
+            hooks_trampoline: hooks_trampoline_address,
         },
         factory::Components {
             http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
@@ -422,7 +432,7 @@ pub async fn run(config: Configuration) {
         Some(
             simulator::simulation_builder::SettlementSimulator::new(
                 settlement_contract.clone(),
-                Default::default(),
+                flashloan_router_address,
                 hooks_trampoline_address,
                 *native_token.address(),
                 config.gas_limit.saturating_to(),

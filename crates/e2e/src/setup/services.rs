@@ -143,6 +143,11 @@ impl<'a> Services<'a> {
                 native_token: Some(*self.contracts.weth.address()),
                 hooks: Some(*self.contracts.hooks.address()),
                 balancer_v2_vault: Some(*self.contracts.balancer_vault.address()),
+                flashloan_router: self
+                    .contracts
+                    .flashloan_router
+                    .as_ref()
+                    .map(|c| *c.address()),
             },
             ..Default::default()
         }
