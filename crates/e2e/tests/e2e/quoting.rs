@@ -340,10 +340,10 @@ async fn quote_timeout(web3: Web3) {
     );
 
     /// The default quote timeout used when the user does not override it.
-    const DEFAULT_QUOTE_TIME_MS: u64 = 500;
+    const DEFAULT_QUOTE_TIMEOUT_MS: u64 = 500;
 
     /// The maximum quote timeout the user is allowed to configure.
-    const MAX_QUOTE_TIME_MS: u64 = 1000;
+    const MAX_QUOTE_TIMEOUT_MS: u64 = 1000;
 
     services
         .start_api(configs::orderbook::Configuration {
@@ -363,8 +363,8 @@ async fn quote_timeout(web3: Web3) {
                 ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
             price_estimation: configs::price_estimation::PriceEstimation {
-                quote_timeout: Duration::from_millis(DEFAULT_QUOTE_TIME_MS),
-                max_quote_timeout: Duration::from_millis(MAX_QUOTE_TIME_MS),
+                quote_timeout: Duration::from_millis(DEFAULT_QUOTE_TIMEOUT_MS),
+                max_quote_timeout: Duration::from_millis(MAX_QUOTE_TIMEOUT_MS),
                 ..configs::orderbook::Configuration::test_default().price_estimation
             },
             ..configs::orderbook::Configuration::test_default()
@@ -374,7 +374,7 @@ async fn quote_timeout(web3: Web3) {
     mock_solver.configure_solution_async(Arc::new(|| {
         async {
             // make the solver always exceeds the max quote timeout
-            tokio::time::sleep(Duration::from_millis(MAX_QUOTE_TIME_MS + 100)).await;
+            tokio::time::sleep(Duration::from_millis(MAX_QUOTE_TIMEOUT_MS + 100)).await;
             // we only care about timeout management so no need to return
             // a working solution
             None
@@ -411,13 +411,13 @@ async fn quote_timeout(web3: Web3) {
     let start = std::time::Instant::now();
     let res = services.get_native_price(&Address::random()).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
-    assert_within_variance(start, DEFAULT_QUOTE_TIME_MS);
+    assert_within_variance(start, DEFAULT_QUOTE_TIMEOUT_MS);
 
     // not providing a quote timeout uses the backend's default timeout (500ms)
     let start = std::time::Instant::now();
     let res = services.submit_quote(&quote_request(None)).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
-    assert_within_variance(start, DEFAULT_QUOTE_TIME_MS);
+    assert_within_variance(start, DEFAULT_QUOTE_TIMEOUT_MS);
 
     // timeouts below the default timeout get enforced correctly
     let start = std::time::Instant::now();
@@ -439,11 +439,11 @@ async fn quote_timeout(web3: Web3) {
     let start = std::time::Instant::now();
     let res = services
         .submit_quote(&quote_request(Some(Duration::from_millis(
-            MAX_QUOTE_TIME_MS * 2,
+            MAX_QUOTE_TIMEOUT_MS * 2,
         ))))
         .await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
-    assert_within_variance(start, MAX_QUOTE_TIME_MS);
+    assert_within_variance(start, MAX_QUOTE_TIMEOUT_MS);
 
     // set up trader to pass balance checks during order creation
     sell_token.mint(trader.address(), 1u64.eth()).await;
@@ -477,7 +477,7 @@ async fn quote_timeout(web3: Web3) {
     let start = std::time::Instant::now();
     let res = services.create_order(&order).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
-    assert_within_variance(start, DEFAULT_QUOTE_TIME_MS);
+    assert_within_variance(start, DEFAULT_QUOTE_TIMEOUT_MS);
 }
 
 async fn quote_custom_solver_errors(web3: Web3) {
