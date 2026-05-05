@@ -2019,7 +2019,7 @@ components:
               description: >
                 User provided timeout in milliseconds. If no value is provided
                 the systems default quote timeout will be used. Values get capped
-                at a generous maximum timeout. 
+                at a generous maximum timeout.
                 Note that reducing the timeout can result in worse quotes because
                 it might be too short for some price estimators.
           required:
