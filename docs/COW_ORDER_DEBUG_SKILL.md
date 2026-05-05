@@ -407,6 +407,66 @@ settle(
 - Monitors chain state, cancels if settlement becomes invalid (liquidity moved, etc)
 - **Penalty** if solution proposed but not settled
 
+### 10.1 Discarded Solutions: Replay-then-Trace
+
+When the driver logs `discarded solution: settlement encoding` with `err=simulation(revert(... accesslist("execution reverted")))`, the solver produced a route but `eth_createAccessList` reverted. The driver-side message is intentionally generic — the truth is in the calldata embedded in the err field.
+
+The solver's `tx { from: 0x..., to: 0x..., input: 0x13d79a0b... }` is printed inside the err string. Extract `from`, `to`, and `input` and replay the call at the historic block.
+
+**Use an archive RPC** — public RPCs typically prune state ~128 blocks back, and order-time blocks are usually older than that:
+- Mainnet: `https://ovh-mainnet-reth-02.nodes.batch.exchange/reth` (reth proxy, supports `debug_traceCall`)
+- Gnosis: `https://rpc.gnosis.gateway.fm`
+- Other chains: prefer Tenderly authenticated node, or a chain-specific archive
+
+For Tenderly, the CoW org slug is `cow-protocol`; common project slugs include `production`, `staging`, `barn`. POST `/api/v1/account/cow-protocol/project/<slug>/simulate` with `network_id`, `from`, `to`, `input`, `block_number`.
+
+### 10.2 Walk the Call Tree — Don't Stop at the First Revert String
+
+A top-level `Error(string)` is a **suspect**, not a **cause**. Many contracts wrap inner reverts in their own messages: Curve pools, Permit2, multicall, Universal Router, 0x Settler, custom routers, HooksTrampoline.
+
+Recipe:
+1. Run both `eth_call` (gives you the top-level Error(string) text) AND `debug_traceCall` with `{tracer: "callTracer", tracerConfig: {withLog: true}}` (gives you the full call tree).
+2. Walk every CALL/DELEGATECALL/STATICCALL frame and find the **deepest** node with `error: execution reverted`.
+3. Decode that frame's `output`:
+   - `0x08c379a0...` → standard `Error(string)` — ABI-decode the string
+   - `0x4e487b71...` → `Panic(uint256)` — Solidity invariant break
+   - any other 4-byte → custom error; look up the selector
+4. Report **both** the wrapped (suspect) and unwrapped (cause) reverts in your output, e.g.: `"GnosisEURe:transfer" (Curve pool rethrow) ← ERC20InsufficientBalance(pool, 0, 5891.63e18)`.
+
+The wrapper string is often diagnostic (it tells you *which* contract caught and rethrew), but it routinely names the wrong cause.
+
+### 10.3 Custom Error Cheat Sheet
+
+| Selector | Signature | Where you'll see it |
+|---|---|---|
+| `0xe450d38c` | `ERC20InsufficientBalance(address,uint256,uint256)` | OZ v5 ERC20 |
+| `0xfb8f41b2` | `ERC20InsufficientAllowance(address,address,uint256,uint256)` | OZ v5 ERC20 |
+| `0x118cdaa7` | `OwnableUnauthorizedAccount(address)` | OZ v5 Ownable |
+| `0xe2517d3f` | `AccessControlUnauthorizedAccount(address,bytes32)` | OZ v5 AccessControl |
+| `0xd0d04f60` | `AllowanceExpired(uint256)` | Permit2 |
+| `0x756688fe` | `InvalidNonce()` | Permit2 |
+| `0x7939f424` | `TooMuchSlippage(address,uint256,uint256)` | 0x Settler / CoW solvers |
+
+For anything else: 4byte.directory or openchain.xyz, or read the called contract's source.
+
+### 10.4 Verify State Before Declaring a Policy/Permission Cause
+
+Whenever the conclusion feels like "X is rejecting Y" (KYC, blacklist, allowlist, paused, frozen, "not whitelisted"), require a falsifying check before writing it down:
+- Read the contract's policy state directly at the historic block (`_isFrozen(addr)`, `isBlacklisted(addr)`, `paused()`, role membership), OR
+- Reproduce the error with a control input (e.g., the same call against a different recipient at the same block).
+
+If you can't do either, write "suspected" not "confirmed". Pattern-matching a contract name to a domain story (e.g., "Monerium → regulated → KYC whitelist") is how the wrong root cause ships.
+
+### 10.5 State-at-Block Checklist
+
+For every contract in the failing call chain, at the historic revert block, fetch:
+- Native balance
+- ERC20 balance of every relevant token (sell, buy, every intermediate hop)
+- Allowances if a `transferFrom` appears in the trace
+- Any contract-specific flags the revert hints at (paused, frozen, deny-listed, role)
+
+Empty pools, drained routers, and contracts that an earlier hop was supposed to pre-fund but didn't are common solver-routing bugs that look like "settlement failed" from the outside.
+
 ---
 
 ## 11. Auction Runtime Issues
@@ -625,3 +685,6 @@ Order not matched?
 | Unverified quote accepted | Simulation failed but UI showed price anyway | User signed bad limit price |
 | Pre-hook revert | User's pre-hook call failed | Check hook calldata + target |
 | Gas estimate too low | API gas estimation bug | Known issue, being fixed |
+| Discarded with `accesslist("execution reverted")` | Solver-side route includes empty/broken pool, expired permit, slippage too tight, etc. | Replay tx via `debug_traceCall` at the order-placement block on an archive RPC (§10.1–10.2); walk to the deepest reverting frame |
+| Wrapped revert string from intermediate router/pool | Inner `ERC20InsufficientBalance` / `InsufficientAllowance` / `TooMuchSlippage` rethrown as a contract-specific message | Decode the 4-byte custom error in the deepest frame (§10.3); don't trust the top-level string |
+| Solver routed through near-empty pool | Stale/incorrect liquidity data on the solver side | Check ERC20 balance of every contract in the failing call chain at the historic block (§10.5) |
