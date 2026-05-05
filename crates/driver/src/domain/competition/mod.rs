@@ -377,7 +377,7 @@ impl Competition {
             ),
         );
         let auction = auction.map_err(|err| {
-            tracing::error!(?err, "auction preparation task failed");
+            tracing::error!(?err, "order filtering task failed");
             Error::InternalError(err.to_string())
         })?;
         let liquidity = liquidity.map_err(|err| {
