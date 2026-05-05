@@ -2,6 +2,36 @@
 
 Use before flagging code that looks unusual, redundant, accidental, or "easy to clean up". Often that code looks weird because it had to.
 
+## How to invoke
+
+Two ways:
+
+- **Procedurally** — follow the steps below when you encounter unusual-looking code in any context (PR review, order-debug session, ad-hoc *"why is this here?"*).
+- **Via slash command** — `/blame-context <path>:<line>` wraps the procedure end-to-end and prints the strengthens / weakens / inverts decision. Useful when you want a one-shot answer rather than walking the procedure manually.
+
+## Example
+
+A reviewer sees this in `crates/driver/src/domain/competition/solution/settlement.rs:444`:
+
+```rust
+let max_gas = eth::Gas(block_limit.0 / eth::U256::from(2));
+```
+
+`/2` looks arbitrary — a reviewer might be tempted to flag it as a magic number. Run the procedure first:
+
+```bash
+git blame -L 444,444 -- crates/driver/src/domain/competition/solution/settlement.rs
+# → a4ee76aae3  Felix Leupold  2024-03-18  ...
+
+git log -1 --format='%s%n%b' a4ee76aae3
+# → subject ends with `(#NNNN)`; pivot to the PR
+gh pr view <NNNN> -R cowprotocol/services
+# → body: "block builders' default algorithm picks tx whose gas limit
+#    fits remaining space; leave headroom for inclusion."
+```
+
+Decision: **weakens** the "magic number" suspicion — the constant has documented inclusion-economics rationale. Drop the finding, or downgrade to a `Question:` confirming the rationale still applies on the chain in question.
+
 ## Procedure
 
 ```bash
