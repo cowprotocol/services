@@ -120,11 +120,13 @@ impl Eip4626 {
         &self,
         token: Address,
     ) -> Result<Option<(Address, u8)>, PriceEstimationError> {
+        let started = Instant::now();
         let vault = IERC4626::IERC4626::new(token, &self.provider);
         let vault_erc20 = ERC20::ERC20::new(token, &self.provider);
         let asset_call = vault.asset();
         let decimals_call = vault_erc20.decimals();
         let (asset_result, decimals_result) = tokio::join!(asset_call.call(), decimals_call.call());
+        let elapsed = started.elapsed();
 
         match asset_result {
             Ok(asset) => {
@@ -134,15 +136,25 @@ impl Eip4626 {
                         "failed to call decimals() on {token}: {err}"
                     ))
                 })?;
+                tracing::debug!(%token, %asset, ?elapsed, "eip4626: vault info fetched");
                 Ok(Some((asset, vault_decimals)))
             }
             // Contract-level revert on `asset()` + working `decimals()` =
             // plain ERC-20. Transient transport failures propagate so they
             // retry instead of pinning the token as non-vault.
-            Err(err) if err.is_contract_revert() && decimals_result.is_ok() => Ok(None),
-            Err(err) => Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                "failed to call asset() on {token}: {err}"
-            ))),
+            Err(err) if err.is_contract_revert() && decimals_result.is_ok() => {
+                tracing::debug!(%token, ?elapsed, "eip4626: not a vault (asset reverted)");
+                Ok(None)
+            }
+            Err(err) => {
+                tracing::debug!(
+                    %token, ?elapsed, %err,
+                    "eip4626: vault info fetch failed (will be cached as Err)"
+                );
+                Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                    "failed to call asset() on {token}: {err}"
+                )))
+            }
         }
     }
 

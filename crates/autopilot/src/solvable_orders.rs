@@ -545,15 +545,26 @@ async fn get_native_prices(
     native_price_estimator: &NativePriceUpdater,
     timeout: Duration,
 ) -> BTreeMap<Address, alloy::primitives::U256> {
-    native_price_estimator
-        .update_tokens_and_fetch_prices(tokens, timeout)
-        .await
-        .into_iter()
-        .flat_map(|(token, result)| {
-            let price = to_normalized_price(result.ok()?)?;
-            Some((token, price))
-        })
-        .collect()
+    let raw = native_price_estimator
+        .update_tokens_and_fetch_prices(tokens.clone(), timeout)
+        .await;
+
+    let mut prices = BTreeMap::new();
+    for token in tokens {
+        match raw.get(&token) {
+            Some(Ok(price)) => match to_normalized_price(*price) {
+                Some(p) => {
+                    prices.insert(token, p);
+                }
+                None => tracing::debug!(%token, price, "native price not representable"),
+            },
+            Some(Err(err)) => {
+                tracing::debug!(%token, %err, "native price estimation failed")
+            }
+            None => tracing::debug!(%token, "native price absent from estimator response"),
+        }
+    }
+    prices
 }
 
 /// Finds orders with pending presignatures. EIP-1271 signature validation is
@@ -769,6 +780,8 @@ mod tests {
         },
     };
 
+    const MOCK_NATIVE_TOKEN: Address = Address::repeat_byte(0xfe);
+
     #[tokio::test]
     async fn get_orders_with_native_prices_with_timeout() {
         let token1 = Address::repeat_byte(1);
@@ -817,7 +830,7 @@ mod tests {
             3,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         );
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
@@ -916,7 +929,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         );
         let native_price_estimator = NativePriceUpdater::new(
             caching_estimator,
@@ -1025,7 +1038,7 @@ mod tests {
                 (token2, ApproximationToken::same_decimals(token_approx2)),
             ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         );
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());

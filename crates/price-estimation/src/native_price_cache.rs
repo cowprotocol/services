@@ -353,6 +353,9 @@ impl CachingNativePriceEstimator {
 
             // update price in cache
             if should_cache(&result) {
+                if let Err(ref err) = result {
+                    tracing::debug!(%token, %err, "native price cache: persisting Err");
+                }
                 self.0.cache.insert(token, result.clone());
             };
 
@@ -567,6 +570,8 @@ mod tests {
         num::ToPrimitive,
     };
 
+    const MOCK_NATIVE_TOKEN: Address = Address::repeat_byte(0xfe);
+
     fn token(u: u64) -> Address {
         Address::left_padding_from(&u.to_be_bytes())
     }
@@ -586,7 +591,7 @@ mod tests {
             concurrent_requests,
             approximation_tokens,
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         )
     }
 
@@ -608,7 +613,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         );
 
         {
@@ -1020,7 +1025,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         );
         let updater = NativePriceUpdater::new(
             estimator.clone(),
@@ -1079,7 +1084,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         );
         let all_tokens: HashSet<_> = (0..10).map(Address::with_last_byte).collect();
         let updater = NativePriceUpdater::new(
@@ -1139,7 +1144,7 @@ mod tests {
             BATCH_SIZE,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
-            Address::repeat_byte(0xfe),
+            MOCK_NATIVE_TOKEN,
         );
         let all_tokens: HashSet<_> = (0..BATCH_SIZE as u64)
             .map(|u| Address::left_padding_from(&u.to_be_bytes()))
