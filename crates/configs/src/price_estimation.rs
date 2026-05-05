@@ -27,6 +27,10 @@ const fn default_quote_timeout() -> Duration {
     Duration::from_secs(5)
 }
 
+const fn default_max_quote_timeout() -> Duration {
+    Duration::from_secs(10)
+}
+
 fn default_quote_inaccuracy_limit() -> BigDecimal {
     BigDecimal::from(1)
 }
@@ -62,6 +66,11 @@ pub struct PriceEstimation {
     /// Default timeout for quote requests.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub quote_timeout: Duration,
+
+    /// Maximum timeout a user may request for a quote. User-provided timeouts
+    /// are clamped to `[0, max_quote_timeout]`.
+    #[serde(with = "humantime_serde", default = "default_max_quote_timeout")]
+    pub max_quote_timeout: Duration,
 
     #[serde(default)]
     pub balance_overrides: BalanceOverridesConfig,
@@ -121,6 +130,7 @@ impl Default for PriceEstimation {
             quote_inaccuracy_limit: default_quote_inaccuracy_limit(),
             quote_verification: Default::default(),
             quote_timeout: default_quote_timeout(),
+            max_quote_timeout: default_max_quote_timeout(),
             balance_overrides: Default::default(),
             tokens_without_verification: Default::default(),
             max_gas_per_tx: default_max_gas_per_tx(),
