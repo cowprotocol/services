@@ -284,12 +284,20 @@ impl Bitget {
 
         let input_amount = decimal_to_wei(&response.amount_in, sell_decimals, Round::Up)?;
 
+        // Sanity check: if Bitget's own estimated output is below what we
+        // asked for, the recursion under-converged and the on-chain swap
+        // (which strictly enforces the requested `minAmountOut`) would
+        // revert. Bail early so we don't waste a simulator roundtrip.
+        // Compare the raw BigDecimals so the check doesn't depend on
+        // rounding direction.
+        let requested_out = wei_to_decimal(order.amount.get(), buy_decimals);
+        if response.expected_amount_out < requested_out {
+            return Err(Error::NotFound);
+        }
+
         // CoW buy orders require the executed buy amount to equal the order's
-        // buy amount exactly. The on-chain `minAmountOut` check in Bitget's
-        // calldata reverts the swap if it would underdeliver, and the
-        // driver simulates settlement before submission, so any genuinely
-        // bad quote is caught downstream. We just report the exact buy
-        // amount here; any overshoot accrues to the settlement buffer.
+        // buy amount exactly. Bitget's calldata enforces this on chain, and
+        // any overshoot accrues to the settlement buffer.
         let output_amount = order.amount.get();
 
         Ok(dex::Swap {
