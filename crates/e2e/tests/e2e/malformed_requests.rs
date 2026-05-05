@@ -460,7 +460,7 @@ async fn http_validation(web3: Web3) {
         "zero sellAmount should return 422"
     );
 
-    // some fields missing → 422
+    // Invalid kind enum value → 422
     let response = client
         .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({

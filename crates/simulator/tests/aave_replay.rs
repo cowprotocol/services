@@ -7,7 +7,6 @@ use {
     },
     simulator::simulation_builder::{
         self,
-        AccountOverrideRequest,
         Block,
         EthCallInputs,
         ExecutionAmount,
@@ -210,13 +209,13 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
 
     simulator
         .new_simulation_builder()
-        .add_orders([simulation_builder::Order::new(order_data)
+        .with_orders([simulation_builder::Order::new(order_data)
             .with_signature(order_owner, Signature::Eip1271(signature_bytes))
             .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
         .parameters_from_app_data(full_app_data)
         .expect("parameters_from_app_data should parse the app data")
         .from_solver(Solver::Fake(None))
-        .with_overrides([AccountOverrideRequest::BuyTokensForBuffers])
+        .provide_sufficient_buy_tokens()
         .at_block(Block::Number(fork_block_mainnet))
         .build()
         .await

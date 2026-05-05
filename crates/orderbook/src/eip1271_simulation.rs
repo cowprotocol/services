@@ -5,7 +5,6 @@ use {
     shared::order_validation::{Eip1271Simulating, Eip1271SimulationError},
     simulator::simulation_builder::{
         self,
-        AccountOverrideRequest,
         Block,
         ExecutionAmount,
         PriceEncoding,
@@ -37,13 +36,13 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
         let inputs = self
             .inner
             .new_simulation_builder()
-            .add_orders([simulation_builder::Order::new(order.data)
+            .with_orders([simulation_builder::Order::new(order.data)
                 .with_signature(order.metadata.owner, order.signature.clone())
                 .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
             .parameters_from_app_data(&full_app_data)
             .map_err(|err| Eip1271SimulationError::Infra(anyhow!(err).context("parse app data")))?
             .from_solver(Solver::Fake(None))
-            .with_overrides([AccountOverrideRequest::BuyTokensForBuffers])
+            .provide_sufficient_buy_tokens()
             .at_block(Block::Latest)
             .build()
             .await

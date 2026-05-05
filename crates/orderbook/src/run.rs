@@ -401,12 +401,10 @@ pub async fn run(config: Configuration) {
                         chain.id().to_string(),
                     )) as _
                 });
-            let flash_loan_router_address =
-                contracts::FlashLoanRouter::deployment_address(&chain.id()).unwrap_or_default();
             Some(
                 simulator::simulation_builder::SettlementSimulator::new(
                     settlement_contract.clone(),
-                    flash_loan_router_address,
+                    flashloan_router_address,
                     hooks_trampoline_address,
                     *native_token.address(),
                     sim_config.gas_limit.saturating_to(),
@@ -479,33 +477,6 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
-
-    let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Arc::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(
-            simulator::simulation_builder::SettlementSimulator::new(
-                settlement_contract.clone(),
-                flashloan_router_address,
-                hooks_trampoline_address,
-                *native_token.address(),
-                config.gas_limit.saturating_to(),
-                balance_overrider.clone(),
-                current_block_stream.clone(),
-                tenderly,
-            )
-            .await
-            .expect("failed to initialize SettlementSimulator"),
-        )
-    } else {
-        None
-    };
 
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
