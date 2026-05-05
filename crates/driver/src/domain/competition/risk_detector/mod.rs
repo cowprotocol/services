@@ -351,7 +351,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ithout_unsupported_orders_all_supported_orders_are_kept() {
+    async fn without_unsupported_orders_all_supported_orders_are_kept() {
         let signer = addr(1);
         let sell_token = addr(2).into();
         let buy_token = addr(3).into();
@@ -364,11 +364,8 @@ mod tests {
             u32::MAX,
             false,
         )];
-
         let detector = Detector::new(Default::default());
-
         detector.without_unsupported_orders(&mut orders, true).await;
-
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].uid, order_uid);
     }
@@ -376,7 +373,6 @@ mod tests {
     #[tokio::test]
     async fn without_unsupported_orders_filters_unsupported_orders_and_flashloans() {
         let valid_to = u32::MAX;
-
         let metrics_bad_uid = uid(1, addr(6), valid_to);
         let token_bad_uid = uid(2, addr(7), valid_to);
         let supported_uid = uid(3, addr(8), valid_to);
@@ -385,6 +381,85 @@ mod tests {
         let sell_detector_unsupported_uid = uid(6, addr(11), valid_to);
         let sell_detector_supported_uid = uid(7, addr(12), valid_to);
         let flashloan_uid = uid(8, addr(13), valid_to);
+        let metrics_quality_unsupported_address = addr(3).into();
+
+        let orders = vec![
+            order(
+                // metrics bad -> discard
+                metrics_bad_uid,
+                addr(6),
+                addr(1).into(),
+                addr(2).into(),
+                valid_to,
+                false,
+            ),
+            order(
+                // token bad -> discard
+                token_bad_uid,
+                addr(7),
+                metrics_quality_unsupported_address,
+                addr(2).into(),
+                valid_to,
+                false,
+            ),
+            order(
+                // token good -> keep
+                supported_uid,
+                addr(8),
+                addr(1).into(),
+                addr(2).into(),
+                valid_to,
+                false,
+            ),
+            order(
+                // unknown sell -> keep
+                unknown_sell_uid,
+                addr(9),
+                addr(4).into(),
+                addr(2).into(),
+                valid_to,
+                false,
+            ),
+            order(
+                // unknown buy -> keep
+                unknown_buy_uid,
+                addr(10),
+                addr(1).into(),
+                addr(5).into(),
+                valid_to,
+                false,
+            ),
+            order(
+                // unsupported on quality check -> discard
+                sell_detector_unsupported_uid,
+                addr(11),
+                addr(6).into(),
+                addr(2).into(),
+                valid_to,
+                false,
+            ),
+            order(
+                // supported on quality check -> keep
+                sell_detector_supported_uid,
+                addr(12),
+                addr(7).into(),
+                addr(2).into(),
+                valid_to,
+                false,
+            ),
+            order(
+                // flashloan -> keep if flashloans is enabled, else discard
+                flashloan_uid,
+                addr(13),
+                addr(1).into(),
+                addr(2).into(),
+                valid_to,
+                true,
+            ),
+        ];
+
+        let mut orders_flashloans_disabled = orders.clone();
+        let mut orders_flashloans_enabled = orders.clone();
 
         let metrics_detector = bad_orders::metrics::Detector::new(
             0.5,
@@ -395,13 +470,10 @@ mod tests {
             Duration::from_secs(60),
             solver::Name("test_solver".into()),
         );
-        let metrics_quality_unsupported_address = addr(3).into();
         let mut detector_config = HashMap::new();
         detector_config.insert(metrics_quality_unsupported_address, Quality::Unsupported);
-
         let mut detector = Detector::new(detector_config);
         detector.with_metrics_detector(metrics_detector);
-
         // Simulate repeated metrics failure for order with metrics_bad_uid
         detector.encoding_failed(&[metrics_bad_uid]);
         detector.encoding_failed(&[metrics_bad_uid]);
@@ -409,77 +481,9 @@ mod tests {
         detector.with_simulation_detector(sell_quality_detector(sell_detector_unsupported_uid));
 
         // Test with flashloans disabled
-        let mut orders_flashloans_disabled = vec![
-            order(
-                metrics_bad_uid,
-                addr(6),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                token_bad_uid,
-                addr(7),
-                metrics_quality_unsupported_address,
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                supported_uid,
-                addr(8),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                unknown_sell_uid,
-                addr(9),
-                addr(4).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                unknown_buy_uid,
-                addr(10),
-                addr(1).into(),
-                addr(5).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                sell_detector_unsupported_uid,
-                addr(11),
-                addr(6).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                sell_detector_supported_uid,
-                addr(12),
-                addr(7).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                flashloan_uid,
-                addr(13),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                true,
-            ),
-        ];
-
         detector
             .without_unsupported_orders(&mut orders_flashloans_disabled, false)
             .await;
-
         let remaining_uids = orders_flashloans_disabled
             .iter()
             .map(|order| order.uid)
@@ -496,77 +500,9 @@ mod tests {
         );
 
         // Test with flashloans enabled
-        let mut orders_flashloans_enabled = vec![
-            order(
-                metrics_bad_uid,
-                addr(6),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                token_bad_uid,
-                addr(7),
-                addr(3).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                supported_uid,
-                addr(8),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                unknown_sell_uid,
-                addr(9),
-                addr(4).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                unknown_buy_uid,
-                addr(10),
-                addr(1).into(),
-                addr(5).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                sell_detector_unsupported_uid,
-                addr(11),
-                addr(6).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                sell_detector_supported_uid,
-                addr(12),
-                addr(7).into(),
-                addr(2).into(),
-                valid_to,
-                false,
-            ),
-            order(
-                flashloan_uid,
-                addr(13),
-                addr(1).into(),
-                addr(2).into(),
-                valid_to,
-                true,
-            ),
-        ];
-
         detector
             .without_unsupported_orders(&mut orders_flashloans_enabled, true)
             .await;
-
         let remaining_uids = orders_flashloans_enabled
             .iter()
             .map(|order| order.uid)
