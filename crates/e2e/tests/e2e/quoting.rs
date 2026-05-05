@@ -373,7 +373,7 @@ async fn quote_timeout(web3: Web3) {
 
     mock_solver.configure_solution_async(Arc::new(|| {
         async {
-            // make the solver always exceeds the max quote timeout
+            // make the solver always exceed the max quote timeout
             tokio::time::sleep(Duration::from_millis(MAX_QUOTE_TIMEOUT_MS + 100)).await;
             // we only care about timeout management so no need to return
             // a working solution
