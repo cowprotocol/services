@@ -280,10 +280,9 @@ async fn build_final_state_overrides(
                 result
             }
             AccountOverrideRequest::BuyTokensForBuffers => {
-                unreachable!(
-                    "replaced with specific Balance requests before state overrides get \
-                     computed"
-                )
+                tracing::error!("BuyTokensForBuffers is supposed to be replaced with specific balance \
+                    override requests before assembling the final state overrides");
+                None
             }
             AccountOverrideRequest::Code { account, code } => Some((
                 account,
