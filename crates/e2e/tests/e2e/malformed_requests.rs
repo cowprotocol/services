@@ -570,6 +570,14 @@ async fn simulation_not_enabled(web3: Web3) {
             "buyAmount": "1000000000000000000",
             "kind": "sell",
             "owner": VALID_ADDRESS,
+            "appData": "{}",
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "signingScheme": "eip1271",
+            "signature": "0x000000",
+            "feeAmount": "0",
+            "validTo": 12341234,
+            "partiallyFillable": false,
         }))
         .send()
         .await
