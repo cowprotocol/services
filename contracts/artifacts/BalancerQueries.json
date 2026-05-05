@@ -23,9 +23,7 @@
       ],
       "stateMutability": "view",
       "type": "function"
-    }
-  ],
-  "_disabled": [
+    },
     {
       "inputs": [
         {
@@ -108,7 +106,9 @@
       ],
       "stateMutability": "nonpayable",
       "type": "function"
-    },
+    }
+  ],
+  "_disabled": [
     {
       "inputs": [
         {
