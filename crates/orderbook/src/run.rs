@@ -441,7 +441,7 @@ pub async fn run(config: Configuration) {
                 tenderly,
             )
             .await
-            .unwrap(),
+            .expect("failed to initialize SettlementSimulator"),
         )
     } else {
         None
