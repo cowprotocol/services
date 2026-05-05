@@ -6,6 +6,7 @@ use {
         test_util::TestDefault,
     },
     e2e::setup::{colocation::SolverEngine, mock::Mock, *},
+    eth_domain_types::Address,
     ethrpc::alloy::CallBuilderExt,
     futures::FutureExt,
     model::{
@@ -338,9 +339,11 @@ async fn quote_timeout(web3: Web3) {
         false,
     );
 
-    /// The default and maximum quote timeout enforced by the backend.
-    /// (configurable but always 500ms in e2e tests)
-    const MAX_QUOTE_TIME_MS: u64 = 500;
+    /// The default quote timeout used when the user does not override it.
+    const DEFAULT_QUOTE_TIME_MS: u64 = 500;
+
+    /// The maximum quote timeout the user is allowed to configure.
+    const MAX_QUOTE_TIME_MS: u64 = 1000;
 
     services
         .start_api(configs::orderbook::Configuration {
@@ -360,7 +363,8 @@ async fn quote_timeout(web3: Web3) {
                 ..configs::orderbook::native_price::NativePriceConfig::test_default()
             },
             price_estimation: configs::price_estimation::PriceEstimation {
-                quote_timeout: Duration::from_millis(MAX_QUOTE_TIME_MS),
+                quote_timeout: Duration::from_millis(DEFAULT_QUOTE_TIME_MS),
+                max_quote_timeout: Duration::from_millis(MAX_QUOTE_TIME_MS),
                 ..configs::orderbook::Configuration::test_default().price_estimation
             },
             ..configs::orderbook::Configuration::test_default()
@@ -369,9 +373,8 @@ async fn quote_timeout(web3: Web3) {
 
     mock_solver.configure_solution_async(Arc::new(|| {
         async {
-            // make the solver always exceeds the maximum allowed timeout
-            // (by default 500ms in e2e tests)
-            tokio::time::sleep(Duration::from_millis(MAX_QUOTE_TIME_MS + 300)).await;
+            // make the solver always exceeds the max quote timeout
+            tokio::time::sleep(Duration::from_millis(MAX_QUOTE_TIME_MS + 100)).await;
             // we only care about timeout management so no need to return
             // a working solution
             None
@@ -381,8 +384,10 @@ async fn quote_timeout(web3: Web3) {
 
     let quote_request = |timeout| OrderQuoteRequest {
         from: trader.address(),
-        sell_token: *onchain.contracts().weth.address(),
-        buy_token: *sell_token.address(),
+        // use random address to avoid tokens getting cached as unquotable
+        // due to repeated quoting errors
+        sell_token: Address::random(),
+        buy_token: Address::random(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(1u64.eth()).unwrap(),
@@ -402,19 +407,19 @@ async fn quote_timeout(web3: Web3) {
         assert!((min..max).contains(&elapsed));
     };
 
-    // native token price requests are also capped to the max timeout
+    // native token price requests use the default timeout
     let start = std::time::Instant::now();
-    let res = services.get_native_price(sell_token.address()).await;
+    let res = services.get_native_price(&Address::random()).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
-    assert_within_variance(start, MAX_QUOTE_TIME_MS);
+    assert_within_variance(start, DEFAULT_QUOTE_TIME_MS);
 
-    // not providing a timeout uses the backend's default timeout (500ms)
+    // not providing a quote timeout uses the backend's default timeout (500ms)
     let start = std::time::Instant::now();
     let res = services.submit_quote(&quote_request(None)).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
-    assert_within_variance(start, MAX_QUOTE_TIME_MS);
+    assert_within_variance(start, DEFAULT_QUOTE_TIME_MS);
 
-    // timeouts below the max timeout get enforced correctly
+    // timeouts below the default timeout get enforced correctly
     let start = std::time::Instant::now();
     let res = services
         .submit_quote(&quote_request(Some(Duration::from_millis(300))))
@@ -422,7 +427,15 @@ async fn quote_timeout(web3: Web3) {
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
     assert_within_variance(start, 300);
 
-    // user provided timeouts get capped at the backend's max timeout (500ms)
+    // timeouts between default and max value get enforced correctly
+    let start = std::time::Instant::now();
+    let res = services
+        .submit_quote(&quote_request(Some(Duration::from_millis(700))))
+        .await;
+    assert!(res.unwrap_err().1.contains("NoLiquidity"));
+    assert_within_variance(start, 700);
+
+    // user provided timeouts get capped at the backend's max timeout (1000ms)
     let start = std::time::Instant::now();
     let res = services
         .submit_quote(&quote_request(Some(Duration::from_millis(
@@ -464,7 +477,7 @@ async fn quote_timeout(web3: Web3) {
     let start = std::time::Instant::now();
     let res = services.create_order(&order).await;
     assert!(res.unwrap_err().1.contains("NoLiquidity"));
-    assert_within_variance(start, MAX_QUOTE_TIME_MS);
+    assert_within_variance(start, DEFAULT_QUOTE_TIME_MS);
 }
 
 async fn quote_custom_solver_errors(web3: Web3) {
