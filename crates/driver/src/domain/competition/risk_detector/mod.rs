@@ -335,7 +335,7 @@ mod tests {
 
         let mut detector = Detector::new(hardcoded_tokens);
         detector.with_metrics_detector(metrics_detector);
-        // Simulate
+        // Simulate multiple encoding failures to mark uid bad
         for uid in metrics_bad_uids {
             detector.encoding_failed(&[uid]);
             detector.encoding_failed(&[uid]);
