@@ -104,6 +104,7 @@ impl SettlementSimulator {
             solver: None,
             auction_id: None,
             account_override_requests: vec![],
+            provide_buy_tokens: false,
             block: Block::Latest,
         }
     }
@@ -134,6 +135,7 @@ pub struct SimulationBuilder {
     pub(crate) auction_id: Option<i64>,
     pub(crate) simulator: SettlementSimulator,
     pub(crate) account_override_requests: Vec<AccountOverrideRequest>,
+    pub(crate) provide_buy_tokens: bool,
     pub(crate) block: Block,
 }
 
@@ -242,6 +244,15 @@ impl SimulationBuilder {
         }
 
         Ok(self)
+    }
+
+    /// Instructs the builder to override the settlement contract's buy-token
+    /// balances so it can pay out every order. The exact amounts are derived
+    /// from the clearing prices and executed amounts once
+    /// [`build`](Self::build) is called.
+    pub fn provide_sufficient_buy_tokens(mut self) -> Self {
+        self.provide_buy_tokens = true;
+        self
     }
 
     /// Queues [`AccountOverrideRequest`]s to be resolved and applied during
@@ -518,9 +529,6 @@ pub enum AccountOverrideRequest {
         token: Address,
         amount: U256,
     },
-    /// Gives the settlement contract enough buy tokens to pay for all
-    /// orders.
-    BuyTokensForBuffers,
     /// Deploys the provided code at the requested address.
     Code { account: Address, code: Bytes },
     /// Allows to build fully custom overrides for the most exotic use cases.

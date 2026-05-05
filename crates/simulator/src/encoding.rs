@@ -385,17 +385,7 @@ pub(crate) async fn finish_simulation_builder(
         clearing_prices.push(buy_price);
     }
 
-    // Expand any BuyTokensForBuffers request into one Balance override per
-    // order, then remove all BuyTokensForBuffers entries so duplicates are
-    // impossible.
-    if builder
-        .account_override_requests
-        .iter()
-        .any(|r| matches!(r, AccountOverrideRequest::BuyTokensForBuffers))
-    {
-        builder
-            .account_override_requests
-            .retain(|r| !matches!(r, AccountOverrideRequest::BuyTokensForBuffers));
+    if builder.provide_buy_tokens {
         let settlement = *builder.simulator.0.settlement.address();
         for (i, (order, &exec)) in builder.orders.iter().zip(&executed_amounts).enumerate() {
             let sell_price = clearing_prices[2 * i];
@@ -593,11 +583,6 @@ async fn build_final_state_overrides(
                     tracing::warn!(%token, %holder, "failed to compute balance state override, skipping");
                 }
                 result
-            }
-            AccountOverrideRequest::BuyTokensForBuffers => {
-                tracing::error!("BuyTokensForBuffers is supposed to be replaced with specific balance \
-                    override requests before assembling the final state overrides");
-                None
             }
             AccountOverrideRequest::Code { account, code } => Some((
                 account,

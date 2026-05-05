@@ -654,7 +654,7 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
+            .provide_sufficient_buy_tokens()
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
@@ -717,7 +717,7 @@ impl Orderbook {
                     .map(simulation_builder::Block::Number)
                     .unwrap_or(simulation_builder::Block::Latest),
             )
-            .with_overrides([simulation_builder::AccountOverrideRequest::BuyTokensForBuffers])
+            .provide_sufficient_buy_tokens()
             .from_solver(simulation_builder::Solver::Fake(None))
             .build()
             .await
