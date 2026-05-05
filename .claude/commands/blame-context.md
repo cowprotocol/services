@@ -26,7 +26,7 @@ Follow `docs/skills/git-blame-historic-context.md` end-to-end. Concretely:
 1. `git blame -L <start>,<end> -- <path>` to find the originating commit.
 2. If the surface looks like a wholesale move/refactor (same author across many lines, recent date, identical hashes), retry with `git blame -w -C -C -C -L <start>,<end> -- <path>` to recover the real authoring commit.
 3. `git log -1 --format='%s%n%b' <sha>` for the commit body.
-4. If the subject ends with `(#NNNN)`, pivot to the PR conversation: `gh pr view <NNNN> -R <owner>/<repo>`. The PR body is usually richer than the squash commit alone.
+4. If the subject ends with `(#NNNN)`, pivot to the PR conversation: `gh pr view <NNNN>` (the gh CLI infers the repo from the working directory). The PR body is usually richer than the squash commit alone.
 
 Then print the report below.
 

@@ -25,7 +25,7 @@ git blame -L 444,444 -- crates/driver/src/domain/competition/solution/settlement
 
 git log -1 --format='%s%n%b' a4ee76aae3
 # → subject ends with `(#NNNN)`; pivot to the PR
-gh pr view <NNNN> -R cowprotocol/services
+gh pr view <NNNN>
 # → body: "block builders' default algorithm picks tx whose gas limit
 #    fits remaining space; leave headroom for inclusion."
 ```
@@ -41,7 +41,7 @@ git blame -L <start>,<end> -- <path>                # who/what/when
 # subject ends with "(#NNNN)" — extract the PR number, then pivot to the
 # PR conversation, which is usually richer than the commit body alone.
 git log -1 --format='%s%n%b' <sha>
-gh pr view <NNNN> -R <owner>/<repo>
+gh pr view <NNNN>
 ```
 
 ## Decision
