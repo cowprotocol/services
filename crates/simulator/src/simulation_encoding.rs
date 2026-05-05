@@ -251,6 +251,7 @@ async fn build_final_state_overrides(
                 // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
                 // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
                 // slot_padded).
+                // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2AllowListAuthentication.sol#L22>
                 let mut buf = [0u8; 64];
                 buf[12..32].copy_from_slice(addr.as_slice());
                 buf[32..64].copy_from_slice(&U256::ONE.to_be_bytes::<32>());
