@@ -3,7 +3,7 @@
 
 use {
     crate::domain::{dex, eth},
-    bigdecimal::{BigDecimal, ToPrimitive},
+    bigdecimal::BigDecimal,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -98,7 +98,7 @@ impl SwapRequest {
             to_address: settlement_contract,
             // as per a suggestion by the BitGet team for the best routes on EVM chains
             market: "bgwevmaggregator".to_string(),
-            slippage: slippage.as_factor().to_f64().unwrap_or_default() * 100.0,
+            slippage: slippage.as_percent().unwrap_or_default(),
             request_mod: "rich".to_string(),
             fee_rate: Some(0.0),
         }
@@ -198,7 +198,7 @@ impl ReverseSwapRequest {
             request_mode: "minAmountOut".to_string(),
             from_address: settlement_contract,
             to_address: settlement_contract,
-            slippage: slippage.as_factor().to_f64().unwrap_or_default() * 100.0,
+            slippage: slippage.as_percent().unwrap_or_default(),
             fee_rate: 0.0,
         }
     }

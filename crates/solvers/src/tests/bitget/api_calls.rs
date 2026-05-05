@@ -10,6 +10,10 @@ use {
 /// Pause between chain iterations to stay under Bitget's per-IP rate limit.
 const RATE_LIMIT_PAUSE: Duration = Duration::from_secs(1);
 
+/// CoW Protocol GPv2Settlement contract, same address on every supported
+/// chain.
+const SETTLEMENT: Address = address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41");
+
 struct TestCase {
     name: &'static str,
     chain_id: ChainId,
@@ -76,7 +80,6 @@ async fn swap_sell_all_chains() {
     let api_key = env::var("BITGET_API_KEY").unwrap();
     let api_secret = env::var("BITGET_API_SECRET").unwrap();
     let endpoint = reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap();
-    const SETTLEMENT: Address = address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41");
 
     for tc in TEST_CASES {
         let config = bitget_dex::Config {
@@ -161,7 +164,6 @@ async fn swap_buy_all_chains() {
     let api_key = env::var("BITGET_API_KEY").unwrap();
     let api_secret = env::var("BITGET_API_SECRET").unwrap();
     let endpoint = reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap();
-    const SETTLEMENT: Address = address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41");
 
     for tc in TEST_CASES {
         let config = bitget_dex::Config {

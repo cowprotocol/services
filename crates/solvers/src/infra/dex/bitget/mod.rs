@@ -103,9 +103,9 @@ pub struct Config {
     /// The stream that yields every new block.
     pub block_stream: Option<CurrentBlockWatcher>,
 
-    /// Whether to serve buy orders via the reverse-quote endpoint.
-    /// Disabled by default. See [`Bitget::handle_buy_order`] for the
-    /// surplus tradeoff that motivates the opt-in.
+    /// Whether to serve buy orders via the reverse-quote endpoint. Off by
+    /// default so operators can keep the new path opt-in until they're
+    /// confident in it. See [`Bitget::handle_buy_order`] for behavior.
     pub enable_buy_orders: bool,
 }
 
@@ -237,14 +237,15 @@ impl Bitget {
     /// enforces `minAmountOut` on chain, so the swap reverts if it
     /// underdelivers.
     ///
-    /// Surplus tradeoff: the swap typically overshoots the requested
-    /// amount because Bitget's recursion converges from above. The user
-    /// receives exactly the buy amount they signed for (CoW exact-out
-    /// semantics), and the overshoot accrues to GPv2Settlement's internal
-    /// token balance (the "buffer", reused to internalize future swaps).
-    /// In effect, up to the configured slippage of user surplus is
-    /// captured by the protocol rather than the user, which is why this
-    /// path is gated behind `enable_buy_orders`.
+    /// Note that Bitget's recursion typically converges from above, so
+    /// the swap usually delivers slightly more than the requested buy
+    /// amount. CoW exact-out semantics still deliver the user only what
+    /// they signed for, and the overshoot accrues to GPv2Settlement's
+    /// internal token balance (the "buffer", reused to internalize
+    /// future swaps).
+    ///
+    /// This path is feature-gated via `enable_buy_orders` so it can be
+    /// turned off quickly if anything misbehaves on Bitget's side.
     async fn handle_buy_order(
         &self,
         order: &dex::Order,
