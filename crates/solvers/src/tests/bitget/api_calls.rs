@@ -4,8 +4,15 @@ use {
         infra::dex::bitget as bitget_dex,
     },
     alloy::primitives::{Address, address},
-    std::{collections::HashMap, env},
+    std::{collections::HashMap, env, time::Duration},
 };
+
+/// Pause between chain iterations to stay under Bitget's per-IP rate limit.
+const RATE_LIMIT_PAUSE: Duration = Duration::from_secs(1);
+
+/// CoW Protocol GPv2Settlement contract, same address on every supported
+/// chain.
+const SETTLEMENT: Address = address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41");
 
 struct TestCase {
     name: &'static str,
@@ -65,25 +72,27 @@ const TEST_CASES: &[TestCase] = &[
     },
 ];
 
-#[ignore]
-#[tokio::test]
 // To run this test, set the following environment variables accordingly to your
 // Bitget setup: BITGET_API_KEY, BITGET_API_SECRET
+#[ignore]
+#[tokio::test]
 async fn swap_sell_all_chains() {
     let api_key = env::var("BITGET_API_KEY").unwrap();
     let api_secret = env::var("BITGET_API_SECRET").unwrap();
+    let endpoint = reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap();
 
     for tc in TEST_CASES {
         let config = bitget_dex::Config {
-            endpoint: reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap(),
+            endpoint: endpoint.clone(),
             chain_id: tc.chain_id,
             credentials: bitget_dex::BitgetCredentialsConfig {
                 api_key: api_key.clone(),
                 api_secret: api_secret.clone(),
             },
             partner_code: "cowswap".to_string(),
-            settlement_contract: address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            settlement_contract: SETTLEMENT,
             block_stream: None,
+            enable_buy_orders: false,
         };
 
         let order = Order {
@@ -142,11 +151,104 @@ async fn swap_sell_all_chains() {
             "[{}] output token mismatch",
             tc.name
         );
+
+        tokio::time::sleep(RATE_LIMIT_PAUSE).await;
+    }
+}
+
+// To run this test, set the following environment variables accordingly to your
+// Bitget setup: BITGET_API_KEY, BITGET_API_SECRET
+#[ignore]
+#[tokio::test]
+async fn swap_buy_all_chains() {
+    let api_key = env::var("BITGET_API_KEY").unwrap();
+    let api_secret = env::var("BITGET_API_SECRET").unwrap();
+    let endpoint = reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap();
+
+    for tc in TEST_CASES {
+        let config = bitget_dex::Config {
+            endpoint: endpoint.clone(),
+            chain_id: tc.chain_id,
+            credentials: bitget_dex::BitgetCredentialsConfig {
+                api_key: api_key.clone(),
+                api_secret: api_secret.clone(),
+            },
+            partner_code: "cowswap".to_string(),
+            settlement_contract: SETTLEMENT,
+            block_stream: None,
+            enable_buy_orders: true,
+        };
+
+        // Flip sell/buy so that we probe `buy_token = WETH` for a fixed amount,
+        // mirroring the native-price probe shape.
+        let buy_amount = tc.sell_amount;
+        let order = Order {
+            sell: TokenAddress::from(tc.buy_token),
+            buy: TokenAddress::from(tc.sell_token),
+            side: crate::domain::order::Side::Buy,
+            amount: Amount::new(U256::from(buy_amount)),
+            owner: address!("0x6f9ffea7370310cd0f890dfde5e0e061059dcfb8"),
+        };
+
+        let slippage = Slippage::one_percent();
+
+        let mut token_map = HashMap::new();
+        token_map.insert(
+            order.sell,
+            auction::Token {
+                decimals: Some(tc.buy_decimals),
+                symbol: None,
+                reference_price: None,
+                available_balance: U256::ZERO,
+                trusted: false,
+            },
+        );
+        token_map.insert(
+            order.buy,
+            auction::Token {
+                decimals: Some(tc.sell_decimals),
+                symbol: None,
+                reference_price: None,
+                available_balance: U256::ZERO,
+                trusted: false,
+            },
+        );
+        let tokens = auction::Tokens(token_map);
+
+        let bitget = bitget_dex::Bitget::try_new(config).unwrap();
+        let swap = bitget
+            .swap(&order, &slippage, &tokens)
+            .await
+            .unwrap_or_else(|e| panic!("[{}] swap failed: {e}", tc.name));
+
+        assert_eq!(
+            swap.input.token, order.sell,
+            "[{}] input token mismatch",
+            tc.name
+        );
+        assert_eq!(
+            swap.output.token, order.buy,
+            "[{}] output token mismatch",
+            tc.name
+        );
+        // Reverse-quote should produce a swap whose expected output meets or
+        // exceeds the requested buy amount.
+        assert!(
+            swap.output.amount >= order.amount().amount,
+            "[{}] expected output {} < requested {}",
+            tc.name,
+            swap.output.amount,
+            order.amount().amount
+        );
+
+        tokio::time::sleep(RATE_LIMIT_PAUSE).await;
     }
 }
 
 #[tokio::test]
-async fn swap_buy_not_supported() {
+async fn swap_buy_disabled() {
+    // With `enable_buy_orders` off (the default), buy orders must short-circuit
+    // to `OrderNotSupported` without touching the API.
     let config = bitget_dex::Config {
         endpoint: reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap(),
         chain_id: crate::domain::eth::ChainId::Mainnet,
@@ -157,6 +259,7 @@ async fn swap_buy_not_supported() {
         partner_code: "cowswap".to_string(),
         settlement_contract: address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
         block_stream: None,
+        enable_buy_orders: false,
     };
 
     let order = Order {
