@@ -343,6 +343,7 @@ mod tests {
         quote-inaccuracy-limit = "0.01"
         quote-verification = "enforce-when-possible"
         quote-timeout = "10s"
+        max-quote-timeout = "20s"
         tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         amount-to-estimate-prices-with = "1000000000000000000"
         min-gas-amount-for-unverified-quotes = 400000
@@ -404,6 +405,7 @@ mod tests {
             QuoteVerificationMode::EnforceWhenPossible
         ));
         assert_eq!(config.quote_timeout, Duration::from_secs(10));
+        assert_eq!(config.max_quote_timeout, Duration::from_secs(20));
         assert!(config.balance_overrides.autodetect);
         assert_eq!(config.balance_overrides.probing_depth, 30);
         assert_eq!(config.balance_overrides.cache_size, 500);
