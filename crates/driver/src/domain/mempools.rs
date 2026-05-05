@@ -9,7 +9,7 @@ use {
     contracts::CowSettlementForwarder::CowSettlementForwarder,
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
-    futures::{FutureExt, StreamExt, future::select_ok},
+    futures::{FutureExt, StreamExt, stream::FuturesUnordered},
     num::Saturating,
     thiserror::Error,
     tracing::Instrument,
@@ -63,20 +63,46 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
-            async move {
-                let result = self
-                    .submit(mempool, settlement, submission_deadline, mode)
-                    .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
-                    .await;
-                observe::mempool_executed(mempool, settlement, &result);
-                result
-            }
-            .boxed()
-        }))
-        .await?;
+        let mut futures: FuturesUnordered<_> = self
+            .mempools
+            .iter()
+            .map(|mempool| {
+                async move {
+                    let result = self
+                        .submit(mempool, settlement, submission_deadline, mode)
+                        .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
+                        .await;
+                    (mempool, result)
+                }
+                .boxed()
+            })
+            .collect();
 
-        Ok(submission.tx_hash)
+        let mut shadowed_errors: Vec<(&infra::Mempool, Error)> = Vec::new();
+        while let Some((mempool, result)) = futures.next().await {
+            match result {
+                Ok(submission) => {
+                    let tx_hash = submission.tx_hash;
+                    observe::mempool_executed(mempool, settlement, Ok(&submission));
+                    for (shadowed_mempool, err) in &shadowed_errors {
+                        observe::mempool_superseded(shadowed_mempool, mempool, settlement, err);
+                    }
+                    return Ok(tx_hash);
+                }
+                Err(err) => shadowed_errors.push((mempool, err)),
+            }
+        }
+
+        // All mempools failed: observe each with its real error label and return
+        // the last error as the overall failure.
+        let (last_mempool, last_err) = shadowed_errors
+            .pop()
+            .expect("Mempools::try_new guarantees a non-empty mempool list");
+        for (mempool, err) in &shadowed_errors {
+            observe::mempool_executed(mempool, settlement, Err(err));
+        }
+        observe::mempool_executed(last_mempool, settlement, Err(&last_err));
+        Err(last_err)
     }
 
     /// Defines if the mempools are configured in a way that guarantees that

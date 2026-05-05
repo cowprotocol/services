@@ -364,7 +364,7 @@ pub fn solver_response(
 pub fn mempool_executed(
     mempool: &Mempool,
     settlement: &Settlement,
-    res: &Result<SubmissionSuccess, mempools::Error>,
+    res: Result<&SubmissionSuccess, &mempools::Error>,
 ) {
     match res {
         Ok(submission) => {
@@ -435,6 +435,29 @@ pub fn mempool_executed(
             .with_label_values(&[mempool.to_string().as_str(), label])
             .inc_by(blocks_passed.0);
     }
+}
+
+/// Observe that a mempool's submission failed but another mempool succeeded
+/// for the same settlement. Recorded under a distinct `Superseded` label so
+/// that the per-mempool metric can be filtered when computing the overall
+/// settlement submission success rate.
+pub fn mempool_superseded(
+    mempool: &Mempool,
+    superseded_by: &Mempool,
+    settlement: &Settlement,
+    err: &mempools::Error,
+) {
+    tracing::debug!(
+        ?err,
+        %mempool,
+        %superseded_by,
+        ?settlement,
+        "mempool submission superseded by another mempool",
+    );
+    metrics::get()
+        .mempool_submission
+        .with_label_values(&[mempool.to_string().as_str(), "Superseded"])
+        .inc();
 }
 
 /// Observe that an invalid DTO was received.
