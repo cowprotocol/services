@@ -8,7 +8,7 @@ use {
         AccountOverrideRequest,
         Block,
         ExecutionAmount,
-        Prices,
+        PriceEncoding,
         SettlementSimulator,
         Solver,
     },
@@ -37,16 +37,13 @@ impl Eip1271Simulating for OrderSimulatorAdapter {
         let inputs = self
             .inner
             .new_simulation_builder()
-            .add_order(
-                simulation_builder::Order::new(order.data)
-                    .with_signature(order.metadata.owner, order.signature.clone())
-                    .with_executed_amount(ExecutionAmount::Full),
-            )
+            .add_orders([simulation_builder::Order::new(order.data)
+                .with_signature(order.metadata.owner, order.signature.clone())
+                .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
             .parameters_from_app_data(&full_app_data)
             .map_err(|err| Eip1271SimulationError::Infra(anyhow!(err).context("parse app data")))?
-            .with_prices(Prices::Limit)
             .from_solver(Solver::Fake(None))
-            .with_override(AccountOverrideRequest::BuyTokensForBuffers)
+            .with_overrides([AccountOverrideRequest::BuyTokensForBuffers])
             .at_block(Block::Latest)
             .build()
             .await

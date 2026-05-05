@@ -380,7 +380,7 @@ pub async fn run(config: Configuration) {
         .await
         .ok();
 
-    let (order_simulator, eip1271_simulator) = match &config.order_simulation {
+    let order_simulator = match &config.order_simulation {
         Some(sim_config) => {
             let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
                 sim_config.tenderly.as_ref().map(|tenderly_config| {
@@ -392,39 +392,45 @@ pub async fn run(config: Configuration) {
                 });
             let flash_loan_router_address =
                 contracts::FlashLoanRouter::deployment_address(&chain.id()).unwrap_or_default();
-            let order_simulator = simulator::simulation_builder::SettlementSimulator::new(
-                settlement_contract.clone(),
-                flash_loan_router_address,
-                hooks_trampoline_address,
-                balance_overrider.clone(),
-                current_block_stream.clone(),
-                tenderly,
+            Some(
+                simulator::simulation_builder::SettlementSimulator::new(
+                    settlement_contract.clone(),
+                    flash_loan_router_address,
+                    hooks_trampoline_address,
+                    *native_token.address(),
+                    sim_config.gas_limit.saturating_to(),
+                    balance_overrider.clone(),
+                    current_block_stream.clone(),
+                    tenderly,
+                )
+                .await
+                .expect("failed to create SettlementSimulator"),
             )
-            .await
-            .expect("failed to create SettlementSimulator");
-            let mode = match sim_config.eip1271_simulation_mode {
-                configs::orderbook::Eip1271SimulationMode::Shadow => {
-                    Some(Eip1271SimulationMode::Shadow)
-                }
-                configs::orderbook::Eip1271SimulationMode::Enforce => {
-                    Some(Eip1271SimulationMode::Enforce)
-                }
-                configs::orderbook::Eip1271SimulationMode::Disabled => None,
-            };
-            let eip1271_simulator = mode.map(|mode| {
-                let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
-                    crate::eip1271_simulation::OrderSimulatorAdapter::new(order_simulator.clone()),
-                );
-                Eip1271Simulator {
-                    simulator,
-                    mode,
-                    timeout: sim_config.eip1271_simulation_timeout,
-                }
-            });
-            (Some(order_simulator), eip1271_simulator)
         }
-        None => (None, None),
+        None => None,
     };
+
+    let eip1271_simulator = config
+        .order_simulation
+        .as_ref()
+        .zip(order_simulator.clone())
+        .and_then(|(sim_config, simulator)| {
+            let mode = match sim_config.eip1271_simulation_mode {
+                configs::orderbook::Eip1271SimulationMode::Shadow => Eip1271SimulationMode::Shadow,
+                configs::orderbook::Eip1271SimulationMode::Enforce => {
+                    Eip1271SimulationMode::Enforce
+                }
+                configs::orderbook::Eip1271SimulationMode::Disabled => return None,
+            };
+            let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
+                crate::eip1271_simulation::OrderSimulatorAdapter::new(simulator),
+            );
+            Some(Eip1271Simulator {
+                simulator,
+                mode,
+                timeout: sim_config.eip1271_simulation_timeout,
+            })
+        });
 
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
@@ -462,33 +468,6 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
-
-    let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Arc::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(
-            simulator::simulation_builder::SettlementSimulator::new(
-                settlement_contract.clone(),
-                Default::default(),
-                hooks_trampoline_address,
-                *native_token.address(),
-                config.gas_limit.saturating_to(),
-                balance_overrider.clone(),
-                current_block_stream.clone(),
-                tenderly,
-            )
-            .await
-            .unwrap(),
-        )
-    } else {
-        None
-    };
 
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,

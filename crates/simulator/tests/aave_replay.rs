@@ -11,7 +11,7 @@ use {
         Block,
         EthCallInputs,
         ExecutionAmount,
-        Prices,
+        PriceEncoding,
         SettlementSimulator,
         Solver,
     },
@@ -180,6 +180,8 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
         settlement,
         flash_loan_router,
         hooks_trampoline,
+        sell_token_weth,
+        30_000_000u64,
         balance_overrider,
         block_stream,
         None,
@@ -208,16 +210,13 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
 
     simulator
         .new_simulation_builder()
-        .add_order(
-            simulation_builder::Order::new(order_data)
-                .with_signature(order_owner, Signature::Eip1271(signature_bytes))
-                .with_executed_amount(ExecutionAmount::Full),
-        )
+        .add_orders([simulation_builder::Order::new(order_data)
+            .with_signature(order_owner, Signature::Eip1271(signature_bytes))
+            .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
         .parameters_from_app_data(full_app_data)
         .expect("parameters_from_app_data should parse the app data")
-        .with_prices(Prices::Limit)
         .from_solver(Solver::Fake(None))
-        .with_override(AccountOverrideRequest::BuyTokensForBuffers)
+        .with_overrides([AccountOverrideRequest::BuyTokensForBuffers])
         .at_block(Block::Number(fork_block_mainnet))
         .build()
         .await
