@@ -5,7 +5,7 @@ use {
     },
     alloy::primitives::{Address, U256},
     base64::prelude::*,
-    bigdecimal::BigDecimal,
+    bigdecimal::{BigDecimal, RoundingMode},
     ethrpc::block_stream::CurrentBlockWatcher,
     hmac::{Hmac, Mac},
     number::conversions::{big_decimal_to_u256, u256_to_big_uint},
@@ -23,11 +23,38 @@ fn wei_to_decimal(amount: U256, decimals: u8) -> BigDecimal {
     BigDecimal::new(u256_to_big_uint(&amount).into(), i64::from(decimals)).normalized()
 }
 
-/// Convert a decimal amount (from API response) to U256 wei.
-/// e.g., "1964.365496" with 6 decimals → 1964365496
-fn decimal_to_wei(amount: &BigDecimal, decimals: u8) -> Result<U256, Error> {
+/// Rounding direction for converting Bitget's decimal responses to wei.
+///
+/// Bitget can return more decimal digits than the token has (e.g.
+/// `"1.1234567"` for 6-decimal USDC), so we have to round to the nearest
+/// base unit. We pick the direction that, when our reported amount and
+/// the swap's actual amount disagree, leaves the GPv2Settlement contract
+/// holding *more* tokens than it owes (rather than fewer). Holding fewer
+/// would cause an ERC20 transfer to revert during settlement.
+#[derive(Clone, Copy)]
+enum Round {
+    /// For input amounts (what we pay/approve). Rounds 1.1234567 USDC up
+    /// to 1123457 base units (vs. 1123456 for `Down`), so the allowance
+    /// and pulled funds cover the swap's actual input. Under-pulling
+    /// causes a settlement revert.
+    Up,
+    /// For output amounts (what we report as received). Rounds 1.1234567
+    /// USDC down to 1123456 base units (vs. 1123457 for `Up`), so we
+    /// don't claim more buy tokens than the swap delivered. Over-claiming
+    /// causes a settlement revert.
+    Down,
+}
+
+/// Convert a decimal amount (from an API response) to U256 wei using the
+/// given rounding direction. e.g.
+/// `decimal_to_wei("1964.365496", 6, Down) → 1964365496`.
+fn decimal_to_wei(amount: &BigDecimal, decimals: u8, round: Round) -> Result<U256, Error> {
     let scaled = amount * BigDecimal::new(1.into(), -i64::from(decimals));
-    big_decimal_to_u256(&scaled).ok_or(Error::AmountConversionFailed)
+    let mode = match round {
+        Round::Up => RoundingMode::Up,
+        Round::Down => RoundingMode::Down,
+    };
+    big_decimal_to_u256(&scaled.with_scale_round(0, mode)).ok_or(Error::AmountConversionFailed)
 }
 
 mod dto;
@@ -40,8 +67,12 @@ pub const DEFAULT_ENDPOINT: &str = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro
 /// expects in the signature.
 const SIGNATURE_API_PATH: &str = "/bgw-pro/swapx/pro/";
 
-/// Bitget API path for getting swap calldata.
+/// Bitget API path for getting swap calldata (sell orders, exact-in).
 const SWAP_PATH: &str = "swap";
+
+/// Bitget API path for the reverse-quote swap endpoint (buy orders,
+/// `requestMode = "minAmountOut"`).
+const SWAP_REVERSE_PATH: &str = "swapr";
 
 /// Bindings to the Bitget swap API.
 pub struct Bitget {
@@ -52,6 +83,7 @@ pub struct Bitget {
     partner_code: String,
     chain_name: dto::ChainName,
     settlement_contract: Address,
+    enable_buy_orders: bool,
 }
 
 pub struct Config {
@@ -70,6 +102,11 @@ pub struct Config {
 
     /// The stream that yields every new block.
     pub block_stream: Option<CurrentBlockWatcher>,
+
+    /// Whether to serve buy orders via the reverse-quote endpoint. Off by
+    /// default so operators can keep the new path opt-in until they're
+    /// confident in it. See [`Bitget::handle_buy_order`] for behavior.
+    pub enable_buy_orders: bool,
 }
 
 pub struct BitgetCredentialsConfig {
@@ -97,6 +134,7 @@ impl Bitget {
             partner_code: config.partner_code,
             chain_name,
             settlement_contract: config.settlement_contract,
+            enable_buy_orders: config.enable_buy_orders,
         })
     }
 
@@ -106,8 +144,7 @@ impl Bitget {
         slippage: &dex::Slippage,
         tokens: &auction::Tokens,
     ) -> Result<dex::Swap, Error> {
-        // Bitget only supports sell orders (exactIn).
-        if order.side == order::Side::Buy {
+        if order.side == order::Side::Buy && !self.enable_buy_orders {
             return Err(Error::OrderNotSupported);
         }
 
@@ -123,17 +160,45 @@ impl Bitget {
         // Set up a tracing span to make debugging of API requests easier.
         static ID: AtomicU64 = AtomicU64::new(0);
         let id = ID.fetch_add(1, atomic::Ordering::Relaxed);
+        let span = tracing::trace_span!("swap", id = %id);
 
-        let response = self
-            .handle_sell_order(order, slippage, sell_decimals)
-            .instrument(tracing::trace_span!("swap", id = %id))
-            .await?;
+        match order.side {
+            order::Side::Sell => {
+                self.handle_sell_order(order, slippage, sell_decimals, buy_decimals)
+                    .instrument(span)
+                    .await
+            }
+            order::Side::Buy => {
+                self.handle_buy_order(order, slippage, sell_decimals, buy_decimals)
+                    .instrument(span)
+                    .await
+            }
+        }
+    }
 
-        let calldata = response
-            .swap_transaction
-            .decode_calldata()
-            .map_err(|_| Error::InvalidCalldata)?;
+    /// Handle sell orders with a single enriched swap API call.
+    ///
+    /// Uses `requestMod = "rich"` so `/swap` returns the quote (output
+    /// amount, gas) and the swap calldata in the same response. Quoting
+    /// and calldata-building share the same block, so the price the
+    /// solver scores is the same price the calldata would execute at.
+    async fn handle_sell_order(
+        &self,
+        order: &dex::Order,
+        slippage: &dex::Slippage,
+        sell_decimals: u8,
+        buy_decimals: u8,
+    ) -> Result<dex::Swap, Error> {
+        let swap_request = dto::SwapRequest::from_order(
+            order,
+            self.chain_name,
+            self.settlement_contract,
+            slippage,
+            sell_decimals,
+        );
+        let response: dto::SwapResponse = self.send_post_request(SWAP_PATH, &swap_request).await?;
 
+        let calldata = response.swap_transaction.data;
         let contract = response.swap_transaction.to;
 
         // Increase gas estimate by 50% for safety margin, similar to OKX.
@@ -142,7 +207,7 @@ impl Bitget {
             .checked_add(gas_limit / U256::from(2))
             .ok_or(Error::GasCalculationFailed)?;
 
-        let output_amount = decimal_to_wei(&response.out_amount, buy_decimals)?;
+        let output_amount = decimal_to_wei(&response.out_amount, buy_decimals, Round::Down)?;
 
         Ok(dex::Swap {
             calls: vec![dex::Call {
@@ -165,26 +230,99 @@ impl Bitget {
         })
     }
 
-    /// Handle sell orders with a single enriched swap API call.
+    /// Handle buy orders via the reverse-quote endpoint.
     ///
-    /// Uses `requestMod = "rich"` so the swap endpoint returns both quote
-    /// data (output amount, gas) and calldata in a single response,
-    /// eliminating the race condition window of the previous two-call flow.
-    async fn handle_sell_order(
+    /// Bitget computes the required input amount server-side using a
+    /// recursive search on top of sell quotes. The response calldata
+    /// enforces `minAmountOut` on chain, so the swap reverts if it
+    /// underdelivers.
+    ///
+    /// Note that Bitget's recursion typically converges from above, so
+    /// the swap usually delivers slightly more than the requested buy
+    /// amount. CoW exact-out semantics still deliver the user only what
+    /// they signed for, and the overshoot accrues to GPv2Settlement's
+    /// internal token balance (the "buffer", reused to internalize
+    /// future swaps).
+    ///
+    /// This path is feature-gated via `enable_buy_orders` so it can be
+    /// turned off quickly if anything misbehaves on Bitget's side.
+    async fn handle_buy_order(
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
         sell_decimals: u8,
-    ) -> Result<dto::SwapResponse, Error> {
-        let swap_request = dto::SwapRequest::from_order(
+        buy_decimals: u8,
+    ) -> Result<dex::Swap, Error> {
+        let swap_request = dto::ReverseSwapRequest::from_order(
             order,
             self.chain_name,
             self.settlement_contract,
             slippage,
-            sell_decimals,
+            buy_decimals,
         );
+        let response: dto::ReverseSwapResponse = self
+            .send_post_request(SWAP_REVERSE_PATH, &swap_request)
+            .await?;
 
-        self.send_post_request(SWAP_PATH, &swap_request).await
+        // Bitget's reverse-quote builds an EOA-style flow: a typical
+        // multi-tx response is `[approve(router, amountIn), swap(...)]`.
+        // The CoW settlement contract handles its own approvals via
+        // `dex::Allowance`, so we pick the actual swap tx by function
+        // name and ignore everything else. Positive match on `"swap"` so
+        // that any future setup tx types (`permit`, `wrap`, etc.) are
+        // dropped automatically instead of silently picked up.
+        let tx = response
+            .txs
+            .iter()
+            .rev()
+            .find(|tx| tx.function.eq_ignore_ascii_case("swap"))
+            .ok_or(Error::NotFound)?;
+        let calldata = tx.calldata.clone();
+        let contract = tx.to;
+
+        // Increase gas estimate by 50% for safety margin, similar to OKX.
+        let gas_limit = U256::from(tx.gas_limit);
+        let gas = gas_limit
+            .checked_add(gas_limit / U256::from(2))
+            .ok_or(Error::GasCalculationFailed)?;
+
+        let input_amount = decimal_to_wei(&response.amount_in, sell_decimals, Round::Up)?;
+
+        // Sanity check: if Bitget's own estimated output is below what we
+        // asked for, the recursion under-converged and the on-chain swap
+        // (which strictly enforces the requested `minAmountOut`) would
+        // revert. Bail early so we don't waste a simulator roundtrip.
+        // Compare the raw BigDecimals so the check doesn't depend on
+        // rounding direction.
+        let requested_out = wei_to_decimal(order.amount.get(), buy_decimals);
+        if response.expected_amount_out < requested_out {
+            return Err(Error::NotFound);
+        }
+
+        // CoW buy orders require the executed buy amount to equal the order's
+        // buy amount exactly. Bitget's calldata enforces this on chain, and
+        // any overshoot accrues to the settlement buffer.
+        let output_amount = order.amount.get();
+
+        Ok(dex::Swap {
+            calls: vec![dex::Call {
+                to: contract,
+                calldata,
+            }],
+            input: eth::Asset {
+                token: order.sell,
+                amount: input_amount,
+            },
+            output: eth::Asset {
+                token: order.buy,
+                amount: output_amount,
+            },
+            allowance: dex::Allowance {
+                spender: contract,
+                amount: dex::Amount::new(input_amount),
+            },
+            gas: eth::Gas(gas),
+        })
     }
 
     /// Generate HMAC-SHA256 signature for the Bitget API.
@@ -317,8 +455,6 @@ pub enum Error {
     OrderNotSupported,
     #[error("rate limited")]
     RateLimited,
-    #[error("invalid calldata in response")]
-    InvalidCalldata,
     #[error("failed to convert amount between decimal and U256")]
     AmountConversionFailed,
     #[error("decimals are missing for the swapped tokens")]
