@@ -103,16 +103,9 @@ pub struct Config {
     /// The stream that yields every new block.
     pub block_stream: Option<CurrentBlockWatcher>,
 
-    /// Whether buy orders should be served via the reverse-quote endpoint.
-    ///
-    /// Disabled by default. Bitget's reverse-quote enforces only a minimum
-    /// output on chain, so the swap typically overshoots the requested
-    /// amount. CoW exact-out semantics still deliver the user only what
-    /// they signed for, and the overshoot accrues to GPv2Settlement's
-    /// internal token balance (the protocol's "buffer", used to internalize
-    /// future swaps). This means up to the configured slippage of user
-    /// surplus is captured by the protocol rather than the user, so we
-    /// keep the path off until the operator opts in.
+    /// Whether to serve buy orders via the reverse-quote endpoint.
+    /// Disabled by default. See [`Bitget::handle_buy_order`] for the
+    /// surplus tradeoff that motivates the opt-in.
     pub enable_buy_orders: bool,
 }
 
@@ -239,9 +232,19 @@ impl Bitget {
 
     /// Handle buy orders via the reverse-quote endpoint.
     ///
-    /// Bitget computes the required input amount server-side using a recursive
-    /// search on top of sell quotes. The response calldata enforces
-    /// `minAmountOut` on chain, so the swap reverts if it underdelivers.
+    /// Bitget computes the required input amount server-side using a
+    /// recursive search on top of sell quotes. The response calldata
+    /// enforces `minAmountOut` on chain, so the swap reverts if it
+    /// underdelivers.
+    ///
+    /// Surplus tradeoff: the swap typically overshoots the requested
+    /// amount because Bitget's recursion converges from above. The user
+    /// receives exactly the buy amount they signed for (CoW exact-out
+    /// semantics), and the overshoot accrues to GPv2Settlement's internal
+    /// token balance (the "buffer", reused to internalize future swaps).
+    /// In effect, up to the configured slippage of user surplus is
+    /// captured by the protocol rather than the user, which is why this
+    /// path is gated behind `enable_buy_orders`.
     async fn handle_buy_order(
         &self,
         order: &dex::Order,
