@@ -1,7 +1,6 @@
 pub mod encoding;
 pub mod ethereum;
 pub mod simulation_builder;
-mod simulation_encoding;
 pub mod tenderly;
 mod utils;
 

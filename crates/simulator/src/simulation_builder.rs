@@ -261,7 +261,7 @@ impl SimulationBuilder {
     pub async fn build(self) -> Result<EthCallInputs, BuildError> {
         // Forward to a helper function to split the boring repetitive builder
         // code from the non-trivial code that actually does the encoding.
-        crate::simulation_encoding::encode(self).await
+        crate::encoding::finish_simulation_builder(self).await
     }
 }
 
