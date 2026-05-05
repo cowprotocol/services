@@ -289,6 +289,11 @@ impl CachingNativePriceEstimator {
         quote_timeout: Duration,
         native_token: Address,
     ) -> Self {
+        tracing::info!(
+            %native_token,
+            sentinel = %BUY_ETH_ADDRESS,
+            "CachingNativePriceEstimator initialized"
+        );
         let inner = Arc::new(CachingInner {
             estimator,
             cache,
@@ -326,6 +331,7 @@ impl CachingNativePriceEstimator {
     {
         let estimates = tokens.into_iter().map(move |token| async move {
             if self.is_native_or_sentinel(token) {
+                tracing::debug!(%token, "native price short-circuit hit (estimate_prices_and_update_cache)");
                 return (token, Ok(1.0));
             }
 
@@ -410,6 +416,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         if self.is_native_or_sentinel(token) {
+            tracing::debug!(%token, "native price short-circuit hit (estimate_native_price)");
             return async { Ok(1.0) }.boxed();
         }
 
