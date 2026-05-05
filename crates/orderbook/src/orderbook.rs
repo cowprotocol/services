@@ -646,7 +646,9 @@ impl Orderbook {
                     simulation_builder::PriceEncoding::LimitPrice,
                 )])
             .parameters_from_app_data(&full_app_data)
-            .context("failed to parse app data")?
+            .map_err(|err| {
+                OrderSimulationError::MalformedInput(anyhow!("app_data `{}`: {err}", full_app_data))
+            })?
             .at_block(
                 block_number
                     .map(simulation_builder::Block::Number)
@@ -703,7 +705,12 @@ impl Orderbook {
                 simulation_builder::PriceEncoding::LimitPrice,
             )])
             .parameters_from_app_data(&request.app_data)
-            .context("failed to parse app data")?
+            .map_err(|err| {
+                OrderSimulationError::MalformedInput(anyhow!(
+                    "app_data `{}`: {err}",
+                    request.app_data
+                ))
+            })?
             .at_block(
                 request
                     .block_number
