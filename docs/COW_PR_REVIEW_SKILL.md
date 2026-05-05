@@ -67,7 +67,7 @@ Run in **parallel** (single message, multiple Bash tool calls):
 
 ```bash
 gh pr view <PR_NUMBER> -R <owner>/<repo> \
-  --json title,body,author,labels,files,baseRefName,headRefName,additions,deletions,commits,reviewDecision,isDraft,state
+  --json title,body,author,labels,files,baseRefName,headRefName,headRefOid,additions,deletions,commits,reviewDecision,isDraft,state,closingIssuesReferences
 
 gh pr diff <PR_NUMBER> -R <owner>/<repo>
 ```
@@ -80,13 +80,13 @@ gh pr diff <PR_NUMBER> --patch -R <owner>/<repo>
 
 ### Linked issues
 
-Parse the PR body for `Fixes #<N>`, `Closes #<N>`, `Resolves #<N>` (case-insensitive). Fetch each in parallel with the above:
+The `gh pr view` call above already returns `closingIssuesReferences` — GitHub's own parsing of `Fixes #N` / `Closes #N` / `Resolves #N` from the PR body. Iterate that array (in parallel with the diff fetch) and pull each issue:
 
 ```bash
-gh issue view <N> -R <owner>/<repo> --json title,body,labels,state
+gh issue view <issue.number> -R <issue.repository.owner>/<issue.repository.name> --json title,body,labels,state
 ```
 
-If no linked issue is referenced, proceed without one. Do not manufacture one.
+If `closingIssuesReferences` is empty, proceed without one. Do not manufacture one.
 
 ### State handling
 

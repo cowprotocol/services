@@ -18,7 +18,7 @@ Two ways:
 ## Rules
 
 1. **Synthesize, don't copy-paste.** If `<pr_text>` is five words, say so plainly: *"description is minimal; intent inferred from diff"*. Don't pad to look thorough.
-2. **Watch for description-vs-diff drift.** `<pr_text>` must describe `<diff_summary>`'s *current* state, not the author's iteration history. If a claim is no longer true of the diff, raise a finding with `Action: update the PR description to match the current diff`. Do **not** flag the absence of a changelog of removed/superseded behaviour — that belongs in commit history, not the description.
+2. **Watch for description-vs-diff drift.** `<pr_text>` must describe `<diff_summary>`'s *current* state, not the author's iteration history. If a claim is no longer true of the diff, note it in the synthesis as *"description claims X; diff shows Y"*. Don't raise an `Action:` finding here — this skill reports facts; the consumer (e.g. `/review-pr`) decides whether to escalate. Do **not** flag the absence of a changelog of removed/superseded behaviour either — that belongs in commit history, not the description.
 3. **No vague verbs.** *"This PR updates something"* is a failure. Name the component, the change, and the mechanism.
 
 ## Shape
