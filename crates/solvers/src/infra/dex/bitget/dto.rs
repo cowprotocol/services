@@ -4,15 +4,9 @@
 use {
     crate::domain::{dex, eth},
     bigdecimal::{BigDecimal, ToPrimitive},
-    serde::{Deserialize, Serialize, de},
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
-
-/// Decode a `"0x..."` hex string straight into bytes during deserialization.
-fn deserialize_hex_bytes<'de, D: de::Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
-    let s = <&str>::deserialize(d)?;
-    const_hex::decode(s).map_err(de::Error::custom)
-}
 
 /// Bitget chain name used in API requests.
 #[derive(Clone, Copy, Serialize)]
@@ -140,7 +134,7 @@ pub struct SwapTransaction {
     /// Contract address (router/spender).
     pub to: eth::Address,
     /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
-    #[serde(deserialize_with = "deserialize_hex_bytes")]
+    #[serde(deserialize_with = "bytes_hex::deserialize")]
     pub data: Vec<u8>,
 }
 
@@ -237,7 +231,7 @@ pub struct ReverseSwapTx {
     pub to: eth::Address,
 
     /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
-    #[serde(deserialize_with = "deserialize_hex_bytes")]
+    #[serde(deserialize_with = "bytes_hex::deserialize")]
     pub calldata: Vec<u8>,
 
     /// Function name. Observed values include `"swap"`. Other values
