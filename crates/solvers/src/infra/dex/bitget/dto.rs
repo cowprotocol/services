@@ -4,9 +4,15 @@
 use {
     crate::domain::{dex, eth},
     bigdecimal::{BigDecimal, ToPrimitive},
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Serialize, de},
     serde_with::serde_as,
 };
+
+/// Decode a `"0x..."` hex string straight into bytes during deserialization.
+fn deserialize_hex_bytes<'de, D: de::Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+    let s = <&str>::deserialize(d)?;
+    const_hex::decode(s).map_err(de::Error::custom)
+}
 
 /// Bitget chain name used in API requests.
 #[derive(Clone, Copy, Serialize)]
@@ -133,14 +139,9 @@ pub struct GasFee {
 pub struct SwapTransaction {
     /// Contract address (router/spender).
     pub to: eth::Address,
-    /// Hex-encoded calldata with "0x" prefix.
-    pub data: String,
-}
-
-impl SwapTransaction {
-    pub fn decode_calldata(&self) -> Result<Vec<u8>, const_hex::FromHexError> {
-        const_hex::decode(&self.data)
-    }
+    /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
+    #[serde(deserialize_with = "deserialize_hex_bytes")]
+    pub data: Vec<u8>,
 }
 
 /// A Bitget API reverse-swap request (`requestMode = "minAmountOut"`).
@@ -235,8 +236,9 @@ pub struct ReverseSwapTx {
     /// Target contract address (router/spender).
     pub to: eth::Address,
 
-    /// Hex-encoded calldata with "0x" prefix.
-    pub calldata: String,
+    /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
+    #[serde(deserialize_with = "deserialize_hex_bytes")]
+    pub calldata: Vec<u8>,
 
     /// Function name. Observed values include `"swap"`. Other values
     /// (e.g. `"approve"`) likely appear for setup transactions in
@@ -247,12 +249,6 @@ pub struct ReverseSwapTx {
     /// Gas limit estimate.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub gas_limit: u64,
-}
-
-impl ReverseSwapTx {
-    pub fn decode_calldata(&self) -> Result<Vec<u8>, const_hex::FromHexError> {
-        const_hex::decode(&self.calldata)
-    }
 }
 
 /// A Bitget API response wrapper.

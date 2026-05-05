@@ -68,24 +68,26 @@ const TEST_CASES: &[TestCase] = &[
     },
 ];
 
-#[ignore]
-#[tokio::test]
 // To run this test, set the following environment variables accordingly to your
 // Bitget setup: BITGET_API_KEY, BITGET_API_SECRET
+#[ignore]
+#[tokio::test]
 async fn swap_sell_all_chains() {
     let api_key = env::var("BITGET_API_KEY").unwrap();
     let api_secret = env::var("BITGET_API_SECRET").unwrap();
+    let endpoint = reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap();
+    const SETTLEMENT: Address = address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41");
 
     for tc in TEST_CASES {
         let config = bitget_dex::Config {
-            endpoint: reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap(),
+            endpoint: endpoint.clone(),
             chain_id: tc.chain_id,
             credentials: bitget_dex::BitgetCredentialsConfig {
                 api_key: api_key.clone(),
                 api_secret: api_secret.clone(),
             },
             partner_code: "cowswap".to_string(),
-            settlement_contract: address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            settlement_contract: SETTLEMENT,
             block_stream: None,
             enable_buy_orders: false,
         };
@@ -151,24 +153,26 @@ async fn swap_sell_all_chains() {
     }
 }
 
-#[ignore]
-#[tokio::test]
 // To run this test, set the following environment variables accordingly to your
 // Bitget setup: BITGET_API_KEY, BITGET_API_SECRET
+#[ignore]
+#[tokio::test]
 async fn swap_buy_all_chains() {
     let api_key = env::var("BITGET_API_KEY").unwrap();
     let api_secret = env::var("BITGET_API_SECRET").unwrap();
+    let endpoint = reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap();
+    const SETTLEMENT: Address = address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41");
 
     for tc in TEST_CASES {
         let config = bitget_dex::Config {
-            endpoint: reqwest::Url::parse(bitget_dex::DEFAULT_ENDPOINT).unwrap(),
+            endpoint: endpoint.clone(),
             chain_id: tc.chain_id,
             credentials: bitget_dex::BitgetCredentialsConfig {
                 api_key: api_key.clone(),
                 api_secret: api_secret.clone(),
             },
             partner_code: "cowswap".to_string(),
-            settlement_contract: address!("0x9008d19f58aabd9ed0d60971565aa8510560ab41"),
+            settlement_contract: SETTLEMENT,
             block_stream: None,
             enable_buy_orders: true,
         };

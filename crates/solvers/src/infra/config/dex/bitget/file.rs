@@ -28,7 +28,8 @@ struct Config {
     partner_code: String,
 
     /// Whether buy orders should be served via the reverse-quote endpoint.
-    /// Off by default, see the Rust struct doc for caveats.
+    /// Off by default, see [`bitget::Config::enable_buy_orders`] for
+    /// caveats.
     #[serde(default)]
     enable_buy_orders: bool,
 }

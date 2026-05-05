@@ -27,23 +27,27 @@ fn wei_to_decimal(amount: U256, decimals: u8) -> BigDecimal {
 ///
 /// Bitget can return more decimal digits than the token has (e.g.
 /// `"1.1234567"` for 6-decimal USDC), so we have to round to the nearest
-/// base unit. The right direction depends on what the value represents:
-/// pick the side that produces positive (not negative) imbalance in the
-/// settlement buffer.
+/// base unit. We pick the direction that, when our reported amount and
+/// the swap's actual amount disagree, leaves the GPv2Settlement contract
+/// holding *more* tokens than it owes (rather than fewer). Holding fewer
+/// would cause an ERC20 transfer to revert during settlement.
 #[derive(Clone, Copy)]
 enum Round {
-    /// For input amounts (what we pay/approve). Round away from zero so
-    /// the allowance and pulled funds always cover the swap's actual
-    /// input. Under-pulling causes a settlement revert.
+    /// For input amounts (what we pay/approve). Rounds 1.1234567 USDC up
+    /// to 1123457 base units (vs. 1123456 for `Down`), so the allowance
+    /// and pulled funds cover the swap's actual input. Under-pulling
+    /// causes a settlement revert.
     Up,
-    /// For output amounts (what we report as received). Round toward zero
-    /// so we never claim more buy tokens than the swap delivered.
-    /// Over-claiming causes a settlement revert.
+    /// For output amounts (what we report as received). Rounds 1.1234567
+    /// USDC down to 1123456 base units (vs. 1123457 for `Up`), so we
+    /// don't claim more buy tokens than the swap delivered. Over-claiming
+    /// causes a settlement revert.
     Down,
 }
 
-/// Convert a decimal amount (from API response) to U256 wei using the given
-/// rounding direction. e.g., "1964.365496" with 6 decimals → 1964365496.
+/// Convert a decimal amount (from an API response) to U256 wei using the
+/// given rounding direction. e.g.
+/// `decimal_to_wei("1964.365496", 6, Down) → 1964365496`.
 fn decimal_to_wei(amount: &BigDecimal, decimals: u8, round: Round) -> Result<U256, Error> {
     let scaled = amount * BigDecimal::new(1.into(), -i64::from(decimals));
     let mode = match round {
@@ -100,9 +104,15 @@ pub struct Config {
     pub block_stream: Option<CurrentBlockWatcher>,
 
     /// Whether buy orders should be served via the reverse-quote endpoint.
-    /// Disabled by default since the on-chain overshoot accrues to the
-    /// settlement buffer rather than to the user, costing up to the
-    /// configured slippage in user surplus.
+    ///
+    /// Disabled by default. Bitget's reverse-quote enforces only a minimum
+    /// output on chain, so the swap typically overshoots the requested
+    /// amount. CoW exact-out semantics still deliver the user only what
+    /// they signed for, and the overshoot accrues to GPv2Settlement's
+    /// internal token balance (the protocol's "buffer", used to internalize
+    /// future swaps). This means up to the configured slippage of user
+    /// surplus is captured by the protocol rather than the user, so we
+    /// keep the path off until the operator opts in.
     pub enable_buy_orders: bool,
 }
 
@@ -175,9 +185,10 @@ impl Bitget {
 
     /// Handle sell orders with a single enriched swap API call.
     ///
-    /// Uses `requestMod = "rich"` so the swap endpoint returns both quote
-    /// data (output amount, gas) and calldata in a single response,
-    /// eliminating the race condition window of the previous two-call flow.
+    /// Uses `requestMod = "rich"` so `/swap` returns the quote (output
+    /// amount, gas) and the swap calldata in the same response. Quoting
+    /// and calldata-building share the same block, so the price the
+    /// solver scores is the same price the calldata would execute at.
     async fn handle_sell_order(
         &self,
         order: &dex::Order,
@@ -194,10 +205,7 @@ impl Bitget {
         );
         let response: dto::SwapResponse = self.send_post_request(SWAP_PATH, &swap_request).await?;
 
-        let calldata = response
-            .swap_transaction
-            .decode_calldata()
-            .map_err(|_| Error::InvalidCalldata)?;
+        let calldata = response.swap_transaction.data;
         let contract = response.swap_transaction.to;
 
         // Increase gas estimate by 50% for safety margin, similar to OKX.
@@ -265,7 +273,7 @@ impl Bitget {
             .rev()
             .find(|tx| tx.function.eq_ignore_ascii_case("swap"))
             .ok_or(Error::NotFound)?;
-        let calldata = tx.decode_calldata().map_err(|_| Error::InvalidCalldata)?;
+        let calldata = tx.calldata.clone();
         let contract = tx.to;
 
         // Increase gas estimate by 50% for safety margin, similar to OKX.
@@ -276,21 +284,12 @@ impl Bitget {
 
         let input_amount = decimal_to_wei(&response.amount_in, sell_decimals, Round::Up)?;
 
-        // Sanity check before we submit anything to the simulator: if Bitget's
-        // own expected output is below the requested buy amount, the
-        // recursion under-converged and the on-chain swap is likely to
-        // revert. Round::Up here so a borderline value (e.g. expected
-        // output exactly equal to the requested amount, with sub-base-unit
-        // dust) doesn't trigger a false rejection.
-        let expected_out = decimal_to_wei(&response.expected_amount_out, buy_decimals, Round::Up)?;
-        if expected_out < order.amount.get() {
-            return Err(Error::NotFound);
-        }
-
         // CoW buy orders require the executed buy amount to equal the order's
-        // buy amount exactly. The calldata's on-chain `minAmountOut` check
-        // enforces this, with any overshoot accruing to the settlement
-        // buffer as positive surplus.
+        // buy amount exactly. The on-chain `minAmountOut` check in Bitget's
+        // calldata reverts the swap if it would underdeliver, and the
+        // driver simulates settlement before submission, so any genuinely
+        // bad quote is caught downstream. We just report the exact buy
+        // amount here; any overshoot accrues to the settlement buffer.
         let output_amount = order.amount.get();
 
         Ok(dex::Swap {
@@ -444,8 +443,6 @@ pub enum Error {
     OrderNotSupported,
     #[error("rate limited")]
     RateLimited,
-    #[error("invalid calldata in response")]
-    InvalidCalldata,
     #[error("failed to convert amount between decimal and U256")]
     AmountConversionFailed,
     #[error("decimals are missing for the swapped tokens")]
