@@ -362,6 +362,7 @@ pub async fn run(config: Configuration) {
             balance_fetcher.clone(),
             verification,
             config.price_estimation.quote_timeout,
+            config.price_estimation.max_quote_timeout,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);
