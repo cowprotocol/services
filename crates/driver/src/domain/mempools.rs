@@ -85,6 +85,10 @@ impl Mempools {
         while let Some((mempool, result)) = futures.next().await {
             match result {
                 Ok(submission) => {
+                    // First success wins: record this mempool as the winner and label any
+                    // already-failed mempools as `Superseded`. Remaining in-flight futures are
+                    // dropped here without awaiting. (their outcomes are never logged and emit no
+                    // metrics)
                     observe::mempool_succeeded(mempool, settlement, &submission);
                     for (shadowed_mempool, err) in &shadowed_errors {
                         observe::mempool_superseded(shadowed_mempool, mempool, settlement, err);
