@@ -437,15 +437,10 @@ impl EthCallInputs {
             None
         };
 
-        let simulation_result = self.simulate().await;
-
         Ok(TenderlyReport {
             tenderly_request,
             tenderly_url,
-            error: match simulation_result {
-                Ok(_) => None,
-                Err(err) => Some(err.to_string()),
-            },
+            error: self.simulate().await.err().map(|err| err.to_string()),
         })
     }
 
