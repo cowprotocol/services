@@ -198,29 +198,29 @@ impl SimulationBuilder {
         self.pre_interactions = self.encode_hooks(&protocol.hooks.pre);
         self.post_interactions = self.encode_hooks(&protocol.hooks.post);
 
-        let has_wrappers = !protocol.wrappers.is_empty();
-        let has_flashloan = protocol.flashloan.is_some();
-        if has_wrappers && has_flashloan {
-            return Err(BuildError::FlashloanWrappersIncompatible);
-        }
-        if has_wrappers {
-            self.wrapper = WrapperConfig::Custom(
-                protocol
-                    .wrappers
-                    .into_iter()
-                    .map(|w| WrapperCall {
-                        address: w.address,
-                        data: w.data.into(),
-                    })
-                    .collect(),
-            );
-        } else if let Some(flashloan) = protocol.flashloan {
-            self.wrapper = WrapperConfig::Flashloan(vec![FlashloanRequest {
-                amount: flashloan.amount,
-                borrower: flashloan.protocol_adapter,
-                lender: flashloan.liquidity_provider,
-                token: flashloan.token,
-            }]);
+        match (protocol.wrappers.is_empty(), protocol.flashloan) {
+            (false, Some(_)) => return Err(BuildError::FlashloanWrappersIncompatible),
+            (false, None) => {
+                self.wrapper = WrapperConfig::Custom(
+                    protocol
+                        .wrappers
+                        .into_iter()
+                        .map(|w| WrapperCall {
+                            address: w.address,
+                            data: w.data.into(),
+                        })
+                        .collect(),
+                );
+            }
+            (true, Some(flashloan)) => {
+                self.wrapper = WrapperConfig::Flashloan(vec![FlashloanRequest {
+                    amount: flashloan.amount,
+                    borrower: flashloan.protocol_adapter,
+                    lender: flashloan.liquidity_provider,
+                    token: flashloan.token,
+                }]);
+            }
+            (true, None) => {}
         }
 
         Ok(self)
