@@ -120,7 +120,7 @@ impl TradeVerifier {
             verification.from = Address::random();
             tracing::debug!(
                 trader = ?verification.from,
-                "use random trader address with fake balances"
+                "using random trader address with fake balances"
             );
         }
 
@@ -189,7 +189,7 @@ impl TradeVerifier {
         };
 
         // pre: [verification.pre, trade.pre, trade_setup, storeBalance_before]
-        let pre_interactions: Vec<InteractionData> = map_interactions_data(
+        let pre_interactions = map_interactions_data(
             verification
                 .pre_interactions
                 .iter()
@@ -197,8 +197,7 @@ impl TradeVerifier {
         )
         .into_iter()
         .chain([self.trade_setup_interaction(out_amount, &verification, query, trade)])
-        .chain([store_balance.clone()])
-        .collect();
+        .chain([store_balance.clone()]);
 
         // WETH unwrap so ETH buy orders can pay out native tokens
         let weth_unwrap = (query.buy_token == BUY_ETH_ADDRESS).then(|| InteractionData {
@@ -207,15 +206,13 @@ impl TradeVerifier {
             call_data: WETH9::WETH9::withdrawCall { wad: buy_amount }.abi_encode(),
         });
         // main: [trade.main, weth_unwrap]
-        let main_interactions: Vec<InteractionData> = map_interactions_data(trade.interactions())
+        let main_interactions = map_interactions_data(trade.interactions())
             .into_iter()
-            .chain(weth_unwrap)
-            .collect();
+            .chain(weth_unwrap);
 
         // post: [storeBalance_after, verification.post]
-        let post_interactions: Vec<InteractionData> = std::iter::once(store_balance)
-            .chain(map_interactions_data(verification.post_interactions.iter()))
-            .collect();
+        let post_interactions = std::iter::once(store_balance)
+            .chain(map_interactions_data(&verification.post_interactions));
 
         // Set limit amounts to always pass the settlement check so the actual
         // out_amount can be measured via the storeBalance interactions.
@@ -249,43 +246,7 @@ impl TradeVerifier {
             },
         );
 
-        let jit_orders: Vec<sim_builder::Order> = match trade {
-            TradeKind::Regular(t) => t
-                .jit_orders
-                .iter()
-                .map(|jit_order| {
-                    let order_data = OrderData {
-                        sell_token: jit_order.sell_token,
-                        buy_token: jit_order.buy_token,
-                        receiver: Some(jit_order.receiver),
-                        sell_amount: jit_order.sell_amount,
-                        buy_amount: jit_order.buy_amount,
-                        valid_to: jit_order.valid_to,
-                        app_data: jit_order.app_data,
-                        fee_amount: U256::ZERO,
-                        kind: match &jit_order.side {
-                            Side::Buy => OrderKind::Buy,
-                            Side::Sell => OrderKind::Sell,
-                        },
-                        partially_fillable: jit_order.partially_fillable,
-                        sell_token_balance: jit_order.sell_token_source,
-                        buy_token_balance: jit_order.buy_token_destination,
-                    };
-                    let (owner, signature) = recover_jit_order_owner(
-                        jit_order,
-                        &order_data,
-                        &self.simulator.domain_separator(),
-                    )?;
-                    Ok(sim_builder::Order::new(order_data)
-                        .with_signature(owner, signature)
-                        .fill_at(
-                            ExecutionAmount::Explicit(jit_order.executed_amount),
-                            PriceEncoding::LimitPrice,
-                        ))
-                })
-                .collect::<Result<_>>()?,
-            _ => vec![],
-        };
+        let jit_orders = encode_jit_orders(trade, &self.simulator.domain_separator())?;
 
         let eth_call_inputs = self
             .simulator
@@ -297,8 +258,7 @@ impl TradeVerifier {
             .with_post_interactions(post_interactions)
             .with_overrides(override_requests)
             .build()
-            .await
-            .map_err(|e| Error::SimulationFailed(anyhow::anyhow!("{e}")))?;
+            .await?;
 
         // after assembling the state overrides and settlement call data we need to
         // craft a call that takes the settle call data as an argument.
@@ -475,16 +435,17 @@ impl TradeVerifier {
         query: &PriceQuery,
         trade: &TradeKind,
     ) -> Result<Vec<AccountOverrideRequest>> {
-        let mut requests: Vec<AccountOverrideRequest> = Vec::new();
+        let mut requests = vec![
+            // Setup the funding contract override. Regardless of whether or not the
+            // contract has funds, it needs to exist in order to not revert
+            // simulations (Solidity reverts on attempts to call addresses without
+            // any code).
+            AccountOverrideRequest::Code {
+                account: Self::SPARDOSE,
+                code: Spardose::Spardose::DEPLOYED_BYTECODE.clone(),
+            },
+        ];
 
-        // Setup the funding contract override. Regardless of whether or not the
-        // contract has funds, it needs to exist in order to not revert
-        // simulations (Solidity reverts on attempts to call addresses without
-        // any code).
-        requests.push(AccountOverrideRequest::Code {
-            account: Self::SPARDOSE,
-            code: Spardose::Spardose::DEPLOYED_BYTECODE.clone(),
-        });
         // Provide mocked balances if possible to the spardose to allow it to
         // give some balances to the trader in order to verify trades even for
         // owners without balances. Note that we use a separate account for
@@ -783,6 +744,47 @@ pub struct PriceQuery {
     pub in_amount: NonZeroU256,
 }
 
+fn encode_jit_orders(
+    trade: &TradeKind,
+    domain_separator: &DomainSeparator,
+) -> Result<Vec<sim_builder::Order>> {
+    let TradeKind::Regular(trade) = trade else {
+        return Ok(vec![]);
+    };
+
+    trade
+        .jit_orders
+        .iter()
+        .map(|jit_order| {
+            let order_data = OrderData {
+                sell_token: jit_order.sell_token,
+                buy_token: jit_order.buy_token,
+                receiver: Some(jit_order.receiver),
+                sell_amount: jit_order.sell_amount,
+                buy_amount: jit_order.buy_amount,
+                valid_to: jit_order.valid_to,
+                app_data: jit_order.app_data,
+                fee_amount: U256::ZERO,
+                kind: match &jit_order.side {
+                    Side::Buy => OrderKind::Buy,
+                    Side::Sell => OrderKind::Sell,
+                },
+                partially_fillable: jit_order.partially_fillable,
+                sell_token_balance: jit_order.sell_token_source,
+                buy_token_balance: jit_order.buy_token_destination,
+            };
+            let (owner, signature) =
+                recover_jit_order_owner(jit_order, &order_data, domain_separator)?;
+            Ok(sim_builder::Order::new(order_data)
+                .with_signature(owner, signature)
+                .fill_at(
+                    ExecutionAmount::Explicit(jit_order.executed_amount),
+                    PriceEncoding::LimitPrice,
+                ))
+        })
+        .collect::<Result<_>>()
+}
+
 /// Recovers the owner and signature from a `JitOrder`.
 fn recover_jit_order_owner(
     jit_order: &dto::JitOrder,
@@ -823,6 +825,8 @@ enum Error {
     /// Some error caused the simulation to not finish successfully.
     #[error("quote could not be simulated")]
     SimulationFailed(#[from] anyhow::Error),
+    #[error("failed to build the verification simuation")]
+    FailedToBuildSimulation(#[from] simulator::simulation_builder::BuildError),
 }
 
 /// Spardose gets `needed` plus a 1% headroom, floored at 1 wei so the

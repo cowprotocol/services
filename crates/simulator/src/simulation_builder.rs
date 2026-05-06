@@ -1,5 +1,5 @@
 use {
-    crate::{encoding::WrapperCall, tenderly::dto::StateObject},
+    crate::{encoding::WrapperCall, tenderly},
     alloy_primitives::{Address, B256, Bytes, TxKind, U256},
     alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
@@ -38,7 +38,7 @@ pub(crate) struct Inner {
     pub(crate) domain_separator: DomainSeparator,
     pub(crate) chain_id: u64,
     pub(crate) current_block: CurrentBlockWatcher,
-    pub(crate) tenderly: Option<Arc<dyn crate::tenderly::Api>>,
+    pub(crate) tenderly: Option<Arc<dyn tenderly::Api>>,
 }
 
 impl SettlementSimulator {
@@ -51,7 +51,7 @@ impl SettlementSimulator {
         max_gas_limit: u64,
         balance_overrides: Arc<dyn BalanceOverriding>,
         current_block: CurrentBlockWatcher,
-        tenderly: Option<Arc<dyn crate::tenderly::Api>>,
+        tenderly: Option<Arc<dyn tenderly::Api>>,
     ) -> Result<Self> {
         let authenticator = Address(settlement.authenticator().call().await?.0);
         let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
@@ -149,7 +149,7 @@ impl SimulationBuilder {
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
-        self.pre_interactions = interactions.into_iter().collect();
+        self.pre_interactions.extend(interactions);
         self
     }
 
@@ -157,7 +157,7 @@ impl SimulationBuilder {
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
-        self.main_interactions = interactions.into_iter().collect();
+        self.main_interactions.extend(interactions);
         self
     }
 
@@ -165,7 +165,7 @@ impl SimulationBuilder {
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
-        self.post_interactions = interactions.into_iter().collect();
+        self.post_interactions.extend(interactions);
         self
     }
 
@@ -195,55 +195,59 @@ impl SimulationBuilder {
     pub fn parameters_from_app_data(mut self, app_data: &str) -> Result<Self, BuildError> {
         let protocol = app_data::parse(app_data.as_bytes()).map_err(BuildError::AppDataParse)?;
 
-        let encode_hooks = |hooks: &[app_data::Hook]| -> Vec<InteractionData> {
-            if hooks.is_empty() {
-                return vec![];
-            }
-            vec![InteractionData {
-                target: self.simulator.0.hooks_trampoline,
-                value: U256::ZERO,
-                call_data: contracts::HooksTrampoline::HooksTrampoline::executeCall {
-                    hooks: hooks
-                        .iter()
-                        .map(|h| contracts::HooksTrampoline::HooksTrampoline::Hook {
-                            target: h.target,
-                            callData: Bytes::copy_from_slice(&h.call_data),
-                            gasLimit: U256::from(h.gas_limit),
+        self.pre_interactions = self.encode_hooks(&protocol.hooks.pre);
+        self.post_interactions = self.encode_hooks(&protocol.hooks.post);
+
+        match (protocol.wrappers.is_empty(), protocol.flashloan) {
+            (false, Some(_)) => return Err(BuildError::FlashloanWrappersIncompatible),
+            (false, None) => {
+                self.wrapper = WrapperConfig::Custom(
+                    protocol
+                        .wrappers
+                        .into_iter()
+                        .map(|w| WrapperCall {
+                            address: w.address,
+                            data: w.data.into(),
                         })
                         .collect(),
-                }
-                .abi_encode(),
-            }]
-        };
-        self.pre_interactions = encode_hooks(&protocol.hooks.pre);
-        self.post_interactions = encode_hooks(&protocol.hooks.post);
-
-        let has_wrappers = !protocol.wrappers.is_empty();
-        let has_flashloan = protocol.flashloan.is_some();
-        if has_wrappers && has_flashloan {
-            return Err(BuildError::FlashloanWrappersIncompatible);
-        }
-        if has_wrappers {
-            self.wrapper = WrapperConfig::Custom(
-                protocol
-                    .wrappers
-                    .into_iter()
-                    .map(|w| WrapperCall {
-                        address: w.address,
-                        data: w.data.into(),
-                    })
-                    .collect(),
-            );
-        } else if let Some(flashloan) = protocol.flashloan {
-            self.wrapper = WrapperConfig::Flashloan(vec![FlashloanRequest {
-                amount: flashloan.amount,
-                borrower: flashloan.protocol_adapter,
-                lender: flashloan.liquidity_provider,
-                token: flashloan.token,
-            }]);
+                );
+            }
+            (true, Some(flashloan)) => {
+                self.wrapper = WrapperConfig::Flashloan(vec![FlashloanRequest {
+                    amount: flashloan.amount,
+                    borrower: flashloan.protocol_adapter,
+                    lender: flashloan.liquidity_provider,
+                    token: flashloan.token,
+                }]);
+            }
+            (true, None) => {}
         }
 
         Ok(self)
+    }
+
+    /// Generates 1 interaction executing the given hooks via the trampoline
+    /// contract since executing hooks directly from the settlement contract
+    /// context would give them elevated privileges that put funds at risk.
+    fn encode_hooks(&self, hooks: &[app_data::Hook]) -> Vec<InteractionData> {
+        if hooks.is_empty() {
+            return vec![];
+        }
+        vec![InteractionData {
+            target: self.simulator.0.hooks_trampoline,
+            value: U256::ZERO,
+            call_data: contracts::HooksTrampoline::HooksTrampoline::executeCall {
+                hooks: hooks
+                    .iter()
+                    .map(|h| contracts::HooksTrampoline::HooksTrampoline::Hook {
+                        target: h.target,
+                        callData: Bytes::copy_from_slice(&h.call_data),
+                        gasLimit: U256::from(h.gas_limit),
+                    })
+                    .collect(),
+            }
+            .abi_encode(),
+        }]
     }
 
     /// Instructs the builder to override the settlement contract's buy-token
@@ -274,6 +278,113 @@ impl SimulationBuilder {
         // code from the non-trivial code that actually does the encoding.
         crate::encoding::finish_simulation_builder(self).await
     }
+}
+
+/// The output of [`SimulationBuilder::build`]: a transaction request and state
+/// overrides ready to be passed to an alloy provider for simulation.
+pub struct EthCallInputs {
+    pub request: TransactionRequest,
+    pub state_overrides: StateOverride,
+    pub simulator: SettlementSimulator,
+    pub block: u64,
+}
+
+impl EthCallInputs {
+    /// Runs the generated simulation using an `eth_call` and returns the
+    /// response bytes if there are any.
+    pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
+        self.simulator
+            .0
+            .provider
+            .clone()
+            .call(self.request)
+            .overrides(self.state_overrides)
+            .block(self.block.into())
+            .await
+    }
+
+    /// Same as [`EthCallInputs::simulate`] but also generates a tenderly
+    /// request in case one wants to re-simulate with tenderly. If tenderly
+    /// credentials are configured this even generates a shareable link for
+    /// the simulation.
+    pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
+        let tenderly_request = self
+            .to_tenderly_request()
+            .context("failed to convert to tenderly request")?;
+
+        let tenderly_url = if let Some(api) = &self.simulator.0.tenderly {
+            api.simulate_and_share(tenderly_request.clone())
+                .await
+                .inspect_err(|err| tracing::warn!(?err, "failed to simulate via tenderly"))
+                .ok()
+        } else {
+            None
+        };
+
+        Ok(TenderlyReport {
+            tenderly_request,
+            tenderly_url,
+            error: self.simulate().await.err().map(|err| err.to_string()),
+        })
+    }
+
+    /// Converts the simulation into a request that can be simulated with
+    /// tenderly.
+    pub fn to_tenderly_request(&self) -> Result<tenderly::dto::Request, ConversionError> {
+        Ok(tenderly::dto::Request {
+            // By default tenderly simulates calls at the start of the block. So if we simulate
+            // something when the latest block is `n` we need to tell tenderly to simulate at
+            // block `n+1` to still have all of block n's txs happen before our simulation runs.
+            block_number: Some(self.block + 1),
+            network_id: self.simulator.0.chain_id.to_string(),
+            from: self.request.from.unwrap_or_default(),
+            to: match &self.request.to.ok_or(ConversionError::MissingTo)? {
+                TxKind::Create => Default::default(),
+                TxKind::Call(to) => *to,
+            },
+            input: self
+                .request
+                .input
+                .input
+                .as_ref()
+                .map(|bytes| bytes.to_vec())
+                .unwrap_or_default(),
+            gas: self.request.gas,
+            value: self.request.value,
+            simulation_type: Some(tenderly::dto::SimulationType::Full),
+            state_objects: Some(
+                self.state_overrides
+                    .iter()
+                    .map(|(key, value)| {
+                        Ok((
+                            *key,
+                            tenderly::dto::StateObject::try_from(value.clone())
+                                .map_err(|_| ConversionError::StateOverrides)?,
+                        ))
+                    })
+                    .collect::<Result<_, ConversionError>>()?,
+            ),
+            access_list: self.request.access_list.as_ref().map(Into::into),
+            save: Some(true),
+            gas_price: None,
+            save_if_fails: Some(true),
+            transaction_index: None,
+            generate_access_list: None,
+        })
+    }
+}
+
+/// The result of Order simulation, contains the error (if any)
+/// and full Tenderly API request that can be used to resimulate
+/// and debug using Tenderly
+#[derive(Clone, Debug)]
+pub struct TenderlyReport {
+    /// Full request object that can be used directly with the Tenderly API
+    pub tenderly_request: tenderly::dto::Request,
+    /// Shared Tenderly simulation URL for debugging in the dashboard
+    pub tenderly_url: Option<String>,
+    /// Any error that might have been reported during order simulation
+    pub error: Option<String>,
 }
 
 pub enum Solver {
@@ -326,10 +437,32 @@ pub struct Order {
     pub(crate) data: OrderData,
     pub(crate) owner: Address,
     pub(crate) signature: Signature,
-    pub(crate) pre_interactions: Vec<InteractionData>,
-    pub(crate) post_interactions: Vec<InteractionData>,
     pub(crate) executed_amount: ExecutionAmount,
     pub(crate) price_encoding: PriceEncoding,
+}
+
+impl Order {
+    pub fn new(data: OrderData) -> Self {
+        Self {
+            data,
+            owner: Address::ZERO,
+            signature: Signature::default_with(SigningScheme::Eip1271),
+            executed_amount: ExecutionAmount::Remaining,
+            price_encoding: PriceEncoding::LimitPrice,
+        }
+    }
+
+    pub fn with_signature(mut self, owner: Address, signature: Signature) -> Self {
+        self.owner = owner;
+        self.signature = signature;
+        self
+    }
+
+    pub fn fill_at(mut self, execution: ExecutionAmount, price: PriceEncoding) -> Self {
+        self.executed_amount = execution;
+        self.price_encoding = price;
+        self
+    }
 }
 
 /// Configuration for wrapping the settlement in a flashloan or custom wrapper
@@ -345,176 +478,6 @@ pub struct FlashloanRequest {
     pub borrower: Address,
     pub lender: Address,
     pub token: Address,
-}
-
-impl Order {
-    pub fn new(data: OrderData) -> Self {
-        Self {
-            data,
-            owner: Address::ZERO,
-            signature: Signature::default_with(SigningScheme::Eip1271),
-            pre_interactions: vec![],
-            post_interactions: vec![],
-            executed_amount: ExecutionAmount::Remaining,
-            price_encoding: PriceEncoding::LimitPrice,
-        }
-    }
-
-    pub fn with_signature(mut self, owner: Address, signature: Signature) -> Self {
-        self.owner = owner;
-        self.signature = signature;
-        self
-    }
-
-    pub fn with_pre_interactions(
-        mut self,
-        interactions: impl IntoIterator<Item = InteractionData>,
-    ) -> Self {
-        self.pre_interactions = interactions.into_iter().collect();
-        self
-    }
-
-    pub fn with_post_interactions(
-        mut self,
-        interactions: impl IntoIterator<Item = InteractionData>,
-    ) -> Self {
-        self.post_interactions = interactions.into_iter().collect();
-        self
-    }
-
-    pub fn fill_at(mut self, execution: ExecutionAmount, price: PriceEncoding) -> Self {
-        self.executed_amount = execution;
-        self.price_encoding = price;
-        self
-    }
-}
-
-/// The output of [`SimulationBuilder::build`]: a transaction request and state
-/// overrides ready to be passed to an alloy provider for simulation.
-pub struct EthCallInputs {
-    pub request: TransactionRequest,
-    pub state_overrides: StateOverride,
-    pub simulator: SettlementSimulator,
-    pub block: u64,
-}
-
-/// The result of Order simulation, contains the error (if any)
-/// and full Tenderly API request that can be used to resimulate
-/// and debug using Tenderly
-#[derive(Clone, Debug)]
-pub struct TenderlyReport {
-    /// Full request object that can be used directly with the Tenderly API
-    pub tenderly_request: crate::tenderly::dto::Request,
-    /// Shared Tenderly simulation URL for debugging in the dashboard
-    pub tenderly_url: Option<String>,
-    /// Any error that might have been reported during order simulation
-    pub error: Option<String>,
-}
-
-impl EthCallInputs {
-    pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
-        self.simulator
-            .0
-            .provider
-            .clone()
-            .call(self.request)
-            .overrides(self.state_overrides)
-            .block(self.block.into())
-            .await
-    }
-
-    pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
-        let tenderly_request = self
-            .to_tenderly_request()
-            .context("failed to convert to tenderly request")?;
-
-        let tenderly_url = if let Some(api) = &self.simulator.0.tenderly {
-            api.simulate_and_share(tenderly_request.clone())
-                .await
-                .inspect_err(|err| tracing::warn!(?err, "failed to simulate via tenderly"))
-                .ok()
-        } else {
-            None
-        };
-
-        let simulation_result = self.simulate().await;
-
-        Ok(TenderlyReport {
-            tenderly_request,
-            tenderly_url,
-            error: match simulation_result {
-                Ok(_) => None,
-                Err(err) => Some(err.to_string()),
-            },
-        })
-    }
-
-    /// Converts the simulation into a request that can be simulated with
-    /// tenderly.
-    pub fn to_tenderly_request(&self) -> Result<crate::tenderly::dto::Request, ConversionError> {
-        Ok(crate::tenderly::dto::Request {
-            // By default tenderly simulates calls at the start of the block. So if we simulate
-            // something when the latest block is `n` we need to tell tenderly to simulate at
-            // block `n+1` to still have all of block n's txs happen before our simulation runs.
-            block_number: Some(self.block + 1),
-            network_id: self.simulator.0.chain_id.to_string(),
-            from: self.request.from.unwrap_or_default(),
-            to: match &self.request.to.ok_or(ConversionError::MissingTo)? {
-                TxKind::Create => Default::default(),
-                TxKind::Call(to) => *to,
-            },
-            input: self
-                .request
-                .input
-                .input
-                .as_ref()
-                .map(|bytes| bytes.to_vec())
-                .unwrap_or_default(),
-            gas: self.request.gas,
-            value: self.request.value,
-            simulation_type: Some(crate::tenderly::dto::SimulationType::Full),
-            state_objects: Some(
-                self.state_overrides
-                    .iter()
-                    .map(|(key, value)| {
-                        Ok((
-                            *key,
-                            StateObject::try_from(value.clone())
-                                .map_err(|_| ConversionError::StateOverrides)?,
-                        ))
-                    })
-                    .collect::<Result<_, ConversionError>>()?,
-            ),
-            access_list: self.request.access_list.as_ref().map(Into::into),
-            save: Some(true),
-            gas_price: None, // use tenderly default for now
-            save_if_fails: Some(true),
-            transaction_index: None,
-            generate_access_list: None,
-        })
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ConversionError {
-    #[error("simulation does not have a target")]
-    MissingTo,
-    #[error("could not convert state overrides")]
-    StateOverrides,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum BuildError {
-    #[error("no order was added")]
-    NoOrder,
-    #[error("no solver was set")]
-    NoSolver,
-    #[error("failed to query filled amount from settlement contract: {0}")]
-    FilledAmountQuery(#[source] anyhow::Error),
-    #[error("failed to parse app data: {0}")]
-    AppDataParse(#[source] serde_json::Error),
-    #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
-    FlashloanWrappersIncompatible,
 }
 
 #[derive(Debug)]
@@ -537,6 +500,32 @@ pub enum AccountOverrideRequest {
         state: AccountOverride,
     },
     // TODO: add Allowance
+}
+
+/// Error returned when a built eth_call simulation could not be converted
+/// into a tenderly simulation request.
+#[derive(Debug, thiserror::Error)]
+pub enum ConversionError {
+    #[error("simulation does not have a target")]
+    MissingTo,
+    #[error("could not convert state overrides")]
+    StateOverrides,
+}
+
+/// Error returned when data needed to build the final simulation was missing,
+/// incompatible, or could not be computed ad-hoc.
+#[derive(Debug, thiserror::Error)]
+pub enum BuildError {
+    #[error("no order was added")]
+    NoOrder,
+    #[error("no solver was set")]
+    NoSolver,
+    #[error("failed to query filled amount from settlement contract: {0}")]
+    FilledAmountQuery(#[from] anyhow::Error),
+    #[error("failed to parse app data: {0}")]
+    AppDataParse(#[from] serde_json::Error),
+    #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
+    FlashloanWrappersIncompatible,
 }
 
 /// Error returned when two [`AccountOverride`]s set the same field for the same

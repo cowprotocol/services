@@ -7776,7 +7776,6 @@ version = "0.1.0"
 dependencies = [
  "alloy-contract",
  "alloy-eips",
- "alloy-network",
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types",

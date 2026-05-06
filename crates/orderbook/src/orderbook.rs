@@ -631,11 +631,12 @@ impl Orderbook {
             return Ok(None);
         };
 
-        let full_app_data = order
-            .metadata
-            .full_app_data
-            .clone()
-            .ok_or_else(|| OrderSimulationError::Other(anyhow!("can't find appdata")))?;
+        let full_app_data = order.metadata.full_app_data.clone().ok_or_else(|| {
+            OrderSimulationError::Other(anyhow!(
+                "can't find the full app data for this order in the database, can't simulate the \
+                 order correctly without that"
+            ))
+        })?;
 
         let sim = order_simulator
             .new_simulation_builder()
