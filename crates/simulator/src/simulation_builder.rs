@@ -1,5 +1,5 @@
 use {
-    crate::{encoding::WrapperCall, tenderly::dto::StateObject},
+    crate::{encoding::WrapperCall, tenderly},
     alloy_primitives::{Address, B256, Bytes, TxKind, U256},
     alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
@@ -38,7 +38,7 @@ pub(crate) struct Inner {
     pub(crate) domain_separator: DomainSeparator,
     pub(crate) chain_id: u64,
     pub(crate) current_block: CurrentBlockWatcher,
-    pub(crate) tenderly: Option<Arc<dyn crate::tenderly::Api>>,
+    pub(crate) tenderly: Option<Arc<dyn tenderly::Api>>,
 }
 
 impl SettlementSimulator {
@@ -51,7 +51,7 @@ impl SettlementSimulator {
         max_gas_limit: u64,
         balance_overrides: Arc<dyn BalanceOverriding>,
         current_block: CurrentBlockWatcher,
-        tenderly: Option<Arc<dyn crate::tenderly::Api>>,
+        tenderly: Option<Arc<dyn tenderly::Api>>,
     ) -> Result<Self> {
         let authenticator = Address(settlement.authenticator().call().await?.0);
         let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
@@ -404,7 +404,7 @@ pub struct EthCallInputs {
 #[derive(Clone, Debug)]
 pub struct TenderlyReport {
     /// Full request object that can be used directly with the Tenderly API
-    pub tenderly_request: crate::tenderly::dto::Request,
+    pub tenderly_request: tenderly::dto::Request,
     /// Shared Tenderly simulation URL for debugging in the dashboard
     pub tenderly_url: Option<String>,
     /// Any error that might have been reported during order simulation
@@ -451,8 +451,8 @@ impl EthCallInputs {
 
     /// Converts the simulation into a request that can be simulated with
     /// tenderly.
-    pub fn to_tenderly_request(&self) -> Result<crate::tenderly::dto::Request, ConversionError> {
-        Ok(crate::tenderly::dto::Request {
+    pub fn to_tenderly_request(&self) -> Result<tenderly::dto::Request, ConversionError> {
+        Ok(tenderly::dto::Request {
             // By default tenderly simulates calls at the start of the block. So if we simulate
             // something when the latest block is `n` we need to tell tenderly to simulate at
             // block `n+1` to still have all of block n's txs happen before our simulation runs.
@@ -472,14 +472,14 @@ impl EthCallInputs {
                 .unwrap_or_default(),
             gas: self.request.gas,
             value: self.request.value,
-            simulation_type: Some(crate::tenderly::dto::SimulationType::Full),
+            simulation_type: Some(tenderly::dto::SimulationType::Full),
             state_objects: Some(
                 self.state_overrides
                     .iter()
                     .map(|(key, value)| {
                         Ok((
                             *key,
-                            StateObject::try_from(value.clone())
+                            tenderly::dto::StateObject::try_from(value.clone())
                                 .map_err(|_| ConversionError::StateOverrides)?,
                         ))
                     })
