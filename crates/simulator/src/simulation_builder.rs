@@ -541,9 +541,9 @@ pub enum BuildError {
     #[error("no solver was set")]
     NoSolver,
     #[error("failed to query filled amount from settlement contract: {0}")]
-    FilledAmountQuery(#[source] anyhow::Error),
+    FilledAmountQuery(#[from] anyhow::Error),
     #[error("failed to parse app data: {0}")]
-    AppDataParse(#[source] serde_json::Error),
+    AppDataParse(#[from] serde_json::Error),
     #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
     FlashloanWrappersIncompatible,
 }
