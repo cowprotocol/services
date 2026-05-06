@@ -562,18 +562,14 @@ impl Competition {
             lock.truncate(max_to_propose * MAX_CONCURRENT_AUCTIONS);
         }
 
-        // Shadow-mode submission to the pod network. Failures must never affect
-        // the response we return to the autopilot.
-        if let (Some(pm), Some(auction_id), Some((best, _))) =
-            (self.solver.pod_manager(), auction.id, scored.first())
-        {
-            pm.spawn(
-                auction_id,
-                auction.clone(),
-                deadline,
-                best.clone(),
-                self.solver.clone(),
-            );
+        // Shadow-mode submission to pod. Failures and cost must not affect
+        // the response we return to autopilot. `spawn` does its serialization
+        // synchronously from borrowed inputs, so no deep `Auction` clone
+        // happens here. Send the full scored vec so pod and autopilot rank
+        // the same set.
+        if let (Some(pm), Some(auction_id)) = (self.solver.pod_manager(), auction.id) {
+            let solveds: Vec<Solved> = scored.iter().map(|(s, _)| s).cloned().collect();
+            pm.spawn(auction_id, deadline, solveds, auction, self.solver.clone());
         }
 
         // Re-simulate the solution on every new block until the deadline ends to make

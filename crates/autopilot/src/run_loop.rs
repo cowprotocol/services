@@ -643,7 +643,10 @@ impl RunLoop {
             .filter_map(|solution| match solution {
                 Ok(solution) => {
                     Metrics::solution_ok(&driver);
-                    Some(competition::Bid::new(solution, driver.clone()))
+                    Some(competition::Bid::new(competition::BidPayload::new(
+                        solution,
+                        driver.clone(),
+                    )))
                 }
                 Err(err) => {
                     Metrics::solution_err(&driver, &err);

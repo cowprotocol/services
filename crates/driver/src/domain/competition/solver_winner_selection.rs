@@ -1,11 +1,12 @@
 pub use winner_selection::Unscored;
 use {
-    crate::domain::competition::order::FeePolicy,
-    eth_domain_types::{self as eth, Address, Ether, WrappedNativeToken},
+    crate::{domain::competition::order::FeePolicy, infra::api::routes::solve::dto},
+    ::observe::metrics,
+    eth_domain_types::{self as eth, Ether, WrappedNativeToken},
     winner_selection::{
         self as winsel,
         OrderUid,
-        state::{self, HasState, RankedItem, ScoredItem, UnscoredItem},
+        state::{HasState, RankedItem, ScoredItem, UnscoredItem},
     },
 };
 
@@ -38,26 +39,65 @@ impl SolverArbitrator {
         bids: Vec<Bid<Unscored>>,
         auction: &crate::domain::competition::Auction,
     ) -> Vec<Bid> {
+        self.arbitrate_with_context(bids, &auction.into())
+    }
+
+    /// Same as [`Self::arbitrate`] but takes a precomputed
+    /// [`winsel::AuctionContext`]. Use this when the caller has already
+    /// built the context in the foreground, to avoid the per-call
+    /// conversion from `Auction`.
+    pub fn arbitrate_with_context(
+        &self,
+        bids: Vec<Bid<Unscored>>,
+        context: &winsel::AuctionContext,
+    ) -> Vec<Bid> {
         let paired = bids
             .into_iter()
             .map(|bid| {
-                let solution: winsel::Solution<winsel::Unscored> = bid.solution().into();
+                let solution: winsel::Solution<winsel::Unscored> = bid.payload().into();
                 (bid, solution)
             })
             .collect();
-        let (ws_ranking, mut by_key) = self.0.arbitrate_paired(paired, &auction.into());
+        let rejoined = self.0.arbitrate_paired_and_rejoin(paired, context);
 
-        ws_ranking
+        // An orphan means two input bids shared a `SolutionKey`. Pod is
+        // open so untrusted input can engineer such collisions. Don't panic
+        // (it would kill the spawned pod task); warn and bump the counter
+        // so oncall can alert.
+        if rejoined.orphans > 0 {
+            tracing::warn!(
+                orphans = rejoined.orphans,
+                "ranked solutions had no matching bid; SolutionKey collision suspected",
+            );
+            Metrics::get()
+                .orphan_solutions
+                .inc_by(rejoined.orphans as u64);
+        }
+        debug_assert!(rejoined.orphans == 0, "expected no orphans");
+
+        rejoined
             .ranked
             .into_iter()
-            .map(|ws_solution| {
-                let bid = by_key
-                    .remove(&winsel::SolutionKey::from(&ws_solution))
-                    .expect("every ranked solution has a matching bid");
+            .map(|(bid, ws_solution)| {
                 bid.with_score(Score(eth::Ether(ws_solution.score())))
                     .with_rank(ws_solution.state().rank_type)
             })
             .collect()
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "winner_selection")]
+struct Metrics {
+    /// Arbitrator-returned solutions whose `SolutionKey` had no matching
+    /// bid in the rejoin step. Non-zero indicates a `SolutionKey` collision
+    /// in the input set or an arbitrator invariant violation.
+    orphan_solutions: prometheus::IntCounter,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 }
 
@@ -156,53 +196,7 @@ impl From<&crate::infra::api::routes::solve::dto::solve_response::Solution>
 pub type Scored = winsel::state::Scored<Score>;
 pub type Ranked = winsel::state::Ranked<Score>;
 
-/// A solver's auction bid, which includes solution and corresponding driver
-/// data, progressing through the winner selection process.
-///
-/// It uses the type-state pattern to enforce correct state
-/// transitions at compile time. The state parameter tracks progression through
-/// three phases:
-///
-/// 1. **Unscored**: Initial state when the solution is received from the driver
-/// 2. **Scored**: After computing surplus and fees for the solution
-/// 3. **Ranked**: After winner selection determines if this is a winner
-#[derive(Clone)]
-pub struct Bid<State = Ranked> {
-    solution: crate::infra::api::routes::solve::dto::solve_response::Solution,
-    state: State,
-}
-
-impl<T> Bid<T> {
-    pub fn solution(&self) -> &crate::infra::api::routes::solve::dto::solve_response::Solution {
-        &self.solution
-    }
-
-    pub fn submission_address(&self) -> &Address {
-        &self.solution.submission_address
-    }
-}
-
-impl<State> state::HasState for Bid<State> {
-    type Next<NewState> = Bid<NewState>;
-    type State = State;
-
-    fn with_state<NewState>(self, state: NewState) -> Self::Next<NewState> {
-        Bid {
-            solution: self.solution,
-            state,
-        }
-    }
-
-    fn state(&self) -> &Self::State {
-        &self.state
-    }
-}
-
-impl Bid<Unscored> {
-    pub fn new(solution: crate::infra::api::routes::solve::dto::solve_response::Solution) -> Self {
-        Self {
-            solution,
-            state: Unscored,
-        }
-    }
-}
+/// A solver's auction bid in the typestate pipeline `Unscored -> Scored ->
+/// Ranked`. State transitions are enforced at compile time via
+/// [`winsel::Bid`].
+pub type Bid<State = Ranked> = winsel::Bid<dto::solve_response::Solution, State>;

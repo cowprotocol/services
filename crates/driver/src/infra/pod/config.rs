@@ -2,9 +2,10 @@ use {serde::Deserialize, serde_with::serde_as, url::Url};
 
 /// Default number of winning solutions selected by the local arbitrator.
 ///
-/// Acts as a *protocol parameter* once pod takes real auction traffic —
-/// changing it has the same blast radius as a parameter hardfork — so it is
-/// surfaced as config from the first version that ships.
+/// Once pod takes real auction traffic this acts as a protocol parameter:
+/// changing it has the same blast radius as a parameter hardfork. Exposed
+/// in config from the first version so a future change is configurable
+/// without a release.
 const DEFAULT_MAX_WINNERS: usize = 10;
 
 #[serde_as]

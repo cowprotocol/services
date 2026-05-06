@@ -95,11 +95,10 @@ async fn get_recovery_target(
 ///
 /// Pod limits each submitter to one in-flight transaction; when a second
 /// submission arrives before the first is mined, pod returns an RPC error
-/// containing the substrings matched below. The matcher is brittle by
-/// nature — pod-sdk 0.5.1 wraps this as a stringly RPC error with no typed
-/// variant, so we can only match on the wire format. Pinning the SDK
-/// version here gives a future bump a fair chance to break the test and
-/// force re-evaluation.
+/// containing the substrings matched below. The matcher is brittle: pod-sdk
+/// 0.5.1 returns a stringly RPC error with no typed variant, so the wire
+/// format is the only thing to match on. Pinning the SDK version gives a
+/// future bump a fair chance to break the test and force re-evaluation.
 ///
 /// On a hit we attempt recovery so the next bid in the auction's hot path
 /// can proceed; failing the whole submission would lose the bid for an

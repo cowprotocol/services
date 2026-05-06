@@ -31,6 +31,7 @@ use {
         competition::{Bid, RankType, Ranked, Score, Solution, TradedOrder, Unscored},
         fee,
     },
+    ::observe::metrics,
     ::winner_selection::state::{HasState, RankedItem, ScoredItem, UnscoredItem},
     eth_domain_types::{self as eth, Address, WrappedNativeToken},
     std::collections::HashMap,
@@ -66,34 +67,39 @@ impl Arbitrator {
                 (bid, solution)
             })
             .collect();
-        let (ws_ranking, mut by_key) = self.0.arbitrate_paired(paired, &auction.into());
+        let rejoined = self.0.arbitrate_paired_and_rejoin(paired, &auction.into());
 
-        let reference_scores = self
-            .0
-            .compute_reference_scores(&ws_ranking)
+        // An orphan means two input bids shared a `SolutionKey`. Autopilot
+        // runs one process per chain; panicking here takes auctioning down
+        // until restart. Warn and bump the counter so oncall can alert.
+        if rejoined.orphans > 0 {
+            tracing::warn!(
+                orphans = rejoined.orphans,
+                "ranked solutions had no matching bid; SolutionKey collision suspected",
+            );
+            Metrics::get()
+                .orphan_solutions
+                .inc_by(rejoined.orphans as u64);
+        }
+        debug_assert!(rejoined.orphans == 0, "expected no orphans");
+
+        let reference_scores = rejoined
+            .reference_scores
             .into_iter()
             .map(|(solver, score)| (solver, Score(eth::Ether(score))))
             .collect();
-
-        let filtered_out = ws_ranking
+        let filtered_out = rejoined
             .filtered_out
             .into_iter()
-            .map(|ws_solution| {
-                let bid = by_key
-                    .remove(&winsel::SolutionKey::from(&ws_solution))
-                    .expect("every filtered-out solution has a matching bid");
+            .map(|(bid, ws_solution)| {
                 bid.with_score(Score(eth::Ether(ws_solution.score())))
                     .with_rank(RankType::FilteredOut)
             })
             .collect();
-
-        let ranked = ws_ranking
+        let ranked = rejoined
             .ranked
             .into_iter()
-            .map(|ws_solution| {
-                let bid = by_key
-                    .remove(&winsel::SolutionKey::from(&ws_solution))
-                    .expect("every ranked solution has a matching bid");
+            .map(|(bid, ws_solution)| {
                 bid.with_score(Score(eth::Ether(ws_solution.score())))
                     .with_rank(ws_solution.state().rank_type)
             })
@@ -104,6 +110,21 @@ impl Arbitrator {
             ranked,
             reference_scores,
         }
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "winner_selection")]
+struct Metrics {
+    /// Arbitrator-returned solutions whose `SolutionKey` had no matching
+    /// bid in the rejoin step. Non-zero indicates a `SolutionKey` collision
+    /// in the input set or an arbitrator invariant violation.
+    orphan_solutions: prometheus::IntCounter,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 }
 
@@ -260,7 +281,7 @@ mod tests {
                     Price,
                     order::{self, AppDataHash},
                 },
-                competition::{Bid, Solution, TradedOrder, Unscored},
+                competition::{Bid, BidPayload, Solution, TradedOrder, Unscored},
             },
             infra::Driver,
         },
@@ -1194,7 +1215,7 @@ mod tests {
         .await
         .unwrap();
 
-        Bid::new(solution, std::sync::Arc::new(driver))
+        Bid::new(BidPayload::new(solution, std::sync::Arc::new(driver)))
     }
 
     fn amount(value: u128) -> String {

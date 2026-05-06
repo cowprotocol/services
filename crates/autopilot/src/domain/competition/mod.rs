@@ -11,7 +11,7 @@ use {
 mod bid;
 pub mod winner_selection;
 
-pub use bid::{Bid, RankType, Ranked, Scored, Unscored};
+pub use bid::{Bid, BidPayload, RankType, Ranked, Scored, Unscored};
 
 type SolutionId = u64;
 

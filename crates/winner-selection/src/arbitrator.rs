@@ -624,6 +624,49 @@ impl Arbitrator {
         (self.arbitrate(solutions, context), by_key)
     }
 
+    /// Runs arbitration and rejoins each ranked and filtered-out solution
+    /// to its original input `T`. Also computes reference scores. Output
+    /// solutions that cannot be matched back to an input are counted in
+    /// `orphans` rather than panicking.
+    ///
+    /// A non-zero `orphans` count means two inputs shared the same
+    /// `SolutionKey`. Callers should log and alert on this, not treat it
+    /// as fatal.
+    pub fn arbitrate_paired_and_rejoin<T>(
+        &self,
+        items: Vec<(T, Solution<Unscored>)>,
+        context: &AuctionContext,
+    ) -> Rejoined<T> {
+        let (ranking, mut by_key) = self.arbitrate_paired(items, context);
+        let reference_scores = self.compute_reference_scores(&ranking);
+
+        let mut orphans = 0;
+        let mut rejoin = |s: Solution<Ranked>| -> Option<(T, Solution<Ranked>)> {
+            let key = SolutionKey::from(&s);
+            match by_key.remove(&key) {
+                Some(t) => Some((t, s)),
+                None => {
+                    orphans += 1;
+                    None
+                }
+            }
+        };
+
+        let filtered_out = ranking
+            .filtered_out
+            .into_iter()
+            .filter_map(&mut rejoin)
+            .collect();
+        let ranked = ranking.ranked.into_iter().filter_map(&mut rejoin).collect();
+
+        Rejoined {
+            filtered_out,
+            ranked,
+            reference_scores,
+            orphans,
+        }
+    }
+
     /// Compute reference scores for winning solvers.
     #[instrument(skip_all)]
     pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<Address, U256> {
@@ -736,6 +779,22 @@ struct PriceLimits {
     sell: U256,
     /// Minimum buy amount.
     buy: U256,
+}
+
+/// Result of [`Arbitrator::arbitrate_paired_and_rejoin`].
+#[derive(Debug)]
+pub struct Rejoined<T> {
+    /// Solutions filtered out as unfair, paired with their original input.
+    pub filtered_out: Vec<(T, Solution<Ranked>)>,
+    /// Ranked solutions (winners + non-winners), paired with their original
+    /// input, ordered as produced by [`Arbitrator::arbitrate`].
+    pub ranked: Vec<(T, Solution<Ranked>)>,
+    /// Reference scores per winning solver.
+    pub reference_scores: HashMap<Address, U256>,
+    /// Number of arbitrator-returned solutions whose `SolutionKey` could
+    /// not be matched back to an input item. Non-zero indicates a
+    /// `SolutionKey` collision in the input set.
+    pub orphans: usize,
 }
 
 /// Key to uniquely identify every solution within an auction.
