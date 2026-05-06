@@ -195,28 +195,8 @@ impl SimulationBuilder {
     pub fn parameters_from_app_data(mut self, app_data: &str) -> Result<Self, BuildError> {
         let protocol = app_data::parse(app_data.as_bytes()).map_err(BuildError::AppDataParse)?;
 
-        let encode_hooks = |hooks: &[app_data::Hook]| -> Vec<InteractionData> {
-            if hooks.is_empty() {
-                return vec![];
-            }
-            vec![InteractionData {
-                target: self.simulator.0.hooks_trampoline,
-                value: U256::ZERO,
-                call_data: contracts::HooksTrampoline::HooksTrampoline::executeCall {
-                    hooks: hooks
-                        .iter()
-                        .map(|h| contracts::HooksTrampoline::HooksTrampoline::Hook {
-                            target: h.target,
-                            callData: Bytes::copy_from_slice(&h.call_data),
-                            gasLimit: U256::from(h.gas_limit),
-                        })
-                        .collect(),
-                }
-                .abi_encode(),
-            }]
-        };
-        self.pre_interactions = encode_hooks(&protocol.hooks.pre);
-        self.post_interactions = encode_hooks(&protocol.hooks.post);
+        self.pre_interactions = self.encode_hooks(&protocol.hooks.pre);
+        self.post_interactions = self.encode_hooks(&protocol.hooks.post);
 
         let has_wrappers = !protocol.wrappers.is_empty();
         let has_flashloan = protocol.flashloan.is_some();
@@ -244,6 +224,30 @@ impl SimulationBuilder {
         }
 
         Ok(self)
+    }
+
+    /// Generates 1 interaction executing the given hooks via the trampoline
+    /// contract since executing hooks directly from the settlement contract
+    /// context would give them elevated priviliges that puts funds at risk.
+    fn encode_hooks(&self, hooks: &[app_data::Hook]) -> Vec<InteractionData> {
+        if hooks.is_empty() {
+            return vec![];
+        }
+        vec![InteractionData {
+            target: self.simulator.0.hooks_trampoline,
+            value: U256::ZERO,
+            call_data: contracts::HooksTrampoline::HooksTrampoline::executeCall {
+                hooks: hooks
+                    .iter()
+                    .map(|h| contracts::HooksTrampoline::HooksTrampoline::Hook {
+                        target: h.target,
+                        callData: Bytes::copy_from_slice(&h.call_data),
+                        gasLimit: U256::from(h.gas_limit),
+                    })
+                    .collect(),
+            }
+            .abi_encode(),
+        }]
     }
 
     /// Instructs the builder to override the settlement contract's buy-token
@@ -286,8 +290,8 @@ pub struct EthCallInputs {
 }
 
 impl EthCallInputs {
-    /// Runs the generated simulation using an `eth_call` and returns the response bytes if
-    /// there are any.
+    /// Runs the generated simulation using an `eth_call` and returns the
+    /// response bytes if there are any.
     pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
         self.simulator
             .0
@@ -299,9 +303,10 @@ impl EthCallInputs {
             .await
     }
 
-    /// Same as [`EthCallInputs::simulate`] but also generates a tenderly request in case
-    /// one wants to re-simulate with tenderly. If tenderly credentials are configured this
-    /// even generates a shareable link for the simulation.
+    /// Same as [`EthCallInputs::simulate`] but also generates a tenderly
+    /// request in case one wants to re-simulate with tenderly. If tenderly
+    /// credentials are configured this even generates a shareable link for
+    /// the simulation.
     pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
         let tenderly_request = self
             .to_tenderly_request()
@@ -494,7 +499,6 @@ pub struct FlashloanRequest {
     pub lender: Address,
     pub token: Address,
 }
-
 
 #[derive(Debug)]
 pub enum AccountOverrideRequest {
