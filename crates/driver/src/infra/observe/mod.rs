@@ -437,10 +437,10 @@ pub fn mempool_executed(
     }
 }
 
-/// Observe that a mempool's submission failed but another mempool succeeded
-/// for the same settlement. Recorded under a distinct `Superseded` label so
-/// that the per-mempool metric can be filtered when computing the overall
-/// settlement submission success rate.
+/// A mempool's submission failed but another mempool succeeded for the
+/// same settlement. Recorded under a `Superseded` label so the per-mempool
+/// metric can be filtered when computing the overall settlement submission
+/// success rate.
 pub fn mempool_superseded(
     mempool: &Mempool,
     superseded_by: &Mempool,

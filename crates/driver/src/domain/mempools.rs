@@ -63,6 +63,8 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
+        // Race all mempools; first success wins. Failures overtaken by a
+        // later success are recorded as `Superseded`.
         let mut futures: FuturesUnordered<_> = self
             .mempools
             .iter()
@@ -78,6 +80,8 @@ impl Mempools {
             })
             .collect();
 
+        // Errors from mempools that have already failed; observed once the
+        // overall outcome is known.
         let mut shadowed_errors: Vec<(&infra::Mempool, Error)> = Vec::new();
         while let Some((mempool, result)) = futures.next().await {
             match result {
