@@ -1,9 +1,5 @@
 use {
-    anyhow::anyhow,
-    async_trait::async_trait,
-    model::order::Order,
-    shared::order_validation::{OrderSimulating, OrderSimulationError},
-    simulator::simulation_builder::{
+    crate::simulation_builder::{
         self,
         Block,
         ExecutionAmount,
@@ -11,9 +7,37 @@ use {
         SettlementSimulator,
         Solver,
     },
+    anyhow::anyhow,
+    async_trait::async_trait,
+    model::order::Order,
 };
 
-/// Drives `SettlementSimulator` to run a full-order simulation at order
+/// Outcome of the order creation simulation.
+#[derive(Debug)]
+pub enum OrderSimulationError {
+    /// The simulation ran and the transaction reverted. `reason` is the
+    /// revert string returned by the EVM (or a Tenderly reason string).
+    Reverted {
+        reason: String,
+        tenderly_url: Option<String>,
+    },
+    /// The simulation could not run (RPC failure, Tenderly error, malformed
+    /// input, timeout). Treated as fail-open.
+    Infra(anyhow::Error),
+}
+
+/// Simulates an order's pre-hooks, swap, and post-hooks against the chain.
+#[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
+#[async_trait]
+pub trait OrderSimulating: Send + Sync {
+    async fn simulate(
+        &self,
+        order: &Order,
+        full_app_data: String,
+    ) -> Result<(), OrderSimulationError>;
+}
+
+/// Drives [`SettlementSimulator`] to run a full-order simulation at order
 /// creation time, including pre/post hooks, swap, and any wrapper chain.
 pub struct OrderSimulatorAdapter {
     inner: SettlementSimulator,

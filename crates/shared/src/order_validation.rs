@@ -44,39 +44,10 @@ use {
         trade_verifier::code_fetching::CodeFetching,
     },
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
+    simulator::order_simulation::{OrderSimulating, OrderSimulationError},
     std::{sync::Arc, time::Duration},
     tracing::instrument,
 };
-
-/// Outcome of the order creation simulation.
-#[derive(Debug)]
-pub enum OrderSimulationError {
-    /// The simulation ran and the transaction reverted. `reason` is the
-    /// revert string returned by the EVM (or a Tenderly reason string).
-    Reverted {
-        reason: String,
-        tenderly_url: Option<String>,
-    },
-    /// The simulation could not run (RPC failure, Tenderly error, malformed
-    /// input, timeout). Treated as fail-open in both Shadow and Enforce
-    /// modes.
-    Infra(anyhow::Error),
-}
-
-// Defined here rather than in `crates/simulator` because `OrderValidator`
-// cannot depend on `orderbook`, where the concrete implementation lives.
-// To be removed once the `simulator` crate's API can be depended on
-// directly.
-/// Simulates an order's pre-hooks, swap, and post-hooks against the chain.
-#[cfg_attr(test, mockall::automock)]
-#[async_trait::async_trait]
-pub trait OrderSimulating: Send + Sync {
-    async fn simulate(
-        &self,
-        order: &Order,
-        full_app_data: String,
-    ) -> Result<(), OrderSimulationError>;
-}
 
 /// Mode controlling whether the order creation simulation can reject orders.
 /// The operational default lives in `configs::orderbook::OrderSimulationMode`
@@ -1408,6 +1379,7 @@ mod tests {
         price_estimation::trade_verifier::code_fetching::MockCodeFetching,
         serde_json::json,
         signature_validator::MockSignatureValidating,
+        simulator::order_simulation::MockOrderSimulating,
     };
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);

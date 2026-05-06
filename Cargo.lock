@@ -7704,6 +7704,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "signature-validator",
+ "simulator",
  "strum",
  "testlib",
  "thiserror 1.0.69",

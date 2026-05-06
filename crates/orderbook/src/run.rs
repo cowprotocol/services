@@ -423,14 +423,14 @@ pub async fn run(config: Configuration) {
         .order_simulation
         .as_ref()
         .zip(order_simulator.clone())
-        .and_then(|(sim_config, simulator)| {
+        .and_then(|(sim_config, settlement_simulator)| {
             let mode = match sim_config.order_simulation_mode {
                 configs::orderbook::OrderSimulationMode::Shadow => OrderSimulationMode::Shadow,
                 configs::orderbook::OrderSimulationMode::Enforce => OrderSimulationMode::Enforce,
                 configs::orderbook::OrderSimulationMode::Disabled => return None,
             };
-            let simulator: Arc<dyn shared::order_validation::OrderSimulating> = Arc::new(
-                crate::order_simulation::OrderSimulatorAdapter::new(simulator),
+            let simulator: Arc<dyn simulator::order_simulation::OrderSimulating> = Arc::new(
+                simulator::order_simulation::OrderSimulatorAdapter::new(settlement_simulator),
             );
             Some(OrderSimulator {
                 simulator,
