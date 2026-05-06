@@ -482,6 +482,19 @@ impl EthCallInputs {
     }
 }
 
+/// The result of Order simulation, contains the error (if any)
+/// and full Tenderly API request that can be used to resimulate
+/// and debug using Tenderly
+#[derive(Clone, Debug)]
+pub struct TenderlyReport {
+    /// Full request object that can be used directly with the Tenderly API
+    pub tenderly_request: tenderly::dto::Request,
+    /// Shared Tenderly simulation URL for debugging in the dashboard
+    pub tenderly_url: Option<String>,
+    /// Any error that might have been reported during order simulation
+    pub error: Option<String>,
+}
+
 #[derive(Debug)]
 pub enum AccountOverrideRequest {
     /// Gives the address a huge amount of ETH.
