@@ -276,6 +276,113 @@ impl SimulationBuilder {
     }
 }
 
+/// The output of [`SimulationBuilder::build`]: a transaction request and state
+/// overrides ready to be passed to an alloy provider for simulation.
+pub struct EthCallInputs {
+    pub request: TransactionRequest,
+    pub state_overrides: StateOverride,
+    pub simulator: SettlementSimulator,
+    pub block: u64,
+}
+
+impl EthCallInputs {
+    /// Runs the generated simulation using an `eth_call` and returns the response bytes if
+    /// there are any.
+    pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
+        self.simulator
+            .0
+            .provider
+            .clone()
+            .call(self.request)
+            .overrides(self.state_overrides)
+            .block(self.block.into())
+            .await
+    }
+
+    /// Same as [`EthCallInputs::simulate`] but also generates a tenderly request in case
+    /// one wants to re-simulate with tenderly. If tenderly credentials are configured this
+    /// even generates a shareable link for the simulation.
+    pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
+        let tenderly_request = self
+            .to_tenderly_request()
+            .context("failed to convert to tenderly request")?;
+
+        let tenderly_url = if let Some(api) = &self.simulator.0.tenderly {
+            api.simulate_and_share(tenderly_request.clone())
+                .await
+                .inspect_err(|err| tracing::warn!(?err, "failed to simulate via tenderly"))
+                .ok()
+        } else {
+            None
+        };
+
+        Ok(TenderlyReport {
+            tenderly_request,
+            tenderly_url,
+            error: self.simulate().await.err().map(|err| err.to_string()),
+        })
+    }
+
+    /// Converts the simulation into a request that can be simulated with
+    /// tenderly.
+    pub fn to_tenderly_request(&self) -> Result<tenderly::dto::Request, ConversionError> {
+        Ok(tenderly::dto::Request {
+            // By default tenderly simulates calls at the start of the block. So if we simulate
+            // something when the latest block is `n` we need to tell tenderly to simulate at
+            // block `n+1` to still have all of block n's txs happen before our simulation runs.
+            block_number: Some(self.block + 1),
+            network_id: self.simulator.0.chain_id.to_string(),
+            from: self.request.from.unwrap_or_default(),
+            to: match &self.request.to.ok_or(ConversionError::MissingTo)? {
+                TxKind::Create => Default::default(),
+                TxKind::Call(to) => *to,
+            },
+            input: self
+                .request
+                .input
+                .input
+                .as_ref()
+                .map(|bytes| bytes.to_vec())
+                .unwrap_or_default(),
+            gas: self.request.gas,
+            value: self.request.value,
+            simulation_type: Some(tenderly::dto::SimulationType::Full),
+            state_objects: Some(
+                self.state_overrides
+                    .iter()
+                    .map(|(key, value)| {
+                        Ok((
+                            *key,
+                            tenderly::dto::StateObject::try_from(value.clone())
+                                .map_err(|_| ConversionError::StateOverrides)?,
+                        ))
+                    })
+                    .collect::<Result<_, ConversionError>>()?,
+            ),
+            access_list: self.request.access_list.as_ref().map(Into::into),
+            save: Some(true),
+            gas_price: None,
+            save_if_fails: Some(true),
+            transaction_index: None,
+            generate_access_list: None,
+        })
+    }
+}
+
+/// The result of Order simulation, contains the error (if any)
+/// and full Tenderly API request that can be used to resimulate
+/// and debug using Tenderly
+#[derive(Clone, Debug)]
+pub struct TenderlyReport {
+    /// Full request object that can be used directly with the Tenderly API
+    pub tenderly_request: tenderly::dto::Request,
+    /// Shared Tenderly simulation URL for debugging in the dashboard
+    pub tenderly_url: Option<String>,
+    /// Any error that might have been reported during order simulation
+    pub error: Option<String>,
+}
+
+
 pub enum Solver {
     /// Simulation assumes this is an actual solver so no state overrides will
     /// be applied to allow list it explicitly.
@@ -387,112 +494,6 @@ impl Order {
         self.price_encoding = price;
         self
     }
-}
-
-/// The output of [`SimulationBuilder::build`]: a transaction request and state
-/// overrides ready to be passed to an alloy provider for simulation.
-pub struct EthCallInputs {
-    pub request: TransactionRequest,
-    pub state_overrides: StateOverride,
-    pub simulator: SettlementSimulator,
-    pub block: u64,
-}
-
-impl EthCallInputs {
-    /// Runs the generated simulation using an `eth_call` and returns the response bytes if
-    /// there are any.
-    pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
-        self.simulator
-            .0
-            .provider
-            .clone()
-            .call(self.request)
-            .overrides(self.state_overrides)
-            .block(self.block.into())
-            .await
-    }
-
-    /// Same as [`EthCallInputs::simulate`] but also generates a tenderly request in case
-    /// one wants to re-simulate with tenderly. If tenderly credentials are configured this
-    /// even generates a shareable link for the simulation.
-    pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
-        let tenderly_request = self
-            .to_tenderly_request()
-            .context("failed to convert to tenderly request")?;
-
-        let tenderly_url = if let Some(api) = &self.simulator.0.tenderly {
-            api.simulate_and_share(tenderly_request.clone())
-                .await
-                .inspect_err(|err| tracing::warn!(?err, "failed to simulate via tenderly"))
-                .ok()
-        } else {
-            None
-        };
-
-        Ok(TenderlyReport {
-            tenderly_request,
-            tenderly_url,
-            error: self.simulate().await.err().map(|err| err.to_string()),
-        })
-    }
-
-    /// Converts the simulation into a request that can be simulated with
-    /// tenderly.
-    pub fn to_tenderly_request(&self) -> Result<tenderly::dto::Request, ConversionError> {
-        Ok(tenderly::dto::Request {
-            // By default tenderly simulates calls at the start of the block. So if we simulate
-            // something when the latest block is `n` we need to tell tenderly to simulate at
-            // block `n+1` to still have all of block n's txs happen before our simulation runs.
-            block_number: Some(self.block + 1),
-            network_id: self.simulator.0.chain_id.to_string(),
-            from: self.request.from.unwrap_or_default(),
-            to: match &self.request.to.ok_or(ConversionError::MissingTo)? {
-                TxKind::Create => Default::default(),
-                TxKind::Call(to) => *to,
-            },
-            input: self
-                .request
-                .input
-                .input
-                .as_ref()
-                .map(|bytes| bytes.to_vec())
-                .unwrap_or_default(),
-            gas: self.request.gas,
-            value: self.request.value,
-            simulation_type: Some(tenderly::dto::SimulationType::Full),
-            state_objects: Some(
-                self.state_overrides
-                    .iter()
-                    .map(|(key, value)| {
-                        Ok((
-                            *key,
-                            tenderly::dto::StateObject::try_from(value.clone())
-                                .map_err(|_| ConversionError::StateOverrides)?,
-                        ))
-                    })
-                    .collect::<Result<_, ConversionError>>()?,
-            ),
-            access_list: self.request.access_list.as_ref().map(Into::into),
-            save: Some(true),
-            gas_price: None,
-            save_if_fails: Some(true),
-            transaction_index: None,
-            generate_access_list: None,
-        })
-    }
-}
-
-/// The result of Order simulation, contains the error (if any)
-/// and full Tenderly API request that can be used to resimulate
-/// and debug using Tenderly
-#[derive(Clone, Debug)]
-pub struct TenderlyReport {
-    /// Full request object that can be used directly with the Tenderly API
-    pub tenderly_request: tenderly::dto::Request,
-    /// Shared Tenderly simulation URL for debugging in the dashboard
-    pub tenderly_url: Option<String>,
-    /// Any error that might have been reported during order simulation
-    pub error: Option<String>,
 }
 
 #[derive(Debug)]
