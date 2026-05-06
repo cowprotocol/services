@@ -438,21 +438,6 @@ pub struct Order {
     pub(crate) price_encoding: PriceEncoding,
 }
 
-/// Configuration for wrapping the settlement in a flashloan or custom wrapper
-/// contract chain.
-pub enum WrapperConfig {
-    Flashloan(Vec<FlashloanRequest>),
-    Custom(Vec<WrapperCall>),
-    NoWrapper,
-}
-
-pub struct FlashloanRequest {
-    pub amount: U256,
-    pub borrower: Address,
-    pub lender: Address,
-    pub token: Address,
-}
-
 impl Order {
     pub fn new(data: OrderData) -> Self {
         Self {
@@ -494,6 +479,22 @@ impl Order {
         self
     }
 }
+
+/// Configuration for wrapping the settlement in a flashloan or custom wrapper
+/// contract chain.
+pub enum WrapperConfig {
+    Flashloan(Vec<FlashloanRequest>),
+    Custom(Vec<WrapperCall>),
+    NoWrapper,
+}
+
+pub struct FlashloanRequest {
+    pub amount: U256,
+    pub borrower: Address,
+    pub lender: Address,
+    pub token: Address,
+}
+
 
 #[derive(Debug)]
 pub enum AccountOverrideRequest {
