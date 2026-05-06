@@ -2774,6 +2774,7 @@ components:
         - feeAmount
         - validTo
         - partiallyFillable
+        - appData
     OrderSimulation:
       description: >
         The Tenderly simulation request for an order, along with any
