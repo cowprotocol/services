@@ -487,7 +487,7 @@ impl EthCallInputs {
             ),
             access_list: self.request.access_list.as_ref().map(Into::into),
             save: Some(true),
-            gas_price: None, // use tenderly default for now
+            gas_price: None,
             save_if_fails: Some(true),
             transaction_index: None,
             generate_access_list: None,
