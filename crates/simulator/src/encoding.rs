@@ -552,7 +552,7 @@ async fn build_final_state_overrides(
                 AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
             )),
             AccountOverrideRequest::AuthenticateAsSolver(addr) => {
-                // GPv2AllowListAuthentication stores `mapping(address => bool) managers`
+                // GPv2AllowListAuthentication stores `mapping(address => bool) solvers`
                 // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
                 // slot_padded).
                 // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2AllowListAuthentication.sol#L22>
