@@ -382,7 +382,6 @@ pub struct TenderlyReport {
     pub error: Option<String>,
 }
 
-
 pub enum Solver {
     /// Simulation assumes this is an actual solver so no state overrides will
     /// be applied to allow list it explicitly.
