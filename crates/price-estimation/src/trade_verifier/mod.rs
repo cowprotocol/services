@@ -246,43 +246,7 @@ impl TradeVerifier {
             },
         );
 
-        let jit_orders: Vec<sim_builder::Order> = match trade {
-            TradeKind::Regular(t) => t
-                .jit_orders
-                .iter()
-                .map(|jit_order| {
-                    let order_data = OrderData {
-                        sell_token: jit_order.sell_token,
-                        buy_token: jit_order.buy_token,
-                        receiver: Some(jit_order.receiver),
-                        sell_amount: jit_order.sell_amount,
-                        buy_amount: jit_order.buy_amount,
-                        valid_to: jit_order.valid_to,
-                        app_data: jit_order.app_data,
-                        fee_amount: U256::ZERO,
-                        kind: match &jit_order.side {
-                            Side::Buy => OrderKind::Buy,
-                            Side::Sell => OrderKind::Sell,
-                        },
-                        partially_fillable: jit_order.partially_fillable,
-                        sell_token_balance: jit_order.sell_token_source,
-                        buy_token_balance: jit_order.buy_token_destination,
-                    };
-                    let (owner, signature) = recover_jit_order_owner(
-                        jit_order,
-                        &order_data,
-                        &self.simulator.domain_separator(),
-                    )?;
-                    Ok(sim_builder::Order::new(order_data)
-                        .with_signature(owner, signature)
-                        .fill_at(
-                            ExecutionAmount::Explicit(jit_order.executed_amount),
-                            PriceEncoding::LimitPrice,
-                        ))
-                })
-                .collect::<Result<_>>()?,
-            _ => vec![],
-        };
+        let jit_orders = encode_jit_orders(trade, &self.simulator.domain_separator())?;
 
         let eth_call_inputs = self
             .simulator
@@ -778,6 +742,47 @@ pub struct PriceQuery {
     pub buy_token: Address,
     pub kind: OrderKind,
     pub in_amount: NonZeroU256,
+}
+
+fn encode_jit_orders(
+    trade: &TradeKind,
+    domain_separator: &DomainSeparator,
+) -> Result<Vec<sim_builder::Order>> {
+    let TradeKind::Regular(trade) = trade else {
+        return Ok(vec![]);
+    };
+
+    trade
+        .jit_orders
+        .iter()
+        .map(|jit_order| {
+            let order_data = OrderData {
+                sell_token: jit_order.sell_token,
+                buy_token: jit_order.buy_token,
+                receiver: Some(jit_order.receiver),
+                sell_amount: jit_order.sell_amount,
+                buy_amount: jit_order.buy_amount,
+                valid_to: jit_order.valid_to,
+                app_data: jit_order.app_data,
+                fee_amount: U256::ZERO,
+                kind: match &jit_order.side {
+                    Side::Buy => OrderKind::Buy,
+                    Side::Sell => OrderKind::Sell,
+                },
+                partially_fillable: jit_order.partially_fillable,
+                sell_token_balance: jit_order.sell_token_source,
+                buy_token_balance: jit_order.buy_token_destination,
+            };
+            let (owner, signature) =
+                recover_jit_order_owner(jit_order, &order_data, domain_separator)?;
+            Ok(sim_builder::Order::new(order_data)
+                .with_signature(owner, signature)
+                .fill_at(
+                    ExecutionAmount::Explicit(jit_order.executed_amount),
+                    PriceEncoding::LimitPrice,
+                ))
+        })
+        .collect::<Result<_>>()
 }
 
 /// Recovers the owner and signature from a `JitOrder`.
