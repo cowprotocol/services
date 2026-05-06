@@ -398,20 +398,9 @@ pub struct EthCallInputs {
     pub block: u64,
 }
 
-/// The result of Order simulation, contains the error (if any)
-/// and full Tenderly API request that can be used to resimulate
-/// and debug using Tenderly
-#[derive(Clone, Debug)]
-pub struct TenderlyReport {
-    /// Full request object that can be used directly with the Tenderly API
-    pub tenderly_request: tenderly::dto::Request,
-    /// Shared Tenderly simulation URL for debugging in the dashboard
-    pub tenderly_url: Option<String>,
-    /// Any error that might have been reported during order simulation
-    pub error: Option<String>,
-}
-
 impl EthCallInputs {
+    /// Runs the generated simulation using an `eth_call` and returns the response bytes if
+    /// there are any.
     pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
         self.simulator
             .0
@@ -423,6 +412,9 @@ impl EthCallInputs {
             .await
     }
 
+    /// Same as [`EthCallInputs::simulate`] but also generates a tenderly request in case
+    /// one wants to re-simulate with tenderly. If tenderly credentials are configured this
+    /// even generates a shareable link for the simulation.
     pub async fn simulate_with_tenderly_report(self) -> Result<TenderlyReport, anyhow::Error> {
         let tenderly_request = self
             .to_tenderly_request()
