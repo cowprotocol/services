@@ -189,7 +189,7 @@ impl TradeVerifier {
         };
 
         // pre: [verification.pre, trade.pre, trade_setup, storeBalance_before]
-        let pre_interactions: Vec<InteractionData> = map_interactions_data(
+        let pre_interactions = map_interactions_data(
             verification
                 .pre_interactions
                 .iter()
@@ -197,8 +197,7 @@ impl TradeVerifier {
         )
         .into_iter()
         .chain([self.trade_setup_interaction(out_amount, &verification, query, trade)])
-        .chain([store_balance.clone()])
-        .collect();
+        .chain([store_balance.clone()]);
 
         // WETH unwrap so ETH buy orders can pay out native tokens
         let weth_unwrap = (query.buy_token == BUY_ETH_ADDRESS).then(|| InteractionData {
@@ -207,15 +206,13 @@ impl TradeVerifier {
             call_data: WETH9::WETH9::withdrawCall { wad: buy_amount }.abi_encode(),
         });
         // main: [trade.main, weth_unwrap]
-        let main_interactions: Vec<InteractionData> = map_interactions_data(trade.interactions())
+        let main_interactions = map_interactions_data(trade.interactions())
             .into_iter()
-            .chain(weth_unwrap)
-            .collect();
+            .chain(weth_unwrap);
 
         // post: [storeBalance_after, verification.post]
-        let post_interactions: Vec<InteractionData> = std::iter::once(store_balance)
-            .chain(map_interactions_data(verification.post_interactions.iter()))
-            .collect();
+        let post_interactions = std::iter::once(store_balance)
+            .chain(map_interactions_data(&verification.post_interactions));
 
         // Set limit amounts to always pass the settlement check so the actual
         // out_amount can be measured via the storeBalance interactions.
