@@ -972,7 +972,11 @@ async fn get_or_create_quote(
                 .await
                 .map_err(ValidationError::Other)?;
 
-            tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
+            tracing::debug!(
+                original_quote_id = ?quote_id,
+                quote_id =? quote.id,
+                "computed fresh quote for order creation"
+            );
             quote
         }
     };
