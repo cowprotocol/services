@@ -415,7 +415,7 @@ pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools
 
     // For some of the errors we are interested in observing the exact block numbers
     // passed since the first submission.
-    let (start, end) = match err {
+    let (BlockNo(start), BlockNo(end)) = match err {
         Revert {
             submitted_at_block,
             reverted_at_block: end,
@@ -432,11 +432,10 @@ pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools
         } => (submitted_at_block, end),
         _ => return,
     };
-    let BlockNo(blocks_passed) = end.saturating_sub(*start);
     metrics::get()
         .mempool_submission_results_blocks_passed
         .with_label_values(&[mempool.to_string().as_str(), label])
-        .inc_by(blocks_passed);
+        .inc_by(end.saturating_sub(*start));
 }
 
 /// A mempool's submission failed but another mempool succeeded for the
