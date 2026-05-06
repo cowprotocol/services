@@ -190,7 +190,7 @@ impl IntoResponse for ValidationErrorWrapper {
                 .into_response(),
             ValidationError::SimulationFailed(reason) => (
                 StatusCode::BAD_REQUEST,
-                error("Eip1271SimulationFailed", reason),
+                error("OrderSimulationFailed", reason),
             )
                 .into_response(),
             ValidationError::InsufficientBalance => (

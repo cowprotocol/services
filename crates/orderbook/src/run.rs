@@ -42,8 +42,8 @@ use {
     shared::{
         order_quoting::{self, OrderQuoter},
         order_validation::{
-            Eip1271SimulationMode,
-            Eip1271Simulator,
+            OrderSimulationMode,
+            OrderSimulator,
             OrderValidPeriodConfiguration,
             OrderValidator,
         },
@@ -419,25 +419,23 @@ pub async fn run(config: Configuration) {
         None => None,
     };
 
-    let eip1271_simulator = config
+    let validator_simulator = config
         .order_simulation
         .as_ref()
         .zip(order_simulator.clone())
         .and_then(|(sim_config, simulator)| {
-            let mode = match sim_config.eip1271_simulation_mode {
-                configs::orderbook::Eip1271SimulationMode::Shadow => Eip1271SimulationMode::Shadow,
-                configs::orderbook::Eip1271SimulationMode::Enforce => {
-                    Eip1271SimulationMode::Enforce
-                }
-                configs::orderbook::Eip1271SimulationMode::Disabled => return None,
+            let mode = match sim_config.order_simulation_mode {
+                configs::orderbook::OrderSimulationMode::Shadow => OrderSimulationMode::Shadow,
+                configs::orderbook::OrderSimulationMode::Enforce => OrderSimulationMode::Enforce,
+                configs::orderbook::OrderSimulationMode::Disabled => return None,
             };
-            let simulator: Arc<dyn shared::order_validation::Eip1271Simulating> = Arc::new(
-                crate::eip1271_simulation::OrderSimulatorAdapter::new(simulator),
+            let simulator: Arc<dyn shared::order_validation::OrderSimulating> = Arc::new(
+                crate::order_simulation::OrderSimulatorAdapter::new(simulator),
             );
-            Some(Eip1271Simulator {
+            Some(OrderSimulator {
                 simulator,
                 mode,
-                timeout: sim_config.eip1271_simulation_timeout,
+                timeout: sim_config.order_simulation_timeout,
             })
         });
 
@@ -455,7 +453,7 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
-        eip1271_simulator,
+        validator_simulator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,

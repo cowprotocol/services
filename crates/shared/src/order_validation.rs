@@ -48,9 +48,9 @@ use {
     tracing::instrument,
 };
 
-/// Outcome of the EIP-1271 order simulation.
+/// Outcome of the order creation simulation.
 #[derive(Debug)]
-pub enum Eip1271SimulationError {
+pub enum OrderSimulationError {
     /// The simulation ran and the transaction reverted. `reason` is the
     /// revert string returned by the EVM (or a Tenderly reason string).
     Reverted {
@@ -63,29 +63,27 @@ pub enum Eip1271SimulationError {
     Infra(anyhow::Error),
 }
 
-/// Simulates an EIP-1271 order's pre-hooks, swap, and post-hooks against
-/// the chain.
-///
-/// Defined here rather than in `crates/simulator` because `OrderValidator`
-/// cannot depend on `orderbook`, where the concrete implementation lives.
-/// To be removed once the `simulator` crate's API can be depended on
-/// directly.
+// Defined here rather than in `crates/simulator` because `OrderValidator`
+// cannot depend on `orderbook`, where the concrete implementation lives.
+// To be removed once the `simulator` crate's API can be depended on
+// directly.
+/// Simulates an order's pre-hooks, swap, and post-hooks against the chain.
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait Eip1271Simulating: Send + Sync {
+pub trait OrderSimulating: Send + Sync {
     async fn simulate(
         &self,
         order: &Order,
         full_app_data: String,
-    ) -> Result<(), Eip1271SimulationError>;
+    ) -> Result<(), OrderSimulationError>;
 }
 
-/// Mode controlling whether the EIP-1271 order simulation can reject orders.
-/// The operational default lives in `configs::orderbook::Eip1271SimulationMode`
-/// (currently `Disabled`); this enum only represents the on-path states
+/// Mode controlling whether the order creation simulation can reject orders.
+/// The operational default lives in `configs::orderbook::OrderSimulationMode`
+/// (currently `Disabled`). This enum only represents the on-path states
 /// `OrderValidator` actually executes.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Eip1271SimulationMode {
+pub enum OrderSimulationMode {
     /// Log disagreements, emit metrics. Never reject.
     Shadow,
     /// If the signature check passes but the order simulation fails, reject
@@ -98,28 +96,28 @@ pub enum Eip1271SimulationMode {
 /// check and decides, based on the configured mode, whether a failure
 /// should reject the order.
 #[derive(Clone)]
-pub struct Eip1271Simulator {
-    pub simulator: Arc<dyn Eip1271Simulating>,
-    pub mode: Eip1271SimulationMode,
+pub struct OrderSimulator {
+    pub simulator: Arc<dyn OrderSimulating>,
+    pub mode: OrderSimulationMode,
     pub timeout: Duration,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "eip1271_simulation")]
-struct Eip1271SimulationMetrics {
+#[metric(subsystem = "order_simulation")]
+struct OrderSimulationMetrics {
     /// Counts each (signature-check, simulation) outcome pair. The signature
     /// axis takes `pass | fail | infra | skipped`; the simulation axis
     /// takes `pass | fail | infra`.
     #[metric(labels("signature", "simulation"))]
     total: prometheus::IntCounterVec,
-    /// Time spent in the EIP-1271 order simulation.
+    /// Time spent in the order creation simulation.
     simulation_time: prometheus::Histogram,
 }
 
-impl Eip1271SimulationMetrics {
+impl OrderSimulationMetrics {
     fn get() -> &'static Self {
         Self::instance(observe::metrics::get_storage_registry())
-            .expect("unexpected error getting Eip1271SimulationMetrics instance")
+            .expect("unexpected error getting OrderSimulationMetrics instance")
     }
 }
 
@@ -176,25 +174,23 @@ fn classify_signature(res: &Result<u64, SignatureValidationError>) -> SignatureO
 /// `simulation_time` histogram, and folds the timeout / revert / infra error
 /// cases into a single `SimulationOutcome`.
 async fn timed_simulation(
-    sim: &dyn Eip1271Simulating,
+    sim: &dyn OrderSimulating,
     order: &Order,
     full_app_data: String,
     timeout: Duration,
 ) -> SimulationOutcome {
-    let _timer = Eip1271SimulationMetrics::get()
-        .simulation_time
-        .start_timer();
+    let _timer = OrderSimulationMetrics::get().simulation_time.start_timer();
     match tokio::time::timeout(timeout, sim.simulate(order, full_app_data)).await {
         Ok(Ok(())) => SimulationOutcome::Pass,
-        Ok(Err(Eip1271SimulationError::Reverted {
+        Ok(Err(OrderSimulationError::Reverted {
             reason,
             tenderly_url,
         })) => SimulationOutcome::Fail {
             reason,
             tenderly_url,
         },
-        Ok(Err(Eip1271SimulationError::Infra(err))) => SimulationOutcome::Infra(err),
-        Err(_) => SimulationOutcome::Infra(anyhow!("eip1271 simulation timeout")),
+        Ok(Err(OrderSimulationError::Infra(err))) => SimulationOutcome::Infra(err),
+        Err(_) => SimulationOutcome::Infra(anyhow!("order simulation timeout")),
     }
 }
 
@@ -203,7 +199,7 @@ fn record_simulation_outcome(
     simulation: &SimulationOutcome,
     order_uid: OrderUid,
 ) {
-    Eip1271SimulationMetrics::get()
+    OrderSimulationMetrics::get()
         .total
         .with_label_values(&[signature.label(), simulation.label()])
         .inc();
@@ -221,23 +217,23 @@ fn record_simulation_outcome(
             simulation = simulation.label(),
             ?reason,
             ?tenderly_url,
-            "eip1271 simulation disagreement",
+            "order simulation disagreement",
         ),
         (SignatureOutcome::Fail, SimulationOutcome::Pass) => tracing::warn!(
             ?order_uid,
             signature = signature.label(),
             simulation = simulation.label(),
-            "eip1271 simulation disagreement",
+            "order simulation disagreement",
         ),
         (_, SimulationOutcome::Infra(err)) => {
-            tracing::warn!(?order_uid, ?err, "eip1271 simulation infra error")
+            tracing::warn!(?order_uid, ?err, "order simulation infra error")
         }
         _ => {}
     }
 }
 
-async fn run_eip1271_simulation_only(
-    config: &Eip1271Simulator,
+async fn run_order_simulation_only(
+    config: &OrderSimulator,
     preview_order: &Order,
     full_app_data: String,
 ) {
@@ -248,7 +244,7 @@ async fn run_eip1271_simulation_only(
         config.timeout,
     )
     .await;
-    Eip1271SimulationMetrics::get()
+    OrderSimulationMetrics::get()
         .total
         .with_label_values(&[SignatureOutcome::Skipped.label(), outcome.label()])
         .inc();
@@ -260,33 +256,14 @@ async fn run_eip1271_simulation_only(
             order_uid = %preview_order.metadata.uid,
             ?reason,
             ?tenderly_url,
-            "eip1271 simulation (signature check skipped)",
+            "order simulation (signature check skipped)",
         ),
         SimulationOutcome::Infra(err) => tracing::warn!(
             order_uid = %preview_order.metadata.uid,
             ?err,
-            "eip1271 simulation infra error (signature check skipped)",
+            "order simulation infra error (signature check skipped)",
         ),
         SimulationOutcome::Pass => {}
-    }
-}
-
-fn build_preview_order_for_sim(
-    data: &OrderData,
-    interactions: &Interactions,
-    owner: Address,
-    uid: OrderUid,
-    signature: Signature,
-) -> Order {
-    Order {
-        metadata: OrderMetadata {
-            owner,
-            uid,
-            ..Default::default()
-        },
-        data: *data,
-        signature,
-        interactions: interactions.clone(),
     }
 }
 
@@ -493,7 +470,7 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
-    eip1271_simulator: Option<Eip1271Simulator>,
+    order_simulator: Option<OrderSimulator>,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
@@ -564,7 +541,7 @@ impl OrderValidator {
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
-        eip1271_simulator: Option<Eip1271Simulator>,
+        order_simulator: Option<OrderSimulator>,
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
@@ -582,7 +559,7 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
-            eip1271_simulator,
+            order_simulator,
             limit_order_counter,
             max_limit_orders_per_user,
             code_fetcher,
@@ -624,13 +601,16 @@ impl OrderValidator {
                     amount: loan.amount,
                 }),
         );
-        let preview_order = build_preview_order_for_sim(
-            data,
-            &app_data.interactions,
-            owner,
-            uid,
-            order.signature.clone(),
-        );
+        let preview_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid,
+                ..Default::default()
+            },
+            data: *data,
+            signature: order.signature.clone(),
+            interactions: app_data.interactions.clone(),
+        };
         let full_app_data = app_data.inner.document.clone();
         self.run_eip1271_checks(check, &preview_order, full_app_data, hash)
             .await
@@ -638,14 +618,15 @@ impl OrderValidator {
 
     /// Entry point for the EIP-1271 block of `validate_and_construct_order`.
     ///
-    /// Two paths, depending on the `eip1271_skip_creation_validation` flag:
+    /// When the [`OrderValidator::eip1271_skip_creation_validation`] flag is:
     ///
-    /// - **Skipped**: the cheap `isValidSignature` check is bypassed by the
+    /// - `true`: the cheap `isValidSignature` check is bypassed by the
     ///   operator, and we return a `verification_gas_limit` of `0` (no gas was
     ///   spent on-chain verifying the signature). If the optional
-    ///   `Eip1271Simulator` is configured, the full simulation still runs for
+    ///   [`OrderSimulator`] is configured, the full simulation still runs for
     ///   observability only and can never reject.
-    /// - **Not skipped**: delegates to `run_eip1271_with_signature_check`.
+    /// - `false`: delegates to
+    ///   [`OrderValidator::run_eip1271_with_signature_check`].
     async fn run_eip1271_checks(
         &self,
         check: SignatureCheck,
@@ -654,8 +635,8 @@ impl OrderValidator {
         hash: B256,
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
-            if let Some(config) = &self.eip1271_simulator {
-                run_eip1271_simulation_only(config, preview_order, full_app_data).await;
+            if let Some(config) = &self.order_simulator {
+                run_order_simulation_only(config, preview_order, full_app_data).await;
             }
             return Ok(0u64);
         }
@@ -685,7 +666,7 @@ impl OrderValidator {
             .signature_validator
             .validate_signature_and_get_additional_gas(check);
 
-        let Some(config) = &self.eip1271_simulator else {
+        let Some(config) = &self.order_simulator else {
             return signature_fut.await.map_err(|err| match err {
                 SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
                 SignatureValidationError::Other(err) => ValidationError::Other(err),
@@ -709,7 +690,7 @@ impl OrderValidator {
         );
 
         match (signature_res, &simulation_outcome, config.mode) {
-            (Ok(_gas), SimulationOutcome::Fail { reason, .. }, Eip1271SimulationMode::Enforce) => {
+            (Ok(_gas), SimulationOutcome::Fail { reason, .. }, OrderSimulationMode::Enforce) => {
                 Err(ValidationError::SimulationFailed(reason.clone()))
             }
             (Ok(gas), _, _) => Ok(gas),
@@ -1429,7 +1410,7 @@ mod tests {
         signature_validator::MockSignatureValidating,
     };
 
-    const DEFAULT_EIP1271_SIM_TIMEOUT: Duration = Duration::from_secs(2);
+    const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 
     #[tokio::test]
     async fn pre_validate_err() {
@@ -1452,7 +1433,7 @@ mod tests {
             false,
             DenyListedTokens::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1609,7 +1590,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1691,7 +1672,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2020,7 +2001,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2094,7 +2075,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2156,7 +2137,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2211,7 +2192,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2270,7 +2251,7 @@ mod tests {
             false,
             deny_listed_tokens,
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2332,7 +2313,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2393,7 +2374,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2553,7 +2534,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2966,7 +2947,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -3029,20 +3010,17 @@ mod tests {
         }
     }
 
-    fn simulator_with_mode(
-        sim: MockEip1271Simulating,
-        mode: Eip1271SimulationMode,
-    ) -> Eip1271Simulator {
-        Eip1271Simulator {
+    fn simulator_with_mode(sim: MockOrderSimulating, mode: OrderSimulationMode) -> OrderSimulator {
+        OrderSimulator {
             simulator: Arc::new(sim),
             mode,
-            timeout: DEFAULT_EIP1271_SIM_TIMEOUT,
+            timeout: DEFAULT_ORDER_SIM_TIMEOUT,
         }
     }
 
     fn build_1271_validator(
         signature_validator: MockSignatureValidating,
-        eip1271_simulator: Option<Eip1271Simulator>,
+        order_simulator: Option<OrderSimulator>,
         eip1271_skip_creation_validation: bool,
     ) -> OrderValidator {
         // The quote lookup, balance fetch, and limit-order count are off the
@@ -3067,7 +3045,7 @@ mod tests {
             eip1271_skip_creation_validation,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -3075,7 +3053,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
-            eip1271_simulator,
+            order_simulator,
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
@@ -3089,10 +3067,10 @@ mod tests {
     ///
     /// Only the `(signature Pass, simulation Fail, Enforce)` cell changes
     /// behaviour relative to today. Every other cell must match the
-    /// existing signature-only behaviour.
+    /// signature-only behaviour from before order simulation was added.
     #[tokio::test]
     async fn signature_and_simulation_outcome_matrix() {
-        use Eip1271SimulationMode::{Enforce, Shadow};
+        use OrderSimulationMode::{Enforce, Shadow};
 
         #[derive(Copy, Clone, Debug)]
         enum Sig {
@@ -3111,7 +3089,7 @@ mod tests {
             SimulationFailed,
         }
 
-        let cases: &[(Sig, Sim, Eip1271SimulationMode, Expected)] = &[
+        let cases: &[(Sig, Sim, OrderSimulationMode, Expected)] = &[
             (Sig::Pass, Sim::Pass, Shadow, Expected::Accepted),
             (Sig::Pass, Sim::Reverted, Shadow, Expected::Accepted),
             (Sig::Invalid, Sim::Pass, Shadow, Expected::InvalidSignature),
@@ -3146,11 +3124,11 @@ mod tests {
                     Sig::Pass => Ok(0u64),
                     Sig::Invalid => Err(SignatureValidationError::Invalid),
                 });
-            let mut sim = MockEip1271Simulating::new();
+            let mut sim = MockOrderSimulating::new();
             sim.expect_simulate()
                 .returning(move |_, _| match simulation {
                     Sim::Pass => Ok(()),
-                    Sim::Reverted => Err(Eip1271SimulationError::Reverted {
+                    Sim::Reverted => Err(OrderSimulationError::Reverted {
                         reason: "hook reverted".into(),
                         tenderly_url: None,
                     }),
@@ -3184,23 +3162,20 @@ mod tests {
 
     #[tokio::test]
     async fn simulation_infra_error_is_fail_open_in_both_modes() {
-        for mode in [
-            Eip1271SimulationMode::Shadow,
-            Eip1271SimulationMode::Enforce,
-        ] {
+        for mode in [OrderSimulationMode::Shadow, OrderSimulationMode::Enforce] {
             let mut signature_validator = MockSignatureValidating::new();
             signature_validator
                 .expect_validate_signature_and_get_additional_gas()
                 .returning(|_| Ok(0u64));
-            let mut sim = MockEip1271Simulating::new();
+            let mut sim = MockOrderSimulating::new();
             sim.expect_simulate()
-                .returning(|_, _| Err(Eip1271SimulationError::Infra(anyhow!("RPC down"))));
+                .returning(|_, _| Err(OrderSimulationError::Infra(anyhow!("RPC down"))));
             let validator = build_1271_validator(
                 signature_validator,
-                Some(Eip1271Simulator {
+                Some(OrderSimulator {
                     simulator: Arc::new(sim),
                     mode,
-                    timeout: DEFAULT_EIP1271_SIM_TIMEOUT,
+                    timeout: DEFAULT_ORDER_SIM_TIMEOUT,
                 }),
                 false,
             );
@@ -3227,16 +3202,16 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
-        let mut sim = MockEip1271Simulating::new();
+        let mut sim = MockOrderSimulating::new();
         sim.expect_simulate().returning(|_, _| {
-            Err(Eip1271SimulationError::Reverted {
+            Err(OrderSimulationError::Reverted {
                 reason: "x".into(),
                 tenderly_url: None,
             })
         });
         let validator = build_1271_validator(
             signature_validator,
-            Some(simulator_with_mode(sim, Eip1271SimulationMode::Enforce)),
+            Some(simulator_with_mode(sim, OrderSimulationMode::Enforce)),
             true,
         );
         let result = validator
@@ -3259,11 +3234,11 @@ mod tests {
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
-        let mut sim = MockEip1271Simulating::new();
+        let mut sim = MockOrderSimulating::new();
         sim.expect_simulate().times(0);
         let validator = build_1271_validator(
             signature_validator,
-            Some(simulator_with_mode(sim, Eip1271SimulationMode::Enforce)),
+            Some(simulator_with_mode(sim, OrderSimulationMode::Enforce)),
             false,
         );
 
@@ -3285,7 +3260,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_simulator_configured_preserves_existing_behaviour() {
+    async fn no_simulator_configured_returns_invalid_eip1271_signature_on_invalid_signature() {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()

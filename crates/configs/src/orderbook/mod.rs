@@ -61,29 +61,26 @@ pub struct OrderSimulationConfig {
     #[serde(default)]
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
 
-    /// Mode for the EIP-1271 order simulation.
+    /// Mode for the order creation simulation.
     #[serde(default)]
-    pub eip1271_simulation_mode: Eip1271SimulationMode,
+    pub order_simulation_mode: OrderSimulationMode,
 
-    /// Per-call timeout for the EIP-1271 order simulation.
-    #[serde(
-        default = "default_eip1271_simulation_timeout",
-        with = "humantime_serde"
-    )]
-    pub eip1271_simulation_timeout: Duration,
+    /// Per-call timeout for the order creation simulation.
+    #[serde(default = "default_order_simulation_timeout", with = "humantime_serde")]
+    pub order_simulation_timeout: Duration,
 }
 
-/// Mode for the EIP-1271 order simulation at order creation.
+/// Mode for the order creation simulation.
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum Eip1271SimulationMode {
+pub enum OrderSimulationMode {
     Shadow,
     Enforce,
     #[default]
     Disabled,
 }
 
-fn default_eip1271_simulation_timeout() -> Duration {
+fn default_order_simulation_timeout() -> Duration {
     Duration::from_secs(2)
 }
 
@@ -197,6 +194,17 @@ pub mod test_util {
         std::path::Path,
     };
 
+    impl TestDefault for OrderSimulationConfig {
+        fn test_default() -> Self {
+            Self {
+                gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
+                tenderly: None,
+                order_simulation_mode: Default::default(),
+                order_simulation_timeout: std::time::Duration::from_secs(2),
+            }
+        }
+    }
+
     impl Configuration {
         pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
             Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
@@ -251,12 +259,7 @@ pub mod test_util {
                     ..TestDefault::test_default()
                 },
                 // Enable order simulation for testing
-                order_simulation: Some(OrderSimulationConfig {
-                    gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
-                    tenderly: None,
-                    eip1271_simulation_mode: Default::default(),
-                    eip1271_simulation_timeout: std::time::Duration::from_secs(2),
-                }),
+                order_simulation: Some(TestDefault::test_default()),
                 hide_competition_before_deadline: false,
             }
         }
@@ -469,41 +472,41 @@ mod tests {
 
     #[test]
     fn parses_simulation_mode_default() {
-        let toml = r#"gas-limit = "0x1000000""#;
+        let toml = r#"gas-limit = "16777216""#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
-        assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(2));
+        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Disabled);
+        assert_eq!(cfg.order_simulation_timeout, Duration::from_secs(2));
     }
 
     #[test]
     fn parses_simulation_mode_enforce() {
         let toml = r#"
-            gas-limit = "0x1000000"
-            eip1271-simulation-mode = "enforce"
-            eip1271-simulation-timeout = "5s"
+            gas-limit = "16777216"
+            order-simulation-mode = "enforce"
+            order-simulation-timeout = "5s"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Enforce);
-        assert_eq!(cfg.eip1271_simulation_timeout, Duration::from_secs(5));
+        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Enforce);
+        assert_eq!(cfg.order_simulation_timeout, Duration::from_secs(5));
     }
 
     #[test]
     fn parses_simulation_mode_shadow() {
         let toml = r#"
-            gas-limit = "0x1000000"
-            eip1271-simulation-mode = "shadow"
+            gas-limit = "16777216"
+            order-simulation-mode = "shadow"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Shadow);
+        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Shadow);
     }
 
     #[test]
     fn parses_simulation_mode_disabled() {
         let toml = r#"
-            gas-limit = "0x1000000"
-            eip1271-simulation-mode = "disabled"
+            gas-limit = "16777216"
+            order-simulation-mode = "disabled"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.eip1271_simulation_mode, Eip1271SimulationMode::Disabled);
+        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Disabled);
     }
 }

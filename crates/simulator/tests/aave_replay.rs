@@ -58,9 +58,13 @@ const APP_DATA: &str = r#"{
     "version": "1.14.0"
 }"#;
 
-/// Returns `app_data` minified with keys sorted alphabetically. The output
-/// matches the signed production bytes byte-for-byte because that payload
-/// is already alphabetically keyed at every level.
+/// Returns `app_data` minified with object keys sorted alphabetically.
+///
+/// The sort comes from `serde_json::Value::Object`'s `BTreeMap` backing, which
+/// applies whenever the `preserve_order` feature is not enabled (it isn't in
+/// this workspace). The signed production payload happens to already be
+/// alphabetically keyed at every level, so the output matches it byte for
+/// byte.
 fn canonicalise_app_data(app_data: &str) -> String {
     let value: serde_json::Value =
         serde_json::from_str(app_data).expect("APP_DATA must be valid JSON");

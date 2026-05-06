@@ -2,9 +2,9 @@
 //!
 //! - Negative: a Safe-signed order whose `app_data.protocol.wrappers` points at
 //!   a custom always-revert wrapper. With the orderbook in
-//!   `Eip1271SimulationMode::Enforce`, the simulation drives `settle()` through
+//!   `OrderSimulationMode::Enforce`, the simulation drives `settle()` through
 //!   the wrapper, the wrapper reverts, and the API rejects with HTTP 400
-//!   `Eip1271SimulationFailed`. A wrapper is used rather than a buggy pre-hook
+//!   `OrderSimulationFailed`. A wrapper is used rather than a buggy pre-hook
 //!   because `HooksTrampoline.execute` deliberately swallows hook reverts, so a
 //!   buggy hook would not surface as a simulation failure.
 //! - Positive: a Safe-signed order with empty app_data is accepted, proving the
@@ -16,7 +16,10 @@ use {
         providers::Provider,
         rpc::types::TransactionRequest,
     },
-    configs::{orderbook::Eip1271SimulationMode, test_util::TestDefault},
+    configs::{
+        orderbook::{Configuration, OrderSimulationConfig, OrderSimulationMode},
+        test_util::TestDefault,
+    },
     e2e::setup::{MintableToken, OnchainComponents, Services, run_test, safe::Safe},
     model::order::{OrderCreation, OrderCreationAppData, OrderKind},
     number::units::EthUnit,
@@ -73,8 +76,8 @@ async fn rejects_when_wrapper_reverts(web3: Web3) {
     let (status, body) = services.create_order(&order).await.unwrap_err();
     assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
     assert!(
-        body.contains("Eip1271SimulationFailed"),
-        "expected Eip1271SimulationFailed in body, got: {body}",
+        body.contains("OrderSimulationFailed"),
+        "expected OrderSimulationFailed in body, got: {body}",
     );
 }
 
@@ -135,12 +138,13 @@ async fn start_services_in_enforce_mode<'a>(
     onchain: &'a OnchainComponents,
     solver: e2e::setup::onchain_components::TestAccount,
 ) -> Services<'a> {
-    let mut orderbook_config = configs::orderbook::Configuration::test_default();
-    orderbook_config
-        .order_simulation
-        .as_mut()
-        .expect("test_default enables order_simulation")
-        .eip1271_simulation_mode = Eip1271SimulationMode::Enforce;
+    let orderbook_config = Configuration {
+        order_simulation: Some(OrderSimulationConfig {
+            order_simulation_mode: OrderSimulationMode::Enforce,
+            ..TestDefault::test_default()
+        }),
+        ..Configuration::test_default()
+    };
 
     let services = Services::new(onchain).await;
     services
