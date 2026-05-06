@@ -495,28 +495,6 @@ impl EthCallInputs {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ConversionError {
-    #[error("simulation does not have a target")]
-    MissingTo,
-    #[error("could not convert state overrides")]
-    StateOverrides,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum BuildError {
-    #[error("no order was added")]
-    NoOrder,
-    #[error("no solver was set")]
-    NoSolver,
-    #[error("failed to query filled amount from settlement contract: {0}")]
-    FilledAmountQuery(#[source] anyhow::Error),
-    #[error("failed to parse app data: {0}")]
-    AppDataParse(#[source] serde_json::Error),
-    #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
-    FlashloanWrappersIncompatible,
-}
-
 #[derive(Debug)]
 pub enum AccountOverrideRequest {
     /// Gives the address a huge amount of ETH.
@@ -537,6 +515,28 @@ pub enum AccountOverrideRequest {
         state: AccountOverride,
     },
     // TODO: add Allowance
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversionError {
+    #[error("simulation does not have a target")]
+    MissingTo,
+    #[error("could not convert state overrides")]
+    StateOverrides,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BuildError {
+    #[error("no order was added")]
+    NoOrder,
+    #[error("no solver was set")]
+    NoSolver,
+    #[error("failed to query filled amount from settlement contract: {0}")]
+    FilledAmountQuery(#[source] anyhow::Error),
+    #[error("failed to parse app data: {0}")]
+    AppDataParse(#[source] serde_json::Error),
+    #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
+    FlashloanWrappersIncompatible,
 }
 
 /// Error returned when two [`AccountOverride`]s set the same field for the same
