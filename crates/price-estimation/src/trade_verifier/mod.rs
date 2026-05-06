@@ -294,8 +294,7 @@ impl TradeVerifier {
             .with_post_interactions(post_interactions)
             .with_overrides(override_requests)
             .build()
-            .await
-            .map_err(|e| Error::SimulationFailed(anyhow::anyhow!("{e}")))?;
+            .await?;
 
         // after assembling the state overrides and settlement call data we need to
         // craft a call that takes the settle call data as an argument.
@@ -821,6 +820,8 @@ enum Error {
     /// Some error caused the simulation to not finish successfully.
     #[error("quote could not be simulated")]
     SimulationFailed(#[from] anyhow::Error),
+    #[error("failed to build the verification simuation")]
+    FailedToBuildSimulation(#[from] simulator::simulation_builder::BuildError),
 }
 
 /// Spardose gets `needed` plus a 1% headroom, floored at 1 wei so the
