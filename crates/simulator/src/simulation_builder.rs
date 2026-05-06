@@ -517,6 +517,8 @@ pub enum AccountOverrideRequest {
     // TODO: add Allowance
 }
 
+/// Error returned when a built eth_call simulation could not be converted
+/// into a tenderly simulation request.
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
     #[error("simulation does not have a target")]
@@ -525,6 +527,8 @@ pub enum ConversionError {
     StateOverrides,
 }
 
+/// Error returned when data needed to build the final simulation was missing,
+/// incompatible, or could not be computed ad-hoc.
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
     #[error("no order was added")]
