@@ -513,6 +513,9 @@ mod tests {
         let tx_gas_limit = gas(EIP_7825_MAINNET_TX_GAS_CAP);
         let result = Gas::new(tx_gas_limit, block_limit, tx_gas_limit).unwrap();
         assert_eq!(result.estimate, tx_gas_limit);
+        // The 2x buffer would otherwise push limit to 2 * tx_gas_limit; the
+        // min(max_gas, ...) clamp must keep it at the configured cap.
+        assert_eq!(result.limit, tx_gas_limit);
     }
 
     #[test]
