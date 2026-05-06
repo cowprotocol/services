@@ -507,6 +507,11 @@ pub(crate) async fn finish_simulation_builder(
     })
 }
 
+/// Computes the exact amount the order should be filled with
+/// based on the configured [`ExecutionAmount`].
+/// If `Remaining` is configured we look up how much the order
+/// was already filled in the settlement contract and deduct
+/// that from the full amount.
 async fn executed_amount(
     builder: &SimulationBuilder,
     order: &Order,
