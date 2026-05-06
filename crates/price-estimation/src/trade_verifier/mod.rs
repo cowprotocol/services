@@ -120,7 +120,7 @@ impl TradeVerifier {
             verification.from = Address::random();
             tracing::debug!(
                 trader = ?verification.from,
-                "use random trader address with fake balances"
+                "using random trader address with fake balances"
             );
         }
 
@@ -475,16 +475,17 @@ impl TradeVerifier {
         query: &PriceQuery,
         trade: &TradeKind,
     ) -> Result<Vec<AccountOverrideRequest>> {
-        let mut requests: Vec<AccountOverrideRequest> = Vec::new();
+        let mut requests = vec![
+            // Setup the funding contract override. Regardless of whether or not the
+            // contract has funds, it needs to exist in order to not revert
+            // simulations (Solidity reverts on attempts to call addresses without
+            // any code).
+            AccountOverrideRequest::Code {
+                account: Self::SPARDOSE,
+                code: Spardose::Spardose::DEPLOYED_BYTECODE.clone(),
+            },
+        ];
 
-        // Setup the funding contract override. Regardless of whether or not the
-        // contract has funds, it needs to exist in order to not revert
-        // simulations (Solidity reverts on attempts to call addresses without
-        // any code).
-        requests.push(AccountOverrideRequest::Code {
-            account: Self::SPARDOSE,
-            code: Spardose::Spardose::DEPLOYED_BYTECODE.clone(),
-        });
         // Provide mocked balances if possible to the spardose to allow it to
         // give some balances to the trader in order to verify trades even for
         // owners without balances. Note that we use a separate account for
