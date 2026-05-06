@@ -411,8 +411,6 @@ pub(crate) async fn finish_simulation_builder(
 
     // Encode every order as a trade, then collect all their interactions.
     let mut trades = Vec::with_capacity(n);
-    let mut all_order_pre: Vec<InteractionData> = vec![];
-    let mut all_order_post: Vec<InteractionData> = vec![];
     for (i, (order, exec)) in builder.orders.iter().zip(&executed_amounts).enumerate() {
         trades.push(encode_trade(
             &order.data,
@@ -422,8 +420,6 @@ pub(crate) async fn finish_simulation_builder(
             2 * i + 1,
             *exec,
         ));
-        all_order_pre.extend_from_slice(&order.pre_interactions);
-        all_order_post.extend_from_slice(&order.post_interactions);
     }
 
     let settlement = EncodedSettlement {
@@ -431,11 +427,9 @@ pub(crate) async fn finish_simulation_builder(
         clearing_prices,
         trades,
         interactions: Interactions {
-            // order pre-hooks run before any additional pre-interactions
-            pre: encode_interactions(all_order_pre.iter().chain(&builder.pre_interactions)),
+            pre: encode_interactions(&builder.pre_interactions),
             main: encode_interactions(&builder.main_interactions),
-            // additional post-interactions run before order post-hooks
-            post: encode_interactions(builder.post_interactions.iter().chain(&all_order_post)),
+            post: encode_interactions(&builder.post_interactions),
         },
     };
 

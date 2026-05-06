@@ -149,7 +149,7 @@ impl SimulationBuilder {
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
-        self.pre_interactions = interactions.into_iter().collect();
+        self.pre_interactions.extend(interactions);
         self
     }
 
@@ -157,7 +157,7 @@ impl SimulationBuilder {
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
-        self.main_interactions = interactions.into_iter().collect();
+        self.main_interactions.extend(interactions);
         self
     }
 
@@ -165,7 +165,7 @@ impl SimulationBuilder {
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
-        self.post_interactions = interactions.into_iter().collect();
+        self.post_interactions.extend(interactions);
         self
     }
 
@@ -437,8 +437,6 @@ pub struct Order {
     pub(crate) data: OrderData,
     pub(crate) owner: Address,
     pub(crate) signature: Signature,
-    pub(crate) pre_interactions: Vec<InteractionData>,
-    pub(crate) post_interactions: Vec<InteractionData>,
     pub(crate) executed_amount: ExecutionAmount,
     pub(crate) price_encoding: PriceEncoding,
 }
@@ -449,8 +447,6 @@ impl Order {
             data,
             owner: Address::ZERO,
             signature: Signature::default_with(SigningScheme::Eip1271),
-            pre_interactions: vec![],
-            post_interactions: vec![],
             executed_amount: ExecutionAmount::Remaining,
             price_encoding: PriceEncoding::LimitPrice,
         }
@@ -459,22 +455,6 @@ impl Order {
     pub fn with_signature(mut self, owner: Address, signature: Signature) -> Self {
         self.owner = owner;
         self.signature = signature;
-        self
-    }
-
-    pub fn with_pre_interactions(
-        mut self,
-        interactions: impl IntoIterator<Item = InteractionData>,
-    ) -> Self {
-        self.pre_interactions = interactions.into_iter().collect();
-        self
-    }
-
-    pub fn with_post_interactions(
-        mut self,
-        interactions: impl IntoIterator<Item = InteractionData>,
-    ) -> Self {
-        self.post_interactions = interactions.into_iter().collect();
         self
     }
 
