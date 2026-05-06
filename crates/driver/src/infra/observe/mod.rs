@@ -10,7 +10,9 @@ use {
         domain::{
             Liquidity,
             competition::{
-                self, Solution, Solved,
+                self,
+                Solution,
+                Solved,
                 solution::{self, Settlement},
             },
             mempools::{self, SubmissionSuccess},
