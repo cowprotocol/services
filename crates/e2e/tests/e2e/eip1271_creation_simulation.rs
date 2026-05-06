@@ -140,7 +140,7 @@ async fn start_services_in_enforce_mode<'a>(
 ) -> Services<'a> {
     let orderbook_config = Configuration {
         order_simulation: Some(OrderSimulationConfig {
-            order_simulation_mode: OrderSimulationMode::Enforce,
+            mode: OrderSimulationMode::Enforce,
             ..TestDefault::test_default()
         }),
         ..Configuration::test_default()

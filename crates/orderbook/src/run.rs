@@ -424,7 +424,7 @@ pub async fn run(config: Configuration) {
         .as_ref()
         .zip(order_simulator.clone())
         .and_then(|(sim_config, settlement_simulator)| {
-            let mode = match sim_config.order_simulation_mode {
+            let mode = match sim_config.mode {
                 configs::orderbook::OrderSimulationMode::Shadow => OrderSimulationMode::Shadow,
                 configs::orderbook::OrderSimulationMode::Enforce => OrderSimulationMode::Enforce,
                 configs::orderbook::OrderSimulationMode::Disabled => return None,
@@ -435,7 +435,7 @@ pub async fn run(config: Configuration) {
             Some(OrderSimulator {
                 simulator,
                 mode,
-                timeout: sim_config.order_simulation_timeout,
+                timeout: sim_config.timeout,
             })
         });
 

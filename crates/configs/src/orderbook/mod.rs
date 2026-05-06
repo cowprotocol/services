@@ -63,11 +63,11 @@ pub struct OrderSimulationConfig {
 
     /// Mode for the order creation simulation.
     #[serde(default)]
-    pub order_simulation_mode: OrderSimulationMode,
+    pub mode: OrderSimulationMode,
 
     /// Per-call timeout for the order creation simulation.
-    #[serde(default = "default_order_simulation_timeout", with = "humantime_serde")]
-    pub order_simulation_timeout: Duration,
+    #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
+    pub timeout: Duration,
 }
 
 /// Mode for the order creation simulation.
@@ -80,7 +80,7 @@ pub enum OrderSimulationMode {
     Disabled,
 }
 
-fn default_order_simulation_timeout() -> Duration {
+fn default_simulation_timeout() -> Duration {
     Duration::from_secs(2)
 }
 
@@ -199,8 +199,8 @@ pub mod test_util {
             Self {
                 gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
                 tenderly: None,
-                order_simulation_mode: Default::default(),
-                order_simulation_timeout: std::time::Duration::from_secs(2),
+                mode: Default::default(),
+                timeout: std::time::Duration::from_secs(2),
             }
         }
     }
@@ -474,39 +474,39 @@ mod tests {
     fn parses_simulation_mode_default() {
         let toml = r#"gas-limit = "16777216""#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Disabled);
-        assert_eq!(cfg.order_simulation_timeout, Duration::from_secs(2));
+        assert_eq!(cfg.mode, OrderSimulationMode::Disabled);
+        assert_eq!(cfg.timeout, Duration::from_secs(2));
     }
 
     #[test]
     fn parses_simulation_mode_enforce() {
         let toml = r#"
             gas-limit = "16777216"
-            order-simulation-mode = "enforce"
-            order-simulation-timeout = "5s"
+            mode = "enforce"
+            timeout = "5s"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Enforce);
-        assert_eq!(cfg.order_simulation_timeout, Duration::from_secs(5));
+        assert_eq!(cfg.mode, OrderSimulationMode::Enforce);
+        assert_eq!(cfg.timeout, Duration::from_secs(5));
     }
 
     #[test]
     fn parses_simulation_mode_shadow() {
         let toml = r#"
             gas-limit = "16777216"
-            order-simulation-mode = "shadow"
+            mode = "shadow"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Shadow);
+        assert_eq!(cfg.mode, OrderSimulationMode::Shadow);
     }
 
     #[test]
     fn parses_simulation_mode_disabled() {
         let toml = r#"
             gas-limit = "16777216"
-            order-simulation-mode = "disabled"
+            mode = "disabled"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.order_simulation_mode, OrderSimulationMode::Disabled);
+        assert_eq!(cfg.mode, OrderSimulationMode::Disabled);
     }
 }
