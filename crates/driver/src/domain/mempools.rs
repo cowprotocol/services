@@ -85,7 +85,7 @@ impl Mempools {
         while let Some((mempool, result)) = futures.next().await {
             match result {
                 Ok(submission) => {
-                    observe::mempool_executed(mempool, settlement, Ok(&submission));
+                    observe::mempool_succeeded(mempool, settlement, &submission);
                     for (shadowed_mempool, err) in &shadowed_errors {
                         observe::mempool_superseded(shadowed_mempool, mempool, settlement, err);
                     }
@@ -98,7 +98,7 @@ impl Mempools {
         // All mempools failed: observe each with its real error label and return the
         // last error as the overall failure.
         for (mempool, err) in &shadowed_errors {
-            observe::mempool_executed(mempool, settlement, Err(err));
+            observe::mempool_failed(mempool, settlement, err);
         }
         let (_last_mempool, last_err) = shadowed_errors
             .pop()

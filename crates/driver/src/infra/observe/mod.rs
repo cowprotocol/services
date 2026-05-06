@@ -10,9 +10,7 @@ use {
         domain::{
             Liquidity,
             competition::{
-                self,
-                Solution,
-                Solved,
+                self, Solution, Solved,
                 solution::{self, Settlement},
             },
             mempools::{self, SubmissionSuccess},
@@ -22,7 +20,7 @@ use {
         infra::solver,
         util::http,
     },
-    eth_domain_types::{self as eth, Gas},
+    eth_domain_types::{self as eth, BlockNo, Gas},
     ethrpc::block_stream::BlockInfo,
     num::Saturating,
     std::{
@@ -360,28 +358,42 @@ pub fn solver_response(
         .observe(compute_time.as_secs_f64());
 }
 
-/// Observe the result of mempool transaction execution.
-pub fn mempool_executed(
+/// Observe a successful mempool transaction execution.
+pub fn mempool_succeeded(
     mempool: &Mempool,
     settlement: &Settlement,
-    res: Result<&SubmissionSuccess, &mempools::Error>,
+    submission: &SubmissionSuccess,
 ) {
-    match res {
-        Ok(submission) => {
-            tracing::info!(
-                txid = ?submission.tx_hash,
-                %mempool,
-                ?settlement,
-                "sending transaction via mempool succeeded",
-            );
-        }
-        Err(mempools::Error::Disabled) => {
+    tracing::info!(
+        txid = ?submission.tx_hash,
+        %mempool,
+        ?settlement,
+        "sending transaction via mempool succeeded",
+    );
+    metrics::get()
+        .mempool_submission
+        .with_label_values(&[mempool.to_string().as_str(), "Success"])
+        .inc();
+    let blocks_passed = submission
+        .included_in_block
+        .saturating_sub(submission.submitted_at_block);
+    metrics::get()
+        .mempool_submission_results_blocks_passed
+        .with_label_values(&[mempool.to_string().as_str(), "Success"])
+        .inc_by(blocks_passed.0);
+}
+
+/// Observe a failed mempool transaction execution.
+pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools::Error) {
+    use mempools::Error::*;
+    match err {
+        Disabled => {
             tracing::debug!(
                 %mempool,
                 "sending transaction via mempool disabled",
             );
         }
-        Err(err) => {
+        _ => {
             tracing::warn!(
                 ?err,
                 %mempool,
@@ -390,51 +402,41 @@ pub fn mempool_executed(
             );
         }
     }
-    let result = match res {
-        Ok(_) => "Success",
-        Err(mempools::Error::Revert { .. } | mempools::Error::SimulationRevert { .. }) => "Revert",
-        Err(mempools::Error::Expired { .. }) => "Expired",
-        Err(mempools::Error::Other(_)) => "Other",
-        Err(mempools::Error::Disabled) => "Disabled",
+    let label = match err {
+        Revert { .. } | SimulationRevert { .. } => "Revert",
+        Expired { .. } => "Expired",
+        Other(_) => "Other",
+        Disabled => "Disabled",
     };
     metrics::get()
         .mempool_submission
-        .with_label_values(&[mempool.to_string().as_str(), result])
+        .with_label_values(&[mempool.to_string().as_str(), label])
         .inc();
 
     // For some of the errors we are interested in observing the exact block numbers
     // passed since the first submission.
-    let blocks_passed = match res {
-        Ok(SubmissionSuccess {
+    let (start, end) = match err {
+        Revert {
             submitted_at_block,
-            included_in_block,
+            reverted_at_block: end,
             ..
-        }) => Some(("Success", submitted_at_block, included_in_block)),
-        Err(mempools::Error::Revert {
-            tx_id: _,
+        }
+        | SimulationRevert {
             submitted_at_block,
-            reverted_at_block,
-        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
-        Err(mempools::Error::SimulationRevert {
+            reverted_at_block: end,
+        }
+        | Expired {
             submitted_at_block,
-            reverted_at_block,
-        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
-        Err(mempools::Error::Expired {
-            tx_id: _,
-            submitted_at_block,
-            submission_deadline,
-        }) => Some(("Expired", submitted_at_block, submission_deadline)),
-        Err(mempools::Error::Other(_)) => None,
-        Err(mempools::Error::Disabled) => None,
+            submission_deadline: end,
+            ..
+        } => (submitted_at_block, end),
+        _ => return,
     };
-
-    if let Some((label, start, end)) = blocks_passed {
-        let blocks_passed = end.saturating_sub(*start);
-        metrics::get()
-            .mempool_submission_results_blocks_passed
-            .with_label_values(&[mempool.to_string().as_str(), label])
-            .inc_by(blocks_passed.0);
-    }
+    let BlockNo(blocks_passed) = end.saturating_sub(*start);
+    metrics::get()
+        .mempool_submission_results_blocks_passed
+        .with_label_values(&[mempool.to_string().as_str(), label])
+        .inc_by(blocks_passed);
 }
 
 /// A mempool's submission failed but another mempool succeeded for the
