@@ -1,19 +1,21 @@
 # Skill — PR context synthesis
 
-Use to produce a tight 1–3 paragraph *what / why / how* block for a single PR (or PR-shaped change). Consumed by the PR review report's CONTEXT section and by [`pr-blame-walk`](pr-blame-walk.md), which calls this skill once per candidate PR before scoring.
+Use to produce a tight 1–3 paragraph *what / why / how* block for a single PR (or PR-shaped change). Consumed by the PR review report's CONTEXT section and by other workflows that need a per-PR summary (e.g. ad-hoc *"summarise this PR for me"* or per-candidate context in an incident-investigation walk).
 
 ## How to invoke
 
 Two ways:
 
-- **Procedurally** — follow the rules below when you need a tight 1–3 paragraph synthesis (CONTEXT block of `/review-pr`, per-candidate block in `pr-blame-walk`, ad-hoc *"summarise this PR for me"*).
+- **Procedurally** — follow the rules below when you need a tight 1–3 paragraph synthesis (CONTEXT block of `/review-pr`, ad-hoc *"summarise this PR for me"*, per-candidate context for an investigation).
 - **Via slash command** — `/pr-synthesis <N|owner/repo#N|url>` fetches the PR, linked issue, and diff for you and prints the synthesis verbatim.
 
 ## Inputs
 
-- `<pr_text>` — PR title and body. If there is no PR yet (e.g. local-diff mode), substitute the branch name plus the relevant commit messages.
+Listed ground-truth-first; downstream items are interpreted relative to the diff.
+
+- `<diff_summary>` — file scope plus a codemap or per-file note of the actual change. The ground truth the synthesis must stay anchored to. For large PRs this may be file-scope only (paths + ±counts + change type), without hunks — `/pr-synthesis` falls back to that when the diff is too big to fetch in full.
+- `<pr_text>` — PR title and body. If there is no PR yet (e.g. local-diff mode), use the current branch name and the relevant commit messages (i.e. diff against `main`).
 - `<linked_issue>` — title and body of any issue referenced via `Fixes #N` / `Closes #N` / `Resolves #N`. May be empty.
-- `<diff_summary>` — file scope plus a codemap or per-file note of the actual change. The ground truth the synthesis must stay anchored to.
 
 ## Rules
 
