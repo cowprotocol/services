@@ -54,6 +54,12 @@ pub enum Quality {
     Unknown,
 }
 
+enum OrderQuality {
+    Supported,
+    Unsupported,
+    ShouldRequireSellTokenSimulation,
+}
+
 #[derive(Default)]
 pub struct Detector {
     /// manually configured list of supported and unsupported tokens. Only
@@ -87,8 +93,7 @@ impl Detector {
         self
     }
 
-    /// Performs flashloan filtering and removes all unsupported orders from the
-    /// auction.
+    /// Filters out unsupported and disallowed orders from the auction.
     #[instrument(skip_all)]
     pub async fn without_unsupported_orders(
         &self,
@@ -96,59 +101,109 @@ impl Detector {
         flashloans_enabled: bool,
     ) {
         let now = Instant::now();
-        let mut token_quality_checks = FuturesUnordered::new();
-
         // List of orders that have been removed
         let mut removed_uids: HashSet<Uid> = HashSet::new();
-        // List of orders that will be retained
+        // Choose filtering path depending on whether simulation detector is set
+        let supported_orders = match &self.simulation_detector {
+            Some(detector) => {
+                let supported_orders = self
+                    .supported_orders_with_detector(
+                        orders.drain(..),
+                        flashloans_enabled,
+                        now,
+                        &mut removed_uids,
+                        detector.as_ref(),
+                    )
+                    .await;
+                detector.evict_outdated_entries();
+                supported_orders
+            }
+            None => self.supported_orders_without_detector(
+                orders.drain(..),
+                flashloans_enabled,
+                now,
+                &mut removed_uids,
+            ),
+        };
+        if !removed_uids.is_empty() {
+            tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
+        }
+        // Replace the original orders in the auction with supported orders
+        *orders = supported_orders;
+    }
+
+    /// Filters orders using only static checks
+    fn supported_orders_without_detector(
+        &self,
+        orders: impl Iterator<Item = Order>,
+        flashloans_enabled: bool,
+        now: Instant,
+        removed_uids: &mut HashSet<Uid>,
+    ) -> Vec<Order> {
         let mut supported_orders = Vec::new();
-        // Zero-copy allocation re-use
-        let original_orders = std::mem::take(orders);
-        for order in original_orders {
+        for order in orders {
             // Flashloans are disabled => drop order
-            if !flashloans_enabled && order.app_data.flashloan().is_some() {
+            if Self::is_disabled_flashloan_order(&order, flashloans_enabled) {
                 removed_uids.insert(order.uid);
                 continue;
             }
-
-            // Metrics determined quality is unsupported => drop order
-            if self
-                .metrics
-                .as_ref()
-                .map(|metrics| metrics.get_quality(&order.uid, now))
-                .is_some_and(|q| q == Quality::Unsupported)
-            {
-                removed_uids.insert(order.uid);
-                continue;
-            }
-
-            let sell = self.get_token_quality(order.sell.token, now);
-            let buy = self.get_token_quality(order.buy.token, now);
-            match (sell, buy) {
-                // both tokens supported => keep order
-                (Quality::Supported, Quality::Supported) => supported_orders.push(order),
-                // at least 1 token unsupported => drop order
-                (Quality::Unsupported, _) | (_, Quality::Unsupported) => {
+            // Determine whether to keep or drop order
+            match self.order_quality(&order, now) {
+                OrderQuality::Supported | OrderQuality::ShouldRequireSellTokenSimulation => {
+                    supported_orders.push(order);
+                }
+                OrderQuality::Unsupported => {
                     removed_uids.insert(order.uid);
                 }
-                // sell token quality is unknown => keep order if token is supported,
-                // if simulation detector is unavailable assume it is good
-                (Quality::Unknown, _) => {
-                    let Some(detector) = &self.simulation_detector else {
-                        // We can't determine quality => assume order is good
-                        supported_orders.push(order);
-                        continue;
-                    };
-                    // Add to quality checks to determine if supported or unsupported
-                    token_quality_checks.push(async move {
-                        let quality = detector.determine_sell_token_quality(&order, now).await;
-                        (order, quality)
-                    });
-                }
-                // buy token quality is unknown => keep order (because we can't
-                // determine quality and assume it's good)
-                (_, Quality::Unknown) => supported_orders.push(order),
             }
+        }
+        supported_orders
+    }
+
+    /// Filters orders and uses simulation for unknown sell-token quality.
+    async fn supported_orders_with_detector(
+        &self,
+        orders: impl Iterator<Item = Order>,
+        flashloans_enabled: bool,
+        now: Instant,
+        removed_uids: &mut HashSet<Uid>,
+        detector: &dyn DetectorApi,
+    ) -> Vec<Order> {
+        let mut supported_orders = Vec::new();
+        let mut orders_requiring_simulation = Vec::new();
+
+        for order in orders {
+            // Flashloans are disabled => drop order
+            if Self::is_disabled_flashloan_order(&order, flashloans_enabled) {
+                removed_uids.insert(order.uid);
+                continue;
+            }
+            // Determine whether to keep, simulate or drop order
+            match self.order_quality(&order, now) {
+                OrderQuality::Supported => {
+                    supported_orders.push(order);
+                }
+                OrderQuality::Unsupported => {
+                    removed_uids.insert(order.uid);
+                }
+                OrderQuality::ShouldRequireSellTokenSimulation => {
+                    orders_requiring_simulation.push(order);
+                }
+            }
+        }
+
+        // If no orders require simulation, return early
+        if orders_requiring_simulation.is_empty() {
+            return supported_orders;
+        }
+
+        let mut token_quality_checks = FuturesUnordered::new();
+        for order in orders_requiring_simulation {
+            // Add to quality checks to determine if supported or unsupported
+            token_quality_checks.push(async move {
+                let quality = detector.determine_sell_token_quality(&order, now).await;
+                (order, quality)
+            });
         }
         // Wait for all quality checks to complete
         while let Some((order, quality)) = token_quality_checks.next().await {
@@ -158,16 +213,39 @@ impl Detector {
                 removed_uids.insert(order.uid);
             }
         }
-        // Replace the original orders in the auction with supported orders
-        *orders = supported_orders;
+        supported_orders
+    }
 
-        if !removed_uids.is_empty() {
-            tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
+    /// Classifies an order using metrics and static checks.
+    fn order_quality(&self, order: &Order, now: Instant) -> OrderQuality {
+        // Metrics determined quality is unsupported => drop order
+        if self
+            .metrics
+            .as_ref()
+            .map(|metrics| metrics.get_quality(&order.uid, now))
+            .is_some_and(|q| q == Quality::Unsupported)
+        {
+            return OrderQuality::Unsupported;
         }
+        let sell = self.get_token_quality(order.sell.token, now);
+        let buy = self.get_token_quality(order.buy.token, now);
+        match (sell, buy) {
+            // both tokens supported => keep order
+            (Quality::Supported, Quality::Supported) => OrderQuality::Supported,
+            // at least 1 token unsupported => drop order
+            (Quality::Unsupported, _) | (_, Quality::Unsupported) => OrderQuality::Unsupported,
+            // sell token quality is unknown => should require simulation detector,
+            // assume it is good if simulation detector is unavailable
+            (Quality::Unknown, _) => OrderQuality::ShouldRequireSellTokenSimulation,
+            // buy token quality is unknown => keep order (because we can't
+            // determine quality and assume it's good)
+            (_, Quality::Unknown) => OrderQuality::Supported,
+        }
+    }
 
-        if let Some(detector) = &self.simulation_detector {
-            detector.evict_outdated_entries();
-        }
+    /// Returns true if flashloans are disabled and the order uses one.
+    fn is_disabled_flashloan_order(order: &Order, flashloans_enabled: bool) -> bool {
+        !flashloans_enabled && order.app_data.flashloan().is_some()
     }
 
     /// Updates the tokens quality metric for successful operation.
@@ -184,6 +262,8 @@ impl Detector {
         }
     }
 
+    /// Returns the quality of a token using hardcoded configuration or the
+    /// simulation detector.
     fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Quality {
         match self.hardcoded.get(&token) {
             None | Some(Quality::Unknown) => (),

@@ -132,7 +132,7 @@ impl Detector {
     }
 }
 
-impl std::ops::Deref for Detector {
+impl Deref for Detector {
     type Target = Cache;
 
     fn deref(&self) -> &Self::Target {
