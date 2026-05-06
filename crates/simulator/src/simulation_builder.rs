@@ -228,7 +228,7 @@ impl SimulationBuilder {
 
     /// Generates 1 interaction executing the given hooks via the trampoline
     /// contract since executing hooks directly from the settlement contract
-    /// context would give them elevated priviliges that puts funds at risk.
+    /// context would give them elevated privileges that put funds at risk.
     fn encode_hooks(&self, hooks: &[app_data::Hook]) -> Vec<InteractionData> {
         if hooks.is_empty() {
             return vec![];
