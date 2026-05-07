@@ -1,84 +1,26 @@
-//! Local-node tests for the EIP-1271 creation-time simulation.
+//! Local-node smoke test for the EIP-1271 creation-time simulation wiring.
 //!
-//! - Negative: a Safe-signed order whose `app_data.protocol.wrappers` points at
-//!   a custom always-revert wrapper. With the orderbook in
-//!   `OrderSimulationMode::Enforce`, the simulation drives `settle()` through
-//!   the wrapper, the wrapper reverts, and the API rejects with HTTP 400
-//!   `OrderSimulationFailed`. A wrapper is used rather than a buggy pre-hook
-//!   because `HooksTrampoline.execute` deliberately swallows hook reverts, so a
-//!   buggy hook would not surface as a simulation failure.
-//! - Positive: a Safe-signed order with empty app_data is accepted, proving the
-//!   adapter wiring lets healthy orders through.
+//! A Safe-signed order with empty `app_data` is accepted, proving that
+//! `OrderSimulator` runs alongside the cheap signature check without
+//! disrupting the happy path. The simulation runs in shadow mode (logs
+//! disagreements, never rejects). An enforce-mode rejection test will be
+//! added together with the enforce-mode follow-up PR.
 
 use {
-    alloy::{
-        primitives::{Address, Bytes, TxKind, hex},
-        providers::Provider,
-        rpc::types::TransactionRequest,
-    },
     configs::{
-        orderbook::{Configuration, OrderSimulationConfig, OrderSimulationMode},
+        orderbook::{Configuration, OrderSimulationConfig},
         test_util::TestDefault,
     },
     e2e::setup::{MintableToken, OnchainComponents, Services, run_test, safe::Safe},
     model::order::{OrderCreation, OrderCreationAppData, OrderKind},
     number::units::EthUnit,
-    reqwest::StatusCode,
-    serde_json::json,
     shared::web3::Web3,
 };
-
-/// Constructor + runtime that always reverts with empty data on any call.
-///
-/// Constructor copies the 5-byte runtime (`PUSH1 0; PUSH1 0; REVERT`) into
-/// memory and returns it. The deployed contract reverts unconditionally
-/// regardless of selector or calldata.
-const ALWAYS_REVERT_INIT_CODE: [u8; 17] = hex!("6005600c60003960056000f360006000fd");
-
-#[tokio::test]
-#[ignore]
-async fn local_node_eip1271_creation_simulation_rejects_when_wrapper_reverts() {
-    run_test(rejects_when_wrapper_reverts).await;
-}
 
 #[tokio::test]
 #[ignore]
 async fn local_node_eip1271_creation_simulation_accepts_valid_order() {
     run_test(accepts_valid_order).await;
-}
-
-async fn rejects_when_wrapper_reverts(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-    let [solver] = onchain.make_solvers(1u64.eth()).await;
-    let [trader] = onchain.make_accounts(1u64.eth()).await;
-
-    let safe = Safe::deploy(trader.clone(), web3.provider.clone()).await;
-
-    let [token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
-        .await;
-    fund_safe(&safe, &token, &onchain).await;
-
-    let services = start_services_in_enforce_mode(&onchain, solver).await;
-
-    let wrapper_addr = deploy_always_revert(&web3, trader.address()).await;
-
-    let order = sign_order(
-        &safe,
-        &onchain,
-        &token,
-        Some(WrapperRef {
-            address: wrapper_addr,
-            data: vec![],
-        }),
-    );
-
-    let (status, body) = services.create_order(&order).await.unwrap_err();
-    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
-    assert!(
-        body.contains("OrderSimulationFailed"),
-        "expected OrderSimulationFailed in body, got: {body}",
-    );
 }
 
 async fn accepts_valid_order(web3: Web3) {
@@ -93,9 +35,9 @@ async fn accepts_valid_order(web3: Web3) {
         .await;
     fund_safe(&safe, &token, &onchain).await;
 
-    let services = start_services_in_enforce_mode(&onchain, solver).await;
+    let services = start_services_with_simulation(&onchain, solver).await;
 
-    let order = sign_order(&safe, &onchain, &token, None);
+    let order = sign_order(&safe, &onchain, &token);
 
     let uid = services
         .create_order(&order)
@@ -103,25 +45,6 @@ async fn accepts_valid_order(web3: Web3) {
         .expect("expected order to be accepted");
     let stored = services.get_order(&uid).await.unwrap();
     assert_eq!(stored.metadata.uid, uid);
-}
-
-/// Deploys a contract whose runtime is `PUSH1 0; PUSH1 0; REVERT`.
-async fn deploy_always_revert(web3: &Web3, from: Address) -> Address {
-    let mut tx = TransactionRequest::default()
-        .from(from)
-        .input(Bytes::from(ALWAYS_REVERT_INIT_CODE.to_vec()).into());
-    tx.to = Some(TxKind::Create);
-    let receipt = web3
-        .provider
-        .send_transaction(tx)
-        .await
-        .unwrap()
-        .get_receipt()
-        .await
-        .unwrap();
-    receipt
-        .contract_address
-        .expect("deployment receipt should carry the contract address")
 }
 
 async fn fund_safe(safe: &Safe, token: &MintableToken, onchain: &OnchainComponents) {
@@ -134,15 +57,12 @@ async fn fund_safe(safe: &Safe, token: &MintableToken, onchain: &OnchainComponen
     .await;
 }
 
-async fn start_services_in_enforce_mode<'a>(
+async fn start_services_with_simulation<'a>(
     onchain: &'a OnchainComponents,
     solver: e2e::setup::onchain_components::TestAccount,
 ) -> Services<'a> {
     let orderbook_config = Configuration {
-        order_simulation: Some(OrderSimulationConfig {
-            mode: OrderSimulationMode::Enforce,
-            ..TestDefault::test_default()
-        }),
+        order_simulation: Some(OrderSimulationConfig::test_default()),
         ..Configuration::test_default()
     };
 
@@ -157,31 +77,11 @@ async fn start_services_in_enforce_mode<'a>(
     services
 }
 
-struct WrapperRef {
-    address: Address,
-    data: Vec<u8>,
-}
-
 fn sign_order(
     safe: &Safe,
     onchain: &OnchainComponents,
     sell_token: &MintableToken,
-    wrapper: Option<WrapperRef>,
 ) -> OrderCreation {
-    let app_data = match wrapper {
-        Some(w) => json!({
-            "metadata": {
-                "wrappers": [{
-                    "address": format!("{:?}", w.address),
-                    "data": format!("0x{}", hex::encode(&w.data)),
-                    "isOmittable": false,
-                }],
-            },
-        }),
-        None => json!({}),
-    }
-    .to_string();
-
     let mut order = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: *sell_token.address(),
@@ -190,7 +90,9 @@ fn sign_order(
         buy_amount: 1u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         from: Some(safe.address()),
-        app_data: OrderCreationAppData::Full { full: app_data },
+        app_data: OrderCreationAppData::Full {
+            full: "{}".to_string(),
+        },
         ..Default::default()
     };
     safe.sign_order(&mut order, onchain);

@@ -49,108 +49,34 @@ use {
     tracing::instrument,
 };
 
-/// Mode controlling whether the order creation simulation can reject orders.
-/// The operational default lives in `configs::orderbook::OrderSimulationMode`
-/// (currently `Disabled`). This enum only represents the on-path states
-/// `OrderValidator` actually executes.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum OrderSimulationMode {
-    /// Log disagreements, emit metrics. Never reject.
-    Shadow,
-    /// If the signature check passes but the order simulation fails, reject
-    /// the order with `ValidationError::SimulationFailed`. Infra errors
-    /// still never reject (fail-open).
-    Enforce,
-}
-
-/// Runs a full order simulation alongside the cheap EIP-1271 signature
-/// check and decides, based on the configured mode, whether a failure
-/// should reject the order.
+/// Runs the full order simulation alongside the cheap EIP-1271 signature
+/// check. Disagreements are logged. The simulation never rejects the order
+/// (shadow-mode behaviour). An enforce-mode follow-up will use the same
+/// simulator output to reject orders whose simulation reverts.
 #[derive(Clone)]
 pub struct OrderSimulator {
     pub simulator: Arc<dyn OrderSimulating>,
-    pub mode: OrderSimulationMode,
     pub timeout: Duration,
-}
-
-#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "order_simulation")]
-struct OrderSimulationMetrics {
-    /// Counts each (signature-check, simulation) outcome pair. The signature
-    /// axis takes `pass | fail | infra | skipped`; the simulation axis
-    /// takes `pass | fail | infra`.
-    #[metric(labels("signature", "simulation"))]
-    total: prometheus::IntCounterVec,
-    /// Time spent in the order creation simulation.
-    simulation_time: prometheus::Histogram,
-}
-
-impl OrderSimulationMetrics {
-    fn get() -> &'static Self {
-        Self::instance(observe::metrics::get_storage_registry())
-            .expect("unexpected error getting OrderSimulationMetrics instance")
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-enum SignatureOutcome {
-    Pass,
-    Fail,
-    Infra,
-    /// `eip1271_skip_creation_validation` is set — the signature check was
-    /// not run, only the simulation was.
-    Skipped,
 }
 
 #[derive(Debug)]
 enum SimulationOutcome {
     Pass,
-    Fail {
+    Reverted {
         reason: String,
         tenderly_url: Option<String>,
     },
     Infra(anyhow::Error),
 }
 
-impl SignatureOutcome {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Pass => "pass",
-            Self::Fail => "fail",
-            Self::Infra => "infra",
-            Self::Skipped => "skipped",
-        }
-    }
-}
-
-impl SimulationOutcome {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Pass => "pass",
-            Self::Fail { .. } => "fail",
-            Self::Infra(_) => "infra",
-        }
-    }
-}
-
-fn classify_signature(res: &Result<u64, SignatureValidationError>) -> SignatureOutcome {
-    match res {
-        Ok(_) => SignatureOutcome::Pass,
-        Err(SignatureValidationError::Invalid) => SignatureOutcome::Fail,
-        Err(SignatureValidationError::Other(_)) => SignatureOutcome::Infra,
-    }
-}
-
-/// Runs a simulation under the given timeout, recording the duration in the
-/// `simulation_time` histogram, and folds the timeout / revert / infra error
-/// cases into a single `SimulationOutcome`.
+/// Runs a simulation under the given timeout and folds the
+/// timeout / revert / infra cases into a single [`SimulationOutcome`].
 async fn timed_simulation(
     sim: &dyn OrderSimulating,
     order: &Order,
     full_app_data: String,
     timeout: Duration,
 ) -> SimulationOutcome {
-    let _timer = OrderSimulationMetrics::get().simulation_time.start_timer();
     let Ok(simulation_result) =
         tokio::time::timeout(timeout, sim.simulate(order, full_app_data)).await
     else {
@@ -162,7 +88,7 @@ async fn timed_simulation(
         Err(OrderSimulationError::Reverted {
             reason,
             tenderly_url,
-        }) => SimulationOutcome::Fail {
+        }) => SimulationOutcome::Reverted {
             reason,
             tenderly_url,
         },
@@ -170,36 +96,30 @@ async fn timed_simulation(
     }
 }
 
-fn record_simulation_outcome(
-    signature: SignatureOutcome,
+/// Logs the simulation result alongside the signature-check outcome.
+/// Cases that disagree (sig pass + sim revert, sig fail + sim pass) are
+/// surfaced as warnings, infra errors are logged separately.
+fn log_simulation_outcome(
+    signature: &Result<u64, SignatureValidationError>,
     simulation: &SimulationOutcome,
     order_uid: OrderUid,
 ) {
-    OrderSimulationMetrics::get()
-        .total
-        .with_label_values(&[signature.label(), simulation.label()])
-        .inc();
-
     match (signature, simulation) {
         (
-            SignatureOutcome::Pass,
-            SimulationOutcome::Fail {
+            Ok(_),
+            SimulationOutcome::Reverted {
                 reason,
                 tenderly_url,
             },
         ) => tracing::warn!(
             ?order_uid,
-            signature = signature.label(),
-            simulation = simulation.label(),
             ?reason,
             ?tenderly_url,
-            "order simulation disagreement",
+            "order simulation disagreement: signature passed, simulation reverted",
         ),
-        (SignatureOutcome::Fail, SimulationOutcome::Pass) => tracing::warn!(
+        (Err(SignatureValidationError::Invalid), SimulationOutcome::Pass) => tracing::warn!(
             ?order_uid,
-            signature = signature.label(),
-            simulation = simulation.label(),
-            "order simulation disagreement",
+            "order simulation disagreement: signature invalid, simulation passed",
         ),
         (_, SimulationOutcome::Infra(err)) => {
             tracing::warn!(?order_uid, ?err, "order simulation infra error")
@@ -220,19 +140,15 @@ async fn run_order_simulation_only(
         config.timeout,
     )
     .await;
-    OrderSimulationMetrics::get()
-        .total
-        .with_label_values(&[SignatureOutcome::Skipped.label(), outcome.label()])
-        .inc();
     match &outcome {
-        SimulationOutcome::Fail {
+        SimulationOutcome::Reverted {
             reason,
             tenderly_url,
         } => tracing::warn!(
             order_uid = %preview_order.metadata.uid,
             ?reason,
             ?tenderly_url,
-            "order simulation (signature check skipped)",
+            "order simulation reverted (signature check skipped)",
         ),
         SimulationOutcome::Infra(err) => tracing::warn!(
             order_uid = %preview_order.metadata.uid,
@@ -348,10 +264,6 @@ pub enum ValidationError {
     /// An invalid EIP-1271 signature, where the on-chain validation check
     /// reverted or did not return the expected value.
     InvalidEip1271Signature(B256),
-    /// The EIP-1271 order simulation returned a revert in enforce mode. Only
-    /// possible when the 1271 signature check passed but the full
-    /// order simulation failed.
-    SimulationFailed(String),
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
@@ -621,16 +533,10 @@ impl OrderValidator {
     }
 
     /// Runs the cheap `isValidSignature` check and, when a simulator is
-    /// configured, the full order simulation concurrently. Decides the
-    /// outcome:
-    ///
-    /// - signature `Invalid` → `InvalidEip1271Signature` (current behaviour).
-    /// - signature `Other`   → `ValidationError::Other` (infra error).
-    /// - signature `Ok(gas)` + simulation `Reverted` + **Enforce** mode →
-    ///   `SimulationFailed(reason)` (the new rejection added by this PR).
-    /// - signature `Ok(gas)` in every other combination → `Ok(gas)`.
-    ///
-    /// Simulation infra errors (RPC / Tenderly / timeout) never reject.
+    /// configured, the full order simulation concurrently. The signature
+    /// result decides whether the order is accepted. The simulation result
+    /// is logged for observability (shadow mode), it never rejects.
+    /// Simulation infra errors (RPC / Tenderly / timeout) are logged.
     async fn run_eip1271_with_signature_check(
         &self,
         check: SignatureCheck,
@@ -649,6 +555,10 @@ impl OrderValidator {
             });
         };
 
+        // Shadow mode: the simulation runs for observability only. Disagreements
+        // are logged below and never affect the return value. The enforce-mode
+        // follow-up will consume `simulation_outcome` here to reject orders
+        // whose simulation reverts.
         let simulation_fut = timed_simulation(
             config.simulator.as_ref(),
             preview_order,
@@ -658,23 +568,16 @@ impl OrderValidator {
 
         let (signature_res, simulation_outcome) = tokio::join!(signature_fut, simulation_fut);
 
-        let signature_outcome = classify_signature(&signature_res);
-        record_simulation_outcome(
-            signature_outcome,
+        log_simulation_outcome(
+            &signature_res,
             &simulation_outcome,
             preview_order.metadata.uid,
         );
 
-        match (signature_res, &simulation_outcome, config.mode) {
-            (Ok(_gas), SimulationOutcome::Fail { reason, .. }, OrderSimulationMode::Enforce) => {
-                Err(ValidationError::SimulationFailed(reason.clone()))
-            }
-            (Ok(gas), _, _) => Ok(gas),
-            (Err(SignatureValidationError::Invalid), _, _) => {
-                Err(ValidationError::InvalidEip1271Signature(hash))
-            }
-            (Err(SignatureValidationError::Other(err)), _, _) => Err(ValidationError::Other(err)),
-        }
+        signature_res.map_err(|err| match err {
+            SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
+            SignatureValidationError::Other(err) => ValidationError::Other(err),
+        })
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -2987,10 +2890,9 @@ mod tests {
         }
     }
 
-    fn simulator_with_mode(sim: MockOrderSimulating, mode: OrderSimulationMode) -> OrderSimulator {
+    fn order_simulator(sim: MockOrderSimulating) -> OrderSimulator {
         OrderSimulator {
             simulator: Arc::new(sim),
-            mode,
             timeout: DEFAULT_ORDER_SIM_TIMEOUT,
         }
     }
@@ -3040,15 +2942,11 @@ mod tests {
         )
     }
 
-    /// Verifies the full (signature × simulation × mode) outcome matrix.
-    ///
-    /// Only the `(signature Pass, simulation Fail, Enforce)` cell changes
-    /// behaviour relative to today. Every other cell must match the
-    /// signature-only behaviour from before order simulation was added.
+    /// Verifies the (signature × simulation) outcome matrix in shadow mode.
+    /// The signature result alone decides acceptance; the simulation result
+    /// is observed only.
     #[tokio::test]
     async fn signature_and_simulation_outcome_matrix() {
-        use OrderSimulationMode::{Enforce, Shadow};
-
         #[derive(Copy, Clone, Debug)]
         enum Sig {
             Pass,
@@ -3063,37 +2961,17 @@ mod tests {
         enum Expected {
             Accepted,
             InvalidSignature,
-            SimulationFailed,
         }
 
-        let cases: &[(Sig, Sim, OrderSimulationMode, Expected)] = &[
-            (Sig::Pass, Sim::Pass, Shadow, Expected::Accepted),
-            (Sig::Pass, Sim::Reverted, Shadow, Expected::Accepted),
-            (Sig::Invalid, Sim::Pass, Shadow, Expected::InvalidSignature),
-            (
-                Sig::Invalid,
-                Sim::Reverted,
-                Shadow,
-                Expected::InvalidSignature,
-            ),
-            (Sig::Pass, Sim::Pass, Enforce, Expected::Accepted),
-            (
-                Sig::Pass,
-                Sim::Reverted,
-                Enforce,
-                Expected::SimulationFailed,
-            ),
-            (Sig::Invalid, Sim::Pass, Enforce, Expected::InvalidSignature),
-            (
-                Sig::Invalid,
-                Sim::Reverted,
-                Enforce,
-                Expected::InvalidSignature,
-            ),
+        let cases: &[(Sig, Sim, Expected)] = &[
+            (Sig::Pass, Sim::Pass, Expected::Accepted),
+            (Sig::Pass, Sim::Reverted, Expected::Accepted),
+            (Sig::Invalid, Sim::Pass, Expected::InvalidSignature),
+            (Sig::Invalid, Sim::Reverted, Expected::InvalidSignature),
         ];
 
-        for &(sig, simulation, mode, expected) in cases {
-            let label = format!("sig={sig:?} sim={simulation:?} mode={mode:?}");
+        for &(sig, simulation, expected) in cases {
+            let label = format!("sig={sig:?} sim={simulation:?}");
             let mut signature_validator = MockSignatureValidating::new();
             signature_validator
                 .expect_validate_signature_and_get_additional_gas()
@@ -3110,11 +2988,8 @@ mod tests {
                         tenderly_url: None,
                     }),
                 });
-            let validator = build_1271_validator(
-                signature_validator,
-                Some(simulator_with_mode(sim, mode)),
-                false,
-            );
+            let validator =
+                build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
             let result = validator
                 .validate_and_construct_order(
                     make_1271_order_creation(),
@@ -3129,46 +3004,30 @@ mod tests {
                     matches!(result, Err(ValidationError::InvalidEip1271Signature(_))),
                     "{label}: got {result:?}"
                 ),
-                Expected::SimulationFailed => assert!(
-                    matches!(result, Err(ValidationError::SimulationFailed(_))),
-                    "{label}: got {result:?}"
-                ),
             }
         }
     }
 
     #[tokio::test]
-    async fn simulation_infra_error_is_fail_open_in_both_modes() {
-        for mode in [OrderSimulationMode::Shadow, OrderSimulationMode::Enforce] {
-            let mut signature_validator = MockSignatureValidating::new();
-            signature_validator
-                .expect_validate_signature_and_get_additional_gas()
-                .returning(|_| Ok(0u64));
-            let mut sim = MockOrderSimulating::new();
-            sim.expect_simulate()
-                .returning(|_, _| Err(OrderSimulationError::Infra(anyhow!("RPC down"))));
-            let validator = build_1271_validator(
-                signature_validator,
-                Some(OrderSimulator {
-                    simulator: Arc::new(sim),
-                    mode,
-                    timeout: DEFAULT_ORDER_SIM_TIMEOUT,
-                }),
-                false,
-            );
-            let result = validator
-                .validate_and_construct_order(
-                    make_1271_order_creation(),
-                    &DomainSeparator::default(),
-                    Default::default(),
-                    None,
-                )
-                .await;
-            assert!(
-                result.is_ok(),
-                "expected Ok for mode={mode:?}, got {result:?}"
-            );
-        }
+    async fn simulation_infra_error_is_fail_open() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(0u64));
+        let mut sim = MockOrderSimulating::new();
+        sim.expect_simulate()
+            .returning(|_, _| Err(OrderSimulationError::Infra(anyhow!("RPC down"))));
+        let validator =
+            build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
+        let result = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
     }
 
     #[tokio::test]
@@ -3186,11 +3045,7 @@ mod tests {
                 tenderly_url: None,
             })
         });
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(simulator_with_mode(sim, OrderSimulationMode::Enforce)),
-            true,
-        );
+        let validator = build_1271_validator(signature_validator, Some(order_simulator(sim)), true);
         let result = validator
             .validate_and_construct_order(
                 make_1271_order_creation(),
@@ -3204,27 +3059,23 @@ mod tests {
 
     #[tokio::test]
     async fn simulator_is_not_invoked_for_non_eip1271_orders() {
-        // Build an EOA (Eip712) order and a simulator configured in enforce mode.
-        // The simulator should NOT be called — only EIP-1271 orders go through
-        // the simulation path.
+        // Only EIP-1271 orders go through the simulation path; verify that an
+        // EOA order does not invoke the simulator.
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
         let mut sim = MockOrderSimulating::new();
         sim.expect_simulate().times(0);
-        let validator = build_1271_validator(
-            signature_validator,
-            Some(simulator_with_mode(sim, OrderSimulationMode::Enforce)),
-            false,
-        );
+        let validator =
+            build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
 
         let eoa_order = OrderCreation {
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..make_1271_order_creation()
         };
         // Ignore the final result (it will fail WrongOwner/etc. later in the
-        // pipeline — we only care that the sim was not invoked).
+        // pipeline - we only care that the sim was not invoked).
         let _ = validator
             .validate_and_construct_order(
                 eoa_order,

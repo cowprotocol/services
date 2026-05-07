@@ -41,12 +41,7 @@ use {
     },
     shared::{
         order_quoting::{self, OrderQuoter},
-        order_validation::{
-            OrderSimulationMode,
-            OrderSimulator,
-            OrderValidPeriodConfiguration,
-            OrderValidator,
-        },
+        order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -423,20 +418,14 @@ pub async fn run(config: Configuration) {
         .order_simulation
         .as_ref()
         .zip(order_simulator.clone())
-        .and_then(|(sim_config, settlement_simulator)| {
-            let mode = match sim_config.mode {
-                configs::orderbook::OrderSimulationMode::Shadow => OrderSimulationMode::Shadow,
-                configs::orderbook::OrderSimulationMode::Enforce => OrderSimulationMode::Enforce,
-                configs::orderbook::OrderSimulationMode::Disabled => return None,
-            };
+        .map(|(sim_config, settlement_simulator)| {
             let simulator: Arc<dyn simulator::order_simulation::OrderSimulating> = Arc::new(
                 simulator::order_simulation::OrderSimulatorAdapter::new(settlement_simulator),
             );
-            Some(OrderSimulator {
+            OrderSimulator {
                 simulator,
-                mode,
                 timeout: sim_config.timeout,
-            })
+            }
         });
 
     let order_validator = Arc::new(OrderValidator::new(

@@ -61,23 +61,9 @@ pub struct OrderSimulationConfig {
     #[serde(default)]
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
 
-    /// Mode for the order creation simulation.
-    #[serde(default)]
-    pub mode: OrderSimulationMode,
-
     /// Per-call timeout for the order creation simulation.
     #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
     pub timeout: Duration,
-}
-
-/// Mode for the order creation simulation.
-#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum OrderSimulationMode {
-    Shadow,
-    Enforce,
-    #[default]
-    Disabled,
 }
 
 fn default_simulation_timeout() -> Duration {
@@ -199,7 +185,6 @@ pub mod test_util {
             Self {
                 gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
                 tenderly: None,
-                mode: Default::default(),
                 timeout: std::time::Duration::from_secs(2),
             }
         }
@@ -471,42 +456,20 @@ mod tests {
     }
 
     #[test]
-    fn parses_simulation_mode_default() {
+    fn parses_order_simulation_defaults() {
         let toml = r#"gas-limit = "16777216""#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.mode, OrderSimulationMode::Disabled);
         assert_eq!(cfg.timeout, Duration::from_secs(2));
+        assert!(cfg.tenderly.is_none());
     }
 
     #[test]
-    fn parses_simulation_mode_enforce() {
+    fn parses_order_simulation_full() {
         let toml = r#"
             gas-limit = "16777216"
-            mode = "enforce"
             timeout = "5s"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.mode, OrderSimulationMode::Enforce);
         assert_eq!(cfg.timeout, Duration::from_secs(5));
-    }
-
-    #[test]
-    fn parses_simulation_mode_shadow() {
-        let toml = r#"
-            gas-limit = "16777216"
-            mode = "shadow"
-        "#;
-        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.mode, OrderSimulationMode::Shadow);
-    }
-
-    #[test]
-    fn parses_simulation_mode_disabled() {
-        let toml = r#"
-            gas-limit = "16777216"
-            mode = "disabled"
-        "#;
-        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.mode, OrderSimulationMode::Disabled);
     }
 }
