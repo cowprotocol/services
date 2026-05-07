@@ -225,3 +225,113 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
         .await
         .expect("failed to build simulation")
 }
+
+/// AAVE v3 collateral-swap order
+/// `0x441ad034a3c8cd9ad0fc9a9d143c8201bc92d62851a8428997c36a89a03ee2ad4caea9074f2897a3a4ac173c4e5b5bd8b7e3dc976b5f9c6f`
+/// dropped 295 times by the mainnet driver on 2026-05-05 (mostly under
+/// `arc-solve`) with `Simulation(Revert(_))`.
+const NATURALLY_FAILING_APP_DATA: &str = r#"{"appCode":"aave-v3-interface-collateral-swap","metadata":{"flashloan":{"amount":"6136714","liquidityProvider":"0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2","protocolAdapter":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","receiver":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192","token":"0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"},"hooks":{"post":[{"callData":"0x398925de00000000000000000000000000000000000000000000000000000000006700b10000000000000000000000000000000000000000000000000000000069850ebf000000000000000000000000000000000000000000000000000000000000001bb32da7ed8403b8369956ffc15f4c1295953004866fa786c0162d28bea3d18b3b08466a876f9a0cb5d1175ef44838426558b19d64b48002231a8c1c90821e08a4","dappId":"cow-sdk://flashloans/aave/v3/collateral-swap","gasLimit":"700000","target":"0x4CAea9074f2897a3A4ac173C4E5b5Bd8b7E3Dc97"}],"pre":[{"callData":"0xb1b6308b000000000000000000000000029d584e847373b6373b01dfad1a0c9bfb9163820000000000000000000000004ec7efb8c873f54c5f62830ec5ecc2362580bdfe0000000000000000000000004caea9074f2897a3a4ac173c4e5b5bd8b7e3dc970000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000005d978d00000000000000000000000000000000000000000000000000000000c9f769e0f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775000000000000000000000000000000000000000000000000000000006b5f9c6f00000000000000000000000000000000000000000000000000000000005da38a0000000000000000000000000000000000000000000000000000000000000bfd00000000000000000000000000000000000000000000000000000000005da38a00000000000000000000000000000000000000000000000000000000c9f769e0","dappId":"cow-sdk://flashloans/aave/v3/collateral-swap","gasLimit":"300000","target":"0xdeCC46a4b09162F5369c5C80383AAa9159bCf192"}]},"orderClass":{"orderClass":"limit"},"partnerFee":{"recipient":"0xC542C2F197c4939154017c802B0583C596438380","volumeBps":25},"quote":{"slippageBips":0,"smartSlippage":true},"utm":{"utmCampaign":"developer-cohort","utmContent":"","utmMedium":"cow-sdk@7.3.4","utmSource":"cowmunity","utmTerm":"js"}},"version":"1.14.0"}"#;
+
+const NATURALLY_FAILING_SIGNATURE_HEX: &str = "0x0000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000004caea9074f2897a3a4ac173c4e5b5bd8b7e3dc9700000000000000000000000000000000000000000000000000000000005d978d00000000000000000000000000000000000000000000000000000000c9f769e0000000000000000000000000000000000000000000000000000000006b5f9c6f4223823feadc36c4373c9d88ac1e9875d067e3df5ced70c0a1fedcec396f34d10000000000000000000000000000000000000000000000000000000000000000f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee34677500000000000000000000000000000000000000000000000000000000000000005a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc95a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc900000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000041dd46f4ee5ab3d65846780582c116a93cf37d99be5c87ed1638e3f52bc39861b91595d66c1afd17d585d6ccdbe7b643a2d44b46d1a919f479224e49934c293f231c00000000000000000000000000000000000000000000000000000000000000";
+
+/// Replay of a real production order that the mainnet driver was repeatedly
+/// dropping with `Simulation(Revert(_))`. The pre-hook reverts because the
+/// trader's aToken balance is insufficient for the collateral swap.
+#[tokio::test]
+#[ignore]
+async fn aave_collateral_swap_replay_fails_naturally() {
+    let Ok(rpc_url) = std::env::var("MAINNET_RPC_URL") else {
+        eprintln!("MAINNET_RPC_URL not set - skipping replay test");
+        return;
+    };
+
+    let canonical_app_data = canonicalise_app_data(NATURALLY_FAILING_APP_DATA);
+    let inputs = build_naturally_failing_replay_simulation(&rpc_url, &canonical_app_data).await;
+
+    let err = inputs
+        .simulate()
+        .await
+        .expect_err("simulation must revert: pre-hook moves aToken the trader no longer holds");
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("execution reverted"),
+        "expected an EVM revert, got: {msg}",
+    );
+}
+
+async fn build_naturally_failing_replay_simulation(
+    rpc_url: &str,
+    full_app_data: &str,
+) -> EthCallInputs {
+    // Block taken from a `BlockNo(...)` embedded in one of the dropped-
+    // solution events for this order on 2026-05-05.
+    let fork_block_mainnet = 25_028_258u64;
+    let chain_id = 1u64;
+    let order_owner = address!("4caea9074f2897a3a4ac173c4e5b5bd8b7e3dc97");
+    let sell_token_a_wbtc = address!("2260fac5e5542a773aa44fbcfedf7c193bc2c599");
+    let buy_token_usdt = address!("dac17f958d2ee523a2206206994597c13d831ec7");
+    let sell_amount = U256::from_str("6133645").unwrap();
+    let buy_amount = U256::from_str("3388434912").unwrap();
+    let valid_to = 1_801_428_079u32; // 2027-01-31 ish
+
+    let web3 = ethrpc::Web3::new_from_url(rpc_url);
+    let provider = web3.provider.clone();
+
+    let settlement = contracts::GPv2Settlement::Instance::deployed(&provider)
+        .await
+        .expect("settlement contract not deployed on mainnet?");
+
+    let flash_loan_router = contracts::FlashLoanRouter::deployment_address(&chain_id)
+        .expect("FlashLoanRouter deployment address");
+    let hooks_trampoline = contracts::HooksTrampoline::deployment_address(&chain_id)
+        .expect("HooksTrampoline deployment address");
+
+    let balance_overrider = Arc::new(balance_overrides::BalanceOverrides::new(web3));
+    let block_stream = ethrpc::block_stream::mock_single_block(Default::default());
+
+    let simulator = SettlementSimulator::new(
+        settlement,
+        flash_loan_router,
+        hooks_trampoline,
+        sell_token_a_wbtc,
+        30_000_000u64,
+        balance_overrider,
+        block_stream,
+        None,
+    )
+    .await
+    .expect("failed to create SettlementSimulator");
+
+    let signature_bytes = hex::decode(NATURALLY_FAILING_SIGNATURE_HEX.trim_start_matches("0x"))
+        .expect("NATURALLY_FAILING_SIGNATURE_HEX must be valid hex");
+    let app_data_hash = AppDataHash(hash_full_app_data(full_app_data.as_bytes()));
+
+    let order_data = OrderData {
+        sell_token: sell_token_a_wbtc,
+        buy_token: buy_token_usdt,
+        receiver: Some(order_owner),
+        sell_amount,
+        buy_amount,
+        valid_to,
+        app_data: app_data_hash,
+        fee_amount: U256::ZERO,
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        sell_token_balance: SellTokenSource::Erc20,
+        buy_token_balance: BuyTokenDestination::Erc20,
+    };
+
+    simulator
+        .new_simulation_builder()
+        .with_orders([simulation_builder::Order::new(order_data)
+            .with_signature(order_owner, Signature::Eip1271(signature_bytes))
+            .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
+        .parameters_from_app_data(full_app_data)
+        .expect("parameters_from_app_data should parse the app data")
+        .from_solver(Solver::Fake(None))
+        .provide_sufficient_buy_tokens()
+        .at_block(Block::Number(fork_block_mainnet))
+        .build()
+        .await
+        .expect("failed to build simulation")
+}
