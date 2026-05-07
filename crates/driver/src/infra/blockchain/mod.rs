@@ -226,7 +226,7 @@ impl Ethereum {
             .web3
             .provider
             .estimate_gas(tx)
-            .pending()
+            .latest()
             .await
             .map_err(Error::Rpc)?
             .into();
