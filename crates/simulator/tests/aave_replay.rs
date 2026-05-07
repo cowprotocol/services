@@ -58,42 +58,23 @@ const APP_DATA: &str = r#"{
     "version": "1.14.0"
 }"#;
 
-/// Returns `app_data` minified with object keys sorted alphabetically.
-///
-/// The sort comes from `serde_json::Value::Object`'s `BTreeMap` backing, which
-/// applies whenever the `preserve_order` feature is not enabled (it isn't in
-/// this workspace). The signed production payload happens to already be
-/// alphabetically keyed at every level, so the output matches it byte for
-/// byte.
+/// Minifies `app_data` with keys sorted alphabetically.
 fn canonicalise_app_data(app_data: &str) -> String {
     let value: serde_json::Value =
         serde_json::from_str(app_data).expect("APP_DATA must be valid JSON");
     serde_json::to_string(&value).expect("re-serialising must succeed")
 }
 
-/// Production EIP-1271 signature blob for the replayed order. The trader's
-/// signer contract decodes it and validates against the order hash.
+/// Production EIP-1271 signature blob for the replayed order.
 const SIGNATURE_HEX: &str = "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000040d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f000000000000000000000000e58acb86761699c1cbc665e6b7e0271503f6336c0000000000000000000000000000000000000000000000003e14904047a25ee600000000000000000000000000000000000000000000021e4382edd5a86c00000000000000000000000000000000000000000000000000000000000069f323f8a1435054976e030f531f620f051bbabe34ef387901808b8677cf7c9304c21f3c00000000000000000000000000000000000000000000000000000000000000006ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc00000000000000000000000000000000000000000000000000000000000000005a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc95a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc900000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000041bb5488854dd5149f8843514851b7e25499917ca742af77061d2355681f3b608157bb34a59f9632e2228ea869c6d571f822295ee2eb03904dd8dd874245478f3b1b00000000000000000000000000000000000000000000000000000000000000";
 
-/// Replay of a real Aave v3 debt-swap order against a historical mainnet
-/// block, exercising the prototype's `SettlementSimulator`-based simulation
-/// path end-to-end without involving the orderbook's wall-clock validity
-/// check.
-///
-/// Why this test exists:
-///
-/// - A full `OrderValidator::validate_and_construct_order` flow uses
-///   `SystemTime::now()` to bound `valid_to`, which makes any historical order
-///   replay non-deterministic (the test rots as the order expires).
-/// - The prototype's value lives in the simulation, not the validity check, so
-///   we exercise the simulation directly: build a `SettlementSimulator` against
-///   a real RPC, pin the simulation to the block right before settlement, and
-///   assert it does not revert.
-///
-/// Order replayed: an `aave-v3-interface-debt-swap` order
+/// AAVE v3 debt-swap order
 /// `0x7f5df255b55f5eba3034f74acb8e91a04aaf61a755b88c61ad7c61068856f3b2e58acb86761699c1cbc665e6b7e0271503f6336c69f323f8`,
-/// sell WETH, buy GHO. The owner is an EIP-1167 minimal proxy that the
-/// pre-hook deploys just-in-time.
+/// owner is an EIP-1167 minimal proxy the pre-hook deploys JIT.
+///
+/// We exercise `SettlementSimulator` directly instead of going through
+/// `OrderValidator::validate_and_construct_order`, which bounds `valid_to`
+/// by `SystemTime::now()` and would make this test rot.
 #[tokio::test]
 #[ignore]
 async fn aave_debt_swap_replay() {
@@ -147,14 +128,11 @@ async fn aave_debt_swap_replay_fails_when_flashloan_oversubscribed() {
     );
 }
 
-/// Builds a simulation pinned to the block right before the Aave debt-swap
-/// settlement. The caller controls `full_app_data` so the same wiring
-/// supports a positive replay (untouched) and a negative replay (tampered).
+/// Shared builder for the positive replay (`APP_DATA`) and the
+/// flashloan-tampered negative replay.
 async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallInputs {
-    // One block before the on-chain settlement transaction. At this block
-    // the helper-clone owner contract has no code yet (the pre-hook deploys
-    // it), the protocol-adapter factory is live, and Aave v3 has WETH
-    // liquidity.
+    // Pinned one block before the on-chain settlement: pre-hook hasn't
+    // yet deployed the owner contract, Aave has WETH liquidity.
     let fork_block_mainnet = 24_992_051u64;
     let order_owner = address!("e58aCB86761699c1cBC665e6b7E0271503f6336C");
     let sell_token_weth = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
