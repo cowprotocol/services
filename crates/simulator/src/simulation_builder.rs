@@ -199,8 +199,10 @@ impl SimulationBuilder {
     pub fn parameters_from_app_data(mut self, app_data: &str) -> Result<Self, BuildError> {
         let protocol = app_data::parse(app_data.as_bytes()).map_err(BuildError::AppDataParse)?;
 
-        self.pre_interactions = self.encode_hooks(&protocol.hooks.pre);
-        self.post_interactions = self.encode_hooks(&protocol.hooks.post);
+        self.pre_interactions
+            .extend(self.encode_hooks(&protocol.hooks.pre));
+        self.post_interactions
+            .extend(self.encode_hooks(&protocol.hooks.post));
 
         match (protocol.wrappers.is_empty(), protocol.flashloan) {
             (false, Some(_)) => return Err(BuildError::FlashloanWrappersIncompatible),
@@ -233,11 +235,11 @@ impl SimulationBuilder {
     /// Generates 1 interaction executing the given hooks via the trampoline
     /// contract since executing hooks directly from the settlement contract
     /// context would give them elevated privileges that put funds at risk.
-    fn encode_hooks(&self, hooks: &[app_data::Hook]) -> Vec<InteractionData> {
+    fn encode_hooks(&self, hooks: &[app_data::Hook]) -> Option<InteractionData> {
         if hooks.is_empty() {
-            return vec![];
+            return None;
         }
-        vec![InteractionData {
+        Some(InteractionData {
             target: self.simulator.0.hooks_trampoline,
             value: U256::ZERO,
             call_data: contracts::HooksTrampoline::HooksTrampoline::executeCall {
@@ -251,7 +253,7 @@ impl SimulationBuilder {
                     .collect(),
             }
             .abi_encode(),
-        }]
+        })
     }
 
     /// Instructs the builder to override the settlement contract's buy-token
