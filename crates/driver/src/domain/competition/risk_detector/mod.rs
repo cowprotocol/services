@@ -6,13 +6,13 @@
 //! was simply built with a buggy compiler which makes it incompatible
 //! with the settlement contract (see <https://github.com/cowprotocol/services/pull/781>).
 //!
-//! Additionally there are some heuristics to detect when an
+//! Additionally, there are some heuristics to detect when an
 //! order itself is somehow broken or causes issues and slipped through
 //! other detection mechanisms. One big error case is orders adjusting
 //! debt postions in lending protocols. While pre-checks might correctly
 //! detect that the EIP 1271 signature is valid the transfer of the token
 //! would fail because the user's debt position is not collateralized enough.
-//! In other words the bad order detection is a last fail safe in case
+//! In other words the bad order detection is a last fail-safe in case
 //! we were not able to predict issues with orders and pre-emptively
 //! filter them out of the auction.
 
@@ -55,9 +55,12 @@ pub enum Quality {
 }
 
 enum OrderQuality {
-    Supported,
-    Unsupported,
-    ShouldRequireSellTokenSimulation,
+    /// Order should be kept
+    Good,
+    /// Order should not be kept
+    Bad,
+    /// Order needs to be evaluated further
+    Indeterminate,
 }
 
 #[derive(Default)]
@@ -149,10 +152,10 @@ impl Detector {
             }
             // Determine whether to keep or drop order
             match self.order_quality(&order, now) {
-                OrderQuality::Supported | OrderQuality::ShouldRequireSellTokenSimulation => {
+                OrderQuality::Good | OrderQuality::Indeterminate => {
                     supported_orders.push(order);
                 }
-                OrderQuality::Unsupported => {
+                OrderQuality::Bad => {
                     removed_uids.insert(order.uid);
                 }
             }
@@ -170,7 +173,7 @@ impl Detector {
         detector: &dyn DetectorApi,
     ) -> Vec<Order> {
         let mut supported_orders = Vec::new();
-        let mut orders_requiring_simulation = Vec::new();
+        let mut token_quality_checks = FuturesUnordered::new();
 
         for order in orders {
             // Flashloans are disabled => drop order
@@ -180,30 +183,24 @@ impl Detector {
             }
             // Determine whether to keep, simulate or drop order
             match self.order_quality(&order, now) {
-                OrderQuality::Supported => {
+                OrderQuality::Good => {
                     supported_orders.push(order);
                 }
-                OrderQuality::Unsupported => {
+                OrderQuality::Bad => {
                     removed_uids.insert(order.uid);
                 }
-                OrderQuality::ShouldRequireSellTokenSimulation => {
-                    orders_requiring_simulation.push(order);
+                OrderQuality::Indeterminate => {
+                    // Add to quality checks to determine if supported or unsupported
+                    token_quality_checks.push(async move {
+                        let quality = detector.determine_sell_token_quality(&order, now).await;
+                        (order, quality)
+                    });
                 }
             }
         }
-
         // If no orders require simulation, return early
-        if orders_requiring_simulation.is_empty() {
+        if token_quality_checks.is_empty() {
             return supported_orders;
-        }
-
-        let mut token_quality_checks = FuturesUnordered::new();
-        for order in orders_requiring_simulation {
-            // Add to quality checks to determine if supported or unsupported
-            token_quality_checks.push(async move {
-                let quality = detector.determine_sell_token_quality(&order, now).await;
-                (order, quality)
-            });
         }
         // Wait for all quality checks to complete
         while let Some((order, quality)) = token_quality_checks.next().await {
@@ -225,21 +222,21 @@ impl Detector {
             .map(|metrics| metrics.get_quality(&order.uid, now))
             .is_some_and(|q| q == Quality::Unsupported)
         {
-            return OrderQuality::Unsupported;
+            return OrderQuality::Bad;
         }
         let sell = self.get_token_quality(order.sell.token, now);
         let buy = self.get_token_quality(order.buy.token, now);
         match (sell, buy) {
             // both tokens supported => keep order
-            (Quality::Supported, Quality::Supported) => OrderQuality::Supported,
+            (Quality::Supported, Quality::Supported) => OrderQuality::Good,
             // at least 1 token unsupported => drop order
-            (Quality::Unsupported, _) | (_, Quality::Unsupported) => OrderQuality::Unsupported,
+            (Quality::Unsupported, _) | (_, Quality::Unsupported) => OrderQuality::Bad,
             // sell token quality is unknown => should require simulation detector,
             // assume it is good if simulation detector is unavailable
-            (Quality::Unknown, _) => OrderQuality::ShouldRequireSellTokenSimulation,
+            (Quality::Unknown, _) => OrderQuality::Indeterminate,
             // buy token quality is unknown => keep order (because we can't
             // determine quality and assume it's good)
-            (_, Quality::Unknown) => OrderQuality::Supported,
+            (_, Quality::Unknown) => OrderQuality::Good,
         }
     }
 
