@@ -205,7 +205,10 @@ impl Ethereum {
         token::Erc20::new(self, address)
     }
 
-    /// Estimate gas used by a transaction.
+    /// Estimate gas used by a transaction with `eth_estimateGas` on the `latest`
+    /// block. We use the `latest` instead of `pending` to avoid false positive
+    /// reverts that happen when we re-check the tx on a later block after we
+    /// already submitted the tx to the mempool.
     pub async fn estimate_gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
         let tx = TransactionRequest::default()
             .from(tx.from)
@@ -223,7 +226,7 @@ impl Ethereum {
             .web3
             .provider
             .estimate_gas(tx)
-            .pending()
+            .latest()
             .await
             .map_err(Error::Rpc)?
             .into();
