@@ -151,17 +151,22 @@ async fn timed_simulation(
     timeout: Duration,
 ) -> SimulationOutcome {
     let _timer = OrderSimulationMetrics::get().simulation_time.start_timer();
-    match tokio::time::timeout(timeout, sim.simulate(order, full_app_data)).await {
-        Ok(Ok(())) => SimulationOutcome::Pass,
-        Ok(Err(OrderSimulationError::Reverted {
+    let Ok(simulation_result) =
+        tokio::time::timeout(timeout, sim.simulate(order, full_app_data)).await
+    else {
+        return SimulationOutcome::Infra(anyhow!("order simulation timeout"));
+    };
+
+    match simulation_result {
+        Ok(()) => SimulationOutcome::Pass,
+        Err(OrderSimulationError::Reverted {
             reason,
             tenderly_url,
-        })) => SimulationOutcome::Fail {
+        }) => SimulationOutcome::Fail {
             reason,
             tenderly_url,
         },
-        Ok(Err(OrderSimulationError::Infra(err))) => SimulationOutcome::Infra(err),
-        Err(_) => SimulationOutcome::Infra(anyhow!("order simulation timeout")),
+        Err(OrderSimulationError::Infra(err)) => SimulationOutcome::Infra(err),
     }
 }
 
