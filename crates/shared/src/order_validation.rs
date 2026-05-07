@@ -59,103 +59,55 @@ pub struct OrderSimulator {
     pub timeout: Duration,
 }
 
-#[derive(Debug)]
-enum SimulationOutcome {
-    Pass,
-    Reverted {
-        reason: String,
-        tenderly_url: Option<String>,
-    },
-    Infra(anyhow::Error),
-}
-
-/// Runs a simulation under the given timeout and folds the
-/// timeout / revert / infra cases into a single [`SimulationOutcome`].
+/// Runs the simulation under the configured timeout, folding the timeout
+/// case into [`OrderSimulationError::Infra`].
 async fn timed_simulation(
-    sim: &dyn OrderSimulating,
+    config: &OrderSimulator,
     order: &Order,
     full_app_data: String,
-    timeout: Duration,
-) -> SimulationOutcome {
-    let Ok(simulation_result) =
-        tokio::time::timeout(timeout, sim.simulate(order, full_app_data)).await
-    else {
-        return SimulationOutcome::Infra(anyhow!("order simulation timeout"));
-    };
-
-    match simulation_result {
-        Ok(()) => SimulationOutcome::Pass,
-        Err(OrderSimulationError::Reverted {
-            reason,
-            tenderly_url,
-        }) => SimulationOutcome::Reverted {
-            reason,
-            tenderly_url,
-        },
-        Err(OrderSimulationError::Infra(err)) => SimulationOutcome::Infra(err),
+) -> Result<(), OrderSimulationError> {
+    match tokio::time::timeout(
+        config.timeout,
+        config.simulator.simulate(order, full_app_data),
+    )
+    .await
+    {
+        Err(_) => Err(OrderSimulationError::Infra(anyhow!(
+            "order simulation timeout"
+        ))),
+        Ok(res) => res,
     }
 }
 
-/// Logs the simulation result alongside the signature-check outcome.
-/// Cases that disagree (sig pass + sim revert, sig fail + sim pass) are
-/// surfaced as warnings, infra errors are logged separately.
+/// Logs the simulation result alongside the signature outcome. Disagreements
+/// (signature pass + simulation revert, or vice versa) and infra errors are
+/// surfaced as warnings; agreement is silent.
 fn log_simulation_outcome(
     signature: &Result<u64, SignatureValidationError>,
-    simulation: &SimulationOutcome,
+    simulation: &Result<(), OrderSimulationError>,
     order_uid: OrderUid,
 ) {
     match (signature, simulation) {
         (
             Ok(_),
-            SimulationOutcome::Reverted {
+            Err(OrderSimulationError::Reverted {
                 reason,
                 tenderly_url,
-            },
+            }),
         ) => tracing::warn!(
             ?order_uid,
             ?reason,
             ?tenderly_url,
             "order simulation disagreement: signature passed, simulation reverted",
         ),
-        (Err(SignatureValidationError::Invalid), SimulationOutcome::Pass) => tracing::warn!(
+        (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
             ?order_uid,
             "order simulation disagreement: signature invalid, simulation passed",
         ),
-        (_, SimulationOutcome::Infra(err)) => {
+        (_, Err(OrderSimulationError::Infra(err))) => {
             tracing::warn!(?order_uid, ?err, "order simulation infra error")
         }
         _ => {}
-    }
-}
-
-async fn run_order_simulation_only(
-    config: &OrderSimulator,
-    preview_order: &Order,
-    full_app_data: String,
-) {
-    let outcome = timed_simulation(
-        config.simulator.as_ref(),
-        preview_order,
-        full_app_data,
-        config.timeout,
-    )
-    .await;
-    match &outcome {
-        SimulationOutcome::Reverted {
-            reason,
-            tenderly_url,
-        } => tracing::warn!(
-            order_uid = %preview_order.metadata.uid,
-            ?reason,
-            ?tenderly_url,
-            "order simulation reverted (signature check skipped)",
-        ),
-        SimulationOutcome::Infra(err) => tracing::warn!(
-            order_uid = %preview_order.metadata.uid,
-            ?err,
-            "order simulation infra error (signature check skipped)",
-        ),
-        SimulationOutcome::Pass => {}
     }
 }
 
@@ -524,7 +476,10 @@ impl OrderValidator {
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
             if let Some(config) = &self.order_simulator {
-                run_order_simulation_only(config, preview_order, full_app_data).await;
+                let simulation = timed_simulation(config, preview_order, full_app_data).await;
+                // No signature outcome to compare against, so synthesize a
+                // signature-pass: only simulation reverts and infra errors log.
+                log_simulation_outcome(&Ok(0), &simulation, preview_order.metadata.uid);
             }
             return Ok(0u64);
         }
@@ -557,22 +512,12 @@ impl OrderValidator {
 
         // Shadow mode: the simulation runs for observability only. Disagreements
         // are logged below and never affect the return value. The enforce-mode
-        // follow-up will consume `simulation_outcome` here to reject orders
-        // whose simulation reverts.
-        let simulation_fut = timed_simulation(
-            config.simulator.as_ref(),
-            preview_order,
-            full_app_data,
-            config.timeout,
-        );
+        // follow-up will consume `simulation` here to reject orders whose
+        // simulation reverts.
+        let simulation_fut = timed_simulation(config, preview_order, full_app_data);
+        let (signature_res, simulation) = tokio::join!(signature_fut, simulation_fut);
 
-        let (signature_res, simulation_outcome) = tokio::join!(signature_fut, simulation_fut);
-
-        log_simulation_outcome(
-            &signature_res,
-            &simulation_outcome,
-            preview_order.metadata.uid,
-        );
+        log_simulation_outcome(&signature_res, &simulation, preview_order.metadata.uid);
 
         signature_res.map_err(|err| match err {
             SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
