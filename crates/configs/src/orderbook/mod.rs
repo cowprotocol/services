@@ -20,6 +20,7 @@ use {
     std::{
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         path::Path,
+        time::Duration,
     },
 };
 
@@ -59,6 +60,14 @@ pub struct OrderSimulationConfig {
     /// URL.
     #[serde(default)]
     pub tenderly: Option<crate::simulator::TenderlyConfig>,
+
+    /// Per-call timeout for the order creation simulation.
+    #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
+    pub timeout: Duration,
+}
+
+fn default_simulation_timeout() -> Duration {
+    Duration::from_secs(2)
 }
 
 /// Top-level orderbook service configuration.
@@ -171,6 +180,16 @@ pub mod test_util {
         std::path::Path,
     };
 
+    impl TestDefault for OrderSimulationConfig {
+        fn test_default() -> Self {
+            Self {
+                gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
+                tenderly: None,
+                timeout: std::time::Duration::from_secs(2),
+            }
+        }
+    }
+
     impl Configuration {
         pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
             Ok(tokio::fs::write(path, toml::to_string_pretty(self)?).await?)
@@ -225,10 +244,7 @@ pub mod test_util {
                     ..TestDefault::test_default()
                 },
                 // Enable order simulation for testing
-                order_simulation: Some(OrderSimulationConfig {
-                    gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
-                    tenderly: None,
-                }),
+                order_simulation: Some(TestDefault::test_default()),
                 hide_competition_before_deadline: false,
             }
         }
@@ -437,5 +453,23 @@ mod tests {
             deserialized.hide_competition_before_deadline
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
+    }
+
+    #[test]
+    fn parses_order_simulation_defaults() {
+        let toml = r#"gas-limit = "16777216""#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.timeout, Duration::from_secs(2));
+        assert!(cfg.tenderly.is_none());
+    }
+
+    #[test]
+    fn parses_order_simulation_full() {
+        let toml = r#"
+            gas-limit = "16777216"
+            timeout = "5s"
+        "#;
+        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.timeout, Duration::from_secs(5));
     }
 }

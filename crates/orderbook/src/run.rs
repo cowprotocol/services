@@ -41,7 +41,7 @@ use {
     },
     shared::{
         order_quoting::{self, OrderQuoter},
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator},
+        order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -385,6 +385,49 @@ pub async fn run(config: Configuration) {
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
         .await
         .ok();
+
+    let order_simulator = match &config.order_simulation {
+        Some(sim_config) => {
+            let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
+                sim_config.tenderly.as_ref().map(|tenderly_config| {
+                    Arc::new(simulator::tenderly::TenderlyApi::new(
+                        tenderly_config,
+                        &http_factory,
+                        chain.id().to_string(),
+                    )) as _
+                });
+            Some(
+                simulator::simulation_builder::SettlementSimulator::new(
+                    settlement_contract.clone(),
+                    flashloan_router_address,
+                    hooks_trampoline_address,
+                    *native_token.address(),
+                    sim_config.gas_limit.saturating_to(),
+                    balance_overrider.clone(),
+                    current_block_stream.clone(),
+                    tenderly,
+                )
+                .await
+                .expect("failed to create SettlementSimulator"),
+            )
+        }
+        None => None,
+    };
+
+    let validator_simulator = config
+        .order_simulation
+        .as_ref()
+        .zip(order_simulator.clone())
+        .map(|(sim_config, settlement_simulator)| {
+            let simulator: Arc<dyn simulator::order_simulation::OrderSimulating> = Arc::new(
+                simulator::order_simulation::OrderSimulatorAdapter::new(settlement_simulator),
+            );
+            OrderSimulator {
+                simulator,
+                timeout: sim_config.timeout,
+            }
+        });
+
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -399,6 +442,7 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
+        validator_simulator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         code_fetcher,
@@ -420,33 +464,6 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
-
-    let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Arc::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(
-            simulator::simulation_builder::SettlementSimulator::new(
-                settlement_contract.clone(),
-                flashloan_router_address,
-                hooks_trampoline_address,
-                *native_token.address(),
-                config.gas_limit.saturating_to(),
-                balance_overrider.clone(),
-                current_block_stream.clone(),
-                tenderly,
-            )
-            .await
-            .expect("failed to initialize SettlementSimulator"),
-        )
-    } else {
-        None
-    };
 
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,

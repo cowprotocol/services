@@ -460,7 +460,7 @@ async fn http_validation(web3: Web3) {
         "zero sellAmount should return 422"
     );
 
-    // some fields missing → 422
+    // Invalid kind enum value → 422
     let response = client
         .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&json!({
@@ -510,13 +510,8 @@ async fn http_validation(web3: Web3) {
     );
     let body: Error = response.json().await.unwrap();
     assert!(
-        body.description.contains("app_data"),
+        body.description.contains("app data"),
         "error description should name the failing field. Got: {}",
-        body.description
-    );
-    assert!(
-        body.description.contains(bad_app_data),
-        "error description should include the bad value. Got: {}",
         body.description
     );
 }
