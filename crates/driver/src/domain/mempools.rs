@@ -113,6 +113,14 @@ impl Mempools {
         Err(err)
     }
 
+    /// True when the settlement may revert, the configured set has at least one
+    /// revert-protected mempool, and this mempool is not one of them.
+    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
+        settlement.may_revert()
+            && matches!(self.revert_protection(), RevertProtection::Enabled)
+            && mempool.reverts_can_get_mined()
+    }
+
     /// Defines if the mempools are configured in a way that guarantees that
     /// settled solution will not revert.
     pub fn revert_protection(&self) -> RevertProtection {
@@ -133,14 +141,10 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
-        // Don't submit risky transactions if revert protection is
-        // enabled and the settlement may revert in this mempool.
-        if settlement.may_revert()
-            && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.reverts_can_get_mined()
-        {
-            return Err(Error::Disabled);
-        }
+        debug_assert!(
+            !self.is_disabled(mempool, settlement),
+            "submit called for disabled mempool; execute should filter these out",
+        );
 
         let tx = settlement.transaction(settlement::Internalization::Enable);
         let tx = prepare_submission(tx, mode);
