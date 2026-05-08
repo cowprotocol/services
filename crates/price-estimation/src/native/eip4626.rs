@@ -259,8 +259,10 @@ mod tests {
     }
 
     /// Tests two (related) things:
-    /// * Cached tokens bypass the EIP-4626 provider calls — i.e. calling decimals, assets, etc
-    /// * That the BUY_ETH_ADDRESS is cached by default (and the previous applies to it)
+    /// * Cached tokens bypass the EIP-4626 provider calls — i.e. calling
+    ///   decimals, assets, etc
+    /// * That the BUY_ETH_ADDRESS is cached by default (and the previous
+    ///   applies to it)
     #[tokio::test]
     async fn buy_eth_address_bypasses_eth_calls() {
         let mut inner = MockNativePriceEstimating::new();
