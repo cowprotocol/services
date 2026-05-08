@@ -57,19 +57,19 @@ impl Mempools {
         }
     }
 
-    /// Race all configured mempools concurrently. Return the first success,
-    /// dropping pending submission futures. If every mempool fails, return one
-    /// of the failure errors.
+    /// Race the enabled mempools concurrently; first success wins. Pending
+    /// submission futures are dropped at that point and every other mempool is
+    /// recorded as `Superseded`. If every mempool fails, return one of the
+    /// failure errors.
     pub async fn execute(
         &self,
         settlement: &Settlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        // Race all mempools; first success wins. Pending submission futures are dropped
-        // at that point and every other mempool is recorded as `Superseded`.
-        let mut futures: FuturesUnordered<_> = self
-            .mempools
+        let enabled = self.skip_and_observe_disabled_mempools(settlement)?;
+
+        let mut futures: FuturesUnordered<_> = enabled
             .iter()
             .enumerate()
             .map(|(idx, mempool)| async move {
@@ -81,16 +81,16 @@ impl Mempools {
             })
             .collect();
 
-        let mut errors = Vec::with_capacity(self.mempools.len());
+        let mut errors = Vec::with_capacity(enabled.len());
         while let Some((idx, mempool, result)) = futures.next().await {
             match result {
                 Ok(submission) => {
                     let winner = mempool;
                     observe::mempool_succeeded(winner, settlement, &submission);
-                    self.mempools
+                    enabled
                         .iter()
                         .enumerate()
-                        .filter(|(i, _)| *i != idx)
+                        .filter(|(i, _)| *i != idx) // skip winner mempool
                         .for_each(|(_, other)| {
                             observe::mempool_superseded(other, winner, settlement);
                         });
@@ -111,6 +111,34 @@ impl Mempools {
             )));
         };
         Err(err)
+    }
+
+    /// Returns the subset of configured mempools that are eligible for
+    /// submission in this settlement. Returns `Error::Disabled` when none
+    /// qualify.
+    ///
+    /// Disabled mempools are filtered out before the race, not inside it, so
+    /// they don't get scored as Superseded when another mempool wins. That
+    /// would artificially inflate the success rate of metrics that exclude
+    /// Disabled from the failure count.
+    fn skip_and_observe_disabled_mempools(
+        &self,
+        settlement: &Settlement,
+    ) -> Result<Vec<&infra::Mempool>, Error> {
+        let (enabled, disabled): (Vec<_>, Vec<_>) = self
+            .mempools
+            .iter()
+            .partition(|mempool| !self.is_disabled(mempool, settlement));
+
+        for mempool in &disabled {
+            observe::mempool_failed(mempool, settlement, &Error::Disabled);
+        }
+
+        if enabled.is_empty() {
+            return Err(Error::Disabled);
+        }
+
+        Ok(enabled)
     }
 
     /// True when the settlement may revert, the configured set has at least one
