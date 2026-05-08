@@ -795,7 +795,6 @@ impl Persistence {
         .await?;
 
         if let Some(settlement) = settlement {
-            // Use optimized single-pass calculation
             let domain::settlement::SettlementMetrics {
                 gas,
                 gas_price,

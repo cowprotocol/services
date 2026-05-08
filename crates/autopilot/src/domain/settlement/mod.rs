@@ -29,13 +29,14 @@ pub use {
     transaction::Transaction,
 };
 
-/// Combined settlement metrics computed in a single pass for efficiency.
+/// Summary of settlement metrics — used gas, gas price, surplus, fee, etc.
 #[derive(Debug)]
 pub(crate) struct SettlementMetrics<'a> {
     pub(crate) gas: eth::Gas,
     pub(crate) gas_price: eth::EffectiveGasPrice,
     pub(crate) surplus: eth::Ether,
     pub(crate) fee: eth::Ether,
+    /// Map between order and the respective fees.
     pub(crate) fee_breakdown: HashMap<domain::OrderUid, trade::FeeBreakdown>,
     pub(crate) jit_orders: Vec<&'a trade::Jit>,
 }
