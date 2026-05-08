@@ -22,7 +22,7 @@ use {
         infra::solver,
         util::http,
     },
-    eth_domain_types::{self as eth, BlockNo, Gas},
+    eth_domain_types::{self as eth, Gas},
     ethrpc::block_stream::BlockInfo,
     num::Saturating,
     std::{
@@ -385,6 +385,18 @@ pub fn mempool_succeeded(
         .inc_by(blocks_passed.0);
 }
 
+/// Prometheus label for a mempool error. Shared by the per-mempool and
+/// per-attempt counters so they stay in sync.
+fn error_label(err: &mempools::Error) -> &'static str {
+    use mempools::Error::*;
+    match err {
+        Revert { .. } | SimulationRevert { .. } => "Revert",
+        Expired { .. } => "Expired",
+        Other(_) => "Other",
+        Disabled => "Disabled",
+    }
+}
+
 /// Observe a failed mempool transaction execution.
 pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools::Error) {
     use mempools::Error::*;
@@ -404,56 +416,26 @@ pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools
             );
         }
     }
-    let label = match err {
-        Revert { .. } | SimulationRevert { .. } => "Revert",
-        Expired { .. } => "Expired",
-        Other(_) => "Other",
-        Disabled => "Disabled",
-    };
+    let label = error_label(err);
     metrics::get()
         .mempool_submission
         .with_label_values(&[mempool.to_string().as_str(), label])
         .inc();
 
-    // For some of the errors we are interested in observing the exact block numbers
-    // passed since the first submission.
-    let (BlockNo(start), BlockNo(end)) = match err {
-        Revert {
-            submitted_at_block,
-            reverted_at_block: end,
-            ..
-        }
-        | SimulationRevert {
-            submitted_at_block,
-            reverted_at_block: end,
-        }
-        | Expired {
-            submitted_at_block,
-            submission_deadline: end,
-            ..
-        } => (submitted_at_block, end),
-        _ => return,
-    };
-    metrics::get()
-        .mempool_submission_results_blocks_passed
-        .with_label_values(&[mempool.to_string().as_str(), label])
-        .inc_by(end.saturating_sub(*start));
+    if let Some(blocks_passed) = err.blocks_passed() {
+        metrics::get()
+            .mempool_submission_results_blocks_passed
+            .with_label_values(&[mempool.to_string().as_str(), label])
+            .inc_by(blocks_passed);
+    }
 }
 
-/// A mempool's submission failed but another mempool succeeded for the
-/// same settlement. Recorded under a `Superseded` label so the per-mempool
-/// metric can be filtered when computing the overall settlement submission
-/// success rate.
-pub fn mempool_superseded(
-    mempool: &Mempool,
-    superseded_by: &Mempool,
-    settlement: &Settlement,
-    err: &mempools::Error,
-) {
+/// Record a mempool that lost the race. Tagged `Superseded` so the per-mempool
+/// metric separates lost races from failures.
+pub fn mempool_superseded(mempool: &Mempool, winner: &Mempool, settlement: &Settlement) {
     tracing::debug!(
-        ?err,
         %mempool,
-        %superseded_by,
+        %winner,
         ?settlement,
         "mempool submission superseded by another mempool",
     );

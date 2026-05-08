@@ -57,57 +57,60 @@ impl Mempools {
         }
     }
 
+    /// Race all configured mempools concurrently. Return the first success,
+    /// dropping pending submission futures. If every mempool fails, return one
+    /// of the failure errors.
     pub async fn execute(
         &self,
         settlement: &Settlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        // Errors from mempools that have already failed; will be observed once the
-        // overall outcome is known.
-        let mut shadowed_errors: Vec<(&infra::Mempool, Error)> =
-            Vec::with_capacity(self.mempools.len());
-
-        // Race all mempools; first success wins. Failures overtaken by a later success
-        // are recorded as `Superseded`.
+        // Race all mempools; first success wins. Pending submission futures are dropped
+        // at that point and every other mempool is recorded as `Superseded`.
         let mut futures: FuturesUnordered<_> = self
             .mempools
             .iter()
-            .map(|mempool| async move {
+            .enumerate()
+            .map(|(idx, mempool)| async move {
                 let result = self
                     .submit(mempool, settlement, submission_deadline, mode)
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
-                (mempool, result)
+                (idx, mempool, result)
             })
             .collect();
 
-        while let Some((mempool, result)) = futures.next().await {
+        let mut errors = Vec::with_capacity(self.mempools.len());
+        while let Some((idx, mempool, result)) = futures.next().await {
             match result {
                 Ok(submission) => {
-                    // First success wins: record this mempool as the winner and label any
-                    // already-failed mempools as `Superseded`. Remaining in-flight futures are
-                    // dropped here without awaiting. (their outcomes are never logged and emit no
-                    // metrics)
-                    observe::mempool_succeeded(mempool, settlement, &submission);
-                    for (shadowed_mempool, err) in &shadowed_errors {
-                        observe::mempool_superseded(shadowed_mempool, mempool, settlement, err);
-                    }
+                    let winner = mempool;
+                    observe::mempool_succeeded(winner, settlement, &submission);
+                    self.mempools
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != idx)
+                        .for_each(|(_, other)| {
+                            observe::mempool_superseded(other, winner, settlement);
+                        });
                     return Ok(submission.tx_hash);
                 }
-                Err(err) => shadowed_errors.push((mempool, err)),
+                Err(err) => errors.push((mempool, err)),
             }
         }
 
-        // All mempools failed: observe each with its real error label and return the
-        // last error as the overall failure.
-        for (mempool, err) in &shadowed_errors {
+        // All mempools failed: emit per-mempool failure observations and surface one of
+        // the errors.
+        for (mempool, err) in &errors {
             observe::mempool_failed(mempool, settlement, err);
         }
-        let (_last_mempool, last_err) = shadowed_errors
-            .pop()
-            .expect("Mempools::try_new guarantees a non-empty mempool list");
-        Err(last_err)
+        let Some((_, err)) = errors.pop() else {
+            return Err(Error::Other(anyhow::anyhow!(
+                "race_mempools reached all-failed path with no errors recorded"
+            )));
+        };
+        Err(err)
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -519,4 +522,29 @@ pub enum Error {
     Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
+}
+
+impl Error {
+    /// Block delta from submission to the terminal event, when the error
+    /// carries block-level timing.
+    pub fn blocks_passed(&self) -> Option<u64> {
+        let (start, end) = match self {
+            Self::Revert {
+                submitted_at_block,
+                reverted_at_block,
+                ..
+            }
+            | Self::SimulationRevert {
+                submitted_at_block,
+                reverted_at_block,
+            } => (*submitted_at_block, *reverted_at_block),
+            Self::Expired {
+                submitted_at_block,
+                submission_deadline,
+                ..
+            } => (*submitted_at_block, *submission_deadline),
+            Self::Disabled | Self::Other(_) => return None,
+        };
+        Some(end.saturating_sub(start).0)
+    }
 }
