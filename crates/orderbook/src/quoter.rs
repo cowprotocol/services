@@ -232,17 +232,19 @@ fn get_vol_fee_adjusted_quote_data(
     // BPS)
     let scaled_factor = U256::from(factor.to_high_precision());
     let scale = U512::from(FeeFactor::HIGH_PRECISION_SCALE);
+    if scale.is_zero() {
+        return Err(anyhow::anyhow!("volume fee calculation division by zero"));
+    }
+    // Round protocol fee UP to be pessimistic: never undercharge users on the
+    // fee, mirroring the `ceil` rounding used for the network fee in
+    // `crates/shared/src/fee.rs`. For SELL this means a slightly smaller
+    // adjusted buy_amount; for BUY a slightly larger adjusted sell_amount.
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
         OrderQuoteSide::Sell { .. } => {
             // For SELL orders, fee is calculated on buy amount
-            let protocol_fee = U256::uint_try_from(
-                quote
-                    .buy_amount
-                    .widening_mul(scaled_factor)
-                    .checked_div(scale)
-                    .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
-            )
-            .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
+            let numerator = quote.buy_amount.widening_mul(scaled_factor);
+            let protocol_fee = U256::uint_try_from(numerator.div_ceil(scale))
+                .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
             // Reduce buy amount by protocol fee
             let adjusted_buy = quote.buy_amount.saturating_sub(protocol_fee);
@@ -253,13 +255,9 @@ fn get_vol_fee_adjusted_quote_data(
             // For BUY orders, fee is calculated on sell amount + network fee.
             // Network fee is already in sell token, so it is added to get the total volume.
             let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
-            let volume_scaled: Uint<512, 8> = total_sell_volume.widening_mul(scaled_factor);
-            let protocol_fee = U256::uint_try_from(
-                volume_scaled
-                    .checked_div(scale)
-                    .ok_or_else(|| anyhow::anyhow!("volume fee calculation division by zero"))?,
-            )
-            .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
+            let numerator: Uint<512, 8> = total_sell_volume.widening_mul(scaled_factor);
+            let protocol_fee = U256::uint_try_from(numerator.div_ceil(scale))
+                .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
             // Increase sell amount by protocol fee
             let adjusted_sell = quote.sell_amount.saturating_add(protocol_fee);
@@ -570,6 +568,73 @@ mod tests {
         assert_eq!(result.sell_amount, 100u64.eth());
         assert_eq!(result.buy_amount, 100u64.eth());
         assert_eq!(result.protocol_fee_bps, None);
+    }
+
+    #[test]
+    fn test_volume_fee_rounds_up_sell_order() {
+        // Pick amounts so the protocol fee has a non-zero remainder and we can
+        // observe the ceiling. factor 0.0001 -> high_precision = 100, scale =
+        // 1_000_000, so fee = buy_amount * 100 / 1_000_000 = buy_amount / 10_000.
+        // Use buy_amount = 12345 so 12345 / 10000 = 1.2345 -> ceil = 2.
+        let volume_fee = FeeFactor::try_from(0.0001).unwrap();
+        let volume_fee_config = VolumeFeeConfig {
+            factor: Some(volume_fee),
+            effective_from_timestamp: None,
+        };
+        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+
+        let quote = create_test_quote(U256::from(100u64), U256::from(12345u64));
+        let side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: number::nonzero::NonZeroU256::try_from(U256::from(100u64)).unwrap(),
+            },
+        };
+
+        let result = get_vol_fee_adjusted_quote_data(
+            &quote,
+            &side,
+            Some(&volume_fee_config),
+            &volume_fee_policy,
+            TEST_BUY_TOKEN,
+            TEST_SELL_TOKEN,
+        )
+        .unwrap();
+
+        // Fee rounds up from 1.2345 to 2.
+        assert_eq!(result.sell_amount, U256::from(100u64));
+        assert_eq!(result.buy_amount, U256::from(12345u64 - 2));
+    }
+
+    #[test]
+    fn test_volume_fee_rounds_up_buy_order() {
+        // factor 0.0001 -> fee = (sell + network_fee) / 10_000.
+        // sell = 12345, network fee = 0 -> 12345/10000 = 1.2345 -> ceil = 2.
+        let volume_fee = FeeFactor::try_from(0.0001).unwrap();
+        let volume_fee_config = VolumeFeeConfig {
+            factor: Some(volume_fee),
+            effective_from_timestamp: None,
+        };
+        let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
+
+        let quote = create_test_quote(U256::from(12345u64), U256::from(100u64));
+        let side = OrderQuoteSide::Buy {
+            buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(U256::from(100u64))
+                .unwrap(),
+        };
+
+        let result = get_vol_fee_adjusted_quote_data(
+            &quote,
+            &side,
+            Some(&volume_fee_config),
+            &volume_fee_policy,
+            TEST_BUY_TOKEN,
+            TEST_SELL_TOKEN,
+        )
+        .unwrap();
+
+        // Fee rounds up from 1.2345 to 2.
+        assert_eq!(result.sell_amount, U256::from(12345u64 + 2));
+        assert_eq!(result.buy_amount, U256::from(100u64));
     }
 
     #[test]
