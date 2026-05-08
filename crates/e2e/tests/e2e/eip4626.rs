@@ -12,7 +12,10 @@ use {
     e2e::setup::*,
     ethrpc::alloy::CallBuilderExt,
     futures::{FutureExt, future::BoxFuture},
-    model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+    model::{
+        order::BUY_ETH_ADDRESS,
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+    },
     number::units::EthUnit,
     price_estimation::{
         HEALTHY_PRICE_ESTIMATION_TIME,
@@ -20,6 +23,7 @@ use {
     },
     shared::web3::Web3,
     std::time::Duration,
+    testlib::tokens::GNO,
 };
 
 /// The block number from which we will fetch state for the forked test.
@@ -265,11 +269,14 @@ async fn eip4626_empty_revert_terminal_token_test(web3: Web3) {
     let expected_price = 0.0001;
     let inner = FixedPrice(expected_price);
     let estimator = Eip4626::new(Box::new(inner), web3.provider);
-    let price = estimator
-        .estimate_native_price(USDC, HEALTHY_PRICE_ESTIMATION_TIME)
-        .await
-        .expect("empty-revert on terminal token must not abort the unwrap");
-    assert_eq!(price, expected_price);
+
+    for token in [BUY_ETH_ADDRESS, USDC, GNO] {
+        let price = estimator
+            .estimate_native_price(token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await
+            .expect("empty-revert on terminal token must not abort the unwrap");
+        assert_eq!(price, expected_price);
+    }
 }
 
 struct FixedPrice(f64);

@@ -38,6 +38,8 @@ impl Eip4626 {
         Self {
             inner,
             provider,
+            // BUY_ETH_ADDRESS is not ERC-20, but it is a valid estimation address
+            // so we need to make sure it bypasses the EIP-4626 estimator
             non_vault_tokens: DashSet::from_iter([BUY_ETH_ADDRESS]),
         }
     }
@@ -225,6 +227,8 @@ mod tests {
     use {
         super::*,
         crate::{HEALTHY_PRICE_ESTIMATION_TIME, native::MockNativePriceEstimating},
+        alloy::providers::mock::Asserter,
+        std::borrow::Cow,
     };
 
     #[test]
@@ -252,6 +256,39 @@ mod tests {
         let assets = U256::from(2u64) * U256::from(10u64).pow(U256::from(18u64));
         let rate = conversion_rate(assets, 18).unwrap();
         assert!((rate - 2.0).abs() < 1e-9, "rate={rate}");
+    }
+
+    /// Tests two (related) things:
+    /// * Cached tokens bypass the EIP-4626 provider calls — i.e. calling decimals, assets, etc
+    /// * That the BUY_ETH_ADDRESS is cached by default (and the previous applies to it)
+    #[tokio::test]
+    async fn buy_eth_address_bypasses_eth_calls() {
+        let mut inner = MockNativePriceEstimating::new();
+        let token = BUY_ETH_ADDRESS;
+        let expected_price = 1.5;
+        inner
+            .expect_estimate_native_price()
+            .withf(move |t, _| *t == token)
+            .returning(move |_, _| Box::pin(async move { Ok(expected_price) }));
+
+        let asserter = Asserter::new();
+        asserter.push_failure_msg(Cow::from("calls are not being bypassed"));
+        let web3 = ethrpc::Web3::with_asserter(asserter);
+
+        let estimator = Eip4626::new(Box::new(inner), web3.provider);
+
+        let result = estimator
+            .estimate(token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(result.unwrap(), expected_price);
+
+        let result = estimator
+            .estimate(Address::random(), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert!(
+            matches!(result, Err(PriceEstimationError::EstimatorInternal(_))),
+            "{result:?}"
+        );
     }
 
     #[tokio::test]
