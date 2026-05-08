@@ -7,6 +7,7 @@ use {
     dashmap::DashSet,
     ethrpc::{AlloyProvider, alloy::errors::ContractErrorExt},
     futures::{FutureExt, future::BoxFuture},
+    model::order::BUY_ETH_ADDRESS,
     num::{BigInt, BigRational, ToPrimitive},
     number::conversions::u256_to_big_rational,
     std::time::{Duration, Instant},
@@ -37,7 +38,7 @@ impl Eip4626 {
         Self {
             inner,
             provider,
-            non_vault_tokens: DashSet::new(),
+            non_vault_tokens: DashSet::from_iter([BUY_ETH_ADDRESS]),
         }
     }
 
