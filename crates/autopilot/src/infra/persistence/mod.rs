@@ -796,14 +796,14 @@ impl Persistence {
 
         if let Some(settlement) = settlement {
             // Use optimized single-pass calculation
-            let summary = settlement.summarize();
-            let gas = summary.gas;
-            let gas_price = summary.gas_price;
-            let surplus = summary.surplus;
-            let fee = summary.fee;
-            let fee_breakdown = summary.fee_breakdown;
-            let jit_orders = summary.jit_orders;
-
+            let domain::settlement::SettlementMetrics {
+                gas,
+                gas_price,
+                surplus,
+                fee,
+                fee_breakdown,
+                jit_orders,
+            } = settlement.summarize();
             let solver: database::Address = ByteArray(settlement.solver().0.0);
 
             tracing::debug!(
