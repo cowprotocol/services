@@ -91,6 +91,7 @@ struct Inner {
     current_block: CurrentBlockWatcher,
     balance_simulator: BalanceSimulator,
     balance_overrider: Arc<dyn BalanceOverriding>,
+    tx_gas_limit: eth::Gas,
 }
 
 impl Ethereum {
@@ -105,6 +106,7 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         current_block_args: &shared::current_block::Arguments,
+        tx_gas_limit: eth::Gas,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
         let current_block_stream = current_block_args
@@ -132,6 +134,7 @@ impl Ethereum {
                 gas,
                 balance_simulator,
                 balance_overrider,
+                tx_gas_limit,
             }),
             web3,
         }
@@ -188,6 +191,12 @@ impl Ethereum {
 
     pub fn block_gas_limit(&self) -> eth::Gas {
         self.inner.current_block.borrow().gas_limit.into()
+    }
+
+    /// Per-transaction gas limit configured for this driver. Operators set
+    /// this per chain (e.g. EIP-7825's 16,777,215 cap on Fusaka chains).
+    pub fn tx_gas_limit(&self) -> eth::Gas {
+        self.inner.tx_gas_limit
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.
