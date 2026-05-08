@@ -237,7 +237,7 @@ fn get_vol_fee_adjusted_quote_data(
     }
     // Round protocol fee UP to be pessimistic: never undercharge users on the
     // fee, mirroring the `ceil` rounding used for the network fee in
-    // `crates/shared/src/fee.rs`. For SELL this means a slightly smaller
+    // `FeeParameters::fee_with_additional_cost`. For SELL this means a slightly smaller
     // adjusted buy_amount; for BUY a slightly larger adjusted sell_amount.
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
         OrderQuoteSide::Sell { .. } => {
