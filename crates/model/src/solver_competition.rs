@@ -61,15 +61,14 @@ pub struct SolverSettlement {
 #[serde_as]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum Score {
-    /// The score is provided by the solver.
+    /// [DEPRECATED] Kept to not break the solver competition API.
     #[serde(rename = "score")]
     Solver(#[serde_as(as = "HexOrDecimalU256")] U256),
     /// The score is calculated by the protocol (and equal to the objective
     /// function).
     #[serde(rename = "scoreProtocol")]
     Protocol(#[serde_as(as = "HexOrDecimalU256")] U256),
-    /// The score is calculated by the protocol and success_probability provided
-    /// by solver is taken into account
+    /// [DEPRECATED] Kept to not break the solver competition API.
     #[serde(rename = "scoreProtocolWithSolverRisk")]
     ProtocolWithSolverRisk(#[serde_as(as = "HexOrDecimalU256")] U256),
     /// The score is calculated by the protocol, by applying a discount to the
@@ -151,7 +150,7 @@ mod tests {
                 {
                     "solver": "2",
                     "solverAddress": "0x2222222222222222222222222222222222222222",
-                    "score": "1",
+                    "scoreProtocol": "1",
                     "ranking": 1,
                     "clearingPrices": {
                         "0x2222222222222222222222222222222222222222": "8",
@@ -196,7 +195,7 @@ mod tests {
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
                     solver_address: Address::repeat_byte(0x22),
-                    score: Some(Score::Solver(U256::ONE)),
+                    score: Some(Score::Protocol(U256::ONE)),
                     ranking: 1,
                     clearing_prices: btreemap! {
                         Address::repeat_byte(0x22) => U256::from(8),
@@ -377,5 +376,21 @@ mod tests {
           "competitionSimulationBlock": 15173535
         });
         assert!(serde_json::from_value::<SolverCompetitionAPI>(competition).is_ok())
+    }
+
+    #[test]
+    fn score_protocol_round_trip() {
+        let score = Score::Protocol(U256::from(42));
+        let json = serde_json::to_value(&score).unwrap();
+        assert_eq!(json, serde_json::json!({"scoreProtocol": "42"}));
+        let deserialized: Score = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized, score);
+    }
+
+    #[test]
+    fn score_solver_legacy_deserialize() {
+        let json = serde_json::json!({"score": "100"});
+        let score: Score = serde_json::from_value(json).unwrap();
+        assert_eq!(score, Score::Solver(U256::from(100)));
     }
 }
