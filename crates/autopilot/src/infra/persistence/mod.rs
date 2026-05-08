@@ -795,12 +795,15 @@ impl Persistence {
         .await?;
 
         if let Some(settlement) = settlement {
-            let gas = settlement.gas();
-            let gas_price = settlement.gas_price();
-            let surplus = settlement.surplus_in_ether();
-            let fee = settlement.fee_in_ether();
-            let fee_breakdown = settlement.fee_breakdown();
-            let jit_orders = settlement.jit_orders();
+            // Use optimized single-pass calculation
+            let summary = settlement.summarize();
+            let gas = summary.gas;
+            let gas_price = summary.gas_price;
+            let surplus = summary.surplus;
+            let fee = summary.fee;
+            let fee_breakdown = summary.fee_breakdown;
+            let jit_orders = summary.jit_orders;
+
             let solver: database::Address = ByteArray(settlement.solver().0.0);
 
             tracing::debug!(
