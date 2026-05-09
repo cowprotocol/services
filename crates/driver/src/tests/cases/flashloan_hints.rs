@@ -12,7 +12,7 @@ use {
 };
 
 #[tokio::test]
-async fn flashloan_order_fails_when_flashloans_disabled() {
+async fn flashloan_order_quote_fails_when_flashloans_disabled() {
     let test = setup()
         .flashloans_enabled(false)
         .pool(ab_pool())
@@ -30,7 +30,7 @@ async fn flashloan_order_fails_when_flashloans_disabled() {
 }
 
 #[tokio::test]
-async fn flashloan_order_passes_when_flashloans_enabled() {
+async fn flashloan_order_quote_passes_when_flashloans_enabled() {
     let test = setup()
         .flashloans_enabled(true)
         .pool(ab_pool())
