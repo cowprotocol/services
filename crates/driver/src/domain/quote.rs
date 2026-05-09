@@ -4,7 +4,10 @@ use {
         boundary,
         domain::{
             self,
-            competition::{self, order},
+            competition::{
+                self,
+                order::{self, app_data::AppData},
+            },
             liquidity,
             time,
         },
@@ -118,6 +121,7 @@ pub struct Order {
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
+    pub app_data: AppData,
 }
 
 impl Order {
@@ -190,7 +194,7 @@ impl Order {
                 } else {
                     competition::order::Kind::Market
                 },
-                app_data: Default::default(),
+                app_data: self.app_data.clone(),
                 partial: competition::order::Partial::No,
                 pre_interactions: Default::default(),
                 post_interactions: Default::default(),

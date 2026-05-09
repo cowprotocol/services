@@ -12,6 +12,38 @@ use {
 };
 
 #[tokio::test]
+async fn flashloan_order_fails_when_flashloans_disabled() {
+    let test = setup()
+        .flashloans_enabled(false)
+        .pool(ab_pool())
+        .order(ab_order().app_data(flashloan_app_data()))
+        .quote()
+        .done()
+        .await;
+
+    // TODO: there should also be a structured error response for requests,
+    // e.g test.quote().await.err()
+    let response = test.quote().await;
+    assert_ne!(response.status(), axum::http::StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(response.body()).unwrap();
+    assert_eq!(body["kind"], "QuotingFailed");
+}
+
+#[tokio::test]
+async fn flashloan_order_passes_when_flashloans_enabled() {
+    let test = setup()
+        .flashloans_enabled(true)
+        .pool(ab_pool())
+        .order(ab_order().app_data(flashloan_app_data()))
+        .solution(ab_solution())
+        .quote()
+        .done()
+        .await;
+
+    test.quote().await.ok().amount().interactions();
+}
+
+#[tokio::test]
 #[ignore]
 async fn solutions_with_flashloan() {
     let flashloan = Flashloan {
@@ -19,7 +51,7 @@ async fn solutions_with_flashloan() {
         receiver: Address::from_slice(&[2; 20]),
         token: Address::from_slice(&[3; 20]),
         protocol_adapter: Address::from_slice(&[4; 20]),
-        amount: ::alloy::primitives::U256::from(3),
+        amount: alloy::primitives::U256::from(3),
     };
     let protocol_app_data = ProtocolAppData {
         flashloan: Some(flashloan.clone()),
@@ -56,7 +88,7 @@ async fn solutions_without_flashloan() {
         receiver: Address::from_slice(&[2; 20]),
         token: Address::from_slice(&[3; 20]),
         protocol_adapter: Address::from_slice(&[4; 20]),
-        amount: ::alloy::primitives::U256::from(3),
+        amount: alloy::primitives::U256::from(3),
     };
     let protocol_app_data = ProtocolAppData {
         flashloan: Some(flashloan.clone()),
@@ -96,7 +128,7 @@ async fn flashloan_order_filtered_when_flashloans_disabled() {
         receiver: Address::from_slice(&[2; 20]),
         token: Address::from_slice(&[3; 20]),
         protocol_adapter: Address::from_slice(&[4; 20]),
-        amount: ::alloy::primitives::U256::from(3),
+        amount: alloy::primitives::U256::from(3),
     };
     let protocol_app_data = ProtocolAppData {
         flashloan: Some(flashloan),
@@ -129,6 +161,20 @@ async fn flashloan_order_filtered_when_flashloans_disabled() {
     // "/solve request body does not match expectation" plus an orders-array
     // diff.
     test.solve().await.ok();
+}
+
+fn flashloan_app_data() -> AppData {
+    let protocol = ProtocolAppData {
+        flashloan: Some(Flashloan {
+            liquidity_provider: Address::from_slice(&[1; 20]),
+            receiver: Address::from_slice(&[2; 20]),
+            token: Address::from_slice(&[3; 20]),
+            protocol_adapter: Address::from_slice(&[4; 20]),
+            amount: alloy::primitives::U256::from(3),
+        }),
+        ..Default::default()
+    };
+    AppData::Full(Arc::new(protocol_app_data_into_validated(protocol)))
 }
 
 fn protocol_app_data_into_validated(protocol: ProtocolAppData) -> app_data::ValidatedAppData {
