@@ -76,8 +76,8 @@ pub fn from_domain(order: &domain::Order) -> Order {
             .cloned()
             .map(Into::into)
             .collect(),
-        sell_token_balance: order.sell_token_balance.clone().into(),
-        buy_token_balance: order.buy_token_balance.clone().into(),
+        sell_token_balance: order.sell_token_balance.into(),
+        buy_token_balance: order.buy_token_balance.into(),
         class: boundary::OrderClass::Limit,
         app_data: order.app_data.clone().into(),
         signature: order.signature.clone().into(),

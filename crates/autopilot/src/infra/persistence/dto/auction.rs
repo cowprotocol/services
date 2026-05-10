@@ -22,7 +22,11 @@ pub fn from_domain(auction: &domain::RawAuctionData) -> RawAuctionData {
             .iter()
             .map(|(key, value)| (**key, value.get().0))
             .collect(),
-        surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.clone(),
+        surplus_capturing_jit_order_owners: auction
+            .surplus_capturing_jit_order_owners
+            .iter()
+            .copied()
+            .collect(),
     }
 }
 
