@@ -302,9 +302,9 @@ impl RunLoop {
         Some(domain::Auction {
             id,
             block: auction.block,
-            orders: auction.orders,
-            prices: auction.prices,
-            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
+            orders: auction.orders.clone(),
+            prices: auction.prices.clone(),
+            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.clone(),
         })
     }
 
