@@ -291,7 +291,8 @@ impl RunLoop {
 
         // always update the auction because the tests use this as a readiness probe
         self.persistence.replace_current_auction_in_db(id, &auction);
-        self.persistence.upload_auction_to_s3(id, &auction);
+        self.persistence
+            .upload_auction_to_s3(id, Arc::clone(&auction));
 
         if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization

@@ -156,12 +156,12 @@ impl Persistence {
     pub fn replace_current_auction_in_db(
         &self,
         new_auction_id: domain::auction::Id,
-        new_auction_data: &Arc<domain::RawAuctionData>,
+        new_auction_data: &domain::RawAuctionData,
     ) {
         self.upload_queue
             .send(AuctionUpload {
                 auction_id: new_auction_id,
-                auction_data: dto::auction::from_domain(new_auction_data.as_ref().clone()),
+                auction_data: dto::auction::from_domain(new_auction_data),
             })
             .expect("upload queue should be alive at all times");
     }
@@ -170,7 +170,7 @@ impl Persistence {
     pub fn upload_auction_to_s3(
         &self,
         id: domain::auction::Id,
-        auction: &Arc<domain::RawAuctionData>,
+        auction: Arc<domain::RawAuctionData>,
     ) {
         if auction.orders.is_empty() {
             return;
@@ -178,9 +178,8 @@ impl Persistence {
         let Some(s3) = self.s3.clone() else {
             return;
         };
-        let auction = Arc::clone(auction);
         tokio::task::spawn(async move {
-            let auction_dto = dto::auction::from_domain(auction.as_ref().clone());
+            let auction_dto = dto::auction::from_domain(&auction);
             match s3.upload(id.to_string(), auction_dto).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
