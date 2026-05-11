@@ -85,14 +85,13 @@ impl Mempools {
         while let Some((idx, mempool, result)) = futures.next().await {
             match result {
                 Ok(submission) => {
-                    let winner = mempool;
-                    observe::mempool_succeeded(winner, settlement, &submission);
+                    observe::mempool_succeeded(mempool, settlement, &submission);
                     enabled
                         .iter()
                         .enumerate()
                         .filter(|(i, _)| *i != idx) // skip winner mempool
-                        .for_each(|(_, mempool)| {
-                            observe::mempool_superseded(other, winner, settlement);
+                        .for_each(|(_, superseeded)| {
+                            observe::mempool_superseded(superseeded, mempool, settlement);
                         });
                     return Ok(submission.tx_hash);
                 }
