@@ -388,20 +388,19 @@ pub fn mempool_succeeded(
 /// Prometheus label for a mempool error. Shared by the per-mempool and
 /// per-attempt counters so they stay in sync.
 fn error_label(err: &mempools::Error) -> &'static str {
-    use mempools::Error::*;
+    use mempools::Error;
     match err {
-        Revert { .. } | SimulationRevert { .. } => "Revert",
-        Expired { .. } => "Expired",
-        Other(_) => "Other",
-        Disabled => "Disabled",
+        Error::Revert { .. } | Error::SimulationRevert { .. } => "Revert",
+        Error::Expired { .. } => "Expired",
+        Error::Other(_) => "Other",
+        Error::Disabled => "Disabled",
     }
 }
 
 /// Observe a failed mempool transaction execution.
 pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools::Error) {
-    use mempools::Error::*;
     match err {
-        Disabled => {
+        mempools::Error::Disabled => {
             tracing::debug!(
                 %mempool,
                 "sending transaction via mempool disabled",
