@@ -4,7 +4,7 @@ use {
         providers::Provider,
         rpc::types::state::StateOverride,
     },
-    balance_overrides::{BalanceOverrideRequest, BalanceOverrides, BalanceOverriding},
+    balance_overrides::{BalanceOverrideRequest, BalanceOverrides, StateOverriding},
     configs::{
         autopilot::Configuration,
         balance_overrides::Strategy,
@@ -621,7 +621,7 @@ async fn trace_based_balance_detection(web3: Web3) {
         };
 
         let override_result = balance_overrides
-            .state_override(BalanceOverrideRequest {
+            .balance_override(BalanceOverrideRequest {
                 token,
                 holder: test_account,
                 amount: test_balance,
@@ -724,7 +724,7 @@ async fn aave_atoken_quote_verification(web3: Web3) {
     let amount = 5u64.eth(); // 5 aEthWETH
 
     let (target, override_) = balance_overrides
-        .state_override(BalanceOverrideRequest {
+        .balance_override(BalanceOverrideRequest {
             token: a_eth_weth,
             holder: spardose,
             amount,

@@ -9,7 +9,7 @@ use {
     alloy_sol_types::SolCall,
     alloy_transport::RpcError,
     anyhow::{Context, Result},
-    balance_overrides::BalanceOverriding,
+    balance_overrides::StateOverriding,
     ethrpc::block_stream::CurrentBlockWatcher,
     model::{
         DomainSeparator,
@@ -33,7 +33,7 @@ pub(crate) struct Inner {
     pub(crate) hooks_trampoline: Address,
     pub(crate) native_token: Address,
     pub(crate) max_gas_limit: u64,
-    pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
+    pub(crate) balance_overrides: Arc<dyn StateOverriding>,
     pub(crate) provider: DynProvider,
     pub(crate) domain_separator: DomainSeparator,
     pub(crate) chain_id: u64,
@@ -49,7 +49,7 @@ impl SettlementSimulator {
         hooks_trampoline: Address,
         native_token: Address,
         max_gas_limit: u64,
-        balance_overrides: Arc<dyn BalanceOverriding>,
+        balance_overrides: Arc<dyn StateOverriding>,
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn tenderly::Api>>,
     ) -> Result<Self> {

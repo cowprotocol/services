@@ -19,7 +19,7 @@ use {
     },
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
-    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
+    balance_overrides::{BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     derive_more::Debug,
     model::{
@@ -542,7 +542,7 @@ async fn executed_amount(
 /// than aborting the whole build.
 async fn build_final_state_overrides(
     requests: Vec<AccountOverrideRequest>,
-    balance_overrides: &dyn BalanceOverriding,
+    balance_overrides: &dyn StateOverriding,
     authenticator: Address,
 ) -> StateOverride {
     let futures = requests.into_iter().map(|request| async move {
@@ -572,7 +572,7 @@ async fn build_final_state_overrides(
                 amount,
             } => {
                 let result = balance_overrides
-                    .state_override(BalanceOverrideRequest {
+                    .balance_override(BalanceOverrideRequest {
                         token,
                         holder,
                         amount,

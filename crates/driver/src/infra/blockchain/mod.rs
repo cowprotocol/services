@@ -8,7 +8,7 @@ use {
         rpc::types::{TransactionReceipt, TransactionRequest},
         transports::TransportErrorKind,
     },
-    balance_overrides::{BalanceOverrides, BalanceOverriding},
+    balance_overrides::{BalanceOverrides, StateOverriding},
     chain::Chain,
     eth_domain_types as eth,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
@@ -90,7 +90,7 @@ struct Inner {
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
     balance_simulator: BalanceSimulator,
-    balance_overrider: Arc<dyn BalanceOverriding>,
+    balance_overrider: Arc<dyn StateOverriding>,
     tx_gas_limit: eth::Gas,
 }
 
@@ -148,7 +148,7 @@ impl Ethereum {
         &self.inner.balance_simulator
     }
 
-    pub fn balance_overrider(&self) -> Arc<dyn BalanceOverriding> {
+    pub fn balance_overrider(&self) -> Arc<dyn StateOverriding> {
         Arc::clone(&self.inner.balance_overrider)
     }
 
