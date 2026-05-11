@@ -125,14 +125,18 @@ impl Mempools {
         &self,
         settlement: &Settlement,
     ) -> Result<Vec<&infra::Mempool>, Error> {
-        let (enabled, disabled): (Vec<_>, Vec<_>) = self
+        let enabled: Vec<_> = self
             .mempools
             .iter()
-            .partition(|mempool| !self.is_disabled(mempool, settlement));
-
-        for mempool in &disabled {
-            observe::mempool_failed(mempool, settlement, &Error::Disabled);
-        }
+            .filter(|mempool| {
+                if self.is_disabled(mempool, settlement) {
+                    observe::mempool_failed(mempool, settlement, &Error::Disabled);
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
 
         if enabled.is_empty() {
             return Err(Error::Disabled);
