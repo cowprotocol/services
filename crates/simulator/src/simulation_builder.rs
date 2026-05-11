@@ -53,7 +53,7 @@ impl SettlementSimulator {
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn tenderly::Api>>,
     ) -> Result<Self> {
-        let authenticator = Address(settlement.authenticator().call().await?.0);
+        let authenticator = settlement.authenticator().call().await?;
         let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
         let provider = settlement.provider().clone();
         let chain_id = provider.get_chain_id().await?;
@@ -409,8 +409,9 @@ pub enum ExecutionAmount {
     /// buy orders), ignoring any on-chain filled state.
     Full,
     /// Fill whatever is still remaining on-chain (queries the settlement
-    /// contract for the already-filled amount and subtracts it). Falls back to
-    /// the full amount if the query fails.
+    /// contract for the already-filled amount and subtracts it). Building the
+    /// simulation will throw an error if the RPC call to fetch the current fill
+    /// state fails.
     Remaining,
     /// Use an explicit fill amount.
     Explicit(U256),
@@ -433,8 +434,10 @@ pub enum PriceEncoding {
 /// A simulator-specific order that bundles the data needed to encode a trade.
 ///
 /// Construct with [`Order::new`] and add optional fields via the builder
-/// methods. Defaults to an EIP-1271 signature (pairs with [`FakeUser`] for
-/// simulations that need to bypass signature verification).
+/// methods. Defaults to the [`PreSign`] signing scheme as that is the easiest
+/// to fake during simulations. Note that [`SimulationBuilder::presign_orders`]
+/// needs to be called to generate the required state overrides to set the
+/// pre-signature.
 pub struct Order {
     pub(crate) data: OrderData,
     pub(crate) owner: Address,
@@ -448,7 +451,7 @@ impl Order {
         Self {
             data,
             owner: Address::ZERO,
-            signature: Signature::default_with(SigningScheme::Eip1271),
+            signature: Signature::default_with(SigningScheme::PreSign),
             executed_amount: ExecutionAmount::Remaining,
             price_encoding: PriceEncoding::LimitPrice,
         }
