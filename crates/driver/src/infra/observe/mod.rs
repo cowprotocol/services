@@ -360,6 +360,12 @@ pub fn solver_response(
         .observe(compute_time.as_secs_f64());
 }
 
+/// Label used for the `mempool_submission` metric when submission succeeds.
+const MEMPOOL_SUBMISSION_SUCCESS_LABEL: &str = "Success";
+/// Label used for the `mempool_submission` metric when a mempool loses the
+/// race to another mempool.
+const MEMPOOL_SUBMISSION_SUPERSEDED_LABEL: &str = "Superseded";
+
 /// Observe a successful mempool transaction execution.
 pub fn mempool_succeeded(
     mempool: &Mempool,
@@ -374,14 +380,20 @@ pub fn mempool_succeeded(
     );
     metrics::get()
         .mempool_submission
-        .with_label_values(&[mempool.to_string().as_str(), "Success"])
+        .with_label_values(&[
+            mempool.to_string().as_str(),
+            MEMPOOL_SUBMISSION_SUCCESS_LABEL,
+        ])
         .inc();
     let blocks_passed = submission
         .included_in_block
         .saturating_sub(submission.submitted_at_block);
     metrics::get()
         .mempool_submission_results_blocks_passed
-        .with_label_values(&[mempool.to_string().as_str(), "Success"])
+        .with_label_values(&[
+            mempool.to_string().as_str(),
+            MEMPOOL_SUBMISSION_SUCCESS_LABEL,
+        ])
         .inc_by(blocks_passed.0);
 }
 
@@ -427,7 +439,10 @@ pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement) {
     );
     metrics::get()
         .mempool_submission
-        .with_label_values(&[mempool.to_string().as_str(), "Disabled"])
+        .with_label_values(&[
+            mempool.to_string().as_str(),
+            mempools::Error::Disabled.metric_label(),
+        ])
         .inc();
 }
 
@@ -442,7 +457,10 @@ pub fn mempool_superseded(mempool: &Mempool, winner: &Mempool, settlement: &Sett
     );
     metrics::get()
         .mempool_submission
-        .with_label_values(&[mempool.to_string().as_str(), "Superseded"])
+        .with_label_values(&[
+            mempool.to_string().as_str(),
+            MEMPOOL_SUBMISSION_SUPERSEDED_LABEL,
+        ])
         .inc();
 }
 
