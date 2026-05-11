@@ -8,7 +8,7 @@ use {
         rpc::types::{TransactionReceipt, TransactionRequest},
         transports::TransportErrorKind,
     },
-    balance_overrides::{BalanceOverrides, StateOverriding},
+    balance_overrides::{StateOverrides, StateOverriding},
     chain::Chain,
     eth_domain_types as eth,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
@@ -117,7 +117,7 @@ impl Ethereum {
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
             .expect("could not initialize important smart contracts");
-        let state_overrider = Arc::new(BalanceOverrides::new(web3.clone()));
+        let state_overrider = Arc::new(StateOverrides::new(web3.clone()));
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
