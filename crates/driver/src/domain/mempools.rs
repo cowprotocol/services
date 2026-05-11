@@ -69,7 +69,7 @@ impl Mempools {
     ) -> Result<eth::TxId, Error> {
         let enabled = self.skip_and_observe_disabled_mempools(settlement)?;
 
-        let mut futures: FuturesUnordered<_> = enabled
+        let mut submission_futures: FuturesUnordered<_> = enabled
             .iter()
             .enumerate()
             .map(|(idx, mempool)| async move {
@@ -82,7 +82,7 @@ impl Mempools {
             .collect();
 
         let mut errors = Vec::with_capacity(enabled.len());
-        while let Some((idx, mempool, result)) = futures.next().await {
+        while let Some((idx, mempool, result)) = submission_futures.next().await {
             match result {
                 Ok(submission) => {
                     observe::mempool_succeeded(mempool, settlement, &submission);
