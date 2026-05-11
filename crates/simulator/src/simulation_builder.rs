@@ -531,6 +531,13 @@ pub enum AccountOverrideRequest {
         account: Address,
         state: AccountOverride,
     },
+    /// Sets the given Erc20 token approval.
+    Approval {
+        owner: Address,
+        token: Address,
+        spender: Address,
+        amount: U256,
+    },
     /// Pre-signs the given order such that the pre-sign signature check passes.
     PreSignature(OrderUid),
 }
