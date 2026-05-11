@@ -33,7 +33,6 @@ use {
     order_validation,
     price_estimation::{
         PriceEstimating,
-        QuoteVerificationMode,
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
@@ -347,8 +346,7 @@ pub async fn run(config: Configuration) {
         max_limit: config.order_validation.max_limit_order_validity_period,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
-                         verification: QuoteVerificationMode| {
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
         Arc::new(OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
@@ -368,18 +366,16 @@ pub async fn run(config: Configuration) {
                 )
                 .unwrap(),
             },
-            balance_fetcher.clone(),
-            verification,
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);
+    let optimal_quoter = create_quoter(price_estimator);
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
     // them.
-    let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
+    let fast_quoter = create_quoter(fast_price_estimator);
 
     let app_data_validator = Validator::new(config.app_data_size_limit);
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
