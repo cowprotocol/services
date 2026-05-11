@@ -67,12 +67,12 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let enabled = self.skip_and_observe_disabled_mempools(settlement)?;
+        let mut enabled = self.skip_and_observe_disabled_mempools(settlement)?;
 
         let mut submission_futures: FuturesUnordered<_> = enabled
             .iter()
             .enumerate()
-            .map(|(idx, mempool)| async move {
+            .map(|(idx, &mempool)| async move {
                 let result = self
                     .submit(mempool, settlement, submission_deadline, mode)
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
@@ -86,13 +86,13 @@ impl Mempools {
             match result {
                 Ok(submission) => {
                     observe::mempool_succeeded(mempool, settlement, &submission);
-                    enabled
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| *i != idx) // skip winner mempool
-                        .for_each(|(_, superseeded)| {
-                            observe::mempool_superseded(superseeded, mempool, settlement);
-                        });
+                    // SAFETY: `idx` comes from `enabled.iter().enumerate()` and `enabled` is
+                    // non-empty (checked in `skip_and_observe_disabled_mempools`), so `swap_remove`
+                    // cannot panic here.
+                    enabled.swap_remove(idx);
+                    for superseded in &enabled {
+                        observe::mempool_superseded(superseded, mempool, settlement);
+                    }
                     return Ok(submission.tx_hash);
                 }
                 Err(err) => errors.push((mempool, err)),
