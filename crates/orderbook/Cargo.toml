@@ -43,7 +43,6 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 model = { workspace = true }
-moka = { workspace = true, features = ["future"] }
 multibase = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }

@@ -1,32 +1,31 @@
 use {
     crate::app_data,
-    alloy::primitives::{Address, U256, U512, Uint, ruint::UintTryFrom},
+    alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
-    contracts::ERC20,
-    ethrpc::AlloyProvider,
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
-    moka::future::Cache,
     price_estimation::{Verification, trade_finding},
     shared::{
         arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
         order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
         order_validation::{
-            AppDataValidationError, OrderValidating, PartialValidationError, PreOrderData,
+            AppDataValidationError,
+            OrderValidating,
+            PartialValidationError,
+            PreOrderData,
         },
     },
     std::sync::Arc,
     thiserror::Error,
+    token_info::TokenInfoFetching,
     tokio::join,
     tracing::instrument,
 };
-
-const TOKEN_SYMBOL_CACHE_SIZE: u64 = 256;
 
 /// Adjusted quote amounts after applying volume fee.
 struct AdjustedQuoteData {
@@ -56,8 +55,7 @@ pub struct QuoteHandler {
     app_data: Arc<app_data::Registry>,
     volume_fee: Option<VolumeFeeConfig>,
     volume_fee_policy: VolumeFeePolicy,
-    token_name_cache: moka::future::Cache<Address, String>,
-    provider: AlloyProvider,
+    token_info_fetcher: Arc<dyn TokenInfoFetching>,
 }
 
 impl QuoteHandler {
@@ -68,7 +66,7 @@ impl QuoteHandler {
         volume_fee: Option<VolumeFeeConfig>,
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
-        provider: AlloyProvider,
+        token_info_fetcher: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         let volume_fee_policy = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
@@ -82,8 +80,7 @@ impl QuoteHandler {
             app_data,
             volume_fee,
             volume_fee_policy,
-            token_name_cache: Cache::new(TOKEN_SYMBOL_CACHE_SIZE),
-            provider,
+            token_info_fetcher,
         }
     }
 
@@ -94,30 +91,17 @@ impl QuoteHandler {
 }
 
 impl QuoteHandler {
-    async fn get_token_symbol(&self, token: &Address) -> Option<String> {
-        match self.token_name_cache.get(token).await {
-            Some(symbol) => Some(symbol),
-            None => {
-                let symbol = ERC20::ERC20::new(*token, &self.provider)
-                    .symbol()
-                    .call()
-                    .await
-                    .ok()?;
-                self.token_name_cache.insert(*token, symbol.clone()).await;
-                Some(symbol)
-            }
-        }
-    }
-
     #[instrument(skip_all, fields(buy_token = ?request.buy_token, sell_token = ?request.sell_token, price_quality = ?request.price_quality))]
     pub async fn calculate_quote(
         &self,
         request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
-        let (sell_token_symbol, buy_token_symbol) = join!(
-            self.get_token_symbol(&request.sell_token),
-            self.get_token_symbol(&request.buy_token),
+        let (sell_token_info, buy_token_info) = join!(
+            self.token_info_fetcher.get_token_info(request.sell_token),
+            self.token_info_fetcher.get_token_info(request.buy_token),
         );
+        let sell_token_symbol = sell_token_info.ok().and_then(|info| info.symbol);
+        let buy_token_symbol = buy_token_info.ok().and_then(|info| info.symbol);
         tracing::debug!(
             ?request,
             sell_token_symbol,
