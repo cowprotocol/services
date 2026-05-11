@@ -218,11 +218,13 @@ pub fn prepare_request(
     block: BlockNo,
 ) -> Result<dto::Request, Error> {
     Ok(dto::Request {
-        block_number: Some(block.0),
-        // By default, tenderly simulates on the top of the specified block, whereas regular
-        // nodes simulate at the end of the specified block. This is to make
-        // simulation results match in case critical state changed within the block.
-        transaction_index: Some(-1),
+        // By default, tenderly simulates the given transaction as if it happened somewhere in the
+        // given block number, while nodes simulate the transaction as if it happened at the very
+        // end of the given block. This could be achieved in tenderly with `transaction_index: -1`
+        // but this is extremely costly to simulate which is why we craft the request to simulate
+        // the tx on the very first index of the **next** block.
+        block_number: Some(block.0 + 1),
+        transaction_index: Some(0),
         network_id: chain_id,
         from: tx.from.unwrap_or_default(),
         to: tx.to.and_then(TxKind::into_to).unwrap_or_default(),
