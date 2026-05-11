@@ -193,7 +193,7 @@ pub async fn build_override(
 mod tests {
     use {
         super::*,
-        alloy_primitives::{address, hex},
+        alloy_primitives::{address, b256, hex},
         alloy_provider::mock::Asserter,
         alloy_sol_types::SolValue,
     };
@@ -249,6 +249,46 @@ mod tests {
             None => asserter.push_failure_msg("execution reverted"),
         }
         asserter
+    }
+
+    #[test]
+    fn ray_div_edge_cases() {
+        let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
+        assert_eq!(ray_div(U256::ZERO, index).unwrap(), U256::ZERO);
+        assert_eq!(
+            ray_div(U256::from(1_000_000_000_000_000_000u128), U256::ZERO),
+            None,
+        );
+    }
+
+    #[test]
+    fn pack_user_state_leaves_additional_data_intact() {
+        let balance = U256::from(0x1234_5678u64);
+        let extra = U256::from(0xabcd_ef01u64);
+        let packed = pack_user_state(balance, extra);
+        let word = U256::from_be_bytes(packed.0);
+
+        let mask = (U256::from(1u64) << 128) - U256::from(1u64);
+        assert_eq!(word & mask, balance);
+        assert_eq!(word >> 128, extra);
+    }
+
+    #[test]
+    fn pack_user_state_truncates_to_uint128() {
+        let overflow = (U256::from(1u64) << 128) + U256::from(7u64);
+        let packed = pack_user_state(overflow, U256::ZERO);
+        let word = U256::from_be_bytes(packed.0);
+        assert_eq!(word, U256::from(7u64));
+    }
+
+    #[test]
+    fn mapping_slot_hash_matches_solidity_layout() {
+        let holder = address!("18709E89BD403F470088aBDAcEbE86CC60dda12e");
+        let slot = mapping_slot_hash(&holder, &U256::from(52).to_be_bytes::<32>());
+        assert_eq!(
+            slot,
+            b256!("6785743a4ad9de6e692f819936c9d0b94b199ed36f2660e82404737b769718e5")
+        );
     }
 
     /// A contract that doesn't expose the aToken selectors — `balanceOf`
