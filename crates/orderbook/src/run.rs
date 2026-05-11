@@ -5,7 +5,6 @@ use {
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
-        order_simulator::OrderSimulator,
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
@@ -20,6 +19,7 @@ use {
     contracts::{
         BalancerV2Vault,
         ChainalysisOracle,
+        FlashLoanRouter,
         GPv2Settlement,
         HooksTrampoline,
         WETH9,
@@ -43,7 +43,6 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
     },
-    simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
@@ -171,6 +170,14 @@ pub async fn run(config: Configuration) {
             .await
             .expect("load hooks trampoline contract"),
     };
+    let hooks_trampoline_address = *hooks_contract.address();
+
+    let flashloan_router_address = config
+        .shared
+        .contracts
+        .flashloan_router
+        .or_else(|| FlashLoanRouter::deployment_address(&chain_id))
+        .expect("no flashloan router deployment for this chain");
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
@@ -248,6 +255,8 @@ pub async fn run(config: Configuration) {
                 .await
                 .expect("failed to query solver authenticator address"),
             block_stream: current_block_stream.clone(),
+            flash_loan_router: flashloan_router_address,
+            hooks_trampoline: hooks_trampoline_address,
         },
         factory::Components {
             http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
@@ -413,31 +422,28 @@ pub async fn run(config: Configuration) {
     ));
 
     let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
             config.tenderly.as_ref().map(|tenderly_config| {
-                Box::new(simulator::tenderly::TenderlyApi::new(
+                Arc::new(simulator::tenderly::TenderlyApi::new(
                     tenderly_config,
                     &http_factory,
                     chain.id().to_string(),
                 )) as _
             });
-        Some(Arc::new(OrderSimulator::new(
-            SwapSimulator::new(
-                balance_overrider.clone(),
-                *settlement_contract.address(),
+        Some(
+            simulator::simulation_builder::SettlementSimulator::new(
+                settlement_contract.clone(),
+                flashloan_router_address,
+                hooks_trampoline_address,
                 *native_token.address(),
+                config.gas_limit.saturating_to(),
+                balance_overrider.clone(),
                 current_block_stream.clone(),
-                web3,
-                config
-                    .gas_limit
-                    .try_into()
-                    .expect("gas_limit must fit in u64"),
+                tenderly,
             )
             .await
-            .expect("failed to create SwapSimulator"),
-            chain.id().to_string(),
-            tenderly,
-        )))
+            .expect("failed to initialize SettlementSimulator"),
+        )
     } else {
         None
     };

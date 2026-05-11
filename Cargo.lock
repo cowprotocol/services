@@ -7793,6 +7793,7 @@ dependencies = [
  "derive_more 1.0.0",
  "eth-domain-types",
  "ethrpc",
+ "futures",
  "gas-price-estimation",
  "hex-literal",
  "http-client",
