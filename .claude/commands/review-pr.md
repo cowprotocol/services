@@ -12,10 +12,10 @@ Follow the instructions in `./docs/COW_PR_REVIEW_SKILL.md` to produce the review
 
 The skill runs in one of two modes. Detection:
 
-- If `$ARGUMENTS` is non-empty → `mode = "pr-local"`. Parse the argument (see [step 2](#2-parse-arguments-pr-modes-only)).
+- If `$ARGUMENTS` is non-empty → `mode = "pr-local"`. Parse the argument (see [step 2](#2-parse-arguments-pr-local-only)).
 - Else (`$ARGUMENTS` empty) → `mode = "diff"`. No `gh` calls needed; source is `git diff $(git merge-base HEAD origin/main)..HEAD` (the actual command runs in step 3 below, after fetching `origin/main`).
 
-### 2. Parse $ARGUMENTS (PR modes only)
+### 2. Parse $ARGUMENTS (`pr-local` only)
 
 *(Skip in `diff` mode.)*
 
@@ -125,7 +125,7 @@ Report the filter in the report's `Scope:` line as `+X −Y across Z files (~N L
 Read `docs/COW_PR_REVIEW_SKILL.md` and follow it from §2 (Metadata Fetch) onward, passing through:
 
 - `mode` (`diff` / `pr-local`) and `mode_qualifier` if set.
-- `<PR_NUMBER>`, `<owner>`, `<repo>` (PR modes only).
+- `<PR_NUMBER>`, `<owner>`, `<repo>` (`pr-local` only).
 - `prior_branch` (`pr-local` only).
 - `loaded_context` (optional skills detected in step 5).
 - The noise-filter classification from step 6 — the reference doc uses it to decide what to read.
