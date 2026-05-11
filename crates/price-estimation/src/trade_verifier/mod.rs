@@ -307,37 +307,6 @@ impl TradeVerifier {
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
 
-        // TODO remove when quoters stop signing zeroex RFQ orders for `tx.origin:
-        // 0x0000` (#2693)
-        if let Err(err) = &output {
-            // Currently we know that if a trade requests to be simulated from `tx.origin:
-            // 0x0000` it's because the solver signs zeroex RFQ orders which
-            // require that origin. However, setting this `tx.origin` actually
-            // results in invalid RFQ orders and until the solver signs orders
-            // for a different `tx.origin` we need to pretend these
-            // quotes actually simulated successfully to not lose these competitive quotes
-            // when we enable quote verification in prod.
-            if trade.tx_origin() == Some(Address::ZERO) {
-                let estimate = Estimate {
-                    out_amount: *out_amount,
-                    gas: trade.gas_estimate().context("no gas estimate")?,
-                    solver: trade.solver(),
-                    verified: true,
-                    execution: QuoteExecution {
-                        interactions: map_interactions_data(trade.interactions()),
-                        pre_interactions: map_interactions_data(trade.pre_interactions()),
-                        jit_orders: trade.jit_orders().cloned().collect(),
-                    },
-                };
-                tracing::warn!(
-                    ?estimate,
-                    ?err,
-                    "quote used invalid zeroex RFQ order; pass verification anyway"
-                );
-                return Ok(estimate);
-            }
-        };
-
         let mut summary = SettleOutput::from_swap(output?, query.kind, &tokens)?;
 
         {
