@@ -85,11 +85,13 @@ impl Mempools {
         while let Some((idx, mempool, result)) = submission_futures.next().await {
             match result {
                 Ok(submission) => {
-                    observe::mempool_succeeded(mempool, settlement, &submission);
+                    // Pop winner out, mark it a success and the rest as superseded.
+                    //
                     // SAFETY: `idx` comes from `enabled.iter().enumerate()` and `enabled` is
                     // non-empty (checked in `skip_and_observe_disabled_mempools`), so `swap_remove`
                     // cannot panic here.
                     enabled.swap_remove(idx);
+                    observe::mempool_succeeded(mempool, settlement, &submission);
                     for superseded in &enabled {
                         observe::mempool_superseded(superseded, mempool, settlement);
                     }
