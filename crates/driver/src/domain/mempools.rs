@@ -156,6 +156,10 @@ impl Mempools {
             && mempool.reverts_can_get_mined()
     }
 
+    fn is_enabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
+        !self.is_disabled(mempool, settlement)
+    }
+
     /// Defines if the mempools are configured in a way that guarantees that
     /// settled solution will not revert.
     pub fn revert_protection(&self) -> RevertProtection {
@@ -177,7 +181,7 @@ impl Mempools {
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
         debug_assert!(
-            !self.is_disabled(mempool, settlement),
+            self.is_enabled(mempool, settlement),
             "submit called for disabled mempool; execute should filter these out",
         );
 
