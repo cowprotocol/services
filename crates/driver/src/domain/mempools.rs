@@ -91,7 +91,7 @@ impl Mempools {
                         .iter()
                         .enumerate()
                         .filter(|(i, _)| *i != idx) // skip winner mempool
-                        .for_each(|(_, other)| {
+                        .for_each(|(_, mempool)| {
                             observe::mempool_superseded(other, winner, settlement);
                         });
                     return Ok(submission.tx_hash);
