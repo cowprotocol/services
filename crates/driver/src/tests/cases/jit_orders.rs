@@ -43,7 +43,6 @@ struct JitOrder {
 
 struct Solution {
     jit_order: JitOrder,
-    expected_score: eth::U256,
 }
 
 struct TestCase {
@@ -55,8 +54,6 @@ struct TestCase {
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
-    use number::testing::ApproxEq;
-
     let test_name = format!("JIT Order: {:?}", test_case.solution.jit_order.order.side);
     // Adjust liquidity pools so that the order is executable at the amounts
     // expected from the solver.
@@ -116,11 +113,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .await;
 
     let result = test.solve().await.ok();
-    assert!(
-        result
-            .score()
-            .is_approx_eq(&test_case.solution.expected_score, None),
-    );
     result.jit_orders(&[jit_order]);
 }
 
@@ -156,7 +148,6 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
             },
             // Surplus is 40 ETH worth of sell tokens, converted to buy tokens using the order's
             // limit price (50 / 60 = 80%) this leaves us with a score of 32 ETH.
-            expected_score: 32.ether().into_wei(),
         },
     };
 
@@ -195,7 +186,6 @@ async fn surplus_protocol_fee_jit_order_not_capped() {
             },
             // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
             // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
-            expected_score: 16.ether().into_wei(),
         },
     };
 

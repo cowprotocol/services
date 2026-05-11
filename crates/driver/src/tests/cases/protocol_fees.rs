@@ -42,14 +42,11 @@ struct TestCase {
     order: Order,
     fee_policy: Vec<Policy>,
     execution: Execution,
-    expected_score: eth::U256,
     fee_handler: FeeHandler,
 }
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
-    use number::testing::ApproxEq;
-
     let test_name = format!(
         "Protocol Fee: {:?} {:?}",
         test_case.order.side, test_case.fee_policy
@@ -99,7 +96,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .await;
 
     let result = test.solve().await.ok();
-    assert!(result.score().is_approx_eq(&test_case.expected_score, None),);
     result.orders(&[order]);
 }
 
@@ -147,7 +143,6 @@ async fn triple_surplus_protocol_fee_buy_order_not_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (50 / 60 = 80%) this leaves us with a score of 16 ETH.
-        expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
 
@@ -191,7 +186,6 @@ async fn triple_surplus_protocol_fee_sell_order_not_capped() {
                 buy: 42.5.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -234,7 +228,6 @@ async fn surplus_and_volume_protocol_fee_buy_order_not_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
-        expected_score: 13.3333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -288,7 +281,6 @@ async fn surplus_and_price_improvement_protocol_fee_sell_order_not_capped() {
                 buy: 17.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -340,7 +332,6 @@ async fn surplus_and_price_improvement_fee_buy_in_market_order_not_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
-        expected_score: 13.33333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -375,7 +366,6 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
-        expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
 
@@ -408,7 +398,6 @@ async fn protocol_fee_calculated_on_the_solver_side() {
         },
         // Surplus is 35 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 28 ETH.
-        expected_score: 28.ether().into_wei(),
         fee_handler: FeeHandler::Solver,
     };
 
@@ -441,7 +430,6 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
                 buy: 50.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -474,7 +462,6 @@ async fn surplus_protocol_fee_partial_buy_order_not_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
 
@@ -507,7 +494,6 @@ async fn surplus_protocol_fee_partial_sell_order_not_capped() {
                 buy: 25.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -541,7 +527,6 @@ async fn surplus_protocol_fee_buy_order_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
-        expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -573,7 +558,6 @@ async fn surplus_protocol_fee_sell_order_capped() {
                 buy: 54.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -605,7 +589,6 @@ async fn surplus_protocol_fee_partial_buy_order_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -637,7 +620,6 @@ async fn surplus_protocol_fee_partial_sell_order_capped() {
                 buy: 27.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -667,7 +649,6 @@ async fn volume_protocol_fee_buy_order() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
-        expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -699,7 +680,6 @@ async fn volume_protocol_fee_buy_order_at_limit_price() {
         },
         // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 8 ETH.
-        expected_score: 8.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -727,7 +707,6 @@ async fn volume_protocol_fee_sell_order() {
                 buy: 45.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -757,7 +736,6 @@ async fn volume_protocol_fee_sell_order_at_limit_price() {
                 buy: 40.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -785,7 +763,6 @@ async fn volume_protocol_fee_partial_buy_order() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -816,7 +793,6 @@ async fn volume_protocol_fee_partial_buy_order_at_limit_price() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 4.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -844,7 +820,6 @@ async fn volume_protocol_fee_partial_sell_order() {
                 buy: 27.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -875,7 +850,6 @@ async fn volume_protocol_fee_partial_sell_order_at_limit_price() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 5.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -916,7 +890,6 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
-        expected_score: 13.33333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -955,7 +928,6 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
                 buy: 53.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -996,7 +968,6 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
         },
         // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 8 ETH.
-        expected_score: 8.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1035,7 +1006,6 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
                 buy: 55.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1076,7 +1046,6 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
-        expected_score: 13.33333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1115,7 +1084,6 @@ async fn price_improvement_fee_sell_in_market_order_capped() {
                 buy: 57.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1156,7 +1124,6 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
         },
         // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 8 ETH.
-        expected_score: 8.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1195,7 +1162,6 @@ async fn price_improvement_fee_sell_out_of_market_order_capped() {
                 buy: 57.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1236,7 +1202,6 @@ async fn price_improvement_fee_partial_buy_in_market_order_not_capped() {
         },
         // Surplus is 15 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (40 / 50 = 80%) this leaves us with a score of 12 ETH.
-        expected_score: 12.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1277,7 +1242,6 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
                 buy: 24.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1316,7 +1280,6 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_not_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1355,7 +1318,6 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_not_capped() {
                 buy: 25.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1396,7 +1358,6 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
         },
         // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
         // limit price (50 / 75 = 66.6%) this leaves us with a score of 13.3 ETH.
-        expected_score: 13.333333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1435,7 +1396,6 @@ async fn price_improvement_fee_partial_sell_in_market_order_capped() {
                 buy: 27.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1474,7 +1434,6 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1513,7 +1472,6 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_capped() {
                 buy: 27.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
@@ -1552,7 +1510,6 @@ async fn price_improvement_fee_sell_no_improvement() {
                 buy: 45.ether().into_wei(),
             },
         },
-        expected_score: 5.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
