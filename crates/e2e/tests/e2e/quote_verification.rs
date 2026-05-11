@@ -5,49 +5,25 @@ use {
         rpc::types::state::StateOverride,
     },
     balance_overrides::{BalanceOverrideRequest, BalanceOverrides, BalanceOverriding},
-    bigdecimal::{BigDecimal, Zero},
     configs::{
         autopilot::Configuration,
         balance_overrides::Strategy,
         price_estimation::BalanceOverridesConfig,
         test_util::TestDefault,
     },
-    contracts::{ERC20, GPv2Settlement},
+    contracts::ERC20,
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
-    model::{
-        interaction::InteractionData,
-        order::{BuyTokenDestination, OrderKind, SellTokenSource},
-        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
-    },
-    number::{nonzero::NonZeroU256, units::EthUnit},
-    price_estimation::{
-        Estimate,
-        Verification,
-        trade_finding::{Interaction, LegacyTrade, QuoteExecution, TradeKind},
-        trade_verifier::{PriceQuery, TradeVerifier, TradeVerifying},
-    },
+    model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+    number::units::EthUnit,
     serde_json::json,
-    simulator::simulation_builder::SettlementSimulator,
-    std::{collections::HashMap, sync::Arc},
+    std::collections::HashMap,
 };
 
 #[tokio::test]
 #[ignore]
 async fn local_node_standard_verified_quote() {
     run_test(standard_verified_quote).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn forked_node_bypass_verification_for_rfq_quotes() {
-    run_forked_test_with_block_number(
-        test_bypass_verification_for_rfq_quotes,
-        std::env::var("FORK_URL_MAINNET")
-            .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        FORK_BLOCK_MAINNET,
-    )
-    .await;
 }
 
 #[tokio::test]
@@ -168,122 +144,6 @@ async fn standard_verified_quote(web3: Web3) {
 
 /// The block number from which we will fetch state for the forked tests.
 const FORK_BLOCK_MAINNET: u64 = 24843565;
-
-/// Tests that quotes requesting `tx_origin: 0x0000` bypass the verification
-/// because those are currently used by some solvers to provide market maker
-/// integrations. Based on an RFQ quote we saw on prod:
-/// https://www.tdly.co/shared/simulation/7402de5e-e524-4e24-9af8-50d0a38c105b
-async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
-    // This RPC node should support websockets
-    let mut url: url::Url = std::env::var("FORK_URL_MAINNET")
-        .expect("FORK_URL_MAINNET must be set to run forked tests")
-        .parse()
-        .unwrap();
-    match url.scheme() {
-        "http" => url.set_scheme("ws").unwrap(),
-        "https" => url.set_scheme("wss").unwrap(),
-        _ => unreachable!("unexpected scheme"),
-    }
-    let block_stream = ethrpc::block_stream::current_block_ws_stream(web3.provider.clone(), url)
-        .await
-        .unwrap();
-    let onchain = OnchainComponents::deployed(web3.clone()).await;
-    let balance_overrides = Arc::new(BalanceOverrides::default());
-    let gas_limit = 12_000_000u64;
-    let settlement_contract = GPv2Settlement::GPv2Settlement::new(
-        *onchain.contracts().gp_settlement.address(),
-        web3.provider.clone(),
-    );
-    let simulator = SettlementSimulator::new(
-        settlement_contract,
-        Default::default(),
-        Default::default(),
-        *onchain.contracts().weth.address(),
-        gas_limit,
-        balance_overrides,
-        block_stream.clone(),
-        None,
-    )
-    .await
-    .unwrap();
-
-    let verifier = TradeVerifier::new(
-        simulator,
-        None,
-        Arc::new(web3.clone()),
-        BigDecimal::zero(),
-        Default::default(),
-        0,
-        u32::MAX,
-    );
-
-    let verify_trade = |tx_origin| {
-        let verifier = verifier.clone();
-        async move {
-            verifier
-                .verify(
-                    &PriceQuery {
-                        sell_token: address!("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
-                        buy_token: address!("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                        kind: OrderKind::Sell,
-                        in_amount: NonZeroU256::new(U256::from(12)).unwrap(),
-                    },
-                    &Verification {
-                        from: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
-                        receiver: address!("0x73688c2b34bf6c09c125fed02fe92d17a94b897a"),
-                        pre_interactions: vec![],
-                        post_interactions: vec![],
-                        sell_token_source: SellTokenSource::Erc20,
-                        buy_token_destination: BuyTokenDestination::Erc20,
-                    },
-                    TradeKind::Legacy(LegacyTrade {
-                        out_amount: U256::from(16380122291179526144u128),
-                        gas_estimate: Some(225000),
-                        interactions: vec![Interaction {
-                            target: address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-                            data: const_hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap(),
-                            value: U256::ZERO,
-                        }],
-                        solver: address!("e3067c7c27c1038de4e8ad95a83b927d23dfbd99"),
-                        tx_origin,
-                    }),
-                )
-                .await
-        }
-    };
-
-    let verified_quote = Estimate {
-        out_amount: U256::from(16380122291179526144u128),
-        gas: 225000,
-        solver: address!("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99"),
-        verified: true,
-        execution: QuoteExecution {
-            interactions: vec![InteractionData {
-                target: address!("0xdef1c0ded9bec7f1a1670819833240f027b25eff"),
-                value: U256::ZERO,
-                call_data: const_hex::decode("aa77476c000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000002260fac5e5542a773aa44fbcfedf7c193bc2c599000000000000000000000000000000000000000000000000e357b42c3a9d8ccf0000000000000000000000000000000000000000000000000000000004d0e79e000000000000000000000000a69babef1ca67a37ffaf7a485dfff3382056e78c0000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066360af101ffffffffffffffffffffffffffffffffffffff0f3f47f166360a8d0000003f0000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000001c66b3383f287dd9c85ad90e7c5a576ea4ba1bdf5a001d794a9afa379e6b2517b47e487a1aef32e75af432cbdbd301ada42754eaeac21ec4ca744afd92732f47540000000000000000000000000000000000000000000000000000000004d0c80f").unwrap()
-            }],
-            pre_interactions: vec![],
-            jit_orders: vec![],
-        },
-    };
-
-    // `tx_origin: 0x0000` is currently used to bypass quote verification due to an
-    // implementation detail of zeroex RFQ orders.
-    // TODO: remove with #2693
-    let verification = verify_trade(Some(Address::ZERO)).await;
-    assert_eq!(&verification.unwrap(), &verified_quote);
-
-    // Trades using any other `tx_origin` can not bypass the verification.
-    let verification = verify_trade(None).await;
-    assert_eq!(
-        verification.unwrap(),
-        Estimate {
-            verified: false,
-            ..verified_quote
-        }
-    );
-}
 
 /// Verified quotes work as for WETH trades without wrapping or approvals.
 async fn verified_quote_eth_balance(web3: Web3) {
