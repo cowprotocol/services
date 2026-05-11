@@ -2731,24 +2731,37 @@ components:
             if omitted.
           allOf:
             - $ref: "#/components/schemas/Address"
-          nullable: true
         sellTokenBalance:
           description: Where the sell token should be drawn from.
           allOf:
             - $ref: "#/components/schemas/SellTokenSource"
-          default: erc20
         buyTokenBalance:
           description: Where the buy token should be transferred to.
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
-          default: erc20
         appData:
           description: >
-            Full app data JSON string. Defaults to `"{}"` if omitted.
+            Full app data JSON string.
           type: string
-          nullable: true
         blockNumber:
           type: integer
+          nullable: true
+        signingScheme:
+          $ref: "#/components/schemas/SigningScheme"
+        signature:
+          $ref: "#/components/schemas/Signature"
+        feeAmount:
+          description: >
+            The fee amount in sell token atoms. Expected to be 0; only present
+            because it must be part of the signed order data.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          description: Unix timestamp (`uint32`) until which the order is valid.
+          type: integer
+        partiallyFillable:
+          description: Whether the order can be partially filled or must be filled all at once.
+          type: boolean
       required:
         - sellToken
         - buyToken
@@ -2756,6 +2769,12 @@ components:
         - buyAmount
         - kind
         - owner
+        - signingScheme
+        - signature
+        - feeAmount
+        - validTo
+        - partiallyFillable
+        - appData
     OrderSimulation:
       description: >
         The Tenderly simulation request for an order, along with any
