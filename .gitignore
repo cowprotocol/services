@@ -6,3 +6,4 @@
 **/testing.*.toml
 /playground/.env
 .env.claude
+.env.*.claude
