@@ -567,8 +567,8 @@ pub enum Error {
 }
 
 impl Error {
-    /// Block delta from submission to the terminal event, when the error
-    /// carries block-level timing.
+    /// Number of blocks between the first submission and when the error was
+    /// returned, if the error carries that timing.
     pub fn blocks_passed(&self) -> Option<u64> {
         let (start, end) = match self {
             Self::Revert {
