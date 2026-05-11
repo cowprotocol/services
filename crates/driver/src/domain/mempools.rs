@@ -591,4 +591,15 @@ impl Error {
         };
         Some(end.saturating_sub(start).0)
     }
+
+    /// Prometheus label for this error. Shared by the per-mempool and
+    /// per-attempt counters so they stay in sync.
+    pub fn metric_label(&self) -> &'static str {
+        match self {
+            Self::Revert { .. } | Self::SimulationRevert { .. } => "Revert",
+            Self::Expired { .. } => "Expired",
+            Self::Other(_) => "Other",
+            Self::Disabled => "Disabled",
+        }
+    }
 }
