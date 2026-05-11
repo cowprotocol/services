@@ -16,7 +16,7 @@ use {
     alloy_rpc_types::state::{AccountOverride, StateOverride},
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
-    balance_overrides::{BalanceOverrideRequest, StateOverriding},
+    balance_overrides::{ApprovalOverrideRequest, BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     derive_more::Debug,
     model::{
@@ -617,6 +617,25 @@ async fn build_final_state_overrides(
                     AccountOverride::default()
                         .with_state_diff(std::iter::once((slot, PRE_SIGN_SENTINEL))),
                 ))
+            }
+            AccountOverrideRequest::Approval {
+                owner,
+                token,
+                spender,
+                amount,
+            } => {
+                let result = state_overrides
+                    .approval_override(ApprovalOverrideRequest {
+                        token,
+                        owner,
+                        spender,
+                        amount,
+                    })
+                    .await;
+                if result.is_none() {
+                    tracing::warn!(%token, %owner, %spender, "failed to compute approval state override, skipping");
+                }
+                result
             }
             AccountOverrideRequest::Custom { account, state } => Some((account, state)),
         }

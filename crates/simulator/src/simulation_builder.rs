@@ -312,16 +312,6 @@ pub struct EthCallInputs {
 }
 
 impl EthCallInputs {
-    pub fn to_transaction_request(&self) -> TransactionRequest {
-        TransactionRequest {
-            from: Some(self.from),
-            to: Some(self.to.into()),
-            input: self.calldata.clone().into(),
-            gas: Some(self.simulator.0.max_gas_limit),
-            ..Default::default()
-        }
-    }
-
     /// Runs the generated simulation using an `eth_call` and returns the
     /// response bytes if there are any.
     pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
@@ -333,6 +323,16 @@ impl EthCallInputs {
             .overrides(self.state_overrides)
             .block(self.block.into())
             .await
+    }
+
+    pub fn to_transaction_request(&self) -> TransactionRequest {
+        TransactionRequest {
+            from: Some(self.from),
+            to: Some(self.to.into()),
+            input: self.calldata.clone().into(),
+            gas: Some(self.simulator.0.max_gas_limit),
+            ..Default::default()
+        }
     }
 
     /// Same as [`EthCallInputs::simulate`] but also generates a tenderly
@@ -527,6 +527,13 @@ pub enum AccountOverrideRequest {
     Custom {
         account: Address,
         state: AccountOverride,
+    },
+    /// Sets the given Erc20 token approval.
+    Approval {
+        owner: Address,
+        token: Address,
+        spender: Address,
+        amount: U256,
     },
     /// Pre-signs the given order such that the pre-sign signature check passes.
     PreSignature(OrderUid),
