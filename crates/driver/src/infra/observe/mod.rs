@@ -430,6 +430,20 @@ pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools
     }
 }
 
+/// Record a mempool that was skipped for this settlement. Tagged `Disabled`
+/// to keep it out of the failure count.
+pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement) {
+    tracing::debug!(
+        %mempool,
+        ?settlement,
+        "skipping disabled mempool",
+    );
+    metrics::get()
+        .mempool_submission
+        .with_label_values(&[mempool.to_string().as_str(), "Disabled"])
+        .inc();
+}
+
 /// Record a mempool that lost the race. Tagged `Superseded` so the per-mempool
 /// metric separates lost races from failures.
 pub fn mempool_superseded(mempool: &Mempool, winner: &Mempool, settlement: &Settlement) {

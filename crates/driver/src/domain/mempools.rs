@@ -130,7 +130,7 @@ impl Mempools {
             .iter()
             .filter(|mempool| {
                 if self.is_disabled(mempool, settlement) {
-                    observe::mempool_failed(mempool, settlement, &Error::Disabled);
+                    observe::mempool_disabled(mempool, settlement);
                     false
                 } else {
                     true
