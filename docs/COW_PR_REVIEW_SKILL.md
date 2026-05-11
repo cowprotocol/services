@@ -1,24 +1,23 @@
 # CoW Services PR Review Skill
 
-This document instructs Claude how to produce a PR review for cowprotocol/services. It is invoked by `.claude/commands/review-pr.md` (locally) or by `.github/workflows/claude-code-review.yml` (in CI). One skill, three operating modes.
+This document instructs Claude how to produce a PR review for cowprotocol/services. It is invoked by `.claude/commands/review-pr.md`. One skill, two operating modes.
 
 At the point this document is read, the entry-point has already determined:
 
 - **`mode`** — one of:
-  - `diff` — local, no PR yet. Source is `git diff $(git merge-base HEAD origin/main)..HEAD` (the whole feature-branch worth of work, computed against the freshly-fetched remote `main` to avoid a stale local `main`). No PR metadata, no `gh` calls. Output to terminal.
-  - `pr-local` — local, PR exists. Source is `gh pr diff <N>` plus PR metadata. Output to terminal.
-  - `pr-ci` — running inside `.github/workflows/claude-code-review.yml`. Source is `gh pr diff <N>` plus PR metadata. Output is a single review comment posted to the PR.
-- **`<PR_NUMBER>`, `<owner>`, `<repo>`** (only in `pr-local` / `pr-ci`).
+  - `diff` — no PR yet. Source is `git diff $(git merge-base HEAD origin/main)..HEAD` (the whole feature-branch worth of work, computed against the freshly-fetched remote `main` to avoid a stale local `main`). No PR metadata, no `gh` calls.
+  - `pr-local` — PR exists. Source is `gh pr diff <N>` plus PR metadata.
+- **`<PR_NUMBER>`, `<owner>`, `<repo>`** (only in `pr-local`).
 - **`prior_branch`** (only in `pr-local` — the branch to print at the end).
 
-The mode shapes which steps run and how the report is delivered, but the *content* of the review is the same in all three.
+Both modes print the report to the terminal; the user posts any review themselves. The mode shapes which steps run, but the *content* of the review is the same.
 
 ---
 
 ## Core Principles (read before executing)
 
 - **Signal over noise.** Report genuine concerns only. LGTM is a perfectly valid verdict and is the correct one whenever the PR is clean. The goal is not to maximise finding count — it is to be worth a senior reviewer's attention.
-- **Local modes never post to GitHub.** In `diff` and `pr-local`, output is strictly terminal. No `gh pr review`, no `gh pr comment`. The user posts whatever they choose. In `pr-ci`, post exactly one consolidated review comment — no per-line spam.
+- **Never post to GitHub.** Output is strictly terminal. No `gh pr review`, no `gh pr comment`. The user posts whatever they choose.
 - **Code is the primary source of truth.** `CLAUDE.md`, design docs in `docs/`, and this skill's own sibling docs can go stale. When a finding turns on *"X is called from Y"* or *"this field is read by Z"*, verify with `git grep` / `rg` / LSP — not by citing a doc.
 - **Inverted: this PR can make existing docs / comments / its own description stale.** If a code change makes a comment, a `docs/` page, or the PR's own description no longer match the diff's current state, that is itself a finding (`Action:` → update X).
 - **`git blame` before flagging code that looks unusual.** Often code looks weird because it had to. Before suggesting a "cleanup", blame the affected lines, read the originating commit message and (if any) linked PR. A comment that says *"this looks accidental, did you mean X?"* without that step risks asking the author to undo a hard-won fix.
@@ -43,16 +42,16 @@ Apply these as the default lens for every change. Pull in CoW-specific siblings 
 
 ## Execution Flow
 
-Steps run in this order. `diff` mode skips PR-metadata steps; `pr-ci` swaps the report sink at the end.
+Steps run in this order. `diff` mode skips PR-metadata steps.
 
-1. Fetch PR metadata and linked issue(s) — [§2](#2-metadata-fetch). *(`pr-local` / `pr-ci` only.)*
-2. Triage prior review comments — [§2.5](#25-prior-comment-follow-up). *(`pr-local` / `pr-ci` only; further skip conditions in §2.5.)*
+1. Fetch PR metadata and linked issue(s) — [§2](#2-metadata-fetch). *(`pr-local` only.)*
+2. Triage prior review comments — [§2.5](#25-prior-comment-follow-up). *(`pr-local` only; further skip conditions in §2.5.)*
 3. Classify diff paths and load conditional context — [§3](#3-conditional-context).
 4. Build a targeted codemap — [§4](#4-codemap-phase).
 5. Synthesize the context block — [§5](#5-context-synthesis).
 6. Review and produce findings — [§6](#6-review-and-severity).
-7. Emit the report — [§7](#7-report-templates). Sink depends on mode.
-8. Offer verification (background) — [§8](#8-verification-offer). *(Local modes only.)*
+7. Emit the report — [§7](#7-report-template).
+8. Offer verification (background) — [§8](#8-verification-offer).
 9. Print cleanup hint — [§9](#9-cleanup). *(`pr-local` only.)*
 
 Error behaviour is consolidated in [§10](#10-error-playbook).
@@ -103,7 +102,7 @@ Skip when any of these holds — no output, the section is omitted from the repo
 - No prior human inline reviews on the PR.
 - For every human reviewer, their latest review's `commit_id` already equals `<head_sha>` — no new commits since their last round.
 
-Otherwise, for each prior inline comment from a human reviewer (use `gh api repos/<owner>/<repo>/pulls/<PR_NUMBER>/reviews` and `/comments`, GET only), surface one entry in the "Prior-comment follow-up" block ([§7](#7-report-templates)). Cite the new code at `<path>:<line>` that addresses it, the author's reply, or note that nothing has changed since `<prior_sha>`. Use stable identifiers `[A]`, `[B]`, ... so findings raised in this review can chain context with `Re: [A]`.
+Otherwise, for each prior inline comment from a human reviewer (use `gh api repos/<owner>/<repo>/pulls/<PR_NUMBER>/reviews` and `/comments`, GET only), surface one entry in the "Prior-comment follow-up" block ([§7](#7-report-template)). Cite the new code at `<path>:<line>` that addresses it, the author's reply, or note that nothing has changed since `<prior_sha>`. Use stable identifiers `[A]`, `[B]`, ... so findings raised in this review can chain context with `Re: [A]`.
 
 **Be conservative.** When the diff doesn't make the answer obvious, say so explicitly — false *"addressed"* tricks the reviewer into closing a thread that should stay open. Don't infer satisfaction from emoji reactions or short acknowledgements; the reviewer makes that call.
 
@@ -152,10 +151,10 @@ For each non-trivial symbol the diff adds, modifies, or deletes:
 | `git blame` / `git log` | Always available | Historic context on suspicious-looking lines. Local, read-only. |
 | `gh api` (read-only verbs) | Always available | Reading individual file contents at a specific ref (e.g. degraded static-diff mode in §4). **Never** use mutating verbs (`POST`/`PATCH`/`DELETE`) — review skill is read-only. |
 | `mcp__plugin_serena_serena__find_symbol` / `find_referencing_symbols` / `get_symbols_overview` | Optional (LSP-backed; available when Serena MCP is configured) | Precise location + kind + signature without reading the full file. |
-| Skills from `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`) | Optional (installed via `npx skills add actionbook/rust-skills`) | Richer cross-crate analysis. Not present in CI by default. |
+| Skills from `actionbook/rust-skills` (`rust-call-graph`, `rust-symbol-analyzer`, `rust-trait-explorer`, `rust-code-navigator`) | Optional (installed via `npx skills add actionbook/rust-skills`) | Richer cross-crate analysis. |
 | `Read` of a full file | Last resort | Only when the diff hunks plus the cheaper tools don't pin down what you need. |
 
-**Fallback rule:** in CI and in `pr-local` (full checkout), every codemap step still works with `rg` and `git` against the local working tree. The optional tools are accelerators, not requirements.
+**Fallback rule:** in `pr-local` (full checkout), every codemap step still works with `rg` and `git` against the local working tree. The optional tools are accelerators, not requirements.
 
 **Exception — degraded static-diff mode.** When `pr-local` falls back to static-diff (a fork the user can't `gh pr checkout`), the working tree is the *prior* branch, not the PR's. `rg crates/`, `Read` of repo files, and `git blame` on the working tree all reflect the wrong code. In this mode:
 
@@ -234,9 +233,7 @@ When a finding has a clear mechanical fix, phrase the `Action:` so the reviewer 
 
 ---
 
-## 7. Report Templates
-
-### Terminal form (`diff` and `pr-local`)
+## 7. Report Template
 
 ```
 ═══════════════════════════════════════════════════════════
@@ -248,7 +245,7 @@ Scope:        +<add> −<del> across <N> files
 Labels:       <labels or "—">           (omit in diff mode)
 Base/Head:    <baseRef> ← <headRef>     (or "main ← <branch>" in diff mode)
 Linked issue: #<N> — <title>            (omit if none)
-Mode:         diff | pr-local | pr-ci   ;  full checkout | degraded static-diff
+Mode:         diff | pr-local            ;  full checkout | degraded static-diff
 
 Codemap
 ───────────────────────────────────────────────────────────
@@ -321,16 +318,6 @@ VERDICT:  LGTM — no blocking or notable issues.
 
 Header, CONTEXT, and (in `pr-local`) NEXT STEPS still print.
 
-### Comment form (`pr-ci`)
-
-In CI, post **one** review comment via the action. Use the same body shape as the terminal form, minus:
-
-- The NEXT STEPS section (no local branch state to print).
-- The VERIFICATION block (CI runs its own checks separately).
-- ANSI box-drawing characters (Markdown headings instead).
-
-GitHub-render the body using `##`/`###` headings and fenced code blocks. Keep findings collapsible with `<details>` if there are more than ~5.
-
 ### Verdict selection
 
 - **LGTM** — no High or Medium findings.
@@ -340,8 +327,6 @@ GitHub-render the body using `##`/`###` headings and fenced code blocks. Keep fi
 ---
 
 ## 8. Verification Offer
-
-*(Local modes only. Skip in `pr-ci` — CI runs its own check/clippy/fmt jobs in parallel.)*
 
 After printing the report, ask the user:
 

@@ -1,5 +1,5 @@
 ---
-description: Produce a structured PR review for cowprotocol/services. Invoked locally as `/review-pr` (diff mode, against current branch vs main) or `/review-pr <N|url>` (PR mode). Same command also runs in CI via `.github/workflows/claude-code-review.yml`, where it posts a single review comment instead of printing to terminal. Read-only in local modes; the user posts any comments manually.
+description: Produce a structured PR review for cowprotocol/services. Invoked locally as `/review-pr` (diff mode, against current branch vs main) or `/review-pr <N|url>` (PR mode). Read-only; the user posts any comments manually.
 ---
 
 Review PR: $ARGUMENTS
@@ -10,12 +10,10 @@ Follow the instructions in `./docs/COW_PR_REVIEW_SKILL.md` to produce the review
 
 ### 1. Detect mode
 
-The skill runs in one of three modes. Detection:
+The skill runs in one of two modes. Detection:
 
-- If the environment variable `$GITHUB_ACTIONS == "true"` → `mode = "pr-ci"`.
-  - `$ARGUMENTS` MUST be a PR number, URL, or `owner/repo#N` form (the workflow passes it).
-- Else if `$ARGUMENTS` is non-empty → `mode = "pr-local"`. Parse the argument (see [step 2](#2-parse-arguments-pr-modes-only)).
-- Else (`$ARGUMENTS` empty, not in CI) → `mode = "diff"`. No `gh` calls needed; source is `git diff $(git merge-base HEAD origin/main)..HEAD` (the actual command runs in step 3 below, after fetching `origin/main`).
+- If `$ARGUMENTS` is non-empty → `mode = "pr-local"`. Parse the argument (see [step 2](#2-parse-arguments-pr-modes-only)).
+- Else (`$ARGUMENTS` empty) → `mode = "diff"`. No `gh` calls needed; source is `git diff $(git merge-base HEAD origin/main)..HEAD` (the actual command runs in step 3 below, after fetching `origin/main`).
 
 ### 2. Parse $ARGUMENTS (PR modes only)
 
@@ -58,9 +56,9 @@ There is **no** clean-tree check, **no** rebase, and **no** `git pull` of main. 
 
 ### 4. PR-mode preflight
 
-*(Only in `mode == "pr-local"` or `mode == "pr-ci"`.)*
+*(Only in `mode == "pr-local"`.)*
 
-#### 4a. Working tree (pr-local only)
+#### 4a. Working tree
 
 Run `git status --porcelain`. If non-empty, print it plus:
 
@@ -73,7 +71,7 @@ Working tree is dirty. Stash or commit your changes, then re-run.
 
 Then **abort**. Never auto-stash.
 
-#### 4b. Save the current branch (pr-local only)
+#### 4b. Save the current branch
 
 Save the current branch name to `<prior_branch>` so the report's NEXT STEPS footer can suggest `git switch <prior_branch>` when the review is done.
 
@@ -93,8 +91,6 @@ Run `gh pr checkout <PR_NUMBER> -R <owner>/<repo>`. Failure handling:
   - In the reference doc's §2, replace `gh pr diff <N>` with `gh pr diff <N> --patch -R <owner>/<repo>`.
   - Flag the qualifier in the report header's `Mode:` line.
 - **Any other error** → surface verbatim and abort.
-
-In `pr-ci`, the workflow has already checked out the PR branch — skip 4d and just verify `HEAD` matches the expected ref.
 
 ### 5. Optional-tooling probe
 
@@ -128,7 +124,7 @@ Report the filter in the report's `Scope:` line as `+X −Y across Z files (~N L
 
 Read `docs/COW_PR_REVIEW_SKILL.md` and follow it from §2 (Metadata Fetch) onward, passing through:
 
-- `mode` (`diff` / `pr-local` / `pr-ci`) and `mode_qualifier` if set.
+- `mode` (`diff` / `pr-local`) and `mode_qualifier` if set.
 - `<PR_NUMBER>`, `<owner>`, `<repo>` (PR modes only).
 - `prior_branch` (`pr-local` only).
 - `loaded_context` (optional skills detected in step 5).
