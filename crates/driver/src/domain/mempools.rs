@@ -145,8 +145,11 @@ impl Mempools {
         Ok(enabled)
     }
 
-    /// True when the settlement may revert, the configured set has at least one
-    /// revert-protected mempool, and this mempool is not one of them.
+    /// A mempool is disabled if all of the following are true:
+    /// * the settlement may revert (see [`Settlement::may_revert`])
+    /// * the pool has revert protection enabled (see
+    ///   [`Self::revert_protection`])
+    /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
     fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
         settlement.may_revert()
             && matches!(self.revert_protection(), RevertProtection::Enabled)
