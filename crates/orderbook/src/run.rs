@@ -1,12 +1,7 @@
 use {
     crate::{
-        api,
-        arguments::Arguments,
-        database::Postgres,
-        ipfs::Ipfs,
-        ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook,
-        quoter::QuoteHandler,
+        api, arguments::Arguments, database::Postgres, ipfs::Ipfs, ipfs_app_data::IpfsAppData,
+        orderbook::Orderbook, quoter::QuoteHandler,
     },
     account_balances::{self, BalanceSimulator},
     alloy::providers::Provider,
@@ -17,13 +12,8 @@ use {
     clap::Parser,
     configs::orderbook::Configuration,
     contracts::{
-        BalancerV2Vault,
-        ChainalysisOracle,
-        FlashLoanRouter,
-        GPv2Settlement,
-        HooksTrampoline,
-        WETH9,
-        support::Balances,
+        BalancerV2Vault, ChainalysisOracle, FlashLoanRouter, GPv2Settlement, HooksTrampoline,
+        WETH9, support::Balances,
     },
     gas_price_estimation::gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
@@ -32,8 +22,7 @@ use {
     observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
     order_validation,
     price_estimation::{
-        PriceEstimating,
-        QuoteVerificationMode,
+        PriceEstimating, QuoteVerificationMode,
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
@@ -473,6 +462,7 @@ pub async fn run(config: Configuration) {
         config.volume_fee,
         volume_fee_bucket_overrides,
         config.shared.enable_sell_equals_buy_volume_fee,
+        web3.provider.clone(),
     )
     .with_fast_quoter(fast_quoter);
 
