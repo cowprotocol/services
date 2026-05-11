@@ -14,8 +14,7 @@ CONTRACTS := \
 	Signatures.sol \
 	Solver.sol \
 	Spardose.sol \
-	Swapper.sol \
-	Trader.sol
+	Swapper.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 
 TEST_CONTRACTS := Counter.sol GasHog.sol NonStandardERC20Balances.sol RemoteERC20Balances.sol

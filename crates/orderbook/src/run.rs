@@ -36,7 +36,6 @@ use {
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
-        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
         order_quoting::{self, OrderQuoter},
@@ -237,8 +236,6 @@ pub async fn run(config: Configuration) {
         web3: web3.clone(),
     })));
 
-    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
-
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &config.price_estimation,
         &config.native_price_estimation.shared,
@@ -263,7 +260,6 @@ pub async fn run(config: Configuration) {
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
-            code_fetcher: code_fetcher.clone(),
         },
     )
     .await
@@ -397,7 +393,6 @@ pub async fn run(config: Configuration) {
         signature_validator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
-        code_fetcher,
         app_data_validator.clone(),
         config.order_validation.max_gas_per_order,
         config.order_validation.same_tokens_policy,

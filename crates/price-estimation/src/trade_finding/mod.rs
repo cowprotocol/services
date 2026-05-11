@@ -5,7 +5,7 @@ pub mod external;
 pub mod trade_estimator;
 
 use {
-    crate::{PriceEstimationError, Query},
+    crate::{PriceEstimationError, Query, trade_verifier::PriceQuery},
     alloy::primitives::{Address, Bytes, U256},
     anyhow::{Context, Result},
     derive_more::Debug,
@@ -81,18 +81,14 @@ impl TradeKind {
         }
     }
 
-    pub fn out_amount(
-        &self,
-        buy_token: &Address,
-        sell_token: &Address,
-        in_amount: &U256,
-        order_kind: &OrderKind,
-    ) -> Result<U256> {
+    pub fn simulation_solver_address(&self) -> Address {
+        self.tx_origin().unwrap_or(self.solver())
+    }
+
+    pub fn out_amount(&self, query: &PriceQuery) -> Result<U256> {
         match self {
             TradeKind::Legacy(trade) => Ok(trade.out_amount),
-            TradeKind::Regular(trade) => {
-                trade.out_amount(buy_token, sell_token, in_amount, order_kind)
-            }
+            TradeKind::Regular(trade) => trade.out_amount(query),
         }
     }
 
@@ -163,26 +159,20 @@ pub struct Trade {
 }
 
 impl Trade {
-    pub fn out_amount(
-        &self,
-        buy_token: &Address,
-        sell_token: &Address,
-        in_amount: &U256,
-        order_kind: &OrderKind,
-    ) -> Result<U256> {
+    pub fn out_amount(&self, query: &PriceQuery) -> Result<U256> {
         let sell_price = self
             .clearing_prices
-            .get(sell_token)
+            .get(&query.sell_token)
             .context("clearing sell price missing")?
             .to_big_rational();
         let buy_price = self
             .clearing_prices
-            .get(buy_token)
+            .get(&query.buy_token)
             .context("clearing buy price missing")?
             .to_big_rational();
-        let order_amount = in_amount.to_big_rational();
+        let order_amount = query.in_amount.get().to_big_rational();
 
-        let out_amount = match order_kind {
+        let out_amount = match &query.kind {
             OrderKind::Sell => order_amount
                 .mul(&sell_price)
                 .checked_div(&buy_price)

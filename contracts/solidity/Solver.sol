@@ -6,7 +6,7 @@ import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
-import { Trader } from "./Trader.sol";
+import { Spardose } from "./Spardose.sol";
 
 /// @title A contract for impersonating a solver. This contract assume the solver
 /// does not execute extra logic outside of the settlement that affects the execution
@@ -22,6 +22,11 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
 
     uint256 private _simulationOverhead;
     uint256[] private _queriedBalances;
+
+    /// @dev When setting up the simulation we compute state overrides to fund this
+    /// address with the necessary sell tokens. If the user does not have the tokens
+    /// already the solver will transfer them from this account to the user.
+    address private constant PIGGY_BANK = 0x1111111111111111111111111111111111111111;
 
     /// @dev Executes the given transaction from the context of a solver.
     /// That way we don't have to fake the authentication logic of the
@@ -40,13 +45,15 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         ISettlement settlementContract,
         address[] calldata tokens,
         address payable receiver,
-        bytes calldata settlementCall
+        bytes calldata settlementCall,
+        address trader,
+        address sellToken,
+        uint256 sellAmount
     ) external returns (
         uint256 gasUsed,
         uint256[] memory queriedBalances
     ) {
-        require(msg.sender == address(this), "only simulation logic is allowed to call 'swap' function");
-
+        ensureTradePreconditions(settlementContract, trader, sellToken, sellAmount);
         // Warm the storage for sending ETH to smart contract addresses.
         // We allow this call to revert becaues it was either unnecessary in the first place
         // or failing to send `ETH` to the `receiver` will cause a revert in the settlement
@@ -59,12 +66,68 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         // Store pre-settlement balances
         _storeSettlementBalances(tokens, settlementContract);
 
-        gasUsed = _executeSettlement(address(settlementContract), settlementCall);
+        gasUsed = _executeAndMeasure(settlementContract, settlementCall);
 
         // Store post-settlement balances
         _storeSettlementBalances(tokens, settlementContract);
 
         queriedBalances = _queriedBalances;
+    }
+
+    /// @dev Copies `settlementCall` to memory, invokes the settlement, and
+    /// returns the net gas consumed (minus simulation overhead and the 2600
+    /// cold-access cost that is normally covered by the 21K tx base cost).
+    function _executeAndMeasure(
+        ISettlement settlementContract,
+        bytes calldata settlementCall
+    ) internal returns (uint256 gasUsed) {
+        // We copy the calldata to memory outside of the metered section because that
+        // would normally not happen if the solver executes the settlement directly.
+        bytes memory settlementCallMem = settlementCall;
+        uint256 gasStart = gasleft();
+        assembly {
+            if iszero(call(gas(), settlementContract, 0, add(settlementCallMem, 32), mload(settlementCallMem), 0, 0)) {
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+        }
+        gasUsed = gasStart - gasleft() - _simulationOverhead - 2600;
+    }
+
+    /// @dev Ensures that the user has given the necessary approvals and transfers sell
+    /// tokens to the user if needed.
+    /// @param settlementContract - pass in settlement contract because it does not have
+    /// a stable address in tests.
+    /// @param trader - account wanting to trade
+    /// @param sellToken - token being sold by the trade
+    /// @param sellAmount - expected amount to be sold according to the quote
+    function ensureTradePreconditions(
+        ISettlement settlementContract,
+        address trader,
+        address sellToken,
+        uint256 sellAmount
+    ) internal {
+        address vaultRelayer = settlementContract.vaultRelayer();
+        uint256 allowance = IERC20(sellToken).allowance(trader, vaultRelayer);
+
+        // User did not actually give the required approval or we were not able
+        // to compute the required state overrides.
+        // Revert with a helpful message.
+        require(allowance >= sellAmount, "trader did not give the required approvals");
+
+        // Ensure that the user has sufficient sell token balance. If not, request some
+        // funds from the piggy bank which will be available if balance overrides could
+        // be computed correctly.
+        uint256 sellBalance = IERC20(sellToken).balanceOf(trader);
+        if (sellBalance < sellAmount) {
+            try Spardose(PIGGY_BANK).requestFunds(trader, sellToken, sellAmount - sellBalance) {}
+            catch {
+                // The trader does not have sufficient sell token balance, and the
+                // piggy bank pre-fund failed, as balance overrides are not available.
+                // Revert with a helpful message.
+                revert("trader does not have enough sell token");
+            }
+        }
     }
 
     /// @dev Helper function that reads the `owner`s balance for a given `token` and
@@ -93,42 +156,5 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         for (uint256 i = 0; i < tokens.length; i++) {
             this.storeBalance(tokens[i], address(settlementContract), false);
         }
-    }
-
-    /// @dev Executes the settlement and measures the gas used.
-    /// @param settlementContract The address of the settlement contract.
-    /// @param settlementCall The calldata for the settlement function.
-    /// @return gasUsed The amount of gas used during the settlement execution.
-    function _executeSettlement(
-        address settlementContract,
-        bytes calldata settlementCall
-    ) private returns (uint256 gasUsed) {
-        uint256 gasStart = gasleft();
-        address(settlementContract).doCall(settlementCall);
-        gasUsed = gasStart - gasleft() - _simulationOverhead;
-    }
-
-    /// @dev Simple wrapper around `Trader.ensureTradePreconditions()` that
-    ///      discounts the gas used to prepare the swap (setting up approvals
-    ///      and balances) from the total gas cost since that would normally
-    ///      not happen during the settlement.
-    function ensureTradePreconditions(
-        Trader trader,
-        ISettlement settlementContract,
-        address sellToken,
-        uint256 sellAmount,
-        address nativeToken,
-        address spardose
-    ) external {
-        uint256 gasStart = gasleft();
-        trader.ensureTradePreconditions(
-            settlementContract,
-            sellToken,
-            sellAmount,
-            nativeToken,
-            spardose
-        );
-        // Account for costs of gas used outside of metered section.
-        _simulationOverhead += gasStart - gasleft() + 4460;
     }
 }

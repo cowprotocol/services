@@ -525,7 +525,6 @@ fn build_module() -> Module {
                 .add_contract(Contract::new("AnyoneAuthenticator"))
                 .add_contract(Contract::new("Solver"))
                 .add_contract(Contract::new("Spardose"))
-                .add_contract(Contract::new("Trader"))
                 .add_contract(Contract::new("Swapper"))
                 .add_contract(Contract::new("Signatures").with_networks(networks![
                     MAINNET => "0x8262d639c38470F38d2eff15926F7071c28057Af",
