@@ -18,9 +18,6 @@ pub enum QuoteVerificationMode {
     /// Quotes get verified whenever possible and verified
     /// quotes are preferred over unverified ones.
     Prefer,
-    /// Quotes get discarded if they can't be verified.
-    /// Some scenarios like missing sell token balance are exempt.
-    EnforceWhenPossible,
 }
 
 const fn default_quote_timeout() -> Duration {
@@ -148,7 +145,7 @@ impl crate::test_util::TestDefault for PriceEstimation {
                 1_000_000_000_000_000_000u64,
             )),
             quote_timeout: Duration::from_secs(10),
-            quote_verification: QuoteVerificationMode::EnforceWhenPossible,
+            quote_verification: QuoteVerificationMode::Prefer,
             ..Default::default()
         }
     }
@@ -341,7 +338,7 @@ mod tests {
     fn deserialize_full() {
         let toml = r#"
         quote-inaccuracy-limit = "0.01"
-        quote-verification = "enforce-when-possible"
+        quote-verification = "prefer"
         quote-timeout = "10s"
         max-quote-timeout = "20s"
         tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
@@ -402,7 +399,7 @@ mod tests {
         assert_eq!(config.quote_inaccuracy_limit.to_string(), "0.01");
         assert!(matches!(
             config.quote_verification,
-            QuoteVerificationMode::EnforceWhenPossible
+            QuoteVerificationMode::Prefer
         ));
         assert_eq!(config.quote_timeout, Duration::from_secs(10));
         assert_eq!(config.max_quote_timeout, Duration::from_secs(20));

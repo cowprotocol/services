@@ -419,6 +419,11 @@ fn build_module() -> Module {
             BASE => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
             POLYGON => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
             AVALANCHE => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            BNB => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            OPTIMISM => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            LINEA => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            PLASMA => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            INK => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
         ]))
         .add_contract(Contract::new("CowSettlementForwarder"))
         .add_contract(Contract::new("ICowWrapper"))
