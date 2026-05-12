@@ -104,8 +104,8 @@ impl QuoteHandler {
         let buy_token_symbol = buy_token_info.ok().and_then(|info| info.symbol);
         tracing::debug!(
             ?request,
-            sell_token_symbol,
-            buy_token_symbol,
+            ?sell_token_symbol,
+            ?buy_token_symbol,
             "calculating quote"
         );
 
