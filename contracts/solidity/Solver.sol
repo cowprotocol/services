@@ -38,6 +38,7 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
     /// it does not have a stable address in tests.
     /// @param tokens - list of tokens used in the trade
     /// @param receiver - address receiving the bought tokens
+    /// @param settleCallTarget - contract we send the `settlementCall` to
     /// @param settlementCall - the calldata of the `settle()` call
     ///
     /// @return gasUsed - gas used for the `settle()` call
@@ -46,10 +47,11 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         ISettlement settlementContract,
         address[] calldata tokens,
         address payable receiver,
-        bytes calldata settlementCall,
         address trader,
         address sellToken,
-        uint256 sellAmount
+        uint256 sellAmount,
+        address settleCallTarget,
+        bytes calldata settlementCall
     ) external returns (
         uint256 gasUsed,
         uint256[] memory queriedBalances
@@ -67,7 +69,7 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         // Store pre-settlement balances
         _storeSettlementBalances(tokens, settlementContract);
 
-        gasUsed = _executeAndMeasure(settlementContract, settlementCall);
+        gasUsed = _executeAndMeasure(settleCallTarget, settlementCall);
 
         // Store post-settlement balances
         _storeSettlementBalances(tokens, settlementContract);
@@ -78,7 +80,7 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
     /// @dev Copies `settlementCall` to memory, invokes the settlement, and
     /// returns the net gas consumed.
     function _executeAndMeasure(
-        ISettlement settlementContract,
+        address settleCallTarget,
         bytes calldata settlementCall
     ) internal returns (uint256 gasUsed) {
         uint256 gasStart = gasleft();
@@ -89,7 +91,7 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         // pass the arguments via pointers outside of the metered section.
         bytes memory settlementCallMem = settlementCall;
         assembly {
-            if iszero(call(gas(), settlementContract, 0, add(settlementCallMem, 32), mload(settlementCallMem), 0, 0)) {
+            if iszero(call(gas(), settleCallTarget, 0, add(settlementCallMem, 32), mload(settlementCallMem), 0, 0)) {
                 returndatacopy(0, 0, returndatasize())
                 revert(0, returndatasize())
             }

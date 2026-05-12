@@ -182,13 +182,14 @@ impl TradeVerifier {
 
         let swap_call = solver_contract
             .swap(
-                settle_call.to,
+                self.simulator.settlement_address(),
                 tokens.clone(),
                 *verification.effective_receiver(),
-                settle_call.calldata.clone(),
                 verification.from,
                 query.sell_token,
                 sell_amount,
+                settle_call.to,
+                settle_call.calldata.clone(),
             )
             .from(*solver_contract.address())
             .gas(self.simulator.max_gas_limit())
