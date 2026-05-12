@@ -276,29 +276,33 @@ impl Detector {
 
         let strategy = self.uncached_detect(token, holder).await;
 
-        if matches!(&strategy, Ok(_) | Err(DetectionError::NotFound)) {
-            tracing::debug!(?token, ?strategy, "caching auto-detected balance strategy");
-            if let Ok(strategy) = strategy.as_ref() {
+        match strategy.as_ref() {
+            Ok(strategy) => {
                 let cache_key = (
                     token,
                     (!strategy.can_be_applied_to_any_holder()).then_some(holder),
                 );
+                tracing::debug!(?token, ?strategy, "caching auto-detected balance strategy");
                 self.cache
                     .lock()
                     .unwrap()
                     .cache_set(cache_key, Some(strategy.clone()));
-            } else {
+            }
+            Err(DetectionError::NotFound) => {
+                tracing::debug!(?token, "caching token as unsupported");
                 self.cache
                     .lock()
                     .unwrap()
                     .cache_set((token, Some(holder)), None);
             }
-        } else {
-            tracing::warn!(
-                ?token,
-                ?strategy,
-                "error auto-detecting token balance override strategy"
-            );
+            Err(err) => {
+                tracing::warn!(
+                    ?token,
+                    ?strategy,
+                    ?err,
+                    "error auto-detecting token balance override strategy"
+                );
+            }
         }
 
         strategy.ok()
