@@ -8,7 +8,7 @@ use {
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
-    price_estimation::{Verification, trade_finding},
+    price_estimation::Verification,
     shared::{
         arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
@@ -129,10 +129,7 @@ impl QuoteHandler {
             verification: Verification {
                 from: request.from,
                 receiver: request.receiver.unwrap_or(request.from),
-                sell_token_source: request.sell_token_balance,
-                buy_token_destination: request.buy_token_balance,
-                pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
-                post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
+                app_data: Arc::new(app_data.inner.document.clone()),
             },
             signing_scheme: request.signing_scheme,
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
