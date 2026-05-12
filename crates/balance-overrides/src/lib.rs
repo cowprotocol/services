@@ -1,25 +1,36 @@
+pub mod approval;
 pub mod balance;
 pub mod detector;
 
-pub use balance::BalanceOverrideRequest;
 use {alloy_primitives::Address, alloy_rpc_types::state::AccountOverride};
+pub use {
+    approval::{ApprovalOverrideRequest, ApprovalStrategy},
+    balance::BalanceOverrideRequest,
+};
 
-/// A component that can provide ERC-20 balance state overrides.
+/// A component that can provide ERC-20 balance and allowance state overrides.
 ///
-/// This allows a wider range of verified quotes to work, even when balances
-/// are not available for the quoter.
+/// This allows a wider range of verified quotes to work, even when balances or
+/// approvals are not available for the quoter.
 #[async_trait::async_trait]
 pub trait StateOverriding: Send + Sync + 'static {
     async fn balance_override(
         &self,
         request: BalanceOverrideRequest,
     ) -> Option<(Address, AccountOverride)>;
+
+    async fn approval_override(
+        &self,
+        request: ApprovalOverrideRequest,
+    ) -> Option<(Address, AccountOverride)>;
 }
 
-/// The default state override provider, handling ERC-20 balance overrides.
+/// The default state override provider, handling both ERC-20 balance and
+/// allowance overrides.
 #[derive(Debug)]
 pub struct StateOverrides {
     pub(crate) balance_detector: balance::Detector,
+    pub(crate) approval_detector: approval::Detector,
 }
 
 impl StateOverrides {
@@ -37,6 +48,12 @@ impl StateOverrides {
     ) -> Self {
         Self {
             balance_detector: balance::Detector::new(
+                web3.clone(),
+                probing_depth,
+                verification_timeout,
+                cache_size,
+            ),
+            approval_detector: approval::Detector::new(
                 web3,
                 probing_depth,
                 verification_timeout,
@@ -63,6 +80,20 @@ impl StateOverriding for StateOverrides {
             .into_iter()
             .last()
     }
+
+    async fn approval_override(
+        &self,
+        request: ApprovalOverrideRequest,
+    ) -> Option<(Address, AccountOverride)> {
+        let strategy = self
+            .approval_detector
+            .detect(request.token, request.owner, request.spender)
+            .await?;
+        strategy
+            .state_override(request.owner, request.spender, request.amount)
+            .into_iter()
+            .last()
+    }
 }
 
 /// State overrider that always returns `None`. Useful for testing.
@@ -76,13 +107,20 @@ impl StateOverriding for DummyStateOverrider {
     ) -> Option<(Address, AccountOverride)> {
         None
     }
+
+    async fn approval_override(
+        &self,
+        _request: ApprovalOverrideRequest,
+    ) -> Option<(Address, AccountOverride)> {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::{balance::Strategy, detector::mapping_slot_hash},
+        crate::balance::Strategy,
         alloy_primitives::{B256, U256, address, b256},
         cached::Cached,
         ethrpc::mock,
@@ -107,7 +145,7 @@ mod tests {
             result,
             Some((
                 cow,
-                alloy_rpc_types::state::AccountOverride {
+                AccountOverride {
                     state_diff: Some(
                         std::iter::once((
                             b256!(
@@ -266,13 +304,104 @@ mod tests {
         );
     }
 
-    #[test]
-    fn mapping_slot_hash_matches_solidity_layout() {
-        let holder = address!("18709E89BD403F470088aBDAcEbE86CC60dda12e");
-        let slot = mapping_slot_hash(&holder, &U256::from(52).to_be_bytes::<32>());
+    /// Universal strategies can be used to compute the state override for
+    /// any spender or owner inputs. This test asserts that we cache those
+    /// with the key (token, None).
+    #[tokio::test]
+    async fn caches_universal_approval_strategy_without_inputs() {
+        let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
+        let owner1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
+        let spender1 = Address::with_last_byte(1);
+        let owner2 = Address::with_last_byte(2);
+        let spender2 = Address::with_last_byte(3);
+        let target_contract = Address::with_last_byte(4);
+
+        let strategy = ApprovalStrategy::SolidityMappingOwnerToSpender {
+            target_contract,
+            map_slot: U256::from(1),
+        };
+
+        let mock_web3 = mock::web3();
+        let state_overrides = StateOverrides::new(mock_web3);
+
+        {
+            state_overrides
+                .approval_detector
+                .cache
+                .lock()
+                .unwrap()
+                .cache_set((token, None), Some(strategy.clone()));
+        }
+
         assert_eq!(
-            slot,
-            b256!("6785743a4ad9de6e692f819936c9d0b94b199ed36f2660e82404737b769718e5")
+            state_overrides
+                .approval_detector
+                .detect(token, owner1, spender1)
+                .await,
+            Some(strategy.clone())
+        );
+        assert_eq!(
+            state_overrides
+                .approval_detector
+                .detect(token, owner2, spender2)
+                .await,
+            Some(strategy)
+        );
+    }
+
+    /// Some strategies can not be used to compute the state override for
+    /// any spender or owner inputs. This test asserts that we cache those
+    /// with the key (token, (owner, spender)) as they only work for those
+    /// specific inputs.
+    #[tokio::test]
+    async fn caches_input_specific_approval_strategy_with_inputs() {
+        let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
+        let owner1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
+        let spender1 = Address::with_last_byte(1);
+        let owner2 = Address::with_last_byte(2);
+        let spender2 = Address::with_last_byte(3);
+        let target_contract = Address::with_last_byte(4);
+
+        let strategy_p1 = ApprovalStrategy::DirectSlot {
+            target_contract,
+            slot: alloy_primitives::B256::repeat_byte(1),
+        };
+        let strategy_p2 = ApprovalStrategy::DirectSlot {
+            target_contract,
+            slot: alloy_primitives::B256::repeat_byte(2),
+        };
+
+        let mock_web3 = mock::web3();
+        let state_overrides = StateOverrides::new(mock_web3);
+
+        {
+            state_overrides
+                .approval_detector
+                .cache
+                .lock()
+                .unwrap()
+                .cache_set((token, Some((owner1, spender1))), Some(strategy_p1.clone()));
+            state_overrides
+                .approval_detector
+                .cache
+                .lock()
+                .unwrap()
+                .cache_set((token, Some((owner2, spender2))), Some(strategy_p2.clone()));
+        }
+
+        assert_eq!(
+            state_overrides
+                .approval_detector
+                .detect(token, owner1, spender1)
+                .await,
+            Some(strategy_p1)
+        );
+        assert_eq!(
+            state_overrides
+                .approval_detector
+                .detect(token, owner2, spender2)
+                .await,
+            Some(strategy_p2)
         );
     }
 }
