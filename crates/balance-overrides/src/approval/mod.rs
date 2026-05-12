@@ -247,7 +247,7 @@ impl Detector {
             }
         }
 
-        let result = self.detect_uncached(token, owner, spender).await;
+        let result = self.uncached_detect(token, owner, spender).await;
 
         if matches!(&result, Ok(_) | Err(DetectionError::NotFound)) {
             tracing::debug!(?token, ?result, "caching auto-detected approval strategy");
@@ -273,7 +273,7 @@ impl Detector {
         result.ok()
     }
 
-    async fn detect_uncached(
+    async fn uncached_detect(
         &self,
         token: Address,
         owner: Address,
