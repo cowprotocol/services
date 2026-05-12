@@ -32,8 +32,8 @@ impl TokenConfiguration {
 /// This allows a wider range of verified quotes to work, even when balances
 /// are not available for the quoter.
 #[async_trait::async_trait]
-pub trait BalanceOverriding: Send + Sync + 'static {
-    async fn state_override(
+pub trait StateOverriding: Send + Sync + 'static {
+    async fn balance_override(
         &self,
         request: BalanceOverrideRequest,
     ) -> Option<(Address, AccountOverride)>;
@@ -228,8 +228,8 @@ impl BalanceOverrides {
 }
 
 #[async_trait::async_trait]
-impl BalanceOverriding for BalanceOverrides {
-    async fn state_override(
+impl StateOverriding for BalanceOverrides {
+    async fn balance_override(
         &self,
         request: BalanceOverrideRequest,
     ) -> Option<(Address, AccountOverride)> {
@@ -250,11 +250,11 @@ impl BalanceOverriding for BalanceOverrides {
 
 /// Balance overrider that always returns `None`. That can be
 /// useful for testing.
-pub struct DummyOverrider;
+pub struct DummyStateOverrider;
 
 #[async_trait::async_trait]
-impl BalanceOverriding for DummyOverrider {
-    async fn state_override(
+impl StateOverriding for DummyStateOverrider {
+    async fn balance_override(
         &self,
         _request: BalanceOverrideRequest,
     ) -> Option<(Address, AccountOverride)> {
@@ -287,7 +287,7 @@ mod tests {
 
         assert_eq!(
             balance_overrides
-                .state_override(BalanceOverrideRequest {
+                .balance_override(BalanceOverrideRequest {
                     token: cow,
                     holder: address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
                     amount: U256::from(0x42),
@@ -342,7 +342,7 @@ mod tests {
         let balance_overrides = BalanceOverrides::default();
         assert_eq!(
             balance_overrides
-                .state_override(BalanceOverrideRequest {
+                .balance_override(BalanceOverrideRequest {
                     token: address!("0000000000000000000000000000000000000000"),
                     holder: address!("0000000000000000000000000000000000000001"),
                     amount: U256::ZERO,
@@ -364,7 +364,7 @@ mod tests {
 
         assert_eq!(
             balance_overrides
-                .state_override(BalanceOverrideRequest {
+                .balance_override(BalanceOverrideRequest {
                     token,
                     holder: address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
                     amount: U256::from(0x42),
@@ -594,7 +594,7 @@ mod tests {
         };
 
         let (addr, override_) = balance_overrides
-            .state_override(BalanceOverrideRequest {
+            .balance_override(BalanceOverrideRequest {
                 token: a_token,
                 holder,
                 amount,
@@ -637,7 +637,7 @@ mod tests {
         };
 
         let result = balance_overrides
-            .state_override(BalanceOverrideRequest {
+            .balance_override(BalanceOverrideRequest {
                 token: a_token,
                 holder: address!("18709E89BD403F470088aBDAcEbE86CC60dda12e"),
                 amount: U256::from(1u64),

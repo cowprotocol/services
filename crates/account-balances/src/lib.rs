@@ -2,7 +2,7 @@ use {
     alloy_primitives::{Address, U256},
     alloy_rpc_types::state::StateOverride,
     alloy_sol_types::{SolCall, SolType, sol_data},
-    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
+    balance_overrides::{BalanceOverrideRequest, StateOverriding},
     contracts::{GPv2Settlement, support::Balances},
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
     model::{
@@ -94,7 +94,7 @@ pub struct BalanceSimulator {
     balances: Balances::Instance,
     vault_relayer: Address,
     vault: Address,
-    balance_overrider: Arc<dyn BalanceOverriding>,
+    balance_overrider: Arc<dyn StateOverriding>,
 }
 
 impl BalanceSimulator {
@@ -103,7 +103,7 @@ impl BalanceSimulator {
         balances: Balances::Instance,
         vault_relayer: Address,
         vault: Option<Address>,
-        balance_overrider: Arc<dyn BalanceOverriding>,
+        balance_overrider: Arc<dyn StateOverriding>,
     ) -> Self {
         Self {
             settlement,
@@ -134,7 +134,7 @@ impl BalanceSimulator {
         let overrides: StateOverride = match balance_override {
             Some(overrides) => self
                 .balance_overrider
-                .state_override(overrides)
+                .balance_override(overrides)
                 .await
                 .into_iter()
                 .collect(),
