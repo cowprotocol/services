@@ -47,6 +47,7 @@ pub(crate) fn find_plausible_strategies_for_slots(
     }
 
     buf[0..20].copy_from_slice(holder.as_slice());
+    buf[20..28].copy_from_slice(&[0x0; 8]); // zeroize dirtied section of buffer
     buf[28..32].copy_from_slice(BALANCE_SLOT_SEED);
     let solady_slot = keccak256(&buf[0..32]);
 
@@ -542,6 +543,7 @@ mod tests {
         buf[32..64].copy_from_slice(&U256::from(5).to_be_bytes::<32>());
         let heuristic_slot2 = keccak256(buf);
         buf[0..20].copy_from_slice(holder.as_slice());
+        buf[20..28].copy_from_slice(&[0x0; 8]);
         buf[28..32].copy_from_slice(BALANCE_SLOT_SEED);
         let heuristic_slot3 = keccak256(&buf[0..32]);
 
