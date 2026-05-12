@@ -52,6 +52,27 @@ impl Chain {
         }
     }
 
+    /// Kebab-case slug used in URLs and per-network configs (pool-indexer API
+    /// routes, DB database names, etc). Stable — other services parse it.
+    pub fn slug(&self) -> &'static str {
+        match &self {
+            Self::Mainnet => "mainnet",
+            Self::Goerli => "goerli",
+            Self::Gnosis => "gnosis",
+            Self::Sepolia => "sepolia",
+            Self::ArbitrumOne => "arbitrum-one",
+            Self::Base => "base",
+            Self::Hardhat => "hardhat",
+            Self::Bnb => "bnb",
+            Self::Avalanche => "avalanche",
+            Self::Optimism => "optimism",
+            Self::Polygon => "polygon",
+            Self::Linea => "linea",
+            Self::Plasma => "plasma",
+            Self::Ink => "ink",
+        }
+    }
+
     /// The default amount in native tokens atoms to use for price estimation
     pub fn default_amount_to_estimate_native_prices_with(&self) -> U256 {
         match &self {

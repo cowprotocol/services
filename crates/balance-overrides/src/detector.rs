@@ -13,7 +13,7 @@ use {
     alloy_transport::{RpcError, TransportErrorKind},
     contracts::ERC20,
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         fmt::{self, Debug, Formatter},
         sync::Arc,
         time::Duration,
@@ -288,7 +288,7 @@ impl Detector {
     ) -> Vec<(Address, B256)> {
         let mut storage_context = vec![initial_storage_context];
         let mut slots = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
 
         for log in &trace
             .try_into_default_frame()

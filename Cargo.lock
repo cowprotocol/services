@@ -2548,6 +2548,8 @@ dependencies = [
  "cow-contract-izeroex",
  "cow-contract-liquoricesettlement",
  "cow-contract-mockerc4626wrapper",
+ "cow-contract-mockuniswapv3factory",
+ "cow-contract-mockuniswapv3pool",
  "cow-contract-nonstandarderc20balances",
  "cow-contract-pancakerouter",
  "cow-contract-permit2",
@@ -3308,6 +3310,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "cow-contract-mockuniswapv3factory"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-mockuniswapv3pool"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
 name = "cow-contract-nonstandarderc20balances"
 version = "0.1.0"
 dependencies = [
@@ -4015,6 +4039,7 @@ dependencies = [
  "number",
  "observe",
  "orderbook",
+ "pool-indexer",
  "price-estimation",
  "refunder",
  "reqwest 0.13.2",
@@ -5397,6 +5422,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "shared",
  "strum",
  "testlib",
  "thiserror 1.0.69",
@@ -6272,6 +6298,42 @@ name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
+
+[[package]]
+name = "pool-indexer"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "anyhow",
+ "async-trait",
+ "axum 0.8.8",
+ "bigdecimal",
+ "clap",
+ "configs",
+ "contracts",
+ "ethrpc",
+ "futures",
+ "mimalloc",
+ "num",
+ "number",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest 0.13.2",
+ "scopeguard",
+ "serde",
+ "serde_json",
+ "shared",
+ "sqlx",
+ "tikv-jemallocator",
+ "tokio",
+ "toml",
+ "tower 0.5.3",
+ "tower-http",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "portable-atomic"
@@ -7682,7 +7744,6 @@ dependencies = [
  "humantime",
  "indexmap 2.13.0",
  "itertools 0.14.0",
- "liquidity-sources",
  "maplit",
  "mockall",
  "model",
