@@ -4,6 +4,7 @@ use {
     alloy_transport::RpcError,
     std::{collections::HashSet, time::Duration},
     thiserror::Error,
+    tracing::instrument,
 };
 
 pub(crate) const DEFAULT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(1);
@@ -29,13 +30,11 @@ pub enum DetectionError<E> {
 /// Extracts storage slots accessed via SLOAD operations from a geth trace.
 /// Returns slots in first-access order, keyed by the storage context
 /// (contract).
+#[instrument(skip_all, level = "trace")]
 pub(crate) fn extract_sload_slots(
     trace: GethTrace,
     initial_storage_context: Address,
 ) -> Vec<(Address, B256)> {
-    let span = tracing::info_span!("extract_sload_slots", token = ?initial_storage_context);
-    let _guard = span.enter();
-
     let mut storage_context = vec![initial_storage_context];
     let mut slots = Vec::new();
     let mut seen = HashSet::new();
