@@ -86,12 +86,32 @@ impl Trade {
     /// fees have been applied.
     pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let surplus_amount = self.surplus_over_limit_price()?;
+        self.surplus_to_ether(surplus_amount, prices)
+    }
+
+    pub(crate) fn surplus_to_ether(
+        &self,
+        surplus: eth::SurplusTokenAmount,
+        prices: &auction::Prices,
+    ) -> Result<eth::Ether, Error> {
         let surplus_token = self.surplus_token();
         let price = prices
             .get(&surplus_token)
             .ok_or(Error::MissingPrice(surplus_token))?;
+        Ok(price.in_eth(eth::TokenAmount(surplus.0)))
+    }
 
-        Ok(price.in_eth(eth::TokenAmount(surplus_amount.0)))
+    pub(crate) fn fee_to_ether(
+        &self,
+        surplus_before: eth::SurplusTokenAmount,
+        surplus_after: eth::SurplusTokenAmount,
+        prices: &auction::Prices,
+    ) -> Result<eth::Ether, Error> {
+        let fee_in_surplus_token = surplus_before
+            .0
+            .checked_sub(surplus_after.0)
+            .ok_or(error::Math::Negative)?;
+        self.surplus_to_ether(eth::SurplusTokenAmount(fee_in_surplus_token), prices)
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
@@ -147,15 +167,26 @@ impl Trade {
         &self,
         fee_policies: &HashMap<OrderUid, impl AsRef<[fee::Policy]>>,
     ) -> Result<Vec<ExecutedProtocolFee>, Error> {
+        let surplus = self.surplus_over_limit_price()?;
+        self.protocol_fees_from_surplus(surplus, fee_policies)
+    }
+
+    /// Calculate protocol fees using a pre-computed surplus value.
+    pub fn protocol_fees_from_surplus(
+        &self,
+        surplus: eth::SurplusTokenAmount,
+        fee_policies: &HashMap<OrderUid, impl AsRef<[fee::Policy]>>,
+    ) -> Result<Vec<ExecutedProtocolFee>, Error> {
         let policies = fee_policies
             .get(&self.uid)
             .map(|value| value.as_ref())
             .unwrap_or_default();
         let mut current_trade = self.clone();
+        let mut current_surplus = surplus;
         let mut total = eth::SurplusTokenAmount::default();
         let mut fees = vec![];
         for (i, policy) in policies.iter().enumerate().rev() {
-            let fee = current_trade.protocol_fee(policy)?;
+            let fee = current_trade.protocol_fee_from_surplus(current_surplus, policy)?;
             fees.push(ExecutedProtocolFee {
                 policy: *policy,
                 fee: eth::Asset {
@@ -174,11 +205,35 @@ impl Trade {
             // in this calculation fails the whole function unnecessarily.
             if i != 0 {
                 current_trade.prices.custom = self.calculate_custom_prices(total)?;
+                current_surplus = current_trade.surplus_over_limit_price()?;
             }
         }
         // Reverse the fees to have them in the same order as the policies
         fees.reverse();
         Ok(fees)
+    }
+
+    pub fn fee_breakdown_from_surplus(
+        &self,
+        surplus_before: eth::SurplusTokenAmount,
+        surplus_after: eth::SurplusTokenAmount,
+        fee_policies: &HashMap<OrderUid, impl AsRef<[fee::Policy]>>,
+    ) -> Result<super::FeeBreakdown, Error> {
+        let fee_amount = surplus_before
+            .0
+            .checked_sub(surplus_after.0)
+            .ok_or(error::Math::Negative)?;
+        let fee = eth::SurplusTokenAmount(fee_amount);
+        let total = self.fee_into_sell_token(fee)?;
+        let protocol = self.protocol_fees_from_surplus(surplus_after, fee_policies)?;
+
+        Ok(super::FeeBreakdown {
+            total: eth::Asset {
+                token: self.sell.token,
+                amount: total.into(),
+            },
+            protocol,
+        })
     }
 
     /// The effective amount that left the user's wallet including all fees.
@@ -245,19 +300,19 @@ impl Trade {
         })
     }
 
-    /// Protocol fee is defined by a fee policy attached to the order.
-    fn protocol_fee(&self, fee_policy: &fee::Policy) -> Result<eth::SurplusTokenAmount, Error> {
+    fn protocol_fee_from_surplus(
+        &self,
+        surplus: eth::SurplusTokenAmount,
+        fee_policy: &fee::Policy,
+    ) -> Result<eth::SurplusTokenAmount, Error> {
         let fee = match fee_policy {
             fee::Policy::Surplus {
                 factor,
                 max_volume_factor,
-            } => {
-                let surplus = self.surplus_over_limit_price()?;
-                std::cmp::min(
-                    self.surplus_fee(surplus, (*factor).get())?,
-                    self.volume_fee((*max_volume_factor).get())?,
-                )
-            }
+            } => std::cmp::min(
+                self.surplus_fee(surplus, (*factor).get())?,
+                self.volume_fee((*max_volume_factor).get())?,
+            ),
             fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
@@ -289,7 +344,7 @@ impl Trade {
 
     /// Uses custom prices to calculate the surplus after the protocol fee and
     /// network fee are applied.
-    fn surplus_over_limit_price(&self) -> Result<eth::SurplusTokenAmount, error::Math> {
+    pub(crate) fn surplus_over_limit_price(&self) -> Result<eth::SurplusTokenAmount, error::Math> {
         let limit_price = PriceLimits {
             sell: self.sell.amount,
             buy: self.buy.amount,
@@ -299,7 +354,9 @@ impl Trade {
 
     /// Uses uniform prices to calculate the surplus as if the protocol fee and
     /// network fee are not applied.
-    fn surplus_over_limit_price_before_fee(&self) -> Result<eth::SurplusTokenAmount, error::Math> {
+    pub(crate) fn surplus_over_limit_price_before_fee(
+        &self,
+    ) -> Result<eth::SurplusTokenAmount, error::Math> {
         let limit_price = PriceLimits {
             sell: self.sell.amount,
             buy: self.buy.amount,
@@ -404,7 +461,7 @@ impl Trade {
         ))
     }
 
-    fn surplus_token(&self) -> eth::TokenAddress {
+    pub(crate) fn surplus_token(&self) -> eth::TokenAddress {
         match self.side {
             order::Side::Buy => self.sell.token,
             order::Side::Sell => self.buy.token,
