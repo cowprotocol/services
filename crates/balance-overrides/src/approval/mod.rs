@@ -442,13 +442,13 @@ mod tests {
 
         let strategy = ApprovalStrategy::SolidityMappingSpenderToOwner {
             target_contract: token,
-            map_slot: U256::from(1),
+            map_slot: U256::ONE,
         };
 
         let (contract, slot) = strategy.slot(owner, spender);
         assert_eq!(contract, token);
 
-        let inner = mapping_slot_hash(&spender, &U256::from(1u64).to_be_bytes::<32>());
+        let inner = mapping_slot_hash(&spender, &U256::ONE.to_be_bytes::<32>());
         let expected = mapping_slot_hash(&owner, &inner.0);
         assert_eq!(slot, expected);
     }
@@ -607,7 +607,7 @@ mod tests {
         // Compute a real Solidity OwnerToSpender slot with map_slot = 1
         let heuristic_strategy = ApprovalStrategy::SolidityMappingOwnerToSpender {
             target_contract: contract,
-            map_slot: U256::from(1),
+            map_slot: U256::ONE,
         };
         let heuristic_slot = heuristic_strategy.slot(owner, spender).1;
         let fallback_slot = B256::with_last_byte(0xff);
@@ -621,7 +621,7 @@ mod tests {
             vec![
                 ApprovalStrategy::SolidityMappingOwnerToSpender {
                     target_contract: contract,
-                    map_slot: U256::from(1),
+                    map_slot: U256::ONE,
                 },
                 ApprovalStrategy::DirectSlot {
                     target_contract: contract,
