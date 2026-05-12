@@ -5,7 +5,7 @@ use {
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
-    anyhow::Context,
+    anyhow::{Context, anyhow},
     contracts::CowSettlementForwarder::CowSettlementForwarder,
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
@@ -67,32 +67,38 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let mut enabled = self.skip_and_observe_disabled_mempools(settlement)?;
+        // Disabled mempools are filtered out before the race, not inside it, so they
+        // don't get scored as Superseded when another mempool wins — that would
+        // artificially inflate the success rate of metrics that exclude Disabled from
+        // the failure count.
+        let (disabled, enabled): (Vec<_>, Vec<_>) = self
+            .mempools
+            .iter()
+            .partition(|mempool| self.is_disabled(mempool, settlement));
+        for mempool in &disabled {
+            observe::mempool_disabled(mempool, settlement);
+        }
+        if enabled.is_empty() {
+            return Err(Error::Disabled);
+        }
 
         let mut submission_futures: FuturesUnordered<_> = enabled
             .iter()
-            .enumerate()
-            .map(|(idx, &mempool)| async move {
+            .map(|&mempool| async move {
                 let result = self
                     .submit(mempool, settlement, submission_deadline, mode)
                     .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                     .await;
-                (idx, mempool, result)
+                (mempool, result)
             })
             .collect();
 
         let mut errors = Vec::with_capacity(enabled.len());
-        while let Some((idx, mempool, result)) = submission_futures.next().await {
+        while let Some((mempool, result)) = submission_futures.next().await {
             match result {
                 Ok(submission) => {
-                    // Pop winner out, mark it a success and the rest as superseded.
-                    //
-                    // SAFETY: `idx` comes from `enabled.iter().enumerate()` and `enabled` is
-                    // non-empty (checked in `skip_and_observe_disabled_mempools`), so `swap_remove`
-                    // cannot panic here.
-                    enabled.swap_remove(idx);
                     observe::mempool_succeeded(mempool, settlement, &submission);
-                    for superseded in &enabled {
+                    for superseded in enabled.iter().filter(|&&m| m != mempool) {
                         observe::mempool_superseded(superseded, mempool, settlement);
                     }
                     return Ok(submission.tx_hash);
@@ -107,43 +113,11 @@ impl Mempools {
             observe::mempool_failed(mempool, settlement, err);
         }
         let Some((_, err)) = errors.pop() else {
-            return Err(Error::Other(anyhow::anyhow!(
-                "race_mempools reached all-failed path with no errors recorded"
-            )));
+            return Err(
+                anyhow!("race_mempools reached all-failed path with no errors recorded").into(),
+            );
         };
         Err(err)
-    }
-
-    /// Returns the subset of configured mempools that are eligible for
-    /// submission in this settlement. Returns `Error::Disabled` when none
-    /// qualify.
-    ///
-    /// Disabled mempools are filtered out before the race, not inside it, so
-    /// they don't get scored as Superseded when another mempool wins. That
-    /// would artificially inflate the success rate of metrics that exclude
-    /// Disabled from the failure count.
-    fn skip_and_observe_disabled_mempools(
-        &self,
-        settlement: &Settlement,
-    ) -> Result<Vec<&infra::Mempool>, Error> {
-        let enabled: Vec<_> = self
-            .mempools
-            .iter()
-            .filter(|mempool| {
-                if self.is_disabled(mempool, settlement) {
-                    observe::mempool_disabled(mempool, settlement);
-                    false
-                } else {
-                    true
-                }
-            })
-            .collect();
-
-        if enabled.is_empty() {
-            return Err(Error::Disabled);
-        }
-
-        Ok(enabled)
     }
 
     /// A mempool is disabled if all of the following are true:
@@ -340,7 +314,7 @@ impl Mempools {
                     }
                 }
             }
-            Err(Error::Other(anyhow::anyhow!(
+            Err(Error::Other(anyhow!(
                 "Block stream finished unexpectedly"
             )))
         }
