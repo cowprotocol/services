@@ -12,14 +12,11 @@ use {
         Solver,
         WrapperConfig,
     },
-    alloy_primitives::{Address, B256, Bytes, U256, keccak256},
-    alloy_rpc_types::{
-        TransactionRequest,
-        state::{AccountOverride, StateOverride},
-    },
+    alloy_primitives::{Address, B256, Bytes, U256, b256, keccak256},
+    alloy_rpc_types::state::{AccountOverride, StateOverride},
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
-    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
+    balance_overrides::{ApprovalOverrideRequest, BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     derive_more::Debug,
     model::{
@@ -409,6 +406,19 @@ pub(crate) async fn finish_simulation_builder(
         }
     }
 
+    if builder.presign_orders {
+        builder.account_override_requests.extend(
+            builder
+                .orders
+                .iter()
+                .filter(|o| matches!(o.signature, Signature::PreSign))
+                .map(|o| {
+                    let uid = o.data.uid(&builder.simulator.0.domain_separator, o.owner);
+                    AccountOverrideRequest::PreSignature(uid)
+                }),
+        );
+    }
+
     // Encode every order as a trade, then collect all their interactions.
     let mut trades = Vec::with_capacity(n);
     for (i, (order, exec)) in builder.orders.iter().zip(&executed_amounts).enumerate() {
@@ -442,7 +452,7 @@ pub(crate) async fn finish_simulation_builder(
     };
 
     let wrapper = builder.wrapper;
-    let (to, input) = match wrapper {
+    let (to, calldata) = match wrapper {
         WrapperConfig::Custom(wrappers) if !wrappers.is_empty() => {
             encode_wrapper_settlement(&wrappers, settle_calldata).expect("wrappers is non-empty")
         }
@@ -482,19 +492,16 @@ pub(crate) async fn finish_simulation_builder(
     };
     let state_overrides = build_final_state_overrides(
         builder.account_override_requests,
-        builder.simulator.0.balance_overrides.as_ref(),
+        builder.simulator.0.state_overrides.as_ref(),
         builder.simulator.0.authenticator,
+        *builder.simulator.0.settlement.address(),
     )
     .await;
 
     Ok(EthCallInputs {
-        request: TransactionRequest {
-            from: Some(from),
-            to: Some(to.into()),
-            input: input.into(),
-            gas: Some(builder.simulator.0.max_gas_limit),
-            ..Default::default()
-        },
+        from,
+        to,
+        calldata,
         state_overrides,
         block,
         simulator: builder.simulator,
@@ -542,8 +549,9 @@ async fn executed_amount(
 /// than aborting the whole build.
 async fn build_final_state_overrides(
     requests: Vec<AccountOverrideRequest>,
-    balance_overrides: &dyn BalanceOverriding,
+    state_overrides: &dyn StateOverriding,
     authenticator: Address,
+    settlement_contract: Address,
 ) -> StateOverride {
     let futures = requests.into_iter().map(|request| async move {
         match request {
@@ -571,8 +579,8 @@ async fn build_final_state_overrides(
                 token,
                 amount,
             } => {
-                let result = balance_overrides
-                    .state_override(BalanceOverrideRequest {
+                let result = state_overrides
+                    .balance_override(BalanceOverrideRequest {
                         token,
                         holder,
                         amount,
@@ -590,6 +598,45 @@ async fn build_final_state_overrides(
                     ..Default::default()
                 },
             )),
+            AccountOverrideRequest::PreSignature(order) => {
+                // GPv2Settlement stores the `mapping(bytes => uint256) public preSignature` at
+                // storage slot 0.
+                // Solidity mapping key: keccak256(order_uid_without_padding ++ slot_padded).
+                // <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L57>
+                let mut buf = [0u8; 56 + 32];
+                buf[0..56].copy_from_slice(order.0.as_slice());
+                // no need to copy anything for storage slot 0 since the array gets 0 initialized.
+                let slot = keccak256(buf);
+
+                // Sentinel value expected by the settlement contract to indicate that the order
+                // was pre-signed by the user.
+                // See <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L44-L46>
+                const PRE_SIGN_SENTINEL: B256 = b256!("f59c009283ff87aa78203fc4d9c2df025ee851130fb69cc3e068941f6b5e2d6f");
+                Some((
+                    settlement_contract,
+                    AccountOverride::default()
+                        .with_state_diff(std::iter::once((slot, PRE_SIGN_SENTINEL))),
+                ))
+            }
+            AccountOverrideRequest::Approval {
+                owner,
+                token,
+                spender,
+                amount,
+            } => {
+                let result = state_overrides
+                    .approval_override(ApprovalOverrideRequest {
+                        token,
+                        owner,
+                        spender,
+                        amount,
+                    })
+                    .await;
+                if result.is_none() {
+                    tracing::warn!(%token, %owner, %spender, "failed to compute approval state override, skipping");
+                }
+                result
+            }
             AccountOverrideRequest::Custom { account, state } => Some((account, state)),
         }
     });

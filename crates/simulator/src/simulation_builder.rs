@@ -1,6 +1,6 @@
 use {
     crate::{encoding::WrapperCall, tenderly},
-    alloy_primitives::{Address, B256, Bytes, TxKind, U256},
+    alloy_primitives::{Address, B256, Bytes, U256},
     alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
         TransactionRequest,
@@ -9,12 +9,12 @@ use {
     alloy_sol_types::SolCall,
     alloy_transport::RpcError,
     anyhow::{Context, Result},
-    balance_overrides::BalanceOverriding,
+    balance_overrides::StateOverriding,
     ethrpc::block_stream::CurrentBlockWatcher,
     model::{
         DomainSeparator,
         interaction::InteractionData,
-        order::OrderData,
+        order::{OrderData, OrderUid},
         signature::{Signature, SigningScheme},
     },
     std::sync::Arc,
@@ -29,11 +29,12 @@ pub struct SettlementSimulator(pub(crate) Arc<Inner>);
 pub(crate) struct Inner {
     pub(crate) settlement: contracts::GPv2Settlement::Instance,
     pub(crate) authenticator: Address,
+    pub(crate) vault_relayer: Address,
     pub(crate) flash_loan_router: Address,
     pub(crate) hooks_trampoline: Address,
     pub(crate) native_token: Address,
     pub(crate) max_gas_limit: u64,
-    pub(crate) balance_overrides: Arc<dyn BalanceOverriding>,
+    pub(crate) state_overrides: Arc<dyn StateOverriding>,
     pub(crate) provider: DynProvider,
     pub(crate) domain_separator: DomainSeparator,
     pub(crate) chain_id: u64,
@@ -49,22 +50,24 @@ impl SettlementSimulator {
         hooks_trampoline: Address,
         native_token: Address,
         max_gas_limit: u64,
-        balance_overrides: Arc<dyn BalanceOverriding>,
+        state_overrides: Arc<dyn StateOverriding>,
         current_block: CurrentBlockWatcher,
         tenderly: Option<Arc<dyn tenderly::Api>>,
     ) -> Result<Self> {
         let authenticator = settlement.authenticator().call().await?;
+        let vault_relayer = Address(settlement.vaultRelayer().call().await?.0);
         let domain_separator = DomainSeparator(settlement.domainSeparator().call().await?.0);
         let provider = settlement.provider().clone();
         let chain_id = provider.get_chain_id().await?;
         Ok(Self(Arc::new(Inner {
             settlement,
             authenticator,
+            vault_relayer,
             flash_loan_router,
             hooks_trampoline,
             native_token,
             max_gas_limit,
-            balance_overrides,
+            state_overrides,
             provider,
             domain_separator,
             chain_id,
@@ -93,6 +96,10 @@ impl SettlementSimulator {
         self.0.authenticator
     }
 
+    pub fn vault_relayer_address(&self) -> Address {
+        self.0.vault_relayer
+    }
+
     pub fn new_simulation_builder(&self) -> SimulationBuilder {
         SimulationBuilder {
             simulator: self.clone(),
@@ -105,6 +112,7 @@ impl SettlementSimulator {
             auction_id: None,
             account_override_requests: vec![],
             provide_buy_tokens: false,
+            presign_orders: false,
             block: Block::Latest,
         }
     }
@@ -136,6 +144,7 @@ pub struct SimulationBuilder {
     pub(crate) simulator: SettlementSimulator,
     pub(crate) account_override_requests: Vec<AccountOverrideRequest>,
     pub(crate) provide_buy_tokens: bool,
+    pub(crate) presign_orders: bool,
     pub(crate) block: Block,
 }
 
@@ -145,7 +154,7 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn with_pre_interactions(
+    pub fn append_pre_interactions(
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
@@ -153,7 +162,7 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn with_main_interactions(
+    pub fn append_main_interactions(
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
@@ -161,7 +170,7 @@ impl SimulationBuilder {
         self
     }
 
-    pub fn with_post_interactions(
+    pub fn append_post_interactions(
         mut self,
         interactions: impl IntoIterator<Item = InteractionData>,
     ) -> Self {
@@ -261,6 +270,15 @@ impl SimulationBuilder {
         self
     }
 
+    /// For every order with signature scheme presign the simulation will
+    /// contains state overrides to provide the signatures.
+    /// This is useful when you have to author an order on behalf of an account
+    /// you don't control.
+    pub fn presign_orders(mut self) -> Self {
+        self.presign_orders = true;
+        self
+    }
+
     /// Queues [`AccountOverrideRequest`]s to be resolved and applied during
     /// [`build`](Self::build). Multiple requests may target the same address
     /// and will be applied on a best-effort basis (failure to compute balance
@@ -282,16 +300,28 @@ impl SimulationBuilder {
     }
 }
 
-/// The output of [`SimulationBuilder::build`]: a transaction request and state
-/// overrides ready to be passed to an alloy provider for simulation.
+/// The output of [`SimulationBuilder::build`]: inputs ready to be passed to an
+/// alloy provider for simulation.
 pub struct EthCallInputs {
-    pub request: TransactionRequest,
+    pub from: Address,
+    pub to: Address,
+    pub calldata: Bytes,
     pub state_overrides: StateOverride,
     pub simulator: SettlementSimulator,
     pub block: u64,
 }
 
 impl EthCallInputs {
+    pub fn as_transaction_request(&self) -> TransactionRequest {
+        TransactionRequest {
+            from: Some(self.from),
+            to: Some(self.to.into()),
+            input: self.calldata.clone().into(),
+            gas: Some(self.simulator.0.max_gas_limit),
+            ..Default::default()
+        }
+    }
+
     /// Runs the generated simulation using an `eth_call` and returns the
     /// response bytes if there are any.
     pub async fn simulate(self) -> Result<Bytes, RpcError<alloy_transport::TransportErrorKind>> {
@@ -299,7 +329,7 @@ impl EthCallInputs {
             .0
             .provider
             .clone()
-            .call(self.request)
+            .call(self.as_transaction_request())
             .overrides(self.state_overrides)
             .block(self.block.into())
             .await
@@ -334,25 +364,23 @@ impl EthCallInputs {
     /// tenderly.
     pub fn to_tenderly_request(&self) -> Result<tenderly::dto::Request, ConversionError> {
         Ok(tenderly::dto::Request {
-            // By default tenderly simulates calls at the start of the block. So if we simulate
-            // something when the latest block is `n` we need to tell tenderly to simulate at
-            // block `n+1` to still have all of block n's txs happen before our simulation runs.
+            // By default, tenderly simulates the given transaction as if it happened somewhere in
+            // the given block number, while nodes simulate the transaction as if it
+            // happened at the very end of the given block. This could be achieved in
+            // tenderly with `transaction_index: -1` but this is extremely costly to
+            // simulate which is why we craft the request to simulate the tx on the very
+            // first index of the **next** block. In practice the different will be that
+            // tenderly's simulation will already use the block number and timestamp of
+            // the **next** block that would be mined which is arguably more correct than
+            // the original simulation.
             block_number: Some(self.block + 1),
+            transaction_index: Some(0),
             network_id: self.simulator.0.chain_id.to_string(),
-            from: self.request.from.unwrap_or_default(),
-            to: match &self.request.to.ok_or(ConversionError::MissingTo)? {
-                TxKind::Create => Default::default(),
-                TxKind::Call(to) => *to,
-            },
-            input: self
-                .request
-                .input
-                .input
-                .as_ref()
-                .map(|bytes| bytes.to_vec())
-                .unwrap_or_default(),
-            gas: self.request.gas,
-            value: self.request.value,
+            from: self.from,
+            to: self.to,
+            input: self.calldata.to_vec(),
+            gas: Some(self.simulator.0.max_gas_limit),
+            value: None,
             simulation_type: Some(tenderly::dto::SimulationType::Full),
             state_objects: Some(
                 self.state_overrides
@@ -366,11 +394,10 @@ impl EthCallInputs {
                     })
                     .collect::<Result<_, ConversionError>>()?,
             ),
-            access_list: self.request.access_list.as_ref().map(Into::into),
+            access_list: None,
             save: Some(true),
             gas_price: None,
             save_if_fails: Some(true),
-            transaction_index: None,
             generate_access_list: None,
         })
     }
@@ -504,15 +531,21 @@ pub enum AccountOverrideRequest {
         account: Address,
         state: AccountOverride,
     },
-    // TODO: add Allowance
+    /// Sets the given Erc20 token approval.
+    Approval {
+        owner: Address,
+        token: Address,
+        spender: Address,
+        amount: U256,
+    },
+    /// Pre-signs the given order such that the pre-sign signature check passes.
+    PreSignature(OrderUid),
 }
 
 /// Error returned when a built eth_call simulation could not be converted
 /// into a tenderly simulation request.
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
-    #[error("simulation does not have a target")]
-    MissingTo,
     #[error("could not convert state overrides")]
     StateOverrides,
 }

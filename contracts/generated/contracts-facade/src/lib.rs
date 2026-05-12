@@ -75,7 +75,6 @@ pub mod support {
         cow_contract_solver as Solver,
         cow_contract_spardose as Spardose,
         cow_contract_swapper as Swapper,
-        cow_contract_trader as Trader,
     };
 }
 pub mod test {
