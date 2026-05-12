@@ -114,7 +114,7 @@ impl Mempools {
         }
         let Some((_, err)) = errors.pop() else {
             return Err(
-                anyhow!("race_mempools reached all-failed path with no errors recorded").into(),
+                anyhow!("execute reached all-failed path with no errors recorded").into(),
             );
         };
         Err(err)
