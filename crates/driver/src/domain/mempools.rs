@@ -113,9 +113,7 @@ impl Mempools {
             observe::mempool_failed(mempool, settlement, err);
         }
         let Some((_, err)) = errors.pop() else {
-            return Err(
-                anyhow!("execute reached all-failed path with no errors recorded").into(),
-            );
+            return Err(anyhow!("execute reached all-failed path with no errors recorded").into());
         };
         Err(err)
     }
