@@ -33,6 +33,9 @@ pub(crate) fn extract_sload_slots(
     trace: GethTrace,
     initial_storage_context: Address,
 ) -> Vec<(Address, B256)> {
+    let span = tracing::info_span!("extract_sload_slots", token = ?initial_storage_context);
+    let _guard = span.enter();
+
     let mut storage_context = vec![initial_storage_context];
     let mut slots = Vec::new();
     let mut seen = HashSet::new();
