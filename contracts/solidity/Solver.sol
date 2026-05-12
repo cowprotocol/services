@@ -26,6 +26,7 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
     /// @dev When setting up the simulation we compute state overrides to fund this
     /// address with the necessary sell tokens. If the user does not have the tokens
     /// already the solver will transfer them from this account to the user.
+    /// If you update this constant it also needs to be updated in `trade_verifier.rs`.
     address private constant PIGGY_BANK = 0x1111111111111111111111111111111111111111;
 
     /// @dev Executes the given transaction from the context of a solver.
@@ -75,15 +76,17 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
     }
 
     /// @dev Copies `settlementCall` to memory, invokes the settlement, and
-    /// returns the net gas consumed (minus simulation overhead and the 2600
-    /// cold-access cost that is normally covered by the 21K tx base cost).
+    /// returns the net gas consumed.
     function _executeAndMeasure(
         ISettlement settlementContract,
         bytes calldata settlementCall
     ) internal returns (uint256 gasUsed) {
         uint256 gasStart = gasleft();
-        // We copy the calldata to memory outside of the metered section because that
-        // would normally not happen if the solver executes the settlement directly.
+        // In order to call a function we need to copy the arguments into memory.
+        // In a regular transaction that would actually not happen because the arguments
+        // would get referenced directly from the calldata. To not overcount the gas
+        // usage due to this difference we manually copy the calldata to memory and
+        // pass the arguments via pointers outside of the metered section.
         bytes memory settlementCallMem = settlementCall;
         assembly {
             if iszero(call(gas(), settlementContract, 0, add(settlementCallMem, 32), mload(settlementCallMem), 0, 0)) {

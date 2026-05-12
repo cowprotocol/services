@@ -79,6 +79,8 @@ impl TradeVerifier {
     /// compute the necessary state overrides once and cache that.
     /// Additionally using a contract means we can expose a function that
     /// handles token transfers instead of setting up Erc20 approvals.
+    /// If you change this value the same constant in `Solver.sol` must be
+    /// updated as well.
     const SPARDOSE: Address = address!("0x1111111111111111111111111111111111111111");
 
     pub fn new(
@@ -231,9 +233,11 @@ impl TradeVerifier {
     /// are specific to the verification aspect:
     /// * has 2 additional interactions tracking relevant balances throughout
     ///   the settlement
-    /// * order has a limit price that is trivial to achieve to see how much the
-    ///   user would actually have gotten even if the solver promised too much
-    ///   (which would otherwise result in a revert)
+    /// * order has a limit price that is trivial to achieve (e.g. buy order
+    ///   buys is willing to sell `U256::MAX`, sell order only wants to buy
+    ///   `0`). That way the solver can deliver **less** than promised and we
+    ///   can still measure how much they actually delivered since the
+    ///   simulation will not revert due to limit price violations.
     async fn assemble_settle_call(
         &self,
         verification: &Verification,
@@ -821,7 +825,8 @@ enum Error {
 /// would be bigger than on block `n` with the same state override.
 /// To not run into race conditions where we compute the state override
 /// on one block but run the actual simulation on the next block we give
-/// the user slightly more sell tokens to compensate for that.
+/// the user 1% (or at least 1 wei in case of rounding issues) more sell
+/// tokens to compensate for that.
 fn give_slightly_more(needed: U256) -> U256 {
     let buffer = std::cmp::max(U256::ONE, needed / U256::from(100u64));
     needed.saturating_add(buffer)
