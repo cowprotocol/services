@@ -321,11 +321,8 @@ impl Detector {
             .take(self.probing_depth.into())
             .enumerate()
         {
-            let result = tokio::time::timeout(
-                self.verification_timeout,
-                self.verify_approval_strategy(token, owner, spender, strategy),
-            )
-            .await;
+            let fut = self.verify_approval_strategy(token, owner, spender, strategy);
+            let result = tokio::time::timeout(self.verification_timeout, fut).await;
 
             match result {
                 Ok(Ok(())) => {
