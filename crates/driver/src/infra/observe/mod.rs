@@ -403,7 +403,7 @@ pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools
         mempools::Error::Disabled => {
             tracing::debug!(
                 %mempool,
-                "sending transaction via mempool disabled",
+                "mempool disabled, not sending transaction",
             );
         }
         _ => {
