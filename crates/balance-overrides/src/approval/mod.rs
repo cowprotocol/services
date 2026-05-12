@@ -22,10 +22,16 @@ use {
 const ALLOWANCE_SLOT_SEED: &[u8] = &[0x7f, 0x5e, 0x9f, 0x20];
 
 /// Produces approval strategy candidates from a list of SLOAD-accessed slots.
+/// This function assumes SLOAD-accessed slots are returned in order that they
+/// were accessed in the relevant call (`balanceOf()`, or `allowance()`).
+/// Since it's most likely that the last slots are the important ones this
+/// function returns strategies for the slots in **reverse** order.
 ///
 /// Tries Solady and both Solidity double-mapping orderings (owner→spender and
-/// spender→owner, for each base map_slot index 0..depth). Reverses slot order
-/// first so most-recently-accessed slots are tried first.
+/// spender→owner, for each base map_slot index 0..depth). If `depth == 0`
+/// **no** such strategies will be tried and returned.
+/// In that case this function can only return `DirectSlot` or `SoladyMapping`
+/// strategies.
 pub(crate) fn find_plausible_strategies_for_slots(
     storage_slots: &[(Address, B256)],
     owner: &Address,
@@ -48,22 +54,22 @@ pub(crate) fn find_plausible_strategies_for_slots(
         for i in 0..heuristic_depth {
             let map_slot = U256::from(i);
 
-            let o2s = ApprovalStrategy::SolidityMappingOwnerToSpender {
+            let owner_to_spender = ApprovalStrategy::SolidityMappingOwnerToSpender {
                 target_contract: *contract,
                 map_slot,
             };
-            if o2s.slot(*owner, *spender).1 == *observed_slot {
-                heuristic_candidates.push(o2s);
+            if owner_to_spender.slot(*owner, *spender).1 == *observed_slot {
+                heuristic_candidates.push(owner_to_spender);
                 matched = true;
                 break;
             }
 
-            let s2o = ApprovalStrategy::SolidityMappingSpenderToOwner {
+            let spender_to_owner = ApprovalStrategy::SolidityMappingSpenderToOwner {
                 target_contract: *contract,
                 map_slot,
             };
-            if s2o.slot(*owner, *spender).1 == *observed_slot {
-                heuristic_candidates.push(s2o);
+            if spender_to_owner.slot(*owner, *spender).1 == *observed_slot {
+                heuristic_candidates.push(spender_to_owner);
                 matched = true;
                 break;
             }
@@ -413,11 +419,11 @@ mod tests {
     fn solidity_mapping_owner_to_spender_slot() {
         let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let owner = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let spender = address!("0000000000000000000000000000000000000001");
+        let spender = Address::with_last_byte(1);
 
         let strategy = ApprovalStrategy::SolidityMappingOwnerToSpender {
             target_contract: token,
-            map_slot: U256::from(1),
+            map_slot: U256::ONE,
         };
 
         let (contract, slot) = strategy.slot(owner, spender);
@@ -432,7 +438,7 @@ mod tests {
     fn solidity_mapping_spender_to_owner_slot() {
         let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let owner = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let spender = address!("0000000000000000000000000000000000000001");
+        let spender = Address::with_last_byte(1);
 
         let strategy = ApprovalStrategy::SolidityMappingSpenderToOwner {
             target_contract: token,
@@ -451,7 +457,7 @@ mod tests {
     fn solady_approval_slot() {
         let token = address!("0000000000c5dc95539589fbd24be07c6c14eca4");
         let owner = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let spender = address!("0000000000000000000000000000000000000001");
+        let spender = Address::with_last_byte(1);
 
         let strategy = ApprovalStrategy::SoladyMapping {
             target_contract: token,
@@ -473,7 +479,7 @@ mod tests {
     async fn override_allowance_simple() {
         let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let owner = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let spender = address!("0000000000000000000000000000000000000001");
+        let spender = Address::with_last_byte(1);
         let amount = U256::from(123123123);
 
         let web3 = Web3::new_from_env();
@@ -506,7 +512,7 @@ mod tests {
     async fn override_allowance_solady() {
         let token = address!("0000000000c5dc95539589fbd24be07c6c14eca4");
         let owner = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let spender = address!("0000000000000000000000000000000000000001");
+        let spender = Address::with_last_byte(1);
         let amount = U256::from(123123123);
 
         let web3 = Web3::new_from_env();
@@ -568,8 +574,8 @@ mod tests {
     #[test]
     fn test_unmatched_slots_become_direct_slot() {
         let contract = Address::with_last_byte(2);
-        let owner = address!("1111111111111111111111111111111111111111");
-        let spender = address!("2222222222222222222222222222222222222222");
+        let owner = Address::repeat_byte(1);
+        let spender = Address::repeat_byte(2);
 
         let slot1 = B256::with_last_byte(0xe1);
         let slot2 = B256::with_last_byte(0xe2);
@@ -595,8 +601,8 @@ mod tests {
     #[test]
     fn test_heuristic_before_direct_slot_fallback() {
         let contract = Address::with_last_byte(2);
-        let owner = address!("1111111111111111111111111111111111111111");
-        let spender = address!("2222222222222222222222222222222222222222");
+        let owner = Address::repeat_byte(1);
+        let spender = Address::repeat_byte(2);
 
         // Compute a real Solidity OwnerToSpender slot with map_slot = 1
         let heuristic_strategy = ApprovalStrategy::SolidityMappingOwnerToSpender {
@@ -628,8 +634,8 @@ mod tests {
     #[test]
     fn test_zero_heuristic_depth_all_direct_slot() {
         let contract = Address::with_last_byte(2);
-        let owner = address!("1111111111111111111111111111111111111111");
-        let spender = address!("2222222222222222222222222222222222222222");
+        let owner = Address::repeat_byte(1);
+        let spender = Address::repeat_byte(2);
 
         // Compute a real Solidity slot — with depth 0 it must NOT match
         let heuristic_strategy = ApprovalStrategy::SolidityMappingOwnerToSpender {

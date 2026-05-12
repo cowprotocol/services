@@ -304,16 +304,17 @@ mod tests {
         );
     }
 
+    /// Universal strategies can be used to compute the state override for
+    /// any spender or owner inputs. This test asserts that we cache those
+    /// with the key (token, None).
     #[tokio::test]
-    async fn cached_approval_detection_caches_pair_agnostic_strategies_without_pair() {
-        use cached::Cached;
-
+    async fn caches_universal_approval_strategy_without_inputs() {
         let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let owner1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let spender1 = address!("0000000000000000000000000000000000000001");
-        let owner2 = address!("0000000000000000000000000000000000000002");
-        let spender2 = address!("0000000000000000000000000000000000000003");
-        let target_contract = address!("0000000000000000000000000000000000000004");
+        let spender1 = Address::with_last_byte(1);
+        let owner2 = Address::with_last_byte(2);
+        let spender2 = Address::with_last_byte(3);
+        let target_contract = Address::with_last_byte(4);
 
         let strategy = ApprovalStrategy::SolidityMappingOwnerToSpender {
             target_contract,
@@ -348,14 +349,18 @@ mod tests {
         );
     }
 
+    /// Some strategies can not be used to compute the state override for
+    /// any spender or owner inputs. This test asserts that we cache those
+    /// with the key (token, (owner, spender)) as they only work for those
+    /// specific inputs.
     #[tokio::test]
-    async fn cached_approval_detection_caches_pair_specific_strategies_with_pair() {
+    async fn caches_input_specific_approval_strategy_with_inputs() {
         let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let owner1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-        let spender1 = address!("0000000000000000000000000000000000000001");
-        let owner2 = address!("0000000000000000000000000000000000000002");
-        let spender2 = address!("0000000000000000000000000000000000000003");
-        let target_contract = address!("0000000000000000000000000000000000000004");
+        let spender1 = Address::with_last_byte(1);
+        let owner2 = Address::with_last_byte(2);
+        let spender2 = Address::with_last_byte(3);
+        let target_contract = Address::with_last_byte(4);
 
         let strategy_p1 = ApprovalStrategy::DirectSlot {
             target_contract,
