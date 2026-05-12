@@ -415,16 +415,15 @@ pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools
             );
         }
     }
-    let label = err.metric_label();
     metrics::get()
         .mempool_submission
-        .with_label_values(&[mempool.to_string().as_str(), label])
+        .with_label_values(&[mempool.to_string().as_str(), err.metric_label()])
         .inc();
 
     if let Some(blocks_passed) = err.blocks_passed() {
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[mempool.to_string().as_str(), label])
+            .with_label_values(&[mempool.to_string().as_str(), err.metric_label()])
             .inc_by(blocks_passed);
     }
 }
