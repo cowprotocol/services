@@ -2,7 +2,7 @@ use {
     alloy_primitives::{Address, B256, keccak256},
     alloy_rpc_types::trace::geth::GethTrace,
     alloy_transport::RpcError,
-    std::time::Duration,
+    std::{collections::HashSet, time::Duration},
     thiserror::Error,
 };
 
@@ -35,7 +35,7 @@ pub(crate) fn extract_sload_slots(
 ) -> Vec<(Address, B256)> {
     let mut storage_context = vec![initial_storage_context];
     let mut slots = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
 
     for log in &trace
         .try_into_default_frame()

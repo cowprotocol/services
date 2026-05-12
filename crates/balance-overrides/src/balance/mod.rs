@@ -27,7 +27,7 @@ const BALANCE_SLOT_SEED: &[u8] = &[0x87, 0xa2, 0x11, 0xa2];
 /// find the correct storage slot quickly.
 ///
 /// Note: does not emit `AaveV3AToken` candidates — Aave is handled by the
-/// fast-path in `Detector::detect_uncached` which tries the canonical
+/// fast-path in `Detector::uncached_detect` which tries the canonical
 /// `_userState` slot directly.
 pub(crate) fn find_plausible_strategies_for_slots(
     storage_slots: &[(Address, B256)],
@@ -274,7 +274,7 @@ impl Detector {
             }
         }
 
-        let strategy = self.detect_uncached(token, holder).await;
+        let strategy = self.uncached_detect(token, holder).await;
 
         if matches!(&strategy, Ok(_) | Err(DetectionError::NotFound)) {
             tracing::debug!(?token, ?strategy, "caching auto-detected balance strategy");
@@ -304,7 +304,7 @@ impl Detector {
         strategy.ok()
     }
 
-    async fn detect_uncached(
+    async fn uncached_detect(
         &self,
         token: Address,
         holder: Address,
@@ -388,11 +388,7 @@ impl Detector {
             "multiple SLOAD operations, testing each one",
         );
 
-        for (i, strategy) in strategies
-            .iter()
-            .take(self.probing_depth.into())
-            .enumerate()
-        {
+        for (i, strategy) in strategies.into_iter().enumerate() {
             // Some tokens (e.g. reflection tokens like LuckyBlock) have
             // `balanceOf` implementations that iterate over storage arrays.
             // During verification we override storage slots with a test value —
@@ -401,7 +397,7 @@ impl Detector {
             // slow slot from blocking the entire detection.
             let result = tokio::time::timeout(
                 self.verification_timeout,
-                self.verify_strategy(token, holder, strategy),
+                self.verify_strategy(token, holder, &strategy),
             )
             .await;
 
@@ -425,7 +421,15 @@ impl Detector {
                         "balance override strategy verification timed out, skipping",
                     );
                 }
-                Ok(Err(_)) => {}
+                Ok(Err(err)) => {
+                    tracing::trace!(
+                        ?token,
+                        ?holder,
+                        ?strategy,
+                        ?err,
+                        "balance override strategy was not correct",
+                    );
+                }
             }
         }
 
@@ -437,6 +441,13 @@ impl Detector {
         Err(DetectionError::NotFound)
     }
 
+    /// Verifies that a strategy correctly controls the balance by applying it
+    /// and checking balanceOf.
+    ///
+    /// For the `AaveV3AToken` variant we allow `balanceOf` to be off by one
+    /// wei, since Aave's ray rounding can slightly differ from our locally
+    /// computed scaled value; for every other variant the check is still an
+    /// exact equality.
     async fn verify_strategy(
         &self,
         token: Address,
@@ -477,6 +488,10 @@ impl std::fmt::Debug for Detector {
     }
 }
 
+/// Is the `balance` returned by `balanceOf` after applying the override
+/// consistent with the `test_balance` we wrote? For `AaveV3AToken` we tolerate
+/// 1 wei of difference because Aave's ray-div / ray-mul round-trip is not
+/// identity by construction; every other strategy must match exactly.
 fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U256) -> bool {
     match strategy {
         Strategy::AaveV3AToken { .. } => balance.abs_diff(test_balance) <= U256::ONE,

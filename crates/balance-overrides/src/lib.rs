@@ -83,7 +83,8 @@ mod tests {
     use {
         super::*,
         crate::{balance::Strategy, detector::mapping_slot_hash},
-        alloy_primitives::{U256, address, b256},
+        alloy_primitives::{B256, U256, address, b256},
+        cached::Cached,
         ethrpc::mock,
     };
 
@@ -157,7 +158,7 @@ mod tests {
             result,
             Some((
                 token,
-                alloy_rpc_types::state::AccountOverride {
+                AccountOverride {
                     state_diff: Some({
                         std::iter::once((
                             b256!(
@@ -177,8 +178,6 @@ mod tests {
 
     #[tokio::test]
     async fn cached_detection_caches_holder_agnostic_strategies_without_holder() {
-        use cached::Cached;
-
         let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let holder1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
         let holder2 = address!("0000000000000000000000000000000000000001");
@@ -219,8 +218,6 @@ mod tests {
 
     #[tokio::test]
     async fn cached_detection_caches_holder_specific_strategies_with_holder() {
-        use cached::Cached;
-
         let token = address!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB");
         let holder1 = address!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
         let holder2 = address!("0000000000000000000000000000000000000001");
@@ -228,11 +225,11 @@ mod tests {
 
         let strategy_h1 = Strategy::DirectSlot {
             target_contract,
-            slot: alloy_primitives::B256::repeat_byte(1),
+            slot: B256::repeat_byte(1),
         };
         let strategy_h2 = Strategy::DirectSlot {
             target_contract,
-            slot: alloy_primitives::B256::repeat_byte(2),
+            slot: B256::repeat_byte(2),
         };
 
         let mock_web3 = mock::web3();

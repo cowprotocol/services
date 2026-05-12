@@ -259,17 +259,10 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    let orderbook_config = configs::orderbook::Configuration {
-        price_estimation: configs::price_estimation::PriceEstimation {
-            balance_overrides: Default::default(),
-            ..configs::orderbook::Configuration::test_default().price_estimation
-        },
-        ..configs::orderbook::Configuration::test_default()
-    };
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
-            orderbook_config,
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -410,13 +403,7 @@ async fn usdt_quote_verification(web3: Web3) {
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
-            configs::orderbook::Configuration {
-                price_estimation: configs::price_estimation::PriceEstimation {
-                    balance_overrides: Default::default(),
-                    ..configs::orderbook::Configuration::test_default().price_estimation
-                },
-                ..configs::orderbook::Configuration::test_default()
-            },
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -453,6 +440,11 @@ async fn trace_based_balance_detection(web3: Web3) {
             .await
             .unwrap();
 
+    // Deploy the NonStandardERC20BalancesEntrance token - as if the previous
+    // contract wasnt complicated enough, this contract will selectively
+    // delegate the balance it returns between itself (allowing for testing of
+    // calling another contract to get a balance--or calling another contract to
+    // *not* get a balance)
     let local_storage_token =
         contracts::test::RemoteERC20Balances::Instance::deploy(web3.provider.clone(), weth, true)
             .await
@@ -462,6 +454,7 @@ async fn trace_based_balance_detection(web3: Web3) {
             .await
             .unwrap();
 
+    // Mint some tokens to the trader (so the contract has non-zero state)
     struct_offset_token
         .mint(trader.address(), 100u64.eth())
         .from(solver.address())
@@ -478,8 +471,6 @@ async fn trace_based_balance_detection(web3: Web3) {
 
     let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
-
-    use contracts::ERC20;
 
     async fn test_balance_override(
         web3: &Web3,

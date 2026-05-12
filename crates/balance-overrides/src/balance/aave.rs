@@ -328,8 +328,6 @@ mod tests {
 
     #[tokio::test]
     async fn aave_v3_a_token_override_scales_amount_and_writes_low_128() {
-        use alloy_provider::mock::Asserter;
-
         let a_token = address!("4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8");
         let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
         let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
