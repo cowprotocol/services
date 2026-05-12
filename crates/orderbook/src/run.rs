@@ -469,6 +469,7 @@ pub async fn run(config: Configuration) {
         config.volume_fee,
         volume_fee_bucket_overrides,
         config.shared.enable_sell_equals_buy_volume_fee,
+        token_info_fetcher.clone(),
     )
     .with_fast_quoter(fast_quoter);
 
