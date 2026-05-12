@@ -602,7 +602,7 @@ async fn build_final_state_overrides(
                 // GPv2Settlement stores the `mapping(bytes => uint256) public preSignature` at
                 // storage slot 0.
                 // Solidity mapping key: keccak256(order_uid_without_padding ++ slot_padded).
-                // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/mixins/GPv2Signing.sol#L57C1-L57C51>
+                // <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L57>
                 let mut buf = [0u8; 56 + 32];
                 buf[0..56].copy_from_slice(order.0.as_slice());
                 // no need to copy anything for storage slot 0 since the array gets 0 initialized.
@@ -610,7 +610,7 @@ async fn build_final_state_overrides(
 
                 // Sentinel value expected by the settlement contract to indicate that the order
                 // was pre-signed by the user.
-                // See <https://github.com/cowprotocol/contracts/blob/main/src/contracts/mixins/GPv2Signing.sol#L44-L46>
+                // See <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L44-L46>
                 const PRE_SIGN_SENTINEL: B256 = b256!("f59c009283ff87aa78203fc4d9c2df025ee851130fb69cc3e068941f6b5e2d6f");
                 Some((
                     settlement_contract,

@@ -312,7 +312,7 @@ pub struct EthCallInputs {
 }
 
 impl EthCallInputs {
-    pub fn to_transaction_request(&self) -> TransactionRequest {
+    pub fn as_transaction_request(&self) -> TransactionRequest {
         TransactionRequest {
             from: Some(self.from),
             to: Some(self.to.into()),
@@ -329,7 +329,7 @@ impl EthCallInputs {
             .0
             .provider
             .clone()
-            .call(self.to_transaction_request())
+            .call(self.as_transaction_request())
             .overrides(self.state_overrides)
             .block(self.block.into())
             .await
@@ -369,7 +369,10 @@ impl EthCallInputs {
             // happened at the very end of the given block. This could be achieved in
             // tenderly with `transaction_index: -1` but this is extremely costly to
             // simulate which is why we craft the request to simulate the tx on the very
-            // first index of the **next** block.
+            // first index of the **next** block. In practice the different will be that
+            // tenderly's simulation will already use the block number and timestamp of
+            // the **next** block that would be mined which is arguably more correct than
+            // the original simulation.
             block_number: Some(self.block + 1),
             transaction_index: Some(0),
             network_id: self.simulator.0.chain_id.to_string(),
