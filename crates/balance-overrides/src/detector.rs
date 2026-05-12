@@ -1,5 +1,5 @@
 use {
-    alloy_primitives::{Address, B256},
+    alloy_primitives::{Address, B256, keccak256},
     alloy_rpc_types::trace::geth::GethTrace,
     alloy_transport::RpcError,
     std::time::Duration,
@@ -82,4 +82,13 @@ pub(crate) fn extract_sload_slots(
     }
 
     slots
+}
+
+/// `keccak256(pad32(holder) ++ map_slot)` — the storage slot of
+/// `mapping(address => _)` entries in Solidity.
+pub(crate) fn mapping_slot_hash(holder: &Address, map_slot: &[u8; 32]) -> B256 {
+    let mut buf = [0u8; 64];
+    buf[12..32].copy_from_slice(holder.as_slice());
+    buf[32..64].copy_from_slice(map_slot);
+    keccak256(buf)
 }

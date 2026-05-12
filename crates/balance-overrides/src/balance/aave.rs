@@ -8,7 +8,8 @@
 //!   in a single slot per holder.
 
 use {
-    alloy_primitives::{Address, B256, U256, keccak256},
+    crate::detector::mapping_slot_hash,
+    alloy_primitives::{Address, B256, U256},
     alloy_rpc_types::state::AccountOverride,
     alloy_sol_types::sol,
     ethrpc::Web3,
@@ -95,15 +96,6 @@ pub fn ray_div(a: U256, b: U256) -> Option<U256> {
     a.checked_mul(RAY)
         .and_then(|prod| prod.checked_add(half_b))
         .map(|num| num / b)
-}
-
-/// `keccak256(pad32(holder) ++ map_slot)` — the storage slot of
-/// `mapping(address => _)` entries in Solidity.
-pub fn mapping_slot_hash(holder: &Address, map_slot: &[u8; 32]) -> B256 {
-    let mut buf = [0u8; 64];
-    buf[12..32].copy_from_slice(holder.as_slice());
-    buf[32..64].copy_from_slice(map_slot);
-    keccak256(buf)
 }
 
 /// Packs a `UserState { uint128 balance; uint128 additionalData }` into a

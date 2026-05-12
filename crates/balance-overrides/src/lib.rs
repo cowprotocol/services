@@ -82,7 +82,10 @@ impl StateOverriding for DummyStateOverrider {
 mod tests {
     use {
         super::*,
-        crate::balance::{Strategy, aave::ray_div},
+        crate::{
+            balance::{Strategy, aave::ray_div},
+            detector::mapping_slot_hash,
+        },
         alloy_primitives::{U256, address, b256},
         ethrpc::{Web3, mock},
     };
@@ -324,7 +327,6 @@ mod tests {
 
     #[test]
     fn mapping_slot_hash_matches_solidity_layout() {
-        use crate::balance::aave::mapping_slot_hash;
         let holder = address!("18709E89BD403F470088aBDAcEbE86CC60dda12e");
         let slot = mapping_slot_hash(&holder, &U256::from(52).to_be_bytes::<32>());
         assert_eq!(

@@ -1,8 +1,7 @@
 pub(crate) mod aave;
 
 use {
-    self::aave::mapping_slot_hash,
-    crate::detector::{DetectionError, SimulationError, extract_sload_slots},
+    crate::detector::{DetectionError, SimulationError, extract_sload_slots, mapping_slot_hash},
     alloy_eips::BlockId,
     alloy_primitives::{Address, B256, TxKind, U256, keccak256, map::AddressMap},
     alloy_provider::ext::DebugApi,
