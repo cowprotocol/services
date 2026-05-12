@@ -253,28 +253,17 @@ impl TradeVerifier {
             .new_simulation_builder()
             .with_orders(std::iter::once(fake_order).chain(jit_orders))
             .from_solver(SimulationSolver::OriginUnaltered(solver_address))
-            .with_pre_interactions(pre_interactions)
-            .with_main_interactions(main_interactions)
-            .with_post_interactions(post_interactions)
+            .append_pre_interactions(pre_interactions)
+            .append_main_interactions(main_interactions)
+            .append_post_interactions(post_interactions)
             .with_overrides(override_requests)
             .build()
             .await?;
 
         // after assembling the state overrides and settlement call data we need to
         // craft a call that takes the settle call data as an argument.
-        let settlement_target = eth_call_inputs
-            .request
-            .to
-            .as_ref()
-            .and_then(|t| t.to())
-            .copied()
-            .expect("settlement target is always set");
-        let calldata: Bytes = eth_call_inputs
-            .request
-            .input
-            .input
-            .clone()
-            .unwrap_or_default();
+        let settlement_target = eth_call_inputs.to;
+        let calldata: Bytes = eth_call_inputs.calldata.clone();
 
         let solver_contract = Solver::Instance::new(solver_address, self.simulator.provider());
         let swap_call = solver_contract
