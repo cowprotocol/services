@@ -4,20 +4,14 @@ use {
         providers::Provider,
         rpc::types::state::StateOverride,
     },
-    balance_overrides::{BalanceOverrideRequest, BalanceOverrides, StateOverriding},
-    configs::{
-        autopilot::Configuration,
-        balance_overrides::Strategy,
-        price_estimation::BalanceOverridesConfig,
-        test_util::TestDefault,
-    },
+    balance_overrides::{BalanceOverrideRequest, StateOverrides, StateOverriding},
+    configs::{autopilot::Configuration, test_util::TestDefault},
     contracts::ERC20,
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     number::units::EthUnit,
     serde_json::json,
-    std::collections::HashMap,
 };
 
 #[tokio::test]
@@ -62,11 +56,7 @@ async fn forked_node_mainnet_usdt_quote() {
     .await;
 }
 
-/// Quote verification for an Aave v3 aToken as the sell token. Exercises
-/// the `AaveV3AToken` strategy end-to-end through `BalanceOverrides`. The
-/// detector is disabled (`detector: None`) to isolate the hardcoded-strategy
-/// path; auto-detection is covered by
-/// `forked_node_mainnet_aave_atoken_detection` below.
+/// Quote verification for an Aave v3 aToken as the sell token.
 #[tokio::test]
 #[ignore]
 async fn forked_node_mainnet_aave_atoken_quote() {
@@ -81,21 +71,6 @@ async fn forked_node_mainnet_aave_atoken_quote() {
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
         FORK_BLOCK,
         ["price_estimation=trace", "balance_overrides=trace"],
-    )
-    .await;
-}
-
-/// The auto-detector identifies aEthWETH as a canonical Aave v3 aToken via
-/// the probe + canonical-slot fast-path, returning the right strategy
-/// without running a `debug_traceCall`. This runs in the forked-e2e CI job.
-#[tokio::test]
-#[ignore]
-async fn forked_node_mainnet_aave_atoken_detection() {
-    run_forked_test_with_block_number(
-        aave_atoken_detection,
-        std::env::var("FORK_URL_MAINNET")
-            .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        FORK_BLOCK_MAINNET,
     )
     .await;
 }
@@ -141,9 +116,6 @@ async fn standard_verified_quote(web3: Web3) {
         .unwrap();
     assert!(response.verified);
 }
-
-/// The block number from which we will fetch state for the forked tests.
-const FORK_BLOCK_MAINNET: u64 = 24843565;
 
 /// Verified quotes work as for WETH trades without wrapping or approvals.
 async fn verified_quote_eth_balance(web3: Web3) {
@@ -287,36 +259,10 @@ async fn verified_quote_with_simulated_balance(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    // The OpenZeppelin `ERC20Mintable` token uses a mapping in
-    // the first (0'th) storage slot for balances.
-    let token_overrides: configs::balance_overrides::TokenConfiguration = toml::from_str(&format!(
-        r#"
-    [{:?}]
-    type = "SolidityMapping"
-    target_contract = "{:?}"
-    map_slot = "0x0"
-    "#,
-        token.address(),
-        token.address()
-    ))
-    .unwrap();
-    let orderbook_config = configs::orderbook::Configuration {
-        price_estimation: configs::price_estimation::PriceEstimation {
-            balance_overrides: BalanceOverridesConfig {
-                token_overrides,
-                // We don't configure the WETH token and instead rely on
-                // auto-detection for balance overrides.
-                autodetect: true,
-                ..Default::default()
-            },
-            ..configs::orderbook::Configuration::test_default().price_estimation
-        },
-        ..configs::orderbook::Configuration::test_default()
-    };
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
-            orderbook_config,
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -457,16 +403,7 @@ async fn usdt_quote_verification(web3: Web3) {
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
-            configs::orderbook::Configuration {
-                price_estimation: configs::price_estimation::PriceEstimation {
-                    balance_overrides: BalanceOverridesConfig {
-                        autodetect: true,
-                        ..Default::default()
-                    },
-                    ..configs::orderbook::Configuration::test_default().price_estimation
-                },
-                ..configs::orderbook::Configuration::test_default()
-            },
+            configs::orderbook::Configuration::test_default(),
             solver,
         )
         .await;
@@ -487,24 +424,17 @@ async fn usdt_quote_verification(web3: Web3) {
     assert!(quote.verified);
 }
 
-/// Tests that balance override detection works with debug_traceCall.
-/// This test verifies the trace-based detection strategy that's similar to
-/// Foundry's `deal`.
+/// Tests that balance override detection works for tokens with non-standard
+/// storage layouts, including struct-offset and remote-storage patterns.
 async fn trace_based_balance_detection(web3: Web3) {
-    use balance_overrides::detector::Detector;
-
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(10u64.eth()).await;
     let [trader] = onchain.make_accounts(1u64.eth()).await;
 
-    // Test with WETH (standard ERC20 with mapping at slot 3)
     let weth = *onchain.contracts().weth.address();
 
-    // Deploy the NonStandardERC20Balances token - this has balances stored at an
-    // offset within a struct mapping, making it undetectable by standard slot
-    // calculation methods
     let struct_offset_token =
         contracts::test::NonStandardERC20Balances::Instance::deploy(web3.provider.clone())
             .await
@@ -539,86 +469,16 @@ async fn trace_based_balance_detection(web3: Web3) {
         .await
         .unwrap();
 
-    let detector = Detector::new(
-        web3.clone(),
-        60,
-        balance_overrides::detector::DEFAULT_VERIFICATION_TIMEOUT,
-    );
-
     let test_account = address!("0000000000000000000000000000000000000042");
     let test_balance = U256::from(123_456_789_u64);
-
-    tracing::info!(?weth, "Testing WETH balance detection...");
-    let weth_strategy = detector.detect(weth, test_account).await;
-    tracing::info!("WETH strategy detected: {:?}", weth_strategy);
-    assert!(
-        matches!(weth_strategy, Ok(Strategy::SolidityMapping { .. })),
-        "Should detect WETH balance slot via trace"
-    );
-
-    // Test with NonStandardERC20Balances - this is the key test case
-    // The balance is at offset 2 within the UserData struct (epoch=0, approvals
-    // mapping=1, balance=2)
-    tracing::info!(address = ?struct_offset_token.address(), "Testing NonStandardERC20Balances detection...");
-    let struct_offset_strategy = detector
-        .detect(*struct_offset_token.address(), test_account)
-        .await;
-    assert!(
-        matches!(struct_offset_strategy, Ok(Strategy::DirectSlot { .. })),
-        "Should detect non-standard token balance slot via trace-based detection"
-    );
-    tracing::info!(
-        "✓ NonStandardERC20Balances strategy detected: {:?}",
-        struct_offset_strategy
-    );
-
-    tracing::info!(address = ?delegated_storage_token.address(), "Testing RemoteERC20Balances (using remote contract slot) detection...");
-    let delegated_storage_strategy = detector
-        .detect(*delegated_storage_token.address(), test_account)
-        .await;
-    assert!(
-        matches!(
-            delegated_storage_strategy,
-            Ok(Strategy::SolidityMapping { .. })
-        ),
-        "Should detect non-standard token balance slot via trace-based detection"
-    );
-    tracing::info!(
-        "✓ RemoteERC20Balances (remote) strategy detected: {:?}",
-        delegated_storage_strategy
-    );
-
-    tracing::info!(address = ?local_storage_token.address(), "Testing RemoteERC20Balances (using local contract slot) detection...");
-    let local_storage_strategy = detector
-        .detect(*local_storage_token.address(), test_account)
-        .await;
-    assert!(
-        matches!(local_storage_strategy, Ok(Strategy::DirectSlot { .. })),
-        "Should detect non-standard token balance slot via trace-based detection"
-    );
-    tracing::info!(
-        "✓ RemoteERC20Balances (self) strategy detected: {:?}",
-        local_storage_strategy
-    );
-
-    // Verify that the detected strategies actually work by testing balance
-    // overrides
-    use contracts::ERC20;
 
     async fn test_balance_override(
         web3: &Web3,
         token: Address,
-        strategy: Strategy,
         test_account: Address,
         test_balance: U256,
     ) {
-        use {balance_overrides::BalanceOverrideRequest, std::collections::HashMap};
-
-        let balance_overrides = BalanceOverrides {
-            hardcoded: HashMap::from([(token, strategy)]),
-            detector: None,
-            web3: None,
-        };
+        let balance_overrides = StateOverrides::new(web3.clone());
 
         let override_result = balance_overrides
             .balance_override(BalanceOverrideRequest {
@@ -631,7 +491,6 @@ async fn trace_based_balance_detection(web3: Web3) {
         assert!(override_result.is_some(), "Should produce state override");
         let (override_token, state_override) = override_result.unwrap();
 
-        // Call balanceOf with the state override to verify it works
         let token_contract = ERC20::Instance::new(token, web3.provider.clone());
         let balance = token_contract
             .balanceOf(test_account)
@@ -658,19 +517,10 @@ async fn trace_based_balance_detection(web3: Web3) {
         );
     }
 
-    // Test each detected strategy
-    test_balance_override(
-        &web3,
-        weth,
-        weth_strategy.unwrap(),
-        test_account,
-        test_balance,
-    )
-    .await;
+    test_balance_override(&web3, weth, test_account, test_balance).await;
     test_balance_override(
         &web3,
         *struct_offset_token.address(),
-        struct_offset_strategy.unwrap(),
         test_account,
         test_balance,
     )
@@ -678,7 +528,6 @@ async fn trace_based_balance_detection(web3: Web3) {
     test_balance_override(
         &web3,
         *delegated_storage_token.address(),
-        delegated_storage_strategy.unwrap(),
         test_account,
         test_balance,
     )
@@ -686,7 +535,6 @@ async fn trace_based_balance_detection(web3: Web3) {
     test_balance_override(
         &web3,
         *local_storage_token.address(),
-        local_storage_strategy.unwrap(),
         test_account,
         test_balance,
     )
@@ -703,23 +551,9 @@ async fn trace_based_balance_detection(web3: Web3) {
 async fn aave_atoken_quote_verification(web3: Web3) {
     // aEthWETH / WETH / Aave v3 Pool on mainnet.
     let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
-    let weth = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-    let aave_v3_pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
     let spardose = address!("0000000000000000000000000000000000020000");
 
-    let hardcoded = HashMap::from([(
-        a_eth_weth,
-        Strategy::AaveV3AToken {
-            target_contract: a_eth_weth,
-            pool: aave_v3_pool,
-            underlying: weth,
-        },
-    )]);
-    let balance_overrides = BalanceOverrides {
-        hardcoded,
-        detector: None,
-        web3: Some(web3.clone()),
-    };
+    let balance_overrides = StateOverrides::new(web3.clone());
 
     let amount = 5u64.eth(); // 5 aEthWETH
 
@@ -749,27 +583,5 @@ async fn aave_atoken_quote_verification(web3: Web3) {
     assert!(
         diff <= U256::from(1u64),
         "balanceOf after override returned {reported}, expected ~{amount} (diff {diff} wei)",
-    );
-}
-
-/// Auto-detection against the mainnet fork: the probe + canonical-slot
-/// fast-path must identify aEthWETH as an `AaveV3AToken` without falling
-/// through to `debug_traceCall`.
-async fn aave_atoken_detection(web3: Web3) {
-    use balance_overrides::detector::{DEFAULT_VERIFICATION_TIMEOUT, Detector};
-
-    let detector = Detector::new(web3, 60, DEFAULT_VERIFICATION_TIMEOUT);
-    let a_eth_weth = address!("4d5f47fa6a74757f35c14fd3a6ef8e3c9bc514e8");
-    let strategy = detector
-        .detect(a_eth_weth, Address::with_last_byte(1))
-        .await
-        .unwrap();
-    assert_eq!(
-        strategy,
-        Strategy::AaveV3AToken {
-            target_contract: a_eth_weth,
-            pool: address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2"),
-            underlying: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-        }
     );
 }
