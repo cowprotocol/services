@@ -166,8 +166,11 @@ impl Strategy {
         iter::once((target_contract, state_override)).collect()
     }
 
-    pub(crate) fn is_valid_for_all_holders(&self) -> bool {
-        matches!(self, Self::DirectSlot { .. } | Self::AaveV3AToken { .. })
+    /// Returns whether the strategy can cheaply compute the necessary state
+    /// override for any given holder or if it only works for the original
+    /// holder it was generated for.
+    pub(crate) fn can_be_applied_to_any_holder(&self) -> bool {
+        !matches!(self, Self::DirectSlot { .. })
     }
 }
 
@@ -279,7 +282,7 @@ impl Detector {
             if let Ok(strategy) = strategy.as_ref() {
                 let cache_key = (
                     token,
-                    (!strategy.is_valid_for_all_holders()).then_some(holder),
+                    (!strategy.can_be_applied_to_any_holder()).then_some(holder),
                 );
                 self.cache
                     .lock()
