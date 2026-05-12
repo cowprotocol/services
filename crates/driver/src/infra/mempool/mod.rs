@@ -18,7 +18,7 @@ use {
     url::Url,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub min_priority_fee: eth::U256,
     pub gas_price_cap: eth::U256,
@@ -57,7 +57,7 @@ impl Config {
 /// This can be enabled to avoid MEV when private transaction
 /// submission strategies are available. If private submission strategies
 /// are not available, revert protection is always disabled.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevertProtection {
     Enabled,
     Disabled,
@@ -79,6 +79,12 @@ pub struct Submission {
 impl std::fmt::Display for Mempool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Mempool({})", self.config.name)
+    }
+}
+
+impl PartialEq for Mempool {
+    fn eq(&self, other: &Self) -> bool {
+        self.config == other.config
     }
 }
 
