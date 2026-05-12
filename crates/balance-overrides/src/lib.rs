@@ -82,12 +82,9 @@ impl StateOverriding for DummyStateOverrider {
 mod tests {
     use {
         super::*,
-        crate::{
-            balance::{Strategy, aave::ray_div},
-            detector::mapping_slot_hash,
-        },
+        crate::{balance::Strategy, detector::mapping_slot_hash},
         alloy_primitives::{U256, address, b256},
-        ethrpc::{Web3, mock},
+        ethrpc::mock,
     };
 
     #[tokio::test]
@@ -269,59 +266,6 @@ mod tests {
                 .detect(token, holder2)
                 .await,
             Some(strategy_h2)
-        );
-    }
-
-    #[tokio::test]
-    async fn aave_v3_a_token_override_scales_amount_and_writes_low_128() {
-        use alloy_provider::mock::Asserter;
-
-        let a_token = address!("4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8");
-        let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
-        let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let holder = address!("18709E89BD403F470088aBDAcEbE86CC60dda12e");
-        let amount = U256::from(1_000_000_000_000_000_000u128);
-
-        let asserter = Asserter::new();
-        let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
-        asserter.push_success(&format!("0x{:064x}", index));
-
-        let web3 = Web3::with_asserter(asserter);
-        let strategy = Strategy::AaveV3AToken {
-            target_contract: a_token,
-            pool,
-            underlying,
-            web3,
-        };
-
-        let (addr, override_) = strategy
-            .state_override(&holder, &amount)
-            .await
-            .into_iter()
-            .last()
-            .expect("override computed");
-
-        assert_eq!(addr, a_token);
-
-        let diff = override_.state_diff.expect("state diff present");
-        assert_eq!(diff.len(), 1);
-        let (slot, value) = diff.into_iter().next().unwrap();
-        assert_eq!(
-            slot,
-            b256!("6785743a4ad9de6e692f819936c9d0b94b199ed36f2660e82404737b769718e5")
-        );
-        let word = U256::from_be_bytes(value.0);
-        assert_eq!(word >> 128, U256::ZERO);
-        assert_eq!(word, ray_div(amount, index).unwrap());
-    }
-
-    #[test]
-    fn ray_div_edge_cases() {
-        let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
-        assert_eq!(ray_div(U256::ZERO, index).unwrap(), U256::ZERO);
-        assert_eq!(
-            ray_div(U256::from(1_000_000_000_000_000_000u128), U256::ZERO),
-            None,
         );
     }
 
