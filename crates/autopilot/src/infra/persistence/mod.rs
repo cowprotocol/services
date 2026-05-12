@@ -795,12 +795,14 @@ impl Persistence {
         .await?;
 
         if let Some(settlement) = settlement {
-            let gas = settlement.gas();
-            let gas_price = settlement.gas_price();
-            let surplus = settlement.surplus_in_ether();
-            let fee = settlement.fee_in_ether();
-            let fee_breakdown = settlement.fee_breakdown();
-            let jit_orders = settlement.jit_orders();
+            let domain::settlement::SettlementMetrics {
+                gas,
+                gas_price,
+                surplus,
+                fee,
+                fee_breakdown,
+                jit_orders,
+            } = settlement.summarize();
             let solver: database::Address = ByteArray(settlement.solver().0.0);
 
             tracing::debug!(

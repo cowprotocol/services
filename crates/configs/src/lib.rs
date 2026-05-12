@@ -1,5 +1,4 @@
 pub mod autopilot;
-pub mod balance_overrides;
 pub mod banned_users;
 pub mod database;
 pub(crate) mod deserialize_env;
