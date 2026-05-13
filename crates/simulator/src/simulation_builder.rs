@@ -633,3 +633,36 @@ pub(crate) enum MergeConflict {
     #[error("both overrides write storage slot {0}")]
     StateDiffSlot(B256),
 }
+
+#[cfg(test)]
+mod test {
+    use {super::*, alloy_primitives::b256};
+
+    #[test]
+    fn computes_correct_overrides_for_euler() {
+        let mut wrapper = app_data::WrapperCall {
+            address: Address::repeat_byte(0x11),
+            data: vec![0x22; 31],
+            is_omittable: true,
+        };
+        // not enough byte in the wrapper data
+        assert!(compute_euler_override(&wrapper).is_none());
+
+        wrapper.data.push(0x22);
+        let overrides = compute_euler_override(&wrapper).unwrap();
+        let AccountOverrideRequest::Custom { account, state } = overrides else {
+            panic!("wrong variant");
+        };
+        assert_eq!(
+            account,
+            address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383")
+        );
+        assert_eq!(
+            state,
+            AccountOverride::default().with_state_diff(std::iter::once((
+                b256!("0xba9557383823d5f9f8449252be0cc1ba57a385166b8d57427a84e04b4b501d9b"),
+                b256!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+            )))
+        );
+    }
+}
