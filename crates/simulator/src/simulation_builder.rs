@@ -328,10 +328,13 @@ impl SimulationBuilder {
 
         let operator = wrapper.address;
 
-        // Outer slot: keccak256(address_prefix ++ slot_24)
+        // Outer slot: keccak256(bytes19_address_prefix ++ slot_24)
         let outer_slot = {
             let mut buf = [0u8; 64];
-            buf[0..32].copy_from_slice(&address_prefix);
+            // take last 19 bytes from the address and write them
+            // to the first 19 bytes of the buffer (to "cast" an
+            // `address` to a `bytes19` mapping key).
+            buf[0..19].copy_from_slice(&address_prefix[13..32]);
             buf[32..64].copy_from_slice(slot_24.as_slice());
             keccak256(buf)
         };
