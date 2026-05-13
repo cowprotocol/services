@@ -1,6 +1,6 @@
 use {
     crate::{encoding::WrapperCall, tenderly},
-    alloy_primitives::{Address, B256, Bytes, U256},
+    alloy_primitives::{Address, B256, Bytes, U256, address, keccak256},
     alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
         TransactionRequest,
@@ -212,16 +212,20 @@ impl SimulationBuilder {
         match (protocol.wrappers.is_empty(), protocol.flashloan) {
             (false, Some(_)) => return Err(BuildError::FlashloanWrappersIncompatible),
             (false, None) => {
-                self.wrapper = WrapperConfig::Custom(
-                    protocol
-                        .wrappers
-                        .into_iter()
-                        .map(|w| WrapperCall {
-                            address: w.address,
-                            data: w.data.into(),
-                        })
-                        .collect(),
-                );
+                let mut wrapper_calls = Vec::with_capacity(protocol.wrappers.len());
+                for w in protocol.wrappers {
+                    // TODO: REMOVE THIS HACK!
+                    // Unconditionally add state override for euler compatibility.
+                    // If this state override gets added to calls that don't need it
+                    // it will not interfere with the simulation.
+                    self.append_euler_override(&w);
+
+                    wrapper_calls.push(WrapperCall {
+                        address: w.address,
+                        data: w.data.into(),
+                    });
+                }
+                self.wrapper = WrapperConfig::Custom(wrapper_calls);
             }
             (true, Some(flashloan)) => {
                 self.wrapper = WrapperConfig::Flashloan(vec![FlashloanRequest {
@@ -297,6 +301,48 @@ impl SimulationBuilder {
         // Forward to a helper function to split the boring repetitive builder
         // code from the non-trivial code that actually does the encoding.
         crate::encoding::finish_simulation_builder(self).await
+    }
+
+    /// Euler is the only integration for now using wrappers and they have a
+    /// chicken and egg problem when quoting. They need a quote to know the
+    /// things they have to make the user sign to make the resulting order
+    /// work. But for the quote to be accurate we already need to have this
+    /// setup done. To get around this we introduce this temporary hack of
+    /// assuming this is an euler wrapper and unconditionally setting up the
+    /// requirements using state overrides.
+    /// For that we need to write `U256::MAX` to this mapping which lives in
+    /// storage slot 24 of contract
+    /// 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383: mapping(bytes19
+    /// addressPrefix => mapping(address operator => uint256 operatorBitField))
+    /// internal operatorLookup;
+    fn append_euler_override(&mut self, wrapper: &app_data::WrapperCall) {
+        let target = address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383");
+        let desired_value = B256::from([0xFF_u8; 32]);
+        let slot_24 = B256::with_last_byte(24);
+        let address_prefix: [u8; 32] = wrapper.data[0..32].try_into().unwrap();
+        let operator = wrapper.address;
+
+        // Outer slot: keccak256(address_prefix ++ slot_24)
+        let outer_slot = {
+            let mut buf = [0u8; 64];
+            buf[0..32].copy_from_slice(&address_prefix);
+            buf[32..64].copy_from_slice(slot_24.as_slice());
+            keccak256(buf)
+        };
+        // Final slot: keccak256(operator ++ outer_slot)
+        let final_slot = {
+            let mut buf = [0u8; 64];
+            buf[12..32].copy_from_slice(operator.as_slice());
+            buf[32..64].copy_from_slice(outer_slot.as_slice());
+            keccak256(buf)
+        };
+
+        self.account_override_requests
+            .push(AccountOverrideRequest::Custom {
+                account: target,
+                state: AccountOverride::default()
+                    .with_state_diff(std::iter::once((final_slot, desired_value))),
+            });
     }
 }
 
