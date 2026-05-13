@@ -307,19 +307,25 @@ impl SimulationBuilder {
     /// chicken and egg problem when quoting. They need a quote to know the
     /// things they have to make the user sign to make the resulting order
     /// work. But for the quote to be accurate we already need to have this
-    /// setup done. To get around this we introduce this temporary hack of
+    /// setup done.
+    /// To get around this we introduce this temporary hack of
     /// assuming this is an euler wrapper and unconditionally setting up the
     /// requirements using state overrides.
+    ///
     /// For that we need to write `U256::MAX` to this mapping which lives in
-    /// storage slot 24 of contract
-    /// 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383: mapping(bytes19
-    /// addressPrefix => mapping(address operator => uint256 operatorBitField))
-    /// internal operatorLookup;
+    /// storage slot 24 of contract 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383:
+    /// mapping(bytes19 addressPrefix => mapping(address operator => uint256
+    /// operatorBitField)) internal operatorLookup;
     fn append_euler_override(&mut self, wrapper: &app_data::WrapperCall) {
         let target = address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383");
         let desired_value = B256::from([0xFF_u8; 32]);
         let slot_24 = B256::with_last_byte(24);
-        let address_prefix: [u8; 32] = wrapper.data[0..32].try_into().unwrap();
+        let Some(address_prefix): Option<[u8; 32]> =
+            wrapper.data.get(0..32).and_then(|s| s.try_into().ok())
+        else {
+            return;
+        };
+
         let operator = wrapper.address;
 
         // Outer slot: keccak256(address_prefix ++ slot_24)
