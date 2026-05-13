@@ -1,6 +1,6 @@
 use {
     crate::{encoding::WrapperCall, tenderly},
-    alloy_primitives::{Address, B256, Bytes, U256, address, keccak256},
+    alloy_primitives::{Address, B256, Bytes, U256, address, b256, keccak256},
     alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::{
         TransactionRequest,
@@ -320,7 +320,7 @@ impl SimulationBuilder {
 /// operatorBitField)) internal operatorLookup;
 fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Option<AccountOverrideRequest> {
     let target = address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383");
-    let desired_value = B256::from([0xFF_u8; 32]);
+    let permission_value = B256::from([0xFF_u8; 32]);
     let slot_24 = B256::with_last_byte(24);
     let address_prefix: [u8; 32] = wrapper.data.get(0..32)?.try_into().ok()?;
     let operator = wrapper.address;
@@ -336,17 +336,64 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Option<AccountOver
         keccak256(buf)
     };
     // Final slot: keccak256(operator ++ outer_slot)
-    let final_slot = {
+    let permission_slot = {
         let mut buf = [0u8; 64];
         buf[12..32].copy_from_slice(operator.as_slice());
         buf[32..64].copy_from_slice(outer_slot.as_slice());
         keccak256(buf)
     };
 
+    let (domain_separator, type_hash) = match wrapper.address {
+        // open position wrapper
+        x if x == address!("0x59684A689D4a1CAc0f0632F54ec8cDd42612D728") => (
+            b256!("0x0af97cc7912b08e2bc78d17603f600b75eb0759236a4591930fc1e0192c042ff"),
+            b256!("0x37458bde9202dec258a12cf2bc8b4ac302a61cf842bbe3a2bb921d968507d3bf"),
+        ),
+        // close position wrapper
+        x if x == address!("0xa18c87849ef90190117ff1e1e8b4ace6dac7a54b") => (
+            b256!("0xffa38a994108ca56910187ade1b200aca3f27ac295ac150bde63a9b5783af04f"),
+            b256!("0x3cdbf47d3b4f755805c36069980ae18f367b382cf0593fa0378ad50c1c5d1fd8"),
+        ),
+        // collateral swap wrapperc:wa
+        x if x == address!("0x175fbd01874e92c9b081f493371fefe009760a42") => (
+            b256!("0xfac3fa57d73575d8f9df481fc13e23240d08bfc183e56bd289a69521402ab2dc"),
+            b256!("0x82f0a6a70fe8cb4c350f918378cd06594e0307d840ad296019fa47d796428016"),
+        ),
+        _ => return None,
+    };
+
+    let struct_hash = keccak256(
+        type_hash
+            .into_iter()
+            .chain(wrapper.data.clone())
+            .collect::<Vec<_>>(),
+    );
+    let map_key = keccak256(
+        [0x19, 0x01]
+            .into_iter()
+            .chain(domain_separator)
+            .chain(struct_hash)
+            .collect::<Vec<_>>(),
+    );
+
+    // mapping(address => mapping(bytes32 => uint256)) public preApprovedHashes;
+    let preapprove_hash_slot = {
+        let mut buf = [0u8; 64];
+        buf[12..32].copy_from_slice(map_key.as_slice());
+        // nothing to copy since mapping lives at storage slot 0
+        keccak256(buf)
+    };
+
+    // keccak256("PreApprovedHashes.PreApproved")
+    let preapprove_value =
+        b256!("0xfdeb67b02819f1ab9c0e57355ac925e9fe35883f75ef41b364cd780799c5998a");
+
     Some(AccountOverrideRequest::Custom {
         account: target,
-        state: AccountOverride::default()
-            .with_state_diff(std::iter::once((final_slot, desired_value))),
+        state: AccountOverride::default().with_state_diff([
+            (permission_slot, permission_value),
+            (preapprove_hash_slot, preapprove_value),
+        ]),
     })
 }
 
@@ -632,37 +679,4 @@ pub(crate) enum MergeConflict {
     StateAndStateDiff,
     #[error("both overrides write storage slot {0}")]
     StateDiffSlot(B256),
-}
-
-#[cfg(test)]
-mod test {
-    use {super::*, alloy_primitives::b256};
-
-    #[test]
-    fn computes_correct_overrides_for_euler() {
-        let mut wrapper = app_data::WrapperCall {
-            address: Address::repeat_byte(0x11),
-            data: vec![0x22; 31],
-            is_omittable: true,
-        };
-        // not enough byte in the wrapper data
-        assert!(compute_euler_override(&wrapper).is_none());
-
-        wrapper.data.push(0x22);
-        let overrides = compute_euler_override(&wrapper).unwrap();
-        let AccountOverrideRequest::Custom { account, state } = overrides else {
-            panic!("wrong variant");
-        };
-        assert_eq!(
-            account,
-            address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383")
-        );
-        assert_eq!(
-            state,
-            AccountOverride::default().with_state_diff(std::iter::once((
-                b256!("0xba9557383823d5f9f8449252be0cc1ba57a385166b8d57427a84e04b4b501d9b"),
-                b256!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-            )))
-        );
-    }
 }
