@@ -388,10 +388,17 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Vec<AccountOverrid
     );
 
     // mapping(address => mapping(bytes32 => uint256)) public preApprovedHashes;
+    let first_map_slot = {
+        let mut buf = [0u8; 64];
+        buf[0..32].copy_from_slice(address_prefix.as_slice());
+        // nothing to copy since mapping lives at storage slot 0
+        keccak256(buf)
+    };
+
     let preapprove_hash_slot = {
         let mut buf = [0u8; 64];
         buf[0..32].copy_from_slice(map_key.as_slice());
-        // nothing to copy since mapping lives at storage slot 0
+        buf[32..64].copy_from_slice(first_map_slot.as_slice());
         keccak256(buf)
     };
 
