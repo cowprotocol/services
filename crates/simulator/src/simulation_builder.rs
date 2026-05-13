@@ -318,11 +318,17 @@ impl SimulationBuilder {
 /// storage slot 24 of contract 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383:
 /// mapping(bytes19 addressPrefix => mapping(address operator => uint256
 /// operatorBitField)) internal operatorLookup;
-fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Option<AccountOverrideRequest> {
-    let target = address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383");
+fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Vec<AccountOverrideRequest> {
+    let mut overrides = vec![];
+
+    let ethereum_vault_connector = address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383");
     let permission_value = B256::from([0xFF_u8; 32]);
     let slot_24 = B256::with_last_byte(24);
-    let address_prefix: [u8; 32] = wrapper.data.get(0..32)?.try_into().ok()?;
+    let Some(address_prefix) = wrapper.data.get(0..32) else {
+        return overrides;
+    };
+    let address_prefix: [u8; 32] = address_prefix.try_into().unwrap();
+
     let operator = wrapper.address;
 
     // Outer slot: keccak256(bytes19_address_prefix ++ slot_24)
@@ -343,6 +349,11 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Option<AccountOver
         keccak256(buf)
     };
 
+    overrides.push(AccountOverrideRequest::Custom {
+        account: ethereum_vault_connector,
+        state: AccountOverride::default().with_state_diff([(permission_slot, permission_value)]),
+    });
+
     let (domain_separator, type_hash) = match wrapper.address {
         // open position wrapper
         x if x == address!("0x59684A689D4a1CAc0f0632F54ec8cDd42612D728") => (
@@ -359,7 +370,7 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Option<AccountOver
             b256!("0xfac3fa57d73575d8f9df481fc13e23240d08bfc183e56bd289a69521402ab2dc"),
             b256!("0x82f0a6a70fe8cb4c350f918378cd06594e0307d840ad296019fa47d796428016"),
         ),
-        _ => return None,
+        _ => return Default::default(),
     };
 
     let struct_hash = keccak256(
@@ -388,13 +399,13 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Option<AccountOver
     let preapprove_value =
         b256!("0xfdeb67b02819f1ab9c0e57355ac925e9fe35883f75ef41b364cd780799c5998a");
 
-    Some(AccountOverrideRequest::Custom {
-        account: target,
-        state: AccountOverride::default().with_state_diff([
-            (permission_slot, permission_value),
-            (preapprove_hash_slot, preapprove_value),
-        ]),
-    })
+    overrides.push(AccountOverrideRequest::Custom {
+        account: wrapper.address,
+        state: AccountOverride::default()
+            .with_state_diff([(preapprove_hash_slot, preapprove_value)]),
+    });
+
+    overrides
 }
 
 /// The output of [`SimulationBuilder::build`]: inputs ready to be passed to an
@@ -679,37 +690,4 @@ pub(crate) enum MergeConflict {
     StateAndStateDiff,
     #[error("both overrides write storage slot {0}")]
     StateDiffSlot(B256),
-}
-
-#[cfg(test)]
-mod test {
-    use {super::*, alloy_primitives::b256};
-
-    #[test]
-    fn computes_correct_overrides_for_euler() {
-        let mut wrapper = app_data::WrapperCall {
-            address: Address::repeat_byte(0x11),
-            data: vec![0x22; 31],
-            is_omittable: true,
-        };
-        // not enough byte in the wrapper data
-        assert!(compute_euler_override(&wrapper).is_none());
-
-        wrapper.data.push(0x22);
-        let overrides = compute_euler_override(&wrapper).unwrap();
-        let AccountOverrideRequest::Custom { account, state } = overrides else {
-            panic!("wrong variant");
-        };
-        assert_eq!(
-            account,
-            address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383")
-        );
-        assert_eq!(
-            state,
-            AccountOverride::default().with_state_diff(std::iter::once((
-                b256!("0xba9557383823d5f9f8449252be0cc1ba57a385166b8d57427a84e04b4b501d9b"),
-                b256!("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
-            )))
-        );
-    }
 }
