@@ -16,7 +16,7 @@ use {
             order::{self, Order, Side},
             solution,
         },
-        infra::metrics,
+        infra::{metrics, tx_gas},
     },
     alloy::primitives::U256,
     reqwest::Url,
@@ -38,6 +38,7 @@ pub struct Config {
     pub solution_gas_offset: eth::SignedGas,
     pub native_token_price_estimation_amount: eth::U256,
     pub uni_v3_node_url: Option<Url>,
+    pub tx_gas_estimator: Option<Arc<tx_gas::TxGasEstimator>>,
 }
 
 struct Inner {
@@ -72,6 +73,10 @@ struct Inner {
 
     /// If provided, the solver can rely on Uniswap V3 LPs
     uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2::Instance>>,
+
+    /// If provided, gas is estimated by simulating the full settlement
+    /// transaction instead of using static per-liquidity-source costs.
+    tx_gas_estimator: Option<Arc<tx_gas::TxGasEstimator>>,
 }
 
 impl Solver {
@@ -99,6 +104,7 @@ impl Solver {
             solution_gas_offset: config.solution_gas_offset,
             native_token_price_estimation_amount: config.native_token_price_estimation_amount,
             uni_v3_quoter_v2,
+            tx_gas_estimator: config.tx_gas_estimator,
         }))
     }
 
@@ -155,6 +161,8 @@ impl Inner {
             self.uni_v3_quoter_v2.clone(),
         );
 
+        tracing::error!(?auction, "Solving auction");
+
         for (i, order) in auction.orders.into_iter().enumerate() {
             let sell_token = order.sell.token;
             let sell_token_price = match auction.tokens.reference_price(&sell_token) {
@@ -191,6 +199,7 @@ impl Inner {
             };
 
             let compute_solution = async |request: Request| -> Option<Solution> {
+                tracing::error!(?request, ?order, "Computing solution");
                 let wrappers = request.wrappers.clone();
                 let solution = if order.sell.token == order.buy.token {
                     // When sell and buy tokens are the same, the solution does not require routing
@@ -200,12 +209,21 @@ impl Inner {
                         Side::Buy => (order.buy, order.sell),
                     };
                     output.amount = input.amount;
+                    let gas = if let Some(ref est) = self.tx_gas_estimator {
+                        est.estimate(&order, input, output)
+                            .await
+                            .filter(|g| !g.0.is_zero())
+                            .unwrap_or_else(|| eth::Gas(U256::ZERO) + self.solution_gas_offset)
+                    } else {
+                        eth::Gas(U256::ZERO) + self.solution_gas_offset
+                    };
+                    tracing::error!(?gas, "Calcualated gas for sell=buy");
                     solution::Single {
                         order: order.clone(),
                         input,
                         output,
                         interactions: Vec::default(),
-                        gas: eth::Gas(U256::ZERO) + self.solution_gas_offset,
+                        gas,
                         wrappers,
                     }
                 } else {
@@ -226,8 +244,19 @@ impl Inner {
                             ))
                         })
                         .collect();
-                    let gas = route.gas() + self.solution_gas_offset;
-                    let mut output = route.output();
+                    let route_input = route.input();
+                    let route_output = route.output();
+                    let gas = if let Some(ref est) = self.tx_gas_estimator {
+                        est.estimate(&order, route_input, route_output)
+                            .await
+                            .filter(|g| !g.0.is_zero())
+                            .map(|gas| gas + route.gas())
+                            .unwrap_or_else(|| route.gas() + self.solution_gas_offset)
+                    } else {
+                        route.gas() + self.solution_gas_offset
+                    };
+                    tracing::error!(?gas, "Calculated gas");
+                    let mut output = route_output;
 
                     // The baseline solver generates a path with swapping
                     // for exact output token amounts. This leads to
@@ -241,7 +270,7 @@ impl Inner {
 
                     solution::Single {
                         order: order.clone(),
-                        input: route.input(),
+                        input: route_input,
                         output,
                         interactions,
                         gas,

@@ -2,6 +2,6 @@ mod order;
 mod quote;
 
 pub use {
-    order::{Error as OrderError, Order},
+    order::{Error as OrderError, Order, PostOrder},
     quote::Quote,
 };

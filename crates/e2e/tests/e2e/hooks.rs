@@ -4,10 +4,18 @@ use {
         providers::Provider,
     },
     app_data::Hook,
+    price_estimation::trade_finding::external::dto,
+    configs::{
+        autopilot::native_price::NativePriceConfig as AutopilotNativePriceConfig,
+        native_price_estimators::{NativePriceEstimator, NativePriceEstimators},
+        order_quoting::{ExternalSolver, OrderQuoting},
+        test_util::TestDefault,
+    },
     e2e::setup::{
         OnchainComponents,
         Services,
         TIMEOUT,
+        colocation,
         onchain_components,
         run_test,
         safe::Safe,
@@ -53,6 +61,12 @@ async fn local_node_gas_limit() {
 #[ignore]
 async fn local_node_quote_verification() {
     run_test(quote_verification).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_tx_gas_simulation() {
+    run_test(tx_gas_simulation).await;
 }
 
 async fn gas_limit(web3: Web3) {
@@ -625,4 +639,212 @@ async fn quote_verification(web3: Web3) {
     // quote can be verified although the trader only get the necessary
     // sell tokens with a pre-hook
     assert!(quote.verified);
+}
+
+/// Verifies that enabling `gas-simulation-node-url` on the baseline solver
+/// produces a higher `gas_amount` in the quote response than the static
+/// estimator, because simulation captures the gas cost of order hooks.
+async fn tx_gas_simulation(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(1u64.eth()).await;
+    let [trader] = onchain.make_accounts(1u64.eth()).await;
+
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
+        .await;
+
+    token.mint(trader.address(), 5u64.eth()).await;
+    token
+        .approve(onchain.contracts().allowance, 5u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+    let gas_amount = 1_000_000;
+    let gas_hog = contracts::test::GasHog::Instance::deploy(web3.provider.clone())
+        .await
+        .unwrap();
+    let call = gas_hog.isValidSignature(
+        Default::default(),
+        U256::from(gas_amount).to_be_bytes::<32>().to_vec().into(),
+    );
+    let gas = call.estimate_gas().await.unwrap();
+    let pre_hook = Hook {
+        target: *gas_hog.address(),
+        call_data: call.calldata().to_vec(),
+        gas_limit: gas,
+    };
+    let post_hook = Hook {
+        target: *gas_hog.address(),
+        call_data: call.calldata().to_vec(),
+        gas_limit: gas,
+    };
+
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(5u64.eth()).unwrap(),
+            },
+        },
+        app_data: OrderCreationAppData::Full {
+            full: json!({
+                "metadata": {
+                    "hooks": {
+                        "pre": [pre_hook],
+                        "post": [post_hook],
+                    },
+                },
+            })
+            .to_string(),
+        },
+        ..Default::default()
+    };
+
+    let solver_address = solver.address();
+    let settlement = *onchain.contracts().gp_settlement.address();
+    let weth = *onchain.contracts().weth.address();
+
+    // Phase 1: quote without gas simulation.
+    let solver_no_sim = colocation::start_baseline_solver(
+        "test_quoter".to_string(),
+        solver.clone(),
+        weth,
+        vec![],
+        2,
+        false,
+    )
+    .await;
+    let driver_no_sim = colocation::start_driver(
+        onchain.contracts(),
+        vec![solver_no_sim],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_api(configs::orderbook::Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_quoter",
+            )]),
+            ..configs::orderbook::Configuration::test_default()
+        })
+        .await;
+    services
+        .start_autopilot(
+            None,
+            configs::autopilot::Configuration {
+                native_price_estimation: AutopilotNativePriceConfig {
+                    estimators: NativePriceEstimators::new(vec![vec![
+                        NativePriceEstimator::driver(
+                            "test_quoter".to_string(),
+                            "http://localhost:11088/test_quoter".parse().unwrap(),
+                        ),
+                    ]]),
+                    ..AutopilotNativePriceConfig::test_default()
+                },
+                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                    "test_quoter",
+                    "http://localhost:11088/test_quoter",
+                )]),
+                ..configs::autopilot::Configuration::test("test_quoter", solver_address)
+            },
+        )
+        .await;
+
+    wait_for_condition(TIMEOUT, || async {
+        reqwest::get("http://localhost:11088/test_quoter/healthz")
+            .await
+            .is_ok()
+    })
+    .await
+    .expect("driver (no sim) did not start in time");
+
+    let gas_no_sim = services
+        .submit_quote(&quote_request)
+        .await
+        .unwrap()
+        .quote
+        .gas_amount;
+
+    // Phase 2: replace driver with one that has gas simulation enabled.
+    driver_no_sim.abort();
+    driver_no_sim.await.ok();
+
+    let solver_with_sim = colocation::start_baseline_solver_with_gas_simulation(
+        "test_quoter".to_string(),
+        solver,
+        weth,
+        vec![],
+        2,
+        false,
+        settlement,
+    )
+    .await;
+    let _driver_with_sim = colocation::start_driver(
+        onchain.contracts(),
+        vec![solver_with_sim],
+        colocation::LiquidityProvider::UniswapV2,
+        false,
+    );
+
+    wait_for_condition(TIMEOUT, || async {
+        reqwest::get("http://localhost:11088/test_quoter/healthz")
+            .await
+            .is_ok()
+    })
+    .await
+    .expect("driver (with sim) did not start in time");
+
+    let post_order = dto::PostOrder {
+        sell_token: *token.address(),
+        buy_token: *onchain.contracts().weth.address(),
+        amount: 5u64.eth(),
+        kind: OrderKind::Sell,
+        deadline: chrono::Utc::now() + std::time::Duration::from_secs(30),
+        from: trader.address(),
+        interactions: dto::Interactions {
+            pre: vec![dto::Interaction {
+                target: pre_hook.target,
+                value: U256::ZERO,
+                call_data: pre_hook.call_data.clone(),
+            }],
+            post: vec![dto::Interaction {
+                target: post_hook.target,
+                value: U256::ZERO,
+                call_data: post_hook.call_data.clone(),
+            }],
+        },
+    };
+    let _quote_response = reqwest::Client::new()
+        .post("http://localhost:11088/test_quoter/quote")
+        .json(&post_order)
+        .send()
+        .await
+        .unwrap()
+        .json::<dto::QuoteKind>()
+        .await
+        .unwrap();
+
+    let gas_with_sim = services
+        .submit_quote(&quote_request)
+        .await
+        .unwrap()
+        .quote
+        .gas_amount;
+
+    assert!(
+        gas_with_sim > gas_no_sim,
+        "simulated gas {gas_with_sim} should exceed static estimate {gas_no_sim}"
+    );
+    let hooks_gas = bigdecimal::BigDecimal::from(gas * 2);
+    assert!(
+        gas_with_sim >= hooks_gas,
+        "simulated gas {gas_with_sim} should be at least the sum of hook gas limits"
+    );
 }

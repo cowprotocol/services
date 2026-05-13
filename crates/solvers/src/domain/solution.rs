@@ -135,6 +135,8 @@ impl Single {
             wrappers,
         } = self;
 
+        tracing::error!(?gas, "into_solution");
+
         if (order.sell.token, order.buy.token) != (input.token, output.token) {
             return None;
         }
