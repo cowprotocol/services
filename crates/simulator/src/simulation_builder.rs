@@ -373,10 +373,14 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Vec<AccountOverrid
         _ => return Default::default(),
     };
 
+    let Some(struct_hash_input) = wrapper.data.get(..wrapper.data.len() - 64) else {
+        return vec![];
+    };
+
     let struct_hash = keccak256(
         type_hash
             .into_iter()
-            .chain(wrapper.data.clone())
+            .chain(struct_hash_input.iter().copied())
             .collect::<Vec<_>>(),
     );
     let map_key = keccak256(
