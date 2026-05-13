@@ -218,7 +218,8 @@ impl SimulationBuilder {
                     // Unconditionally add state override for euler compatibility.
                     // If this state override gets added to calls that don't need it
                     // it will not interfere with the simulation.
-                    self.append_euler_override(&w);
+                    self.account_override_requests
+                        .extend(compute_euler_override(&w));
 
                     wrapper_calls.push(WrapperCall {
                         address: w.address,
@@ -302,57 +303,51 @@ impl SimulationBuilder {
         // code from the non-trivial code that actually does the encoding.
         crate::encoding::finish_simulation_builder(self).await
     }
+}
 
-    /// Euler is the only integration for now using wrappers and they have a
-    /// chicken and egg problem when quoting. They need a quote to know the
-    /// things they have to make the user sign to make the resulting order
-    /// work. But for the quote to be accurate we already need to have this
-    /// setup done.
-    /// To get around this we introduce this temporary hack of
-    /// assuming this is an euler wrapper and unconditionally setting up the
-    /// requirements using state overrides.
-    ///
-    /// For that we need to write `U256::MAX` to this mapping which lives in
-    /// storage slot 24 of contract 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383:
-    /// mapping(bytes19 addressPrefix => mapping(address operator => uint256
-    /// operatorBitField)) internal operatorLookup;
-    fn append_euler_override(&mut self, wrapper: &app_data::WrapperCall) {
-        let target = address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383");
-        let desired_value = B256::from([0xFF_u8; 32]);
-        let slot_24 = B256::with_last_byte(24);
-        let Some(address_prefix): Option<[u8; 32]> =
-            wrapper.data.get(0..32).and_then(|s| s.try_into().ok())
-        else {
-            return;
-        };
+/// Euler is the only integration for now using wrappers and they have a
+/// chicken and egg problem when quoting. They need a quote to know the
+/// things they have to make the user sign to make the resulting order
+/// work. But for the quote to be accurate we already need to have this
+/// setup done.
+/// To get around this we introduce this temporary hack of
+/// assuming this is an euler wrapper and unconditionally setting up the
+/// requirements using state overrides.
+///
+/// For that we need to write `U256::MAX` to this mapping which lives in
+/// storage slot 24 of contract 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383:
+/// mapping(bytes19 addressPrefix => mapping(address operator => uint256
+/// operatorBitField)) internal operatorLookup;
+fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Option<AccountOverrideRequest> {
+    let target = address!("0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383");
+    let desired_value = B256::from([0xFF_u8; 32]);
+    let slot_24 = B256::with_last_byte(24);
+    let address_prefix: [u8; 32] = wrapper.data.get(0..32)?.try_into().ok()?;
+    let operator = wrapper.address;
 
-        let operator = wrapper.address;
+    // Outer slot: keccak256(bytes19_address_prefix ++ slot_24)
+    let outer_slot = {
+        let mut buf = [0u8; 64];
+        // take first 19 populated bytes from the padded address and write
+        // them to the first 19 bytes of the buffer (to "cast" an
+        // `address` to a `bytes19` mapping key).
+        buf[0..19].copy_from_slice(&address_prefix[12..31]);
+        buf[32..64].copy_from_slice(slot_24.as_slice());
+        keccak256(buf)
+    };
+    // Final slot: keccak256(operator ++ outer_slot)
+    let final_slot = {
+        let mut buf = [0u8; 64];
+        buf[12..32].copy_from_slice(operator.as_slice());
+        buf[32..64].copy_from_slice(outer_slot.as_slice());
+        keccak256(buf)
+    };
 
-        // Outer slot: keccak256(bytes19_address_prefix ++ slot_24)
-        let outer_slot = {
-            let mut buf = [0u8; 64];
-            // take last 19 bytes from the address and write them
-            // to the first 19 bytes of the buffer (to "cast" an
-            // `address` to a `bytes19` mapping key).
-            buf[0..19].copy_from_slice(&address_prefix[13..32]);
-            buf[32..64].copy_from_slice(slot_24.as_slice());
-            keccak256(buf)
-        };
-        // Final slot: keccak256(operator ++ outer_slot)
-        let final_slot = {
-            let mut buf = [0u8; 64];
-            buf[12..32].copy_from_slice(operator.as_slice());
-            buf[32..64].copy_from_slice(outer_slot.as_slice());
-            keccak256(buf)
-        };
-
-        self.account_override_requests
-            .push(AccountOverrideRequest::Custom {
-                account: target,
-                state: AccountOverride::default()
-                    .with_state_diff(std::iter::once((final_slot, desired_value))),
-            });
-    }
+    Some(AccountOverrideRequest::Custom {
+        account: target,
+        state: AccountOverride::default()
+            .with_state_diff(std::iter::once((final_slot, desired_value))),
+    })
 }
 
 /// The output of [`SimulationBuilder::build`]: inputs ready to be passed to an
