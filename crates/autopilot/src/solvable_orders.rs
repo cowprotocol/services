@@ -11,14 +11,8 @@ use {
     database::order_events::{
         OrderEventLabel,
         OrderFilterReason::{
-            self,
-            BannedUser,
-            DustOrder,
-            InFlight,
-            InsufficientBalance,
-            InvalidSignature,
-            MissingNativePrice,
-            UnsupportedToken,
+            self, BannedUser, DustOrder, InFlight, InsufficientBalance, InvalidSignature,
+            MissingNativePrice, UnsupportedToken,
         },
     },
     futures::FutureExt,
@@ -698,8 +692,17 @@ async fn get_orders_with_native_prices<'a>(
     let mut removed_orders = vec![];
     let mut orders = orders;
     orders.retain(|order| {
-        let both_prices_present = prices.contains_key(&order.data.sell_token)
-            && prices.contains_key(&order.data.buy_token);
+        let sell_token_present = prices.contains_key(&order.data.sell_token);
+        let buy_token_present = prices.contains_key(&order.data.buy_token);
+        tracing::debug!(
+            buy_token = %order.data.buy_token,
+            buy_token_present,
+            sell_token = %order.data.sell_token,
+            sell_token_present,
+            order_id = %order.metadata.uid,
+            "euler: checking if order tokens are present"
+        );
+        let both_prices_present = sell_token_present && buy_token_present;
         if both_prices_present {
             true
         } else {
@@ -757,14 +760,10 @@ mod tests {
         maplit::{btreemap, hashset},
         model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
         price_estimation::{
-            HEALTHY_PRICE_ESTIMATION_TIME,
-            PriceEstimationError,
+            HEALTHY_PRICE_ESTIMATION_TIME, PriceEstimationError,
             native::MockNativePriceEstimating,
             native_price_cache::{
-                ApproximationToken,
-                Cache,
-                CachingNativePriceEstimator,
-                NativePriceUpdater,
+                ApproximationToken, Cache, CachingNativePriceEstimator, NativePriceUpdater,
             },
         },
     };

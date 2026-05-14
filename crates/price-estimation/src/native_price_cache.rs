@@ -345,6 +345,8 @@ impl CachingNativePriceEstimator {
                 .await
                 .map(|price| approximation.normalize_price(price));
 
+            tracing::debug!(estimated_token = %token, ?result, "euler: estimated token");
+
             // update price in cache
             if should_cache(&result) {
                 self.0.cache.insert(token, result.clone());
@@ -548,8 +550,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            HEALTHY_PRICE_ESTIMATION_TIME,
-            PriceEstimationError,
+            HEALTHY_PRICE_ESTIMATION_TIME, PriceEstimationError,
             native::{MockNativePriceEstimating, NativePriceEstimating},
         },
         anyhow::anyhow,
