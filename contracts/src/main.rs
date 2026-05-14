@@ -313,7 +313,7 @@ fn build_module() -> Module {
         ]))
         .add_contract(Contract::new("UniswapV2Router02").with_networks(networks![
             MAINNET => "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
-            // GNOSIS: Uniswap V2 is not officially deployed on Gnosis. Use the `honeyswap` preset (with custom init hash) instead.
+            // GNOSIS: Uniswap V2 is not officially deployed on Gnosis. Use HoneyswapRouter (with custom init hash) instead.
             ARBITRUM_ONE => "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
             BASE => "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
             SEPOLIA => "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
