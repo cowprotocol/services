@@ -373,11 +373,11 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Vec<AccountOverrid
         _ => return Default::default(),
     };
 
-    let Some(struct_hash_input) = (wrapper
+    let Some(struct_hash_input) = wrapper
         .data
         .len()
         .checked_sub(64)
-        .and_then(|offset| wrapper.data.get(..offset)))
+        .and_then(|offset| wrapper.data.get(..offset))
     else {
         return vec![];
     };
