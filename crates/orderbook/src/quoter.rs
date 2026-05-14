@@ -248,10 +248,7 @@ fn get_vol_fee_adjusted_quote_data(
     if scale.is_zero() {
         return Err(anyhow::anyhow!("volume fee calculation division by zero"));
     }
-    // Round protocol fee UP to be pessimistic: never undercharge users on the
-    // fee, mirroring the `ceil` rounding used for the network fee in
-    // `FeeParameters::fee_with_additional_cost`. For SELL this means a slightly smaller
-    // adjusted buy_amount; for BUY a slightly larger adjusted sell_amount.
+    // Round the fee up so we never undercharge the user.
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
         OrderQuoteSide::Sell { .. } => {
             // For SELL orders, fee is calculated on buy amount
@@ -585,10 +582,7 @@ mod tests {
 
     #[test]
     fn test_volume_fee_rounds_up_sell_order() {
-        // Pick amounts so the protocol fee has a non-zero remainder and we can
-        // observe the ceiling. factor 0.0001 -> high_precision = 100, scale =
-        // 1_000_000, so fee = buy_amount * 100 / 1_000_000 = buy_amount / 10_000.
-        // Use buy_amount = 12345 so 12345 / 10000 = 1.2345 -> ceil = 2.
+        // factor 0.0001, buy_amount 12345: fee = 12345/10000 = 1.2345 -> ceil 2.
         let volume_fee = FeeFactor::try_from(0.0001).unwrap();
         let volume_fee_config = VolumeFeeConfig {
             factor: Some(volume_fee),
@@ -613,15 +607,14 @@ mod tests {
         )
         .unwrap();
 
-        // Fee rounds up from 1.2345 to 2.
         assert_eq!(result.sell_amount, U256::from(100u64));
         assert_eq!(result.buy_amount, U256::from(12345u64 - 2));
     }
 
     #[test]
     fn test_volume_fee_rounds_up_buy_order() {
-        // factor 0.0001 -> fee = (sell + network_fee) / 10_000.
-        // sell = 12345, network fee = 0 -> 12345/10000 = 1.2345 -> ceil = 2.
+        // factor 0.0001, sell_amount 12345, network fee 0: 12345/10000 = 1.2345 -> ceil
+        // 2.
         let volume_fee = FeeFactor::try_from(0.0001).unwrap();
         let volume_fee_config = VolumeFeeConfig {
             factor: Some(volume_fee),
@@ -645,7 +638,6 @@ mod tests {
         )
         .unwrap();
 
-        // Fee rounds up from 1.2345 to 2.
         assert_eq!(result.sell_amount, U256::from(12345u64 + 2));
         assert_eq!(result.buy_amount, U256::from(100u64));
     }
