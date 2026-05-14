@@ -7,7 +7,11 @@ use {
     eth_domain_types::{self as eth, ContractAddress},
     hex_literal::hex,
     liquidity_sources::uniswap_v2::{
-        BAOSWAP_INIT, HONEYSWAP_INIT, SUSHISWAP_INIT, SWAPR_INIT, TESTNET_UNISWAP_INIT,
+        BAOSWAP_INIT,
+        HONEYSWAP_INIT,
+        SUSHISWAP_INIT,
+        SWAPR_INIT,
+        TESTNET_UNISWAP_INIT,
         UNISWAP_INIT,
     },
     reqwest::Url,
