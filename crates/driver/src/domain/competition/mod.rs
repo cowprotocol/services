@@ -530,10 +530,9 @@ impl Competition {
         let scored: Vec<(Solved, Settlement)> = scores
             .into_iter()
             .sorted_by_key(|(score, _)| Reverse(*score))
-            .map(|(score, settlement)| {
+            .map(|(_, settlement)| {
                 let solved = Solved {
                     id: settlement.solution().clone(),
-                    score,
                     trades: settlement.orders(),
                     prices: settlement.prices(),
                     gas: Some(settlement.gas.estimate),
@@ -1009,7 +1008,6 @@ fn merge(
 #[derive(Debug)]
 pub struct Solved {
     pub id: solution::Id,
-    pub score: eth::Ether,
     pub trades: HashMap<order::Uid, Amounts>,
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
     pub gas: Option<eth::Gas>,

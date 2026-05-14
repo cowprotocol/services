@@ -480,7 +480,7 @@ impl RunLoop {
             .map(|(index, bid)| SolverSettlement {
                 solver: bid.driver().name.clone(),
                 solver_address: bid.solution().solver(),
-                score: Some(Score::Solver(bid.score().get().0)),
+                score: Some(Score::Protocol(bid.score().get().0)),
                 ranking: index + 1,
                 orders: bid
                     .solution()
