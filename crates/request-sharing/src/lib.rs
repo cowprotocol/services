@@ -95,6 +95,10 @@ where
                 if let Some(cache) = weak.upgrade() {
                     Self::collect_garbage(&cache, &label);
                 } else {
+                    Metrics::get()
+                        .request_sharing_cached_items
+                        .with_label_values(&[label])
+                        .set(0);
                     return;
                 }
             }
@@ -306,7 +310,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drop_does_not_corrupt_existing_entries() {
+    async fn dropping_clone_does_not_corrupt_existing_entries() {
         let cache: Cache<u64, BoxFuture<u64>> = Default::default();
         let label = "drop".to_string();
         let original = RequestSharing {
@@ -349,7 +353,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gauge_on_clone_drop_not_zeroed() {
+    async fn dropping_clone_does_not_affect_shared_cache() {
         let cache: Cache<u64, BoxFuture<u64>> = Default::default();
         let label = "gauge".to_string();
         let original = RequestSharing {
@@ -369,6 +373,5 @@ mod tests {
 
         // Since _pending remains, will still have an entry
         assert_eq!(original.in_flight.lock().unwrap().len(), 1);
-        drop(original); // will now zero, exact value only testable in integration test
     }
 }
