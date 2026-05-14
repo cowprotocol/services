@@ -360,7 +360,10 @@ impl Settlement {
         acc
     }
 
-    /// The uniform price vector this settlement proposes
+    /// The uniform price vector this settlement proposes.
+    ///
+    /// Deprecated: only emitted on the `/solve` response so that autopilots
+    /// running the previous code can deserialise it during a rolling deploy.
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()

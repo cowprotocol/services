@@ -1011,6 +1011,11 @@ pub struct Solved {
     pub id: solution::Id,
     pub score: eth::Ether,
     pub trades: HashMap<order::Uid, Amounts>,
+    /// Deprecated: uniform clearing prices are no longer consumed by the
+    /// autopilot. Still emitted on the `/solve` response so that autopilots
+    /// running the previous code can deserialise it during a rolling deploy.
+    /// Remove together with the response field once the new autopilot is
+    /// fully rolled out.
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
     pub gas: Option<eth::Gas>,
 }

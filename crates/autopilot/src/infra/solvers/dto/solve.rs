@@ -157,6 +157,16 @@ impl Response {
     pub fn into_domain(
         self,
     ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
+        for solution in &self.solutions {
+            if !solution.clearing_prices.is_empty() {
+                tracing::debug!(
+                    solution_id = solution.solution_id,
+                    submission_address = %solution.submission_address,
+                    num_prices = solution.clearing_prices.len(),
+                    "driver sent deprecated clearingPrices field"
+                );
+            }
+        }
         self.solutions
             .into_iter()
             .map(Solution::into_domain)
@@ -197,12 +207,6 @@ impl Solution {
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
                 .collect(),
-            self.clearing_prices
-                .into_iter()
-                .map(|(token, price)| {
-                    domain::auction::Price::try_new(price.into()).map(|price| (token.into(), price))
-                })
-                .collect::<Result<_, _>>()?,
         ))
     }
 }
@@ -271,6 +275,11 @@ pub struct Solution {
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: Address,
     pub orders: HashMap<boundary::OrderUid, TradedOrder>,
+    /// Deprecated: uniform clearing prices are no longer used by the
+    /// autopilot. Kept here purely so we can detect and log drivers that
+    /// still send them, in order to chase them down before the field is
+    /// removed entirely.
+    #[serde(default)]
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<Address, U256>,
     pub gas: Option<u64>,
