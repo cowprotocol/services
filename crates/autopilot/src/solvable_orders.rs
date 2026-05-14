@@ -685,6 +685,9 @@ async fn get_orders_with_native_prices<'a>(
         .chain(additional_tokens)
         .collect::<HashSet<_>>();
 
+    let order_uids: Vec<_> = orders.iter().map(|o| o.metadata.uid).collect();
+    tracing::debug!(tokens=?traded_tokens, ?order_uids, "euler: getting native prices for orders");
+
     let prices = get_native_prices(traded_tokens, native_price_estimator, timeout).await;
 
     // Filter orders so that we only return orders that have prices

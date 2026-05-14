@@ -385,6 +385,7 @@ impl CachingNativePriceEstimator {
             let mut price_stream = price_stream;
 
             while let Some((token, result)) = price_stream.next().await {
+                tracing::debug!(%token, ?result, "euler: received token from price stream");
                 prices.insert(token, result);
             }
         })
@@ -477,7 +478,7 @@ impl NativePriceUpdater {
         tokens: HashSet<Address>,
         timeout: Duration,
     ) -> HashMap<Address, NativePriceEstimateResult> {
-        tracing::trace!(?tokens, "update tokens to maintain");
+        tracing::debug!(?tokens, "euler: update tokens to maintain");
         let token_list: Vec<_> = tokens.iter().copied().collect();
         self.tokens_to_update.store(Arc::new(tokens));
         self.estimator.fetch_prices(&token_list, timeout).await
