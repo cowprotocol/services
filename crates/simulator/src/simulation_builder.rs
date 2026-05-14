@@ -365,7 +365,7 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Vec<AccountOverrid
             b256!("0xffa38a994108ca56910187ade1b200aca3f27ac295ac150bde63a9b5783af04f"),
             b256!("0x3cdbf47d3b4f755805c36069980ae18f367b382cf0593fa0378ad50c1c5d1fd8"),
         ),
-        // collateral swap wrapperc:wa
+        // collateral swap wrapper
         x if x == address!("0x175fbd01874e92c9b081f493371fefe009760a42") => (
             b256!("0xfac3fa57d73575d8f9df481fc13e23240d08bfc183e56bd289a69521402ab2dc"),
             b256!("0x82f0a6a70fe8cb4c350f918378cd06594e0307d840ad296019fa47d796428016"),
@@ -373,7 +373,12 @@ fn compute_euler_override(wrapper: &app_data::WrapperCall) -> Vec<AccountOverrid
         _ => return Default::default(),
     };
 
-    let Some(struct_hash_input) = wrapper.data.get(..wrapper.data.len() - 64) else {
+    let Some(struct_hash_input) = (wrapper
+        .data
+        .len()
+        .checked_sub(64)
+        .and_then(|offset| wrapper.data.get(..offset)))
+    else {
         return vec![];
     };
 
