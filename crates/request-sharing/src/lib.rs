@@ -245,7 +245,7 @@ mod tests {
         });
 
         // Check origin is reused in shared
-        assert!(shared_future.is_shared,);
+        assert!(shared_future.is_shared);
 
         // Check same value is reached
         assert_eq!(origin_future.await, 1);
