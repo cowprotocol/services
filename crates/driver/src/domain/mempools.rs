@@ -414,6 +414,15 @@ impl Mempools {
         }
     }
 
+    /// Scores per-mempool submission metrics.
+    ///
+    /// If a submission succeeded, the winning mempool is recorded as
+    /// `Succeeded` and all others are recorded as `Superseded`. Otherwise, each
+    /// mempool is recorded as `Failed` or `Disabled`.
+    ///
+    /// Heuristics: The mempool race within `Self::execute` can only result in
+    /// two sets of values: 1) a few errors, a success and some pending,
+    /// disabled; or 2) all errors plus disabled.
     fn update_metrics(&self, settlement: &Settlement, stats: &[Outcome]) {
         // SAFETY: using `zip_eq` instead of `zip` here to catch regressions early on
         // tests. It should never panic because we constructed the `stats` slice out of
@@ -457,29 +466,23 @@ impl Mempools {
     }
 }
 
-/// Collapse the per-mempool outcomes into a single result. The first success in
-/// configuration order wins; otherwise the first `Failed` error is returned so
-/// the surfaced error is deterministic regardless of completion order. If every
-/// mempool was `Disabled`, surface `Error::Disabled`.
+/// Collapses per-mempool outcomes into a single result expected by callers of
+/// `Self::execute`.
+///
+/// The first successful submission wins; otherwise the first error is returned.
+/// If all mempools were `Disabled`, returns `Error::Disabled`.
+///
+/// Heuristics: The mempool race within `Self::execute` can only result in two
+/// sets of values: 1) a few errors, a success and some pending, disabled; or 2)
+/// all errors plus disabled.
 fn reconstruct_result(stats: Vec<Outcome>) -> Result<TxId, Error> {
-    if let Some(submission) = stats.iter().find_map(|o| match o {
-        Outcome::Success(s) => Some(s),
-        _ => None,
-    }) {
-        return Ok(submission.tx_hash);
-    }
-
-    Err(stats
+    stats
         .into_iter()
-        .find_map(|outcome| match outcome {
-            Outcome::Failed(err) => Some(err),
-            Outcome::Disabled => None,
-            Outcome::Success(_) | Outcome::Pending => unreachable!(
-                "No successful submission was found, and in that case all pending submissions \
-                 were either turned into errors or disabled"
-            ),
+        .fold(Err(Error::Disabled), |acc, outcome| match outcome {
+            Outcome::Success(submission) => acc.or(Ok(submission.tx_hash)),
+            Outcome::Failed(err) => acc.or(Err(err)),
+            Outcome::Disabled | Outcome::Pending => acc,
         })
-        .unwrap_or(Error::Disabled))
 }
 
 /// Applies the solver's gas fee override if present. When a replacement
