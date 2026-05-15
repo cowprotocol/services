@@ -33,11 +33,9 @@ use {
     order_validation,
     price_estimation::{
         PriceEstimating,
-        QuoteVerificationMode,
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
-        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
         order_quoting::{self, OrderQuoter},
@@ -238,8 +236,6 @@ pub async fn run(config: Configuration) {
         web3: web3.clone(),
     })));
 
-    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
-
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &config.price_estimation,
         &config.native_price_estimation.shared,
@@ -264,7 +260,6 @@ pub async fn run(config: Configuration) {
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
-            code_fetcher: code_fetcher.clone(),
         },
     )
     .await
@@ -347,8 +342,7 @@ pub async fn run(config: Configuration) {
         max_limit: config.order_validation.max_limit_order_validity_period,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
-                         verification: QuoteVerificationMode| {
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
         Arc::new(OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
@@ -368,18 +362,16 @@ pub async fn run(config: Configuration) {
                 )
                 .unwrap(),
             },
-            balance_fetcher.clone(),
-            verification,
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);
+    let optimal_quoter = create_quoter(price_estimator);
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
     // them.
-    let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
+    let fast_quoter = create_quoter(fast_price_estimator);
 
     let app_data_validator = Validator::new(config.app_data_size_limit);
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
@@ -401,7 +393,6 @@ pub async fn run(config: Configuration) {
         signature_validator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
-        code_fetcher,
         app_data_validator.clone(),
         config.order_validation.max_gas_per_order,
         config.order_validation.same_tokens_policy,
@@ -473,6 +464,7 @@ pub async fn run(config: Configuration) {
         config.volume_fee,
         volume_fee_bucket_overrides,
         config.shared.enable_sell_equals_buy_volume_fee,
+        token_info_fetcher.clone(),
     )
     .with_fast_quoter(fast_quoter);
 
