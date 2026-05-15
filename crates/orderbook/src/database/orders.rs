@@ -220,12 +220,11 @@ impl OrderStoring for Postgres {
             .with_label_values(&["insert_order"])
             .start_timer();
 
-        let order = order.clone();
         let mut connection = self.pool.acquire().await?;
         let mut ex = connection.begin().await?;
 
-        insert_order(&order, &mut ex).await?;
-        Self::insert_order_app_data(&order, &mut ex).await?;
+        insert_order(order, &mut ex).await?;
+        Self::insert_order_app_data(order, &mut ex).await?;
 
         ex.commit().await?;
         Ok(())
