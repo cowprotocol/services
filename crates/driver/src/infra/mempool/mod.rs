@@ -82,12 +82,6 @@ impl std::fmt::Display for Mempool {
     }
 }
 
-impl PartialEq for Mempool {
-    fn eq(&self, other: &Self) -> bool {
-        self.config == other.config
-    }
-}
-
 impl Mempool {
     pub fn new(config: Config, solver_accounts: Vec<Account>) -> Self {
         let transport = unbuffered_web3(&config.url);
