@@ -150,6 +150,30 @@ pub fn start_driver(
     )
 }
 
+pub fn start_driver_with_pod(
+    contracts: &Contracts,
+    solvers: Vec<SolverEngine>,
+    liquidity: LiquidityProvider,
+    quote_using_limit_orders: bool,
+) -> JoinHandle<()> {
+    let pod_snippet = format!(
+        r#"
+[pod]
+endpoint = {:?}
+auction-contract-address = {:?}
+"#,
+        config::pod::POD_ENDPOINT,
+        config::pod::POD_AUCTION_CONTRACT,
+    );
+    start_driver_with_config_override(
+        contracts,
+        solvers,
+        liquidity,
+        quote_using_limit_orders,
+        Some(&pod_snippet),
+    )
+}
+
 pub fn start_driver_with_config_override(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,

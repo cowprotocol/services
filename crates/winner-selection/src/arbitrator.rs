@@ -23,6 +23,7 @@ use {
 };
 
 /// Auction arbitrator responsible for selecting winning solutions.
+#[derive(Clone)]
 pub struct Arbitrator {
     /// Maximum number of winning solutions to select.
     pub max_winners: usize,
@@ -602,6 +603,73 @@ impl Arbitrator {
         winners
     }
 
+    /// Pairs each item with its winsel solution, sorts deterministically by
+    /// `canonical_hash`, runs arbitration, and returns the ranking together
+    /// with a `SolutionKey -> T` map so callers can rejoin their domain bids
+    /// with the ranked output.
+    ///
+    /// Sorting before arbitration is what lets independent observers
+    /// (autopilot, driver, third-party verifiers) reach the same
+    /// tie-breaking decision on the same logical solution set.
+    pub fn arbitrate_paired<T>(
+        &self,
+        items: Vec<(T, Solution<Unscored>)>,
+        context: &AuctionContext,
+    ) -> (Ranking, HashMap<SolutionKey, T>) {
+        let mut paired = items;
+        paired.sort_by_cached_key(|(_, solution)| solution.canonical_hash());
+        let mut by_key = HashMap::with_capacity(paired.len());
+        let mut solutions = Vec::with_capacity(paired.len());
+        for (item, solution) in paired {
+            by_key.insert(SolutionKey::from(&solution), item);
+            solutions.push(solution);
+        }
+        (self.arbitrate(solutions, context), by_key)
+    }
+
+    /// Runs arbitration and rejoins each ranked and filtered-out solution
+    /// to its original input `T`. Also computes reference scores. Output
+    /// solutions that cannot be matched back to an input are counted in
+    /// `orphans` rather than panicking.
+    ///
+    /// A non-zero `orphans` count means two inputs shared the same
+    /// `SolutionKey`. Callers should log and alert on this, not treat it
+    /// as fatal.
+    pub fn arbitrate_paired_and_rejoin<T>(
+        &self,
+        items: Vec<(T, Solution<Unscored>)>,
+        context: &AuctionContext,
+    ) -> Rejoined<T> {
+        let (ranking, mut by_key) = self.arbitrate_paired(items, context);
+        let reference_scores = self.compute_reference_scores(&ranking);
+
+        let mut orphans = 0;
+        let mut rejoin = |s: Solution<Ranked>| -> Option<(T, Solution<Ranked>)> {
+            let key = SolutionKey::from(&s);
+            match by_key.remove(&key) {
+                Some(t) => Some((t, s)),
+                None => {
+                    orphans += 1;
+                    None
+                }
+            }
+        };
+
+        let filtered_out = ranking
+            .filtered_out
+            .into_iter()
+            .filter_map(&mut rejoin)
+            .collect();
+        let ranked = ranking.ranked.into_iter().filter_map(&mut rejoin).collect();
+
+        Rejoined {
+            filtered_out,
+            ranked,
+            reference_scores,
+            orphans,
+        }
+    }
+
     /// Compute reference scores for winning solvers.
     #[instrument(skip_all)]
     pub fn compute_reference_scores(&self, ranking: &Ranking) -> HashMap<Address, U256> {
@@ -716,11 +784,40 @@ struct PriceLimits {
     buy: U256,
 }
 
-/// Key to uniquely identify every solution.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct SolutionKey {
-    solver: Address,
-    solution_id: u64,
+/// Result of [`Arbitrator::arbitrate_paired_and_rejoin`].
+#[derive(Debug)]
+pub struct Rejoined<T> {
+    /// Solutions filtered out as unfair, paired with their original input.
+    pub filtered_out: Vec<(T, Solution<Ranked>)>,
+    /// Ranked solutions (winners + non-winners), paired with their original
+    /// input, ordered as produced by [`Arbitrator::arbitrate`].
+    pub ranked: Vec<(T, Solution<Ranked>)>,
+    /// Reference scores per winning solver.
+    pub reference_scores: HashMap<Address, U256>,
+    /// Number of arbitrator-returned solutions whose `SolutionKey` could
+    /// not be matched back to an input item. Non-zero indicates a
+    /// `SolutionKey` collision in the input set.
+    pub orphans: usize,
+}
+
+/// Key to uniquely identify every solution within an auction.
+///
+/// Two solutions submitted by the same solver share an `auction-scoped` id
+/// (`solution_id`); two solutions from different solvers may collide on
+/// `solution_id` but never on `(solver, solution_id)`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct SolutionKey {
+    pub solver: Address,
+    pub solution_id: u64,
+}
+
+impl<S> From<&Solution<S>> for SolutionKey {
+    fn from(solution: &Solution<S>) -> Self {
+        Self {
+            solver: solution.solver(),
+            solution_id: solution.id(),
+        }
+    }
 }
 
 /// Scores of all trades in a solution aggregated by the directional

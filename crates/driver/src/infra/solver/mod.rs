@@ -17,6 +17,7 @@ use {
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
+            pod::{self, PodManager},
         },
         util,
     },
@@ -100,12 +101,27 @@ pub struct ManageNativeToken {
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
     persistence: Persistence,
+    /// Pod-network shadow-mode flow. `None` when pod is unconfigured for this
+    /// solver; the auction contract handle and the local arbitrator only exist
+    /// when pod does, so they're paired structurally.
+    pod_manager: Option<PodManager>,
+}
+
+impl std::fmt::Debug for Solver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Solver")
+            .field("client", &self.client)
+            .field("config", &self.config)
+            .field("eth", &self.eth)
+            .field("persistence", &self.persistence)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -120,7 +136,7 @@ impl TxSigner<Signature> for Account {
     fn address(&self) -> Address {
         match self {
             Account::PrivateKey(local_signer) => local_signer.address(),
-            Account::Kms(aws_signer) => aws_signer.address(),
+            Account::Kms(aws_signer) => TxSigner::<Signature>::address(aws_signer),
             Account::Address(address) => *address,
         }
     }
@@ -222,6 +238,8 @@ pub struct Config {
     /// Maximum number of solutions the driver proposes to the autopilot per
     /// auction. When 1 (the default), only the best-scoring solution is sent.
     pub max_solutions_to_propose: std::num::NonZeroUsize,
+    /// Pod configuration
+    pub pod: Option<pod::config::Config>,
 }
 
 impl Solver {
@@ -240,6 +258,14 @@ impl Solver {
 
         let persistence = Persistence::build(&config).await;
 
+        let pod_manager = match config.pod.as_ref() {
+            Some(pod_config) => {
+                PodManager::try_new(&config.account, pod_config, eth.contracts().weth_address())
+                    .await
+            }
+            None => None,
+        };
+
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
@@ -248,6 +274,7 @@ impl Solver {
             config,
             eth,
             persistence,
+            pod_manager,
         })
     }
 
@@ -330,6 +357,10 @@ impl Solver {
 
     pub fn max_solutions_to_propose(&self) -> usize {
         self.config.max_solutions_to_propose.get()
+    }
+
+    pub fn pod_manager(&self) -> Option<&PodManager> {
+        self.pod_manager.as_ref()
     }
 
     /// Make a POST request instructing the solver to solve an auction.

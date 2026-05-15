@@ -7,14 +7,16 @@
 
 pub mod arbitrator;
 pub mod auction;
+pub mod bid;
 pub mod primitives;
 pub mod solution;
 pub mod state;
 
 // Re-export key types for convenience
 pub use {
-    arbitrator::{Arbitrator, Ranking},
+    arbitrator::{Arbitrator, Ranking, Rejoined, SolutionKey},
     auction::AuctionContext,
+    bid::Bid,
     primitives::{Address, DirectedTokenPair, OrderUid, Side, U256},
     solution::{Order, RankType, Ranked, Scored, Solution, Unscored},
 };

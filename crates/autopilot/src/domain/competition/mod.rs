@@ -11,7 +11,7 @@ use {
 mod bid;
 pub mod winner_selection;
 
-pub use bid::{Bid, RankType, Ranked, Scored, Unscored};
+pub use bid::{Bid, BidPayload, RankType, Ranked, Scored, Unscored};
 
 type SolutionId = u64;
 
@@ -88,7 +88,7 @@ pub struct TradedOrder {
     Eq,
     Ord,
 )]
-pub struct Score(eth::Ether);
+pub struct Score(pub eth::Ether);
 
 impl Score {
     pub fn try_new(score: eth::Ether) -> Result<Self, ZeroScore> {

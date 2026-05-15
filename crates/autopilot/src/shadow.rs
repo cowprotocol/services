@@ -11,7 +11,7 @@ use {
     crate::{
         domain::{
             self,
-            competition::{Bid, Score, Unscored, winner_selection},
+            competition::{Bid, BidPayload, Score, Unscored, winner_selection},
         },
         infra::{
             self,
@@ -259,7 +259,7 @@ impl RunLoop {
 
         solutions
             .into_iter()
-            .map(|s| Bid::new(s, Arc::clone(&driver)))
+            .map(|s| Bid::new(BidPayload::new(s, Arc::clone(&driver))))
             .collect()
     }
 

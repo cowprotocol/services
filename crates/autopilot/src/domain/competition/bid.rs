@@ -9,24 +9,20 @@ use {
 pub type Scored = state::Scored<Score>;
 pub type Ranked = state::Ranked<Score>;
 
-/// A solver's auction bid, which includes solution and corresponding driver
-/// data, progressing through the winner selection process.
-///
-/// It uses the type-state pattern to enforce correct state
-/// transitions at compile time. The state parameter tracks progression through
-/// three phases:
-///
-/// 1. **Unscored**: Initial state when the solution is received from the driver
-/// 2. **Scored**: After computing surplus and fees for the solution
-/// 3. **Ranked**: After winner selection determines if this is a winner
+/// Payload carried by [`Bid`]: the solution plus its originating driver.
+/// Accessible directly through the bid via [`winner_selection::Bid`]'s
+/// `Deref` impl, so `bid.solution()` and `bid.driver()` keep working.
 #[derive(Clone)]
-pub struct Bid<State = Ranked> {
+pub struct BidPayload {
     solution: Solution,
     driver: Arc<infra::Driver>,
-    state: State,
 }
 
-impl<T> Bid<T> {
+impl BidPayload {
+    pub fn new(solution: Solution, driver: Arc<infra::Driver>) -> Self {
+        Self { solution, driver }
+    }
+
     pub fn solution(&self) -> &Solution {
         &self.solution
     }
@@ -36,29 +32,7 @@ impl<T> Bid<T> {
     }
 }
 
-impl<State> state::HasState for Bid<State> {
-    type Next<NewState> = Bid<NewState>;
-    type State = State;
-
-    fn with_state<NewState>(self, state: NewState) -> Self::Next<NewState> {
-        Bid {
-            solution: self.solution,
-            driver: self.driver,
-            state,
-        }
-    }
-
-    fn state(&self) -> &Self::State {
-        &self.state
-    }
-}
-
-impl Bid<Unscored> {
-    pub fn new(solution: Solution, driver: Arc<infra::Driver>) -> Self {
-        Self {
-            solution,
-            driver,
-            state: Unscored,
-        }
-    }
-}
+/// A solver's auction bid in the typestate pipeline `Unscored -> Scored ->
+/// Ranked`. State transitions are enforced at compile time via
+/// [`winner_selection::Bid`].
+pub type Bid<State = Ranked> = ::winner_selection::Bid<BidPayload, State>;

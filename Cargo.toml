@@ -90,6 +90,7 @@ order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
 paste = "1.0"
 pin-project-lite = "0.2.14"
+pod-sdk = "0.5.1"
 prettyplease = "0.2.37"
 price-estimation = { path = "crates/price-estimation" }
 proc-macro2 = "1.0.103"
