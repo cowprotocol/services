@@ -469,7 +469,7 @@ impl Mempools {
 /// Collapses per-mempool outcomes into a single result expected by callers of
 /// `Self::execute`.
 ///
-/// The first successful submission wins; otherwise the first error is returned.
+/// The first successful submission wins; otherwise the last error is returned.
 /// If all mempools were `Disabled`, returns `Error::Disabled`.
 ///
 /// Heuristics: The mempool race within `Self::execute` can only result in two
@@ -635,5 +635,75 @@ impl Error {
             Self::Other(_) => "Other",
             Self::Disabled => "Disabled",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, alloy::primitives::B256};
+
+    fn tx(byte: u8) -> TxId {
+        TxId(B256::repeat_byte(byte))
+    }
+
+    fn success(byte: u8) -> Outcome {
+        Outcome::Success(SubmissionSuccess {
+            tx_hash: tx(byte),
+            included_in_block: BlockNo(0),
+            submitted_at_block: BlockNo(0),
+        })
+    }
+
+    fn failed(msg: &'static str) -> Outcome {
+        Outcome::Failed(Error::Other(anyhow!(msg)))
+    }
+
+    fn assert_ok(stats: Vec<Outcome>, expected_byte: u8) {
+        let got = reconstruct_result(stats).expect("expected Ok");
+        assert_eq!(got.0, B256::repeat_byte(expected_byte));
+    }
+
+    fn assert_err(stats: Vec<Outcome>, expected_msg: &str) {
+        let got = reconstruct_result(stats).expect_err("expected Err");
+        assert_eq!(got.to_string(), expected_msg);
+    }
+
+    #[test]
+    fn reconstruct_result_cases() {
+        // empty -> Disabled (seed value).
+        assert_err(vec![], "Strategy disabled for this tx");
+
+        // all Disabled -> Disabled.
+        assert_err(
+            vec![Outcome::Disabled, Outcome::Disabled],
+            "Strategy disabled for this tx",
+        );
+
+        // Pending only -> Disabled (pending is skipped, seed surfaces).
+        assert_err(vec![Outcome::Pending], "Strategy disabled for this tx");
+
+        // Single Success.
+        assert_ok(vec![success(1)], 1);
+
+        // First Success in order wins (subsequent successes ignored).
+        assert_ok(vec![success(1), success(2)], 1);
+
+        // Success beats prior Failed (success replaces carried error).
+        assert_ok(vec![failed("e1"), success(2)], 2);
+
+        // Success beats later Failed (success sticks).
+        assert_ok(vec![success(1), failed("e1")], 1);
+
+        // Pending and Disabled don't disturb a Success.
+        assert_ok(vec![Outcome::Pending, Outcome::Disabled, success(3)], 3);
+
+        // Multiple Failed, no Success -> last failed wins.
+        assert_err(vec![failed("e1"), failed("e2")], "Failed to submit: e2");
+
+        // Failed beats Disabled regardless of order.
+        assert_err(
+            vec![Outcome::Disabled, failed("e1"), Outcome::Disabled],
+            "Failed to submit: e1",
+        );
     }
 }
