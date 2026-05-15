@@ -26,20 +26,34 @@ pub async fn post_order_handler(
     State(state): State<Arc<AppState>>,
     Json(order): Json<OrderCreation>,
 ) -> Response {
-    state
-        .orderbook
-        .add_order(order.clone())
-        .await
-        .map(|(order_uid, quote_metadata)| {
+    let from = order.from;
+    let sell_token = order.sell_token;
+    let buy_token = order.buy_token;
+    let kind = order.kind;
+    let sell_amount = order.sell_amount;
+    let buy_amount = order.buy_amount;
+
+    match state.orderbook.add_order(order).await {
+        Ok((order_uid, quote_metadata)) => {
             let quote_id = quote_metadata.as_ref().and_then(|q| q.id);
             let quote_solver = quote_metadata.as_ref().map(|q| q.solver);
             tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
-            (StatusCode::CREATED, Json(order_uid))
-        })
-        .inspect_err(|err| {
-            tracing::debug!(?order, ?err, "error creating order");
-        })
-        .into_response()
+            (StatusCode::CREATED, Json(order_uid)).into_response()
+        }
+        Err(err) => {
+            tracing::debug!(
+                ?from,
+                ?sell_token,
+                ?buy_token,
+                ?kind,
+                ?sell_amount,
+                ?buy_amount,
+                ?err,
+                "error creating order"
+            );
+            err.into_response()
+        }
+    }
 }
 
 pub struct PartialValidationErrorWrapper(pub PartialValidationError);
