@@ -5,17 +5,9 @@ use {
         sol_types::SolCall,
     },
     contracts::{
-        BalancerV2Authorizer,
-        BalancerV2Vault,
-        CoWSwapEthFlow,
-        FlashLoanRouter,
-        GPv2AllowListAuthentication,
-        GPv2Settlement,
-        HoneyswapRouter,
-        HooksTrampoline,
-        UniswapV2Factory,
-        UniswapV2Router02,
-        WETH9,
+        BalancerV2Authorizer, BalancerV2Vault, CoWSwapEthFlow, FlashLoanRouter,
+        GPv2AllowListAuthentication, GPv2Settlement, HoneyswapRouter, HooksTrampoline,
+        UniswapV2Factory, UniswapV2Router02, WETH9,
         support::{Balances, Signatures},
     },
     ethrpc::alloy::CallBuilderExt,
@@ -265,6 +257,7 @@ impl Contracts {
 
 /// Resolve a router with the canonical UniswapV2 ABI for the current chain.
 async fn uniswap_v2_router_for_chain(web3: &Web3) -> UniswapV2Router02::Instance {
+    const GNOSIS_CHAIN_ID: u64 = 100;
     let chain_id = web3
         .provider
         .get_chain_id()
@@ -273,7 +266,7 @@ async fn uniswap_v2_router_for_chain(web3: &Web3) -> UniswapV2Router02::Instance
     let address = match chain_id {
         // Gnosis: no official Uniswap V2 deployment; use Honeyswap's router,
         // which is what xdai's `honeyswap` preset binds in the driver.
-        100 => HoneyswapRouter::deployment_address(&chain_id)
+        GNOSIS_CHAIN_ID => HoneyswapRouter::deployment_address(&chain_id)
             .expect("HoneyswapRouter deployment address registered for Gnosis"),
         _ => {
             return UniswapV2Router02::Instance::deployed(&web3.provider)
