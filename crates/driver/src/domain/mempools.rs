@@ -10,7 +10,9 @@ use {
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{StreamExt, stream::FuturesUnordered},
+    itertools::Itertools,
     num::Saturating,
+    std::iter,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -48,6 +50,23 @@ pub struct Mempools {
     ethereum: Ethereum,
 }
 
+enum Outcome {
+    Pending,
+    Success(SubmissionSuccess),
+    Failed(Error),
+    Disabled,
+}
+
+impl From<Result<SubmissionSuccess, Error>> for Outcome {
+    fn from(result: Result<SubmissionSuccess, Error>) -> Self {
+        match result {
+            Ok(sub) => Outcome::Success(sub),
+            Err(Error::Disabled) => Outcome::Disabled,
+            Err(err) => Outcome::Failed(err),
+        }
+    }
+}
+
 impl Mempools {
     pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
         if mempools.is_empty() {
@@ -67,61 +86,29 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        // Disabled mempools are filtered out before the race, not inside it, so they
-        // don't get scored as Superseded when another mempool wins — that would
-        // artificially inflate the success rate of metrics that exclude Disabled from
-        // the failure count.
-        let enabled: Vec<_> = self
+        let mut stats: Vec<Outcome> = iter::repeat_with(|| Outcome::Pending)
+            .take(self.mempools.len())
+            .collect();
+
+        let mut submission_futures: FuturesUnordered<_> = self
             .mempools
             .iter()
-            .filter(|mempool| {
-                if self.is_disabled(mempool, settlement) {
-                    observe::mempool_disabled(mempool, settlement);
-                    false
-                } else {
-                    true
-                }
-            })
-            .collect();
-
-        if enabled.is_empty() {
-            return Err(Error::Disabled);
-        }
-
-        let mut submission_futures: FuturesUnordered<_> = enabled
-            .iter()
-            .map(|&mempool| async move {
+            .enumerate()
+            .map(|(idx, mempool)| async move {
                 let result = self
                     .submit(mempool, settlement, submission_deadline, mode)
-                    .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
+                    .instrument(tracing::info_span!("mempool", kind = %mempool))
                     .await;
-                (mempool, result)
+                (idx, Outcome::from(result))
             })
             .collect();
 
-        let mut errors = Vec::with_capacity(enabled.len());
-        while let Some((mempool, result)) = submission_futures.next().await {
-            match result {
-                Ok(submission) => {
-                    observe::mempool_succeeded(mempool, settlement, &submission);
-                    for superseded in enabled.iter().filter(|&&m| m != mempool) {
-                        observe::mempool_superseded(superseded, mempool, settlement);
-                    }
-                    return Ok(submission.tx_hash);
-                }
-                Err(err) => errors.push((mempool, err)),
-            }
+        while let Some((idx, outcome)) = submission_futures.next().await {
+            stats[idx] = outcome
         }
 
-        // All mempools failed: emit per-mempool failure observations and surface one of
-        // the errors.
-        for (mempool, err) in &errors {
-            observe::mempool_failed(mempool, settlement, err);
-        }
-        let Some((_, err)) = errors.pop() else {
-            return Err(anyhow!("execute reached all-failed path with no errors recorded").into());
-        };
-        Err(err)
+        self.update_metrics(settlement, &stats);
+        reconstruct_result(stats)
     }
 
     /// A mempool is disabled if all of the following are true:
@@ -133,10 +120,6 @@ impl Mempools {
         settlement.may_revert()
             && matches!(self.revert_protection(), RevertProtection::Enabled)
             && mempool.reverts_can_get_mined()
-    }
-
-    fn is_enabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
-        !self.is_disabled(mempool, settlement)
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -159,10 +142,9 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
-        debug_assert!(
-            self.is_enabled(mempool, settlement),
-            "submit called for disabled mempool; execute should filter these out",
-        );
+        if self.is_disabled(mempool, settlement) {
+            return Err(Error::Disabled);
+        }
 
         let tx = settlement.transaction(settlement::Internalization::Enable);
         let tx = prepare_submission(tx, mode);
@@ -431,6 +413,73 @@ impl Mempools {
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
     }
+
+    fn update_metrics(&self, settlement: &Settlement, stats: &[Outcome]) {
+        // SAFETY: using `zip_eq` instead of `zip` here to catch regressions early on
+        // tests. It should never panic because we constructed the `stats` slice out of
+        // `self.mempools`, so their sizes will always match.
+        let mut mempools_and_outcomes: Vec<_> = self.mempools.iter().zip_eq(stats.iter()).collect();
+
+        // If there's a winner, observe everything else as superseeded. Otherwise,
+        // everything should be observed as errors.
+        if let Some((winner, Outcome::Success(submission))) = mempools_and_outcomes
+            .iter()
+            .position(|(_, outcome)| matches!(outcome, Outcome::Success(_)))
+            .map(|i| mempools_and_outcomes.swap_remove(i))
+        {
+            observe::mempool_succeeded(winner, settlement, submission);
+            for (mempool, outcome) in mempools_and_outcomes.iter() {
+                match outcome {
+                    Outcome::Pending | Outcome::Failed(_) => {
+                        observe::mempool_superseded(mempool, winner, settlement)
+                    }
+                    Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
+                    Outcome::Success(_) => {
+                        unreachable!(
+                            "There's only a single successful outcome in the stats slice, and \
+                             we've already removed it"
+                        )
+                    }
+                }
+            }
+        } else {
+            for (mempool, outcome) in mempools_and_outcomes.iter() {
+                match outcome {
+                    Outcome::Failed(error) => observe::mempool_failed(mempool, settlement, error),
+                    Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
+                    Outcome::Success(_) | Outcome::Pending => unreachable!(
+                        "No successful submission was found, and in that case all pending \
+                         submissions were either turned into errors or disabled"
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// Collapse the per-mempool outcomes into a single result. The first success in
+/// configuration order wins; otherwise the first `Failed` error is returned so
+/// the surfaced error is deterministic regardless of completion order. If every
+/// mempool was `Disabled`, surface `Error::Disabled`.
+fn reconstruct_result(stats: Vec<Outcome>) -> Result<TxId, Error> {
+    if let Some(submission) = stats.iter().find_map(|o| match o {
+        Outcome::Success(s) => Some(s),
+        _ => None,
+    }) {
+        return Ok(submission.tx_hash);
+    }
+
+    Err(stats
+        .into_iter()
+        .find_map(|outcome| match outcome {
+            Outcome::Failed(err) => Some(err),
+            Outcome::Disabled => None,
+            Outcome::Success(_) | Outcome::Pending => unreachable!(
+                "No successful submission was found, and in that case all pending submissions \
+                 were either turned into errors or disabled"
+            ),
+        })
+        .unwrap_or(Error::Disabled))
 }
 
 /// Applies the solver's gas fee override if present. When a replacement
