@@ -4,7 +4,10 @@ pub mod order;
 use {
     alloy::primitives::U256,
     eth_domain_types::{Address, NonZeroU256},
-    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    model::{
+        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+        signature::Signature,
+    },
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -45,12 +48,22 @@ pub struct OrderSimulationRequest {
     /// token transfer or internal Balancer Vault transfer.
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
-    /// Full app data JSON. Defaults to `"{}"` if omitted.
-    #[serde(default)]
-    pub app_data: Option<String>,
+    /// Full app data JSON.
+    pub app_data: String,
     /// The block number at which the simulation should happen
-    #[serde(default)]
     pub block_number: Option<u64>,
+    /// The order signature (signing scheme + bytes). Required to pass
+    /// signature verification in the settlement contract during simulation.
+    #[serde(flatten)]
+    pub signature: Signature,
+    /// The fee amount signed by the user. This field is expected to be 0 and
+    /// only still there because it needs to be signed by the user.
+    pub fee_amount: U256,
+    /// UNIX timestamp when the order will expire.
+    pub valid_to: u32,
+    /// Whether the order needs to be filled all at once or allows to be filled
+    /// over multiple partial executions.
+    pub partially_fillable: bool,
 }
 
 /// The result of Order simulation, contains the error (if any)

@@ -41,7 +41,6 @@ use {
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::NativePriceEstimating,
-        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
         order_quoting::{self, OrderQuoter},
@@ -221,6 +220,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         weth: config.shared.contracts.native_token,
         balances: config.shared.contracts.balances,
         trampoline: config.shared.contracts.hooks,
+        flashloan_router: config.shared.contracts.flashloan_router,
     };
     let current_block_args = shared::current_block::Arguments::from(&config.shared.current_block);
     let eth = ethereum(
@@ -295,8 +295,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         block_stream: eth.current_block().clone(),
     });
 
-    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
-
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &config.price_estimation,
         &config.native_price_estimation.shared,
@@ -314,6 +312,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 .await
                 .expect("failed to query solver authenticator address"),
             block_stream: eth.current_block().clone(),
+            flash_loan_router: eth.contracts().flashloan_router(),
+            hooks_trampoline: *eth.contracts().trampoline().address(),
         },
         factory::Components {
             http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
@@ -321,7 +321,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
-            code_fetcher: code_fetcher.clone(),
         },
     )
     .instrument(info_span!("price_estimator_factory"))
@@ -469,9 +468,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             )
             .unwrap(),
         },
-        balance_fetcher.clone(),
-        config.price_estimation.quote_verification,
         config.price_estimation.quote_timeout,
+        config.price_estimation.max_quote_timeout,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(

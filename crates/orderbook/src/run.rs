@@ -5,7 +5,6 @@ use {
         database::Postgres,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
-        order_simulator::OrderSimulator,
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
@@ -20,6 +19,7 @@ use {
     contracts::{
         BalancerV2Vault,
         ChainalysisOracle,
+        FlashLoanRouter,
         GPv2Settlement,
         HooksTrampoline,
         WETH9,
@@ -33,17 +33,14 @@ use {
     order_validation,
     price_estimation::{
         PriceEstimating,
-        QuoteVerificationMode,
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
-        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
     },
-    simulator::swap_simulator::SwapSimulator,
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
@@ -171,6 +168,14 @@ pub async fn run(config: Configuration) {
             .await
             .expect("load hooks trampoline contract"),
     };
+    let hooks_trampoline_address = *hooks_contract.address();
+
+    let flashloan_router_address = config
+        .shared
+        .contracts
+        .flashloan_router
+        .or_else(|| FlashLoanRouter::deployment_address(&chain_id))
+        .expect("no flashloan router deployment for this chain");
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
@@ -231,8 +236,6 @@ pub async fn run(config: Configuration) {
         web3: web3.clone(),
     })));
 
-    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
-
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &config.price_estimation,
         &config.native_price_estimation.shared,
@@ -248,6 +251,8 @@ pub async fn run(config: Configuration) {
                 .await
                 .expect("failed to query solver authenticator address"),
             block_stream: current_block_stream.clone(),
+            flash_loan_router: flashloan_router_address,
+            hooks_trampoline: hooks_trampoline_address,
         },
         factory::Components {
             http_factory: http_client::HttpClientFactory::new(&configs::http_client::HttpClient {
@@ -255,7 +260,6 @@ pub async fn run(config: Configuration) {
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
-            code_fetcher: code_fetcher.clone(),
         },
     )
     .await
@@ -338,8 +342,7 @@ pub async fn run(config: Configuration) {
         max_limit: config.order_validation.max_limit_order_validity_period,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
-                         verification: QuoteVerificationMode| {
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
         Arc::new(OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
@@ -359,17 +362,16 @@ pub async fn run(config: Configuration) {
                 )
                 .unwrap(),
             },
-            balance_fetcher.clone(),
-            verification,
             config.price_estimation.quote_timeout,
+            config.price_estimation.max_quote_timeout,
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator, config.price_estimation.quote_verification);
+    let optimal_quoter = create_quoter(price_estimator);
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
     // them.
-    let fast_quoter = create_quoter(fast_price_estimator, QuoteVerificationMode::Unverified);
+    let fast_quoter = create_quoter(fast_price_estimator);
 
     let app_data_validator = Validator::new(config.app_data_size_limit);
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
@@ -391,7 +393,6 @@ pub async fn run(config: Configuration) {
         signature_validator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
-        code_fetcher,
         app_data_validator.clone(),
         config.order_validation.max_gas_per_order,
         config.order_validation.same_tokens_policy,
@@ -412,31 +413,28 @@ pub async fn run(config: Configuration) {
     ));
 
     let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Box<dyn simulator::tenderly::Api>> =
+        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
             config.tenderly.as_ref().map(|tenderly_config| {
-                Box::new(simulator::tenderly::TenderlyApi::new(
+                Arc::new(simulator::tenderly::TenderlyApi::new(
                     tenderly_config,
                     &http_factory,
                     chain.id().to_string(),
                 )) as _
             });
-        Some(Arc::new(OrderSimulator::new(
-            SwapSimulator::new(
-                balance_overrider.clone(),
-                *settlement_contract.address(),
+        Some(
+            simulator::simulation_builder::SettlementSimulator::new(
+                settlement_contract.clone(),
+                flashloan_router_address,
+                hooks_trampoline_address,
                 *native_token.address(),
+                config.gas_limit.saturating_to(),
+                balance_overrider.clone(),
                 current_block_stream.clone(),
-                web3,
-                config
-                    .gas_limit
-                    .try_into()
-                    .expect("gas_limit must fit in u64"),
+                tenderly,
             )
             .await
-            .expect("failed to create SwapSimulator"),
-            chain.id().to_string(),
-            tenderly,
-        )))
+            .expect("failed to initialize SettlementSimulator"),
+        )
     } else {
         None
     };
@@ -466,6 +464,7 @@ pub async fn run(config: Configuration) {
         config.volume_fee,
         volume_fee_bucket_overrides,
         config.shared.enable_sell_equals_buy_volume_fee,
+        token_info_fetcher.clone(),
     )
     .with_fast_quoter(fast_quoter);
 

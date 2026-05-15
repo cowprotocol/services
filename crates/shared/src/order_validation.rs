@@ -36,12 +36,7 @@ use {
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
-    price_estimation::{
-        PriceEstimationError,
-        Verification,
-        trade_finding,
-        trade_verifier::code_fetching::CodeFetching,
-    },
+    price_estimation::{PriceEstimationError, Verification},
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     std::{sync::Arc, time::Duration},
     tracing::instrument,
@@ -248,7 +243,6 @@ pub struct OrderValidator {
     signature_validator: Arc<dyn SignatureValidating>,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
-    pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: Validator,
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
@@ -318,7 +312,6 @@ impl OrderValidator {
         signature_validator: Arc<dyn SignatureValidating>,
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
-        code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: Validator,
         max_gas_per_order: u64,
         same_tokens_policy: SameTokensPolicy,
@@ -335,7 +328,6 @@ impl OrderValidator {
             signature_validator,
             limit_order_counter,
             max_limit_orders_per_user,
-            code_fetcher,
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
@@ -600,7 +592,7 @@ impl OrderValidating for OrderValidator {
 
                 ValidatedAppData {
                     hash: *hash,
-                    document: String::new(),
+                    document: "{}".to_string(),
                     protocol,
                 }
             }
@@ -684,10 +676,7 @@ impl OrderValidating for OrderValidator {
         let verification = Verification {
             from: owner,
             receiver: order.receiver.unwrap_or(owner),
-            sell_token_source: order.sell_token_balance,
-            buy_token_destination: order.buy_token_balance,
-            pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
-            post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
+            app_data: Arc::new(app_data.inner.document.clone()),
         };
 
         let quote_parameters = QuoteSearchParameters {
@@ -972,7 +961,11 @@ async fn get_or_create_quote(
                 .await
                 .map_err(ValidationError::Other)?;
 
-            tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
+            tracing::debug!(
+                original_quote_id = ?quote_id,
+                quote_id =? quote.id,
+                "computed fresh quote for order creation"
+            );
             quote
         }
     };
@@ -1065,7 +1058,6 @@ mod tests {
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
         number::nonzero::NonZeroU256,
-        price_estimation::trade_verifier::code_fetching::MockCodeFetching,
         serde_json::json,
         signature_validator::MockSignatureValidating,
     };
@@ -1101,7 +1093,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1257,7 +1248,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1338,7 +1328,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::AllowSell,
@@ -1452,7 +1441,6 @@ mod tests {
             signature_validating,
             Arc::new(limit_order_counter),
             max_limit_orders_per_user,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1665,7 +1653,6 @@ mod tests {
             signature_validating,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1738,7 +1725,6 @@ mod tests {
             signature_validating,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1799,7 +1785,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1853,7 +1838,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1911,7 +1895,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -1972,7 +1955,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -2032,7 +2014,6 @@ mod tests {
             Arc::new(signature_validator),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -2099,7 +2080,6 @@ mod tests {
                 Arc::new(MockSignatureValidating::new()),
                 Arc::new(limit_order_counter),
                 0,
-                Arc::new(MockCodeFetching::new()),
                 Default::default(),
                 u64::MAX,
                 SameTokensPolicy::Disallow,
@@ -2190,7 +2170,6 @@ mod tests {
             Arc::new(MockSignatureValidating::new()),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
@@ -2556,7 +2535,7 @@ mod tests {
             verification: Verification {
                 from: Address::from([0xf0; 20]),
                 receiver: Address::from([0xf0; 20]),
-                ..Default::default()
+                app_data: Arc::new("{}".to_string()),
             },
         };
         let quote_id = Some(42);
@@ -2602,7 +2581,6 @@ mod tests {
             Arc::new(signature_validating),
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
