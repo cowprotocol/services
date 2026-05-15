@@ -476,17 +476,15 @@ impl Mempools {
 /// sets of values: 1) a few errors, a success and some pending, disabled; or 2)
 /// all errors plus disabled.
 fn reconstruct_result(stats: Vec<Outcome>) -> Result<TxId, Error> {
-    #[allow(
-        clippy::manual_try_fold,
-        reason = "We use Result semantics to carry state"
-    )]
+    use itertools::FoldWhile::{Continue, Done};
     stats
         .into_iter()
-        .fold(Err(Error::Disabled), |acc, outcome| match outcome {
-            Outcome::Success(submission) => acc.or(Ok(submission.tx_hash)),
-            Outcome::Failed(err) => acc.or(Err(err)),
-            Outcome::Disabled | Outcome::Pending => acc,
+        .fold_while(Err(Error::Disabled), |acc, outcome| match outcome {
+            Outcome::Success(submission) => Done(Ok(submission.tx_hash)),
+            Outcome::Failed(err) => Continue(Err(err)),
+            Outcome::Disabled | Outcome::Pending => Continue(acc),
         })
+        .into_inner()
 }
 
 /// Applies the solver's gas fee override if present. When a replacement
