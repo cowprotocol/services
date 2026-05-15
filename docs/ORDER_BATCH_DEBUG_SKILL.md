@@ -1,8 +1,7 @@
-# CoW Protocol Order-Batch Debug Skill
-
-Debug why a batch of orders failed to execute (or executed slowly). Given a CSV / list of order UIDs, classify each one as truly expired vs filtered-out-earlier, identify the quoting solver, check whether any solver bid on it, and — for solvers that are not co-located — get the driver-side discard reason (insufficient gas, simulation revert, encoding failure, …).
-
-Companion to `COW_ORDER_DEBUG_SKILL.md` (single-order deep dive) and `QUOTE_VERIFICATION_DEBUG_SKILL.md`. Use this one when you have **many** orders and want a per-order CSV plus per-quoter aggregates.
+---
+name: order-batch-debug
+description: Debug why a batch of orders failed to execute (or executed slowly). Given a CSV / list of order UIDs, classify each one as truly expired vs filtered-out-earlier, identify the quoting solver, check whether any solver bid on it, and — for solvers that are not co-located — get the driver-side discard reason.
+---
 
 ## When to use
 
@@ -38,15 +37,12 @@ Per-quoter aggregates: counts of expired-vs-removed-early, did-bid-yes vs no, an
 | `CoW-Prod` MCP (VictoriaLogs) | autopilot `proposed solution` + driver `discarded solution` queries |
 | HTTPS access to `api.cow.fi` | order details (`status`, `quote.solver`, `validTo`) |
 | HTTPS access to `https://debug.cow.fi/api/orders/{uid}/events?chainId=N` | per-order lifecycle (basic auth; ask user for credentials and store in .env.claude) |
-| Python 3 + threadpool | parallel-fetch the API/events endpoints |
-
-No DB credentials needed — everything runs off the public/staging APIs and Victoria Logs. Solver names, addresses, and co-location are all derived from logs (see next section); no access to the infrastructure repo is required.
 
 ## Co-located vs in-cluster solvers (CRITICAL)
 
 Driver-side discard logs are only visible for solvers running in **our** shared driver pod (`<network>-driver-prod-liquidity`). Co-located solvers run their own driver in their own infra and we do **not** see their internal logs.
 
-Discover the full set of solvers and their co-location status from the autopilot's startup logs — no infra-repo access needed:
+Discover the full set of solvers and their co-location status from the autopilot's startup logs:
 
 ```
 container:=<NETWORK>-autopilot-prod AND _msg:="Creating solver"
@@ -132,8 +128,6 @@ def fetch_events(uid, chain_id):
         return json.loads(r.read())   # [{timestamp, label}, …]
 ```
 
-Chain IDs: mainnet=1, gnosis=100, arbitrum-one=42161, base=8453, polygon=137, bnb=56, avalanche=43114, sepolia=11155111, ink=57073, linea=59144, plasma=9745.
-
 Map last label → classification:
 
 | Last label | `expired` | `expired_detail` |
@@ -144,9 +138,8 @@ Map last label → classification:
 | `created`    | `no`  | `never_qualified_for_auction` |
 | `invalid`    | `no`  | `invalid_(insufficient_balance/allowance/sig)` |
 | `filtered`   | `no`  | `filtered_from_auction` |
-| (none)       | `unknown` | `no_events` (DB pruned, or order never made it in) |
 
-The `/events` endpoint does **not** return the `OrderFilterReason` enum — to break `invalid` apart you need the autopilot logs (`filtered out` / `solvable_orders` lines). Usually the high-level bucket is enough.
+The `/events` endpoint does **not** return the `OrderFilterReason` enum — to break `invalid` apart you need the autopilot logs (`filtered out` / `solvable_orders` lines).
 
 ## Step 3 — Solver address ↔ name mapping
 
@@ -210,6 +203,8 @@ The `err` field is verbose. Common patterns to bucket:
 | anything else | record verbatim |
 
 A bid that reaches autopilot AND is later discarded is possible (different solutions for the same order across different auctions). Track them as a set union — `bid_layer = both` if both signals exist for the same `(solver, uid)`.
+
+In order to diagnose the revert reason, you can use https://debug.cow.fi/api/orders/<order_uid>/debug/simulations?auctionId=<auction id> to fetch calldata and simulate either using the tenderly API or using foundy against an archive RPC node.
 
 ## Step 6 — Combine and emit CSV
 
