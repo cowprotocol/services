@@ -1,6 +1,13 @@
 {
-    "[toml]": {
-        "editor.formatOnSave": true,
-        "editor.defaultFormatter": "tombi-toml.tombi"
-    }
+  "[toml]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "tombi-toml.tombi"
+  },
+  "rust-analyzer.rustfmt.overrideCommand": [
+    "rustup",
+    "run",
+    "nightly",
+    "rustfmt",
+    "--edition=2024"
+  ]
 }
