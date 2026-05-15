@@ -476,6 +476,10 @@ impl Mempools {
 /// sets of values: 1) a few errors, a success and some pending, disabled; or 2)
 /// all errors plus disabled.
 fn reconstruct_result(stats: Vec<Outcome>) -> Result<TxId, Error> {
+    #[allow(
+        clippy::manual_try_fold,
+        reason = "We use Result semantics to carry state"
+    )]
     stats
         .into_iter()
         .fold(Err(Error::Disabled), |acc, outcome| match outcome {
