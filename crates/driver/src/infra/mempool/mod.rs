@@ -18,7 +18,7 @@ use {
     url::Url,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub min_priority_fee: eth::U256,
     pub gas_price_cap: eth::U256,
@@ -57,7 +57,7 @@ impl Config {
 /// This can be enabled to avoid MEV when private transaction
 /// submission strategies are available. If private submission strategies
 /// are not available, revert protection is always disabled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum RevertProtection {
     Enabled,
     Disabled,
