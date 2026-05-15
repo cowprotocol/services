@@ -23,8 +23,6 @@ use {
 pub struct Solutions(Vec<solvers_dto::solution::Solution>);
 
 impl Solutions {
-    const MAX_BASE_POINT: u32 = 10000;
-
     pub fn into_domain(
         self,
         auction: &competition::Auction,
@@ -61,7 +59,7 @@ impl Solutions {
                                     eth::U256::from(fulfillment.executed_amount)
                                         .checked_mul(eth::U256::from(haircut_bps))
                                         .and_then(|v| {
-                                            v.checked_div(eth::U256::from(Self::MAX_BASE_POINT))
+                                            v.checked_div(eth::U256::from(super::MAX_BASE_POINT))
                                         })
                                         .unwrap_or_default()
                                 } else {
