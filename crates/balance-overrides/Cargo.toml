@@ -18,11 +18,11 @@ alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-cached = { workspace = true, features = ["default"] }
 clap = { workspace = true }
 configs = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
