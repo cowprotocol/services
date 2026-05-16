@@ -88,6 +88,12 @@ pub struct Probes {
     pub startup: Arc<Option<AtomicBool>>,
 }
 
+#[derive(Debug)]
+struct CutAuction {
+    id: Id,
+    auction: Arc<domain::RawAuctionData>,
+}
+
 pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
@@ -141,7 +147,7 @@ impl RunLoop {
     }
 
     pub async fn run_forever(self, mut control: ShutdownController) {
-        let mut last_auction = None;
+        let mut last_auction: Option<Arc<domain::RawAuctionData>> = None;
         let mut last_block = None;
 
         let self_arc = Arc::new(self);
@@ -255,28 +261,35 @@ impl RunLoop {
     async fn next_auction(
         &self,
         start_block: BlockInfo,
-        prev_auction: &mut Option<domain::Auction>,
+        prev_auction: &mut Option<Arc<domain::RawAuctionData>>,
         prev_block: &mut Option<B256>,
     ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
-        let auction = self.cut_auction().await?;
-        tracing::trace!(auction_id = ?auction.id, "auction cut");
+        let CutAuction { id, auction } = self.cut_auction().await?;
+        tracing::trace!(auction_id = ?id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
-        let previous = prev_auction.replace(auction.clone());
-        if previous.as_ref() == Some(&auction)
+        let previous = prev_auction.replace(Arc::clone(&auction));
+        if previous.as_deref() == Some(auction.as_ref())
             && prev_block.replace(start_block.hash) == Some(start_block.hash)
         {
             return None;
         }
 
-        observe::log_auction_delta(&previous, &auction, &start_block);
+        observe::log_raw_auction_delta(id, previous.as_deref(), auction.as_ref(), &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
-        Some(auction)
+
+        Some(domain::Auction {
+            id,
+            block: auction.block,
+            orders: auction.orders.clone(),
+            prices: auction.prices.clone(),
+            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.clone(),
+        })
     }
 
-    async fn cut_auction(&self) -> Option<domain::Auction> {
+    async fn cut_auction(&self) -> Option<CutAuction> {
         let Some(auction) = self.solvable_orders_cache.current_auction().await else {
             tracing::debug!("no current auction");
             return None;
@@ -290,7 +303,8 @@ impl RunLoop {
         Metrics::auction(id);
 
         // always update the auction because the tests use this as a readiness probe
-        self.persistence.replace_current_auction_in_db(id, &auction);
+        self.persistence
+            .replace_current_auction_in_db(id, auction.as_ref());
         self.persistence
             .upload_auction_to_s3(id, Arc::clone(&auction));
 
@@ -300,13 +314,7 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
-        Some(domain::Auction {
-            id,
-            block: auction.block,
-            orders: auction.orders.clone(),
-            prices: auction.prices.clone(),
-            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.clone(),
-        })
+        Some(CutAuction { id, auction })
     }
 
     #[instrument(skip_all)]
@@ -1085,37 +1093,61 @@ pub mod observe {
         std::collections::HashSet,
     };
 
+    fn log_order_delta<I, J>(
+        id: domain::auction::Id,
+        previous: I,
+        current: J,
+        start_block: &BlockInfo,
+    ) where
+        I: IntoIterator<Item = domain::OrderUid>,
+        J: IntoIterator<Item = domain::OrderUid>,
+    {
+        let previous_uids = previous.into_iter().collect::<HashSet<_>>();
+        let current_uids = current.into_iter().collect::<HashSet<_>>();
+        let added = current_uids.difference(&previous_uids);
+        let removed = previous_uids.difference(&current_uids);
+        tracing::debug!(
+            id,
+            added = ?added,
+            "New orders in auction"
+        );
+        tracing::debug!(
+            id,
+            removed = ?removed,
+            "Orders no longer in auction"
+        );
+        tracing::debug!(auction_id = id, ?start_block);
+    }
+
+    pub fn log_raw_auction_delta(
+        id: domain::auction::Id,
+        previous: Option<&domain::RawAuctionData>,
+        current: &domain::RawAuctionData,
+        start_block: &BlockInfo,
+    ) {
+        log_order_delta(
+            id,
+            previous
+                .into_iter()
+                .flat_map(|auction| auction.orders.iter().map(|order| order.uid)),
+            current.orders.iter().map(|order| order.uid),
+            start_block,
+        );
+    }
+
     pub fn log_auction_delta(
         previous: &Option<domain::Auction>,
         current: &domain::Auction,
         start_block: &BlockInfo,
     ) {
-        let previous_uids = match previous {
-            Some(previous) => previous
-                .orders
+        log_order_delta(
+            current.id,
+            previous
                 .iter()
-                .map(|order| order.uid)
-                .collect::<HashSet<_>>(),
-            None => HashSet::new(),
-        };
-        let current_uids = current
-            .orders
-            .iter()
-            .map(|order| order.uid)
-            .collect::<HashSet<_>>();
-        let added = current_uids.difference(&previous_uids);
-        let removed = previous_uids.difference(&current_uids);
-        tracing::debug!(
-            id = current.id,
-            added = ?added,
-            "New orders in auction"
+                .flat_map(|auction| auction.orders.iter().map(|order| order.uid)),
+            current.orders.iter().map(|order| order.uid),
+            start_block,
         );
-        tracing::debug!(
-            id = current.id,
-            removed = ?removed,
-            "Orders no longer in auction"
-        );
-        tracing::debug!(auction_id = current.id, ?start_block);
     }
 
     pub fn bids(bids: &[domain::competition::Bid<Unscored>]) {

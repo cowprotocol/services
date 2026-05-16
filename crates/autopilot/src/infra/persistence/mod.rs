@@ -179,7 +179,7 @@ impl Persistence {
             return;
         };
         tokio::task::spawn(async move {
-            let auction_dto = dto::auction::from_domain(&auction);
+            let auction_dto = dto::auction::from_domain(auction.as_ref());
             match s3.upload(id.to_string(), auction_dto).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
