@@ -5,12 +5,14 @@ use {
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
-    anyhow::Context,
+    anyhow::{Context, anyhow},
     contracts::CowSettlementForwarder::CowSettlementForwarder,
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
-    futures::{FutureExt, StreamExt, future::select_ok},
+    futures::{StreamExt, stream::FuturesUnordered},
+    itertools::Itertools,
     num::Saturating,
+    std::iter,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -48,6 +50,23 @@ pub struct Mempools {
     ethereum: Ethereum,
 }
 
+enum Outcome {
+    Pending,
+    Success(SubmissionSuccess),
+    Failed(Error),
+    Disabled,
+}
+
+impl From<Result<SubmissionSuccess, Error>> for Outcome {
+    fn from(result: Result<SubmissionSuccess, Error>) -> Self {
+        match result {
+            Ok(sub) => Outcome::Success(sub),
+            Err(Error::Disabled) => Outcome::Disabled,
+            Err(err) => Outcome::Failed(err),
+        }
+    }
+}
+
 impl Mempools {
     pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
         if mempools.is_empty() {
@@ -57,26 +76,50 @@ impl Mempools {
         }
     }
 
+    /// Race the enabled mempools concurrently; first success wins. Pending
+    /// submission futures are dropped at that point and every other mempool is
+    /// recorded as `Superseded`. If every mempool fails, return one of the
+    /// failure errors.
     pub async fn execute(
         &self,
         settlement: &Settlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
-            async move {
+        let mut stats: Vec<Outcome> = iter::repeat_with(|| Outcome::Pending)
+            .take(self.mempools.len())
+            .collect();
+
+        let mut submission_futures: FuturesUnordered<_> = self
+            .mempools
+            .iter()
+            .enumerate()
+            .map(|(idx, mempool)| async move {
                 let result = self
                     .submit(mempool, settlement, submission_deadline, mode)
-                    .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
+                    .instrument(tracing::info_span!("mempool", kind = %mempool))
                     .await;
-                observe::mempool_executed(mempool, settlement, &result);
-                result
-            }
-            .boxed()
-        }))
-        .await?;
+                (idx, Outcome::from(result))
+            })
+            .collect();
 
-        Ok(submission.tx_hash)
+        while let Some((idx, outcome)) = submission_futures.next().await {
+            stats[idx] = outcome
+        }
+
+        self.update_metrics(settlement, &stats);
+        reconstruct_result(stats)
+    }
+
+    /// A mempool is disabled if all of the following are true:
+    /// * the settlement may revert (see [`Settlement::may_revert`])
+    /// * the pool has revert protection enabled (see
+    ///   [`Self::revert_protection`])
+    /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
+    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
+        settlement.may_revert()
+            && matches!(self.revert_protection(), RevertProtection::Enabled)
+            && mempool.reverts_can_get_mined()
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -99,12 +142,7 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
-        // Don't submit risky transactions if revert protection is
-        // enabled and the settlement may revert in this mempool.
-        if settlement.may_revert()
-            && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.reverts_can_get_mined()
-        {
+        if self.is_disabled(mempool, settlement) {
             return Err(Error::Disabled);
         }
 
@@ -262,7 +300,7 @@ impl Mempools {
                     }
                 }
             }
-            Err(Error::Other(anyhow::anyhow!(
+            Err(Error::Other(anyhow!(
                 "Block stream finished unexpectedly"
             )))
         }
@@ -375,6 +413,78 @@ impl Mempools {
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
     }
+
+    /// Scores per-mempool submission metrics.
+    ///
+    /// If a submission succeeded, the winning mempool is recorded as
+    /// `Succeeded` and all others are recorded as `Superseded`. Otherwise, each
+    /// mempool is recorded as `Failed` or `Disabled`.
+    ///
+    /// Heuristics: The mempool race within `Self::execute` can only result in
+    /// two sets of values: 1) a few errors, a success and some pending,
+    /// disabled; or 2) all errors plus disabled.
+    fn update_metrics(&self, settlement: &Settlement, stats: &[Outcome]) {
+        // SAFETY: using `zip_eq` instead of `zip` here to catch regressions early on
+        // tests. It should never panic because we constructed the `stats` slice out of
+        // `self.mempools`, so their sizes will always match.
+        let mut mempools_and_outcomes: Vec<_> = self.mempools.iter().zip_eq(stats.iter()).collect();
+
+        // If there's a winner, observe everything else as superseeded. Otherwise,
+        // everything should be observed as errors.
+        if let Some((winner, Outcome::Success(submission))) = mempools_and_outcomes
+            .iter()
+            .position(|(_, outcome)| matches!(outcome, Outcome::Success(_)))
+            .map(|i| mempools_and_outcomes.swap_remove(i))
+        {
+            observe::mempool_succeeded(winner, settlement, submission);
+            for (mempool, outcome) in mempools_and_outcomes.iter() {
+                match outcome {
+                    Outcome::Pending | Outcome::Failed(_) => {
+                        observe::mempool_superseded(mempool, winner, settlement)
+                    }
+                    Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
+                    Outcome::Success(_) => {
+                        unreachable!(
+                            "There's only a single successful outcome in the stats slice, and \
+                             we've already removed it"
+                        )
+                    }
+                }
+            }
+        } else {
+            for (mempool, outcome) in mempools_and_outcomes.iter() {
+                match outcome {
+                    Outcome::Failed(error) => observe::mempool_failed(mempool, settlement, error),
+                    Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
+                    Outcome::Success(_) | Outcome::Pending => unreachable!(
+                        "No successful submission was found, and in that case all pending \
+                         submissions were either turned into errors or disabled"
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// Collapses per-mempool outcomes into a single result expected by callers of
+/// `Self::execute`.
+///
+/// The first successful submission wins; otherwise the last error is returned.
+/// If all mempools were `Disabled`, returns `Error::Disabled`.
+///
+/// Heuristics: The mempool race within `Self::execute` can only result in two
+/// sets of values: 1) a few errors, a success and some pending, disabled; or 2)
+/// all errors plus disabled.
+fn reconstruct_result(stats: Vec<Outcome>) -> Result<TxId, Error> {
+    use itertools::FoldWhile::{Continue, Done};
+    stats
+        .into_iter()
+        .fold_while(Err(Error::Disabled), |acc, outcome| match outcome {
+            Outcome::Success(submission) => Done(Ok(submission.tx_hash)),
+            Outcome::Failed(err) => Continue(Err(err)),
+            Outcome::Disabled | Outcome::Pending => Continue(acc),
+        })
+        .into_inner()
 }
 
 /// Applies the solver's gas fee override if present. When a replacement
@@ -488,4 +598,110 @@ pub enum Error {
     Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
+}
+
+impl Error {
+    /// Number of blocks between the first submission and when the error was
+    /// returned, if the error carries that timing.
+    pub fn blocks_passed(&self) -> Option<u64> {
+        let (start, end) = match self {
+            Self::Revert {
+                submitted_at_block,
+                reverted_at_block,
+                ..
+            }
+            | Self::SimulationRevert {
+                submitted_at_block,
+                reverted_at_block,
+            } => (*submitted_at_block, *reverted_at_block),
+            Self::Expired {
+                submitted_at_block,
+                submission_deadline,
+                ..
+            } => (*submitted_at_block, *submission_deadline),
+            Self::Disabled | Self::Other(_) => return None,
+        };
+        Some(end.saturating_sub(start).0)
+    }
+
+    /// Prometheus label for this error. Shared by the per-mempool and
+    /// per-attempt counters so they stay in sync.
+    pub fn metric_label(&self) -> &'static str {
+        match self {
+            Self::Revert { .. } | Self::SimulationRevert { .. } => "Revert",
+            Self::Expired { .. } => "Expired",
+            Self::Other(_) => "Other",
+            Self::Disabled => "Disabled",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, alloy::primitives::B256};
+
+    fn tx(byte: u8) -> TxId {
+        TxId(B256::repeat_byte(byte))
+    }
+
+    fn success(byte: u8) -> Outcome {
+        Outcome::Success(SubmissionSuccess {
+            tx_hash: tx(byte),
+            included_in_block: BlockNo(0),
+            submitted_at_block: BlockNo(0),
+        })
+    }
+
+    fn failed(msg: &'static str) -> Outcome {
+        Outcome::Failed(Error::Other(anyhow!(msg)))
+    }
+
+    fn assert_ok(stats: Vec<Outcome>, expected_byte: u8) {
+        let got = reconstruct_result(stats).expect("expected Ok");
+        assert_eq!(got.0, B256::repeat_byte(expected_byte));
+    }
+
+    fn assert_err(stats: Vec<Outcome>, expected_msg: &str) {
+        let got = reconstruct_result(stats).expect_err("expected Err");
+        assert_eq!(got.to_string(), expected_msg);
+    }
+
+    #[test]
+    fn reconstruct_result_cases() {
+        // empty -> Disabled (seed value).
+        assert_err(vec![], "Strategy disabled for this tx");
+
+        // all Disabled -> Disabled.
+        assert_err(
+            vec![Outcome::Disabled, Outcome::Disabled],
+            "Strategy disabled for this tx",
+        );
+
+        // Pending only -> Disabled (pending is skipped, seed surfaces).
+        assert_err(vec![Outcome::Pending], "Strategy disabled for this tx");
+
+        // Single Success.
+        assert_ok(vec![success(1)], 1);
+
+        // First Success in order wins (subsequent successes ignored).
+        assert_ok(vec![success(1), success(2)], 1);
+
+        // Success beats prior Failed (success replaces carried error).
+        assert_ok(vec![failed("e1"), success(2)], 2);
+
+        // Success beats later Failed (success sticks).
+        assert_ok(vec![success(1), failed("e1")], 1);
+
+        // Pending and Disabled don't disturb a Success.
+        assert_ok(vec![Outcome::Pending, Outcome::Disabled, success(3)], 3);
+
+        // Multiple Failed, no Success -> last failed wins.
+        assert_err(vec![failed("e1"), failed("e2")], "Failed to submit: e2");
+
+        // Failed beats Disabled regardless of order.
+        assert_err(
+            vec![Outcome::Disabled, failed("e1"), Outcome::Disabled],
+            "Failed to submit: e1",
+        );
+    }
 }
