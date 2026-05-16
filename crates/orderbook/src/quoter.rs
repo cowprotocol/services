@@ -8,7 +8,7 @@ use {
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
     },
-    price_estimation::{Verification, trade_finding},
+    price_estimation::Verification,
     shared::{
         arguments::TokenBucketFeeOverride,
         fee::VolumeFeePolicy,
@@ -22,6 +22,8 @@ use {
     },
     std::sync::Arc,
     thiserror::Error,
+    token_info::TokenInfoFetching,
+    tokio::join,
     tracing::instrument,
 };
 
@@ -53,6 +55,7 @@ pub struct QuoteHandler {
     app_data: Arc<app_data::Registry>,
     volume_fee: Option<VolumeFeeConfig>,
     volume_fee_policy: VolumeFeePolicy,
+    token_info_fetcher: Arc<dyn TokenInfoFetching>,
 }
 
 impl QuoteHandler {
@@ -63,6 +66,7 @@ impl QuoteHandler {
         volume_fee: Option<VolumeFeeConfig>,
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
+        token_info_fetcher: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         let volume_fee_policy = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
@@ -76,6 +80,7 @@ impl QuoteHandler {
             app_data,
             volume_fee,
             volume_fee_policy,
+            token_info_fetcher,
         }
     }
 
@@ -91,7 +96,18 @@ impl QuoteHandler {
         &self,
         request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
-        tracing::debug!(?request, "calculating quote");
+        let (sell_token_info, buy_token_info) = join!(
+            self.token_info_fetcher.get_token_info(request.sell_token),
+            self.token_info_fetcher.get_token_info(request.buy_token),
+        );
+        let sell_token_symbol = sell_token_info.ok().and_then(|info| info.symbol);
+        let buy_token_symbol = buy_token_info.ok().and_then(|info| info.symbol);
+        tracing::debug!(
+            ?request,
+            ?sell_token_symbol,
+            ?buy_token_symbol,
+            "calculating quote"
+        );
 
         let full_app_data_override = match request.app_data {
             OrderCreationAppData::Hash { hash } => self.app_data.find(&hash).await.unwrap_or(None),
@@ -113,10 +129,7 @@ impl QuoteHandler {
             verification: Verification {
                 from: request.from,
                 receiver: request.receiver.unwrap_or(request.from),
-                sell_token_source: request.sell_token_balance,
-                buy_token_destination: request.buy_token_balance,
-                pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
-                post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
+                app_data: Arc::new(app_data.inner.document.clone()),
             },
             signing_scheme: request.signing_scheme,
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),

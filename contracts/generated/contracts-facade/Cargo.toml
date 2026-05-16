@@ -78,7 +78,6 @@ cow-contract-sushiswaprouter = { path = "../contracts-generated/sushiswaprouter"
 cow-contract-swapper = { path = "../contracts-generated/swapper" }
 cow-contract-swaprrouter = { path = "../contracts-generated/swaprrouter" }
 cow-contract-testnetuniswapv2router02 = { path = "../contracts-generated/testnetuniswapv2router02" }
-cow-contract-trader = { path = "../contracts-generated/trader" }
 cow-contract-uniswapv2factory = { path = "../contracts-generated/uniswapv2factory" }
 cow-contract-uniswapv2router02 = { path = "../contracts-generated/uniswapv2router02" }
 cow-contract-uniswapv3pool = { path = "../contracts-generated/uniswapv3pool" }
