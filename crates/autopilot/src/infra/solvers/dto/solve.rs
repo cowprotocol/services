@@ -47,12 +47,7 @@ impl Request {
             observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
         let helper = RequestHelper {
             id: auction.id,
-            orders: auction
-                .orders
-                .clone()
-                .into_iter()
-                .map(dto::order::from_domain)
-                .collect(),
+            orders: auction.orders.iter().map(dto::order::from_domain).collect(),
             tokens: auction
                 .prices
                 .iter()

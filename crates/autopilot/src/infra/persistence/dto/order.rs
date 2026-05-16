@@ -44,7 +44,7 @@ pub struct Order {
     pub quote: Option<Quote>,
 }
 
-pub fn from_domain(order: domain::Order) -> Order {
+pub fn from_domain(order: &domain::Order) -> Order {
     Order {
         uid: order.uid.into(),
         sell_token: order.sell.token.into(),
@@ -53,7 +53,8 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_amount: order.buy.amount.into(),
         protocol_fees: order
             .protocol_fees
-            .into_iter()
+            .iter()
+            .cloned()
             .map(FeePolicy::from_domain)
             .collect(),
         created: order.created,
@@ -63,18 +64,24 @@ pub fn from_domain(order: domain::Order) -> Order {
         owner: order.owner,
         partially_fillable: order.partially_fillable,
         executed: order.executed.into(),
-        pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
+        pre_interactions: order
+            .pre_interactions
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect(),
         post_interactions: order
             .post_interactions
-            .into_iter()
+            .iter()
+            .cloned()
             .map(Into::into)
             .collect(),
         sell_token_balance: order.sell_token_balance.into(),
         buy_token_balance: order.buy_token_balance.into(),
         class: boundary::OrderClass::Limit,
-        app_data: order.app_data.into(),
-        signature: order.signature.into(),
-        quote: order.quote.map(Quote::from_domain),
+        app_data: order.app_data.clone().into(),
+        signature: order.signature.clone().into(),
+        quote: order.quote.as_ref().map(Quote::from_domain),
     }
 }
 
@@ -346,7 +353,7 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn from_domain(quote: domain::Quote) -> Self {
+    fn from_domain(quote: &domain::Quote) -> Self {
         Quote {
             sell_amount: quote.sell_amount.0,
             buy_amount: quote.buy_amount.0,
