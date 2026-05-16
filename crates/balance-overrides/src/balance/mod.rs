@@ -1,7 +1,10 @@
 pub(crate) mod aave;
 
 use {
-    crate::detector::{DetectionError, SimulationError, extract_sload_slots, mapping_slot_hash},
+    crate::{
+        cache::Cache,
+        detector::{DetectionError, SimulationError, extract_sload_slots, mapping_slot_hash},
+    },
     alloy_eips::BlockId,
     alloy_primitives::{Address, B256, TxKind, U256, keccak256, map::AddressMap},
     alloy_provider::ext::DebugApi,
@@ -13,10 +16,9 @@ use {
     },
     alloy_sol_types::SolCall,
     alloy_transport::TransportErrorKind,
-    cached::{Cached, SizedCache},
     contracts::ERC20,
     ethrpc::Web3,
-    std::{collections::HashMap, iter, sync::Mutex, time::Duration},
+    std::{collections::HashMap, iter, time::Duration},
 };
 
 /// These are the solady magic bytes for user balances
@@ -228,8 +230,6 @@ impl PartialEq for Strategy {
 
 impl Eq for Strategy {}
 
-type Cache = SizedCache<(Address, Option<Address>), Option<Strategy>>;
-
 /// Heuristic balance override detector with integrated caching.
 ///
 /// Owns the Web3 handle, detection parameters, and the per-token strategy
@@ -239,7 +239,7 @@ pub(crate) struct Detector {
     web3: Web3,
     probing_depth: u8,
     verification_timeout: Duration,
-    pub(crate) cache: Mutex<Cache>,
+    pub(crate) cache: Cache<(Address, Option<Address>), Option<Strategy>>,
 }
 
 impl Detector {
@@ -253,7 +253,7 @@ impl Detector {
             web3,
             probing_depth,
             verification_timeout,
-            cache: Mutex::new(SizedCache::with_size(cache_size)),
+            cache: Cache::new(u64::try_from(cache_size).expect("cache_size must be non-negative")),
         }
     }
 
@@ -263,14 +263,13 @@ impl Detector {
         tracing::trace!(?token, "attempting to auto-detect balance slot");
 
         {
-            let mut cache = self.cache.lock().unwrap();
-            if let Some(strategy) = cache.cache_get(&(token, None)) {
+            if let Some(strategy_opt) = self.cache.get(&(token, None)) {
                 tracing::trace!(?token, "cache hit (strategy valid for all holders)");
-                return strategy.clone();
+                return strategy_opt;
             }
-            if let Some(strategy) = cache.cache_get(&(token, Some(holder))) {
+            if let Some(strategy_opt) = self.cache.get(&(token, Some(holder))) {
                 tracing::trace!(?token, ?holder, "cache hit (holder-specific strategy)");
-                return strategy.clone();
+                return strategy_opt;
             }
         }
 
@@ -283,17 +282,11 @@ impl Detector {
                     (!strategy.can_be_applied_to_any_holder()).then_some(holder),
                 );
                 tracing::debug!(?token, ?strategy, "caching auto-detected balance strategy");
-                self.cache
-                    .lock()
-                    .unwrap()
-                    .cache_set(cache_key, Some(strategy.clone()));
+                self.cache.insert(cache_key, Some(strategy.clone()));
             }
             Err(DetectionError::NotFound) => {
                 tracing::debug!(?token, "caching token as unsupported");
-                self.cache
-                    .lock()
-                    .unwrap()
-                    .cache_set((token, Some(holder)), None);
+                self.cache.insert((token, Some(holder)), None);
             }
             Err(err) => {
                 tracing::warn!(

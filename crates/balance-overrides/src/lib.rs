@@ -1,5 +1,6 @@
 pub mod approval;
 pub mod balance;
+mod cache;
 pub mod detector;
 
 use {alloy_primitives::Address, alloy_rpc_types::state::AccountOverride};
@@ -122,7 +123,6 @@ mod tests {
         super::*,
         crate::balance::Strategy,
         alloy_primitives::{B256, U256, address, b256},
-        cached::Cached,
         ethrpc::mock,
     };
 
@@ -229,14 +229,10 @@ mod tests {
         let mock_web3 = mock::web3();
         let state_overrides = StateOverrides::new(mock_web3);
 
-        {
-            state_overrides
-                .balance_detector
-                .cache
-                .lock()
-                .unwrap()
-                .cache_set((token, None), Some(strategy.clone()));
-        }
+        state_overrides
+            .balance_detector
+            .cache
+            .insert((token, None), Some(strategy.clone()));
 
         assert_eq!(
             state_overrides
@@ -273,20 +269,14 @@ mod tests {
         let mock_web3 = mock::web3();
         let state_overrides = StateOverrides::new(mock_web3);
 
-        {
-            state_overrides
-                .balance_detector
-                .cache
-                .lock()
-                .unwrap()
-                .cache_set((token, Some(holder1)), Some(strategy_h1.clone()));
-            state_overrides
-                .balance_detector
-                .cache
-                .lock()
-                .unwrap()
-                .cache_set((token, Some(holder2)), Some(strategy_h2.clone()));
-        }
+        state_overrides
+            .balance_detector
+            .cache
+            .insert((token, Some(holder1)), Some(strategy_h1.clone()));
+        state_overrides
+            .balance_detector
+            .cache
+            .insert((token, Some(holder2)), Some(strategy_h2.clone()));
 
         assert_eq!(
             state_overrides
@@ -324,14 +314,10 @@ mod tests {
         let mock_web3 = mock::web3();
         let state_overrides = StateOverrides::new(mock_web3);
 
-        {
-            state_overrides
-                .approval_detector
-                .cache
-                .lock()
-                .unwrap()
-                .cache_set((token, None), Some(strategy.clone()));
-        }
+        state_overrides
+            .approval_detector
+            .cache
+            .insert((token, None), Some(strategy.clone()));
 
         assert_eq!(
             state_overrides
@@ -374,20 +360,14 @@ mod tests {
         let mock_web3 = mock::web3();
         let state_overrides = StateOverrides::new(mock_web3);
 
-        {
-            state_overrides
-                .approval_detector
-                .cache
-                .lock()
-                .unwrap()
-                .cache_set((token, Some((owner1, spender1))), Some(strategy_p1.clone()));
-            state_overrides
-                .approval_detector
-                .cache
-                .lock()
-                .unwrap()
-                .cache_set((token, Some((owner2, spender2))), Some(strategy_p2.clone()));
-        }
+        state_overrides
+            .approval_detector
+            .cache
+            .insert((token, Some((owner1, spender1))), Some(strategy_p1.clone()));
+        state_overrides
+            .approval_detector
+            .cache
+            .insert((token, Some((owner2, spender2))), Some(strategy_p2.clone()));
 
         assert_eq!(
             state_overrides
