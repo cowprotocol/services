@@ -356,6 +356,7 @@ impl Solver {
             &flashloan_hints,
             &wrappers,
             auction.deadline(self.timeouts()).solvers(),
+            self.config.haircut_bps,
         );
 
         let body = {

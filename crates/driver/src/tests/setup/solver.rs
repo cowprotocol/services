@@ -48,6 +48,7 @@ pub struct Config<'a> {
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
+    pub haircut_bps: u32,
 }
 
 impl Solver {
@@ -92,6 +93,17 @@ impl Solver {
                             _ => {}
                         }
                     }
+                    // Make-room for the haircut: the driver subtracts a haircut
+                    // post-hoc from buy_amount() (sell orders) / adds it to
+                    // sell_amount() (buy orders). Tightening the auction limits
+                    // here ensures solvers bid with enough headroom.
+                    if config.haircut_bps > 0 {
+                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                        current_sell_amount = eth::TokenAmount(current_sell_amount)
+                            .apply_factor(1.0 / (1.0 + factor))
+                            .unwrap()
+                            .0;
+                    }
                     current_sell_amount.to_string()
                 }
                 _ => quote.sell_amount().to_string(),
@@ -117,6 +129,15 @@ impl Solver {
                             }
                             _ => {}
                         }
+                    }
+                    // Make-room for the haircut (see comment in the buy-side
+                    // branch above).
+                    if config.haircut_bps > 0 {
+                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                        current_buy_amount = eth::TokenAmount(current_buy_amount)
+                            .apply_factor(1.0 / (1.0 - factor))
+                            .unwrap()
+                            .0;
                     }
                     current_buy_amount.to_string()
                 }

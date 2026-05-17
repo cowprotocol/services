@@ -1008,6 +1008,7 @@ impl Setup {
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
                 allow_multiple_solve_requests: self.allow_multiple_solve_requests,
+                haircut_bps: solver.haircut_bps,
             })
             .await;
 
