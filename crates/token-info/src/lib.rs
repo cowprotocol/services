@@ -6,6 +6,7 @@ use {
     ethrpc::{Web3, alloy::errors::ignore_non_node_error},
     futures::{
         FutureExt,
+        StreamExt,
         future::{BoxFuture, Shared},
     },
     model::order::BUY_ETH_ADDRESS,
@@ -14,6 +15,7 @@ use {
         sync::{Arc, Mutex},
     },
 };
+const TOKEN_INFO_FETCH_CONCURRENCY: usize = 20;
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
 #[derive(Clone, Debug, Default)]
@@ -84,17 +86,17 @@ impl TokenInfoFetching for TokenInfoFetcher {
     }
 
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
-        futures::future::join_all(addresses.iter().copied().map(|address| async move {
-            let info = self.fetch_token(address).await;
-            if let Err(err) = &info {
-                tracing::debug!(?err, token = ?address, "failed to fetch token info");
-            }
-
-            (address, info.unwrap_or_default())
-        }))
-        .await
-        .into_iter()
-        .collect()
+        futures::stream::iter(addresses.iter().copied())
+            .map(|address| async move {
+                let info = self.fetch_token(address).await;
+                if let Err(err) = &info {
+                    tracing::debug!(?err, token = ?address, "failed to fetch token info");
+                }
+                (address, info.unwrap_or_default())
+            })
+            .buffer_unordered(TOKEN_INFO_FETCH_CONCURRENCY)
+            .collect()
+            .await
     }
 }
 
@@ -148,15 +150,16 @@ impl TokenInfoFetching for CachedTokenInfoFetcher {
     }
 
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
-        futures::future::join_all(addresses.iter().copied().map(|address| async move {
-            (
-                address,
-                self.get_token_info(address).await.unwrap_or_default(),
-            )
-        }))
-        .await
-        .into_iter()
-        .collect()
+        futures::stream::iter(addresses.iter().copied())
+            .map(|address| async move {
+                (
+                    address,
+                    self.get_token_info(address).await.unwrap_or_default(),
+                )
+            })
+            .buffer_unordered(TOKEN_INFO_FETCH_CONCURRENCY)
+            .collect()
+            .await
     }
 }
 
@@ -218,7 +221,7 @@ mod tests {
             }
         );
 
-        // Fetch again, if the the two token 0 and 1 are fetched again (i.e. the
+        // Fetch again, if the two token 0 and 1 are fetched again (i.e. the
         // cache is not working) then this will panic because of the `times(1)`
         // constraint on our mock fetcher. Note that token 2 gets fetched again
         // because it failed to fetch the first time.
