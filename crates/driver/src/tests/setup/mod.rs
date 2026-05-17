@@ -1143,8 +1143,8 @@ impl Test {
         let res = self
             .client
             .get(format!(
-                "http://{}/{}/quote",
-                self.driver.addr,
+                "http://127.0.0.1:{}/{}/quote",
+                self.driver.addr.port(),
                 solver::NAME
             ))
             .query(&driver::quote_req(self))
@@ -1513,12 +1513,20 @@ pub struct Quote<'a> {
 impl<'a> Quote<'a> {
     /// Expect the /quote endpoint to have returned a 200 OK response.
     pub fn ok(self) -> QuoteOk<'a> {
-        assert_eq!(self.status, axum::http::StatusCode::OK);
+        assert_eq!(self.status, StatusCode::OK);
         QuoteOk {
             trades: self.trades,
             body: self.body,
             blockchain: self.blockchain,
         }
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
     }
 }
 

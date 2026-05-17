@@ -33,7 +33,7 @@ use {
         time::Instant,
     },
     tokio::{sync::mpsc, task},
-    tracing::{Instrument, instrument},
+    tracing::Instrument,
 };
 
 pub mod auction;
@@ -339,11 +339,11 @@ impl Competition {
             Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
-        // We can sort the orders and fetch auction data in parallel
+        // We can sort the orders and fetch auction data in parallel.
         let (auction, balances, app_data) =
             tokio::join!(sort_orders_future, tasks.balances, tasks.app_data);
 
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
+        let mut auction = Self::run_blocking_with_timer("update_orders", move || {
             // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
             // bound computations are happening and we want to avoid blocking
             // the runtime.
@@ -351,16 +351,39 @@ impl Competition {
         })
         .await;
 
+        let risk_detector = self.risk_detector.clone();
+        let flashloans_enabled = self.solver.config().flashloans_enabled;
+        let liquidity_mode = self.solver.liquidity();
+
         // We can run bad token filtering and liquidity fetching in parallel
-        let (liquidity, auction) = tokio::join!(
-            async {
-                match self.solver.liquidity() {
-                    solver::Liquidity::Fetch => tasks.liquidity.await,
-                    solver::Liquidity::Skip => Arc::new(Vec::new()),
+        let (auction, liquidity) = tokio::join!(
+            tokio::spawn(
+                async move {
+                    risk_detector
+                        .without_unsupported_orders(&mut auction.orders, flashloans_enabled)
+                        .await;
+                    auction
                 }
-            },
-            self.without_unsupported_orders(auction)
+                .in_current_span(),
+            ),
+            tokio::spawn(
+                async move {
+                    match liquidity_mode {
+                        solver::Liquidity::Fetch => tasks.liquidity.await,
+                        solver::Liquidity::Skip => Arc::new(Vec::new()),
+                    }
+                }
+                .in_current_span(),
+            ),
         );
+        let auction = auction.map_err(|err| {
+            tracing::error!(?err, "order filtering task failed");
+            Error::InternalError(err.to_string())
+        })?;
+        let liquidity = liquidity.map_err(|err| {
+            tracing::error!(?err, "liquidity fetch task failed");
+            Error::InternalError(err.to_string())
+        })?;
 
         let elapsed = start.elapsed();
         metrics::get()
@@ -951,16 +974,6 @@ impl Competition {
         }
         Ok(())
     }
-
-    #[instrument(skip_all)]
-    async fn without_unsupported_orders(&self, mut auction: Auction) -> Auction {
-        if !self.solver.config().flashloans_enabled {
-            auction.orders.retain(|o| o.app_data.flashloan().is_none());
-        }
-        self.risk_detector
-            .filter_unsupported_orders_in_auction(auction)
-            .await
-    }
 }
 
 const MAX_SOLUTIONS_TO_MERGE: usize = 10;
@@ -1077,4 +1090,6 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
+    #[error("internal error: {0}")]
+    InternalError(String),
 }
