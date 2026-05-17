@@ -11,7 +11,7 @@ use {
     },
     model::order::BUY_ETH_ADDRESS,
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
     },
 };
@@ -86,13 +86,16 @@ impl TokenInfoFetching for TokenInfoFetcher {
     }
 
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
-        futures::stream::iter(addresses.iter().copied())
+        futures::stream::iter(addresses.iter().copied().collect::<HashSet<_>>())
             .map(|address| async move {
                 let info = self.fetch_token(address).await;
                 if let Err(err) = &info {
                     tracing::debug!(?err, token = ?address, "failed to fetch token info");
                 }
-                (address, info.unwrap_or_default())
+                (
+                    address,
+                    self.get_token_info(address).await.unwrap_or_default(),
+                )
             })
             .buffer_unordered(TOKEN_INFO_FETCH_CONCURRENCY)
             .collect()
@@ -150,7 +153,7 @@ impl TokenInfoFetching for CachedTokenInfoFetcher {
     }
 
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
-        futures::stream::iter(addresses.iter().copied())
+        futures::stream::iter(addresses.iter().copied().collect::<HashSet<_>>())
             .map(|address| async move {
                 (
                     address,
