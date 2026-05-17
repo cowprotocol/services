@@ -243,14 +243,20 @@ where
     }
 
     async fn fetch_inner_many(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
-        for _ in 0..=self.maximum_retries {
+        let mut last_err = None;
+        for attempt in 0..=self.maximum_retries {
             match self.fetcher.fetch_values(keys.clone(), block).await {
                 Ok(values) => return Ok(values),
-                Err(err) => tracing::warn!("retrying fetch because error: {:?}", err),
+                Err(err) => {
+                    tracing::warn!("retrying fetch because error: {:?}", err);
+                    last_err = Some(err);
+                }
             }
-            tokio::time::sleep(self.delay_between_retries).await;
+            if attempt < self.maximum_retries {
+                tokio::time::sleep(self.delay_between_retries).await;
+            }
         }
-        anyhow::bail!("could not fetch liquidity");
+        Err(last_err.unwrap().context("could not fetch liquidity"))
     }
 
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
