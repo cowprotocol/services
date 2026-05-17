@@ -243,6 +243,9 @@ where
     }
 
     async fn fetch_inner_many(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut last_err = None;
         for attempt in 0..=self.maximum_retries {
             match self.fetcher.fetch_values(keys.clone(), block).await {
