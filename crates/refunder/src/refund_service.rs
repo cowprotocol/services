@@ -207,20 +207,34 @@ where
             uids.truncate(MAX_NUMBER_OF_UIDS_PER_REFUND_TX);
 
             tracing::debug!("Trying to refund the following uids: {:?}", uids);
-
-            let futures = uids.iter().map(|uid| {
-                let (uid, database) = (*uid, &self.database);
-                async move { database.get_ethflow_order_data(&uid).await }
-            });
-            let encoded_ethflow_orders: Vec<_> = stream::iter(futures)
+            let (uids, encoded_ethflow_orders): (Vec<_>, Vec<_>) = stream::iter(uids.iter())
+                .map(|uid| {
+                    let (uid, database) = (*uid, &self.database);
+                    async move {
+                        database
+                            .get_ethflow_order_data(&uid)
+                            .await
+                            .map(|order| (uid, order))
+                            .map_err(|err| (uid, err))
+                    }
+                })
                 .buffer_unordered(10)
                 .filter_map(|result| async {
                     result
-                        .inspect_err(|err| tracing::error!(?err, "failed to get data from db"))
+                        .inspect_err(|(uid, err)| {
+                            tracing::error!(?uid, ?err, "failed to get data from db")
+                        })
                         .ok()
                 })
-                .collect()
-                .await;
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .unzip();
+
+            if uids.is_empty() {
+                continue;
+            }
+
             self.submitter
                 .submit_batch(&uids, encoded_ethflow_orders, contract)
                 .await?;
@@ -305,7 +319,7 @@ mod tests {
     /// Asserts the expected number of orders per contract in a grouped result.
     ///
     /// # Panics
-    /// Panics if the number of orders for the specified contract does not match
+    /// If the number of orders for the specified contract does not match
     /// the expected count, or if the set of UID suffixes differs.
     #[track_caller]
     fn assert_orders_by_contract(
@@ -582,19 +596,15 @@ mod tests {
 
     /// DB errors for individual orders are skipped; other orders proceed.
     ///
-    /// # Current Behavior (documented, not necessarily ideal)
+    /// # Behavior
     ///
     /// When a DB lookup fails for an order:
     /// - The error is logged and the order data is excluded from the submission
-    /// - However, the UID is still included in the submission
+    /// - The corresponding UID is also excluded from the submission
     ///
-    /// This means `submit` receives:
-    /// - `uids`: ALL original UIDs (including those with failed lookups)
+    /// This keeps `submit` inputs aligned:
+    /// - `uids`: Only UIDs with successful lookups
     /// - `orders`: Only the order data for successful lookups
-    ///
-    /// This creates a mismatch between UIDs and order data. See the TODO in
-    /// `test_send_out_refunding_tx_all_db_calls_fail_still_submits` for
-    /// discussion of potential fixes.
     #[tokio::test]
     async fn test_send_out_refunding_tx_db_error_skips_order() {
         let uid1 = create_test_order_placement(1, KNOWN_ETHFLOW).uid;
@@ -618,18 +628,17 @@ mod tests {
 
         let mut mock_submitter = MockChainWrite::new();
 
-        // Current behavior: ALL UIDs are passed, but only successful order data.
-        // - uids contains both uid1 (suffix=1) and uid2 (suffix=2)
-        // - orders contains only 1 entry (from uid2's successful lookup)
+        // Only successfully loaded UIDs are passed with their matching order data.
         mock_submitter
             .expect_submit_batch()
             .times(1)
-            .withf(|uids, orders, _| {
-                let has_both_uids = uids.len() == 2
-                    && uids.iter().any(|uid| uid.0[31] == 1)
-                    && uids.iter().any(|uid| uid.0[31] == 2);
-                let has_one_order = orders.len() == 1;
-                has_both_uids && has_one_order
+            .withf(|uids, orders, contract| {
+                let submitted_uid_suffixes =
+                    uids.iter().map(|uid| uid.0[31]).collect::<HashSet<_>>();
+                uids.len() == orders.len()
+                    && orders.len() == 1
+                    && submitted_uid_suffixes == HashSet::from([2])
+                    && *contract == KNOWN_ETHFLOW
             })
             .returning(|_, _, _| Ok(()));
 
@@ -642,30 +651,20 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    /// If every DB lookup fails, we still call the submitter with the original
-    /// UIDs but without any order data.
+    /// If every DB lookup fails, no refund transaction is submitted.
     ///
     /// What actually happens:
-    /// - Each failed order‑data fetch is logged and ignored (it doesn't stop
+    /// - Each failed order-data fetch is logged and ignored (it doesn't stop
     ///   the whole batch).
-    /// - The submitter gets the same list of UIDs we started with, but the
-    ///   `orders` slice may be empty (or contain fewer entries) because some or
-    ///   all lookups failed.
-    ///
-    /// TODO: Is this the behavior we really want? Submitting a refund that
-    /// contains UIDs but no order details feels off. Possible fixes:
-    /// 1. Skip the submission entirely when `encoded_ethflow_orders` is empty.
-    /// 2. Return an error if *all* order‑data lookups fail.
-    /// 3. Filter the UID list so it only includes IDs with successful lookups.
+    /// - Since no order data is available, the submitter is not called.
     ///
     /// NOTE: This test complements
     /// `test_send_out_refunding_tx_db_error_skips_order`. That test covers
     /// partial DB failure (some lookups succeed); this one covers
     /// total DB failure (all lookups fail). Together they verify that DB errors
-    /// are non-fatal and UIDs are always preserved regardless of lookup
-    /// success.
+    /// are non-fatal and only UIDs with successful lookups are submitted.
     #[tokio::test]
-    async fn test_send_out_refunding_tx_all_db_calls_fail_still_submits() {
+    async fn test_send_out_refunding_tx_all_db_calls_fail_skips_submission() {
         let uid1 = create_test_order_placement(1, KNOWN_ETHFLOW).uid;
         let uid2 = create_test_order_placement(2, KNOWN_ETHFLOW).uid;
 
@@ -680,17 +679,8 @@ mod tests {
 
         let mut mock_submitter = MockChainWrite::new();
 
-        // Verify submission still happens with original UIDs but empty orders list
-        // This documents current (possibly unintended) behavior where UIDs and orders
-        // mismatch
-        mock_submitter
-            .expect_submit_batch()
-            .times(1)
-            .withf(|uids, orders, contract| {
-                // UIDs are preserved, but orders is empty because all DB lookups failed
-                uids.len() == 2 && orders.is_empty() && *contract == KNOWN_ETHFLOW
-            })
-            .returning(|_, _, _| Ok(()));
+        // Verify submission does not happen when no order data could be loaded.
+        mock_submitter.expect_submit_batch().times(0);
 
         let mut service = RefundService::new(mock_db, mock_chain, mock_submitter, 3600, 100);
 
