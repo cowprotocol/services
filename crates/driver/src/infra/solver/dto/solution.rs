@@ -45,15 +45,8 @@ impl Solutions {
                         .iter()
                         .map(|trade| match trade {
                             solvers_dto::solution::Trade::Fulfillment(fulfillment) => {
-                                let order = auction
-                                    .orders()
-                                    .iter()
-                                    .find(|order| order.uid == fulfillment.order.0)
-                                    // TODO this error should reference the UID
-                                    .ok_or(super::Error(
-                                        "invalid order UID specified in fulfillment".to_owned(),
-                                    ))?
-                                    .clone();
+                                let order =
+                                    find_order(auction.orders(), &fulfillment.order)?.clone();
 
                                 // Calculate haircut fee for conservative bidding.
                                 // This reduces reported surplus without affecting executed amounts.
@@ -292,6 +285,22 @@ impl Solutions {
     }
 }
 
+fn find_order<'a>(
+    orders: &'a [competition::Order],
+    uid: &solvers_dto::solution::OrderUid,
+) -> Result<&'a competition::Order, super::Error> {
+    orders
+        .iter()
+        .find(|order| order.uid == uid.0)
+        .ok_or_else(|| {
+            let uid: competition::order::Uid = uid.into();
+            super::Error(format!(
+                "invalid order UID specified in fulfillment: {}",
+                uid.0
+            ))
+        })
+}
+
 #[derive(derive_more::From)]
 pub struct JitOrder(solvers_dto::solution::JitOrder);
 
@@ -380,5 +389,23 @@ impl JitOrder {
             .uid(&DomainSeparator(domain.0), signature.signer)
             .0
             .into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fulfillment_unknown_uid_error_includes_uid() {
+        let missing = solvers_dto::solution::OrderUid([0xab; 56]);
+        let err = find_order(&[], &missing).unwrap_err();
+        let expected_hex = "ab".repeat(56);
+        assert!(
+            err.0.contains(&expected_hex),
+            "error message {:?} should include the offending UID hex {}",
+            err.0,
+            expected_hex,
+        );
     }
 }
