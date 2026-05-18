@@ -144,7 +144,7 @@ impl DataAggregator {
                 vault_relayer: *eth.contracts().vault_relayer(),
                 signatures: eth.contracts().signatures().clone(),
             },
-            eth.balance_overrider(),
+            eth.state_overrider(),
         );
 
         let cow_amm_helper_by_factory = eth

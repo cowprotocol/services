@@ -479,6 +479,7 @@ impl Solver {
                 block_stream_poll_interval: None,
                 node_ws_url: Some(config.blockchain.web3_ws_url.parse().unwrap()),
             },
+            eth_domain_types::Gas(eth_domain_types::U256::from(45_000_000u64)),
         )
         .await;
 

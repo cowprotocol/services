@@ -15,7 +15,6 @@ use {
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
         config::{native_price::NativePriceConfig, price_estimation::BalanceOverridesConfigExt},
-        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
@@ -58,7 +57,6 @@ pub struct Components {
     pub http_factory: HttpClientFactory,
     pub deny_listed_tokens: DenyListedTokens,
     pub tokens: Arc<dyn TokenInfoFetching>,
-    pub code_fetcher: Arc<CachedCodeFetcher>,
 }
 
 /// A factory for initializing shared price estimators.
@@ -125,7 +123,6 @@ impl<'a> PriceEstimatorFactory<'a> {
         let verifier = TradeVerifier::new(
             simulator,
             tenderly,
-            components.code_fetcher.clone(),
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
             args.min_gas_amount_for_unverified_quotes,

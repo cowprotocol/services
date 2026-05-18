@@ -236,13 +236,7 @@ pub mod test_util {
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
-                price_estimation: PriceEstimation {
-                    balance_overrides: crate::price_estimation::BalanceOverridesConfig {
-                        autodetect: true,
-                        ..Default::default()
-                    },
-                    ..TestDefault::test_default()
-                },
+                price_estimation: PriceEstimation::test_default(),
                 // Enable order simulation for testing
                 order_simulation: Some(TestDefault::test_default()),
                 hide_competition_before_deadline: false,

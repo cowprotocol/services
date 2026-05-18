@@ -913,6 +913,54 @@ mod tests {
         TestCase::from_json(case).validate().await;
     }
 
+    /// A solution settling no orders gets a score of 0 which disqualifies it
+    /// from the competition.
+    #[tokio::test]
+    async fn discards_solutions_with_zero_score() {
+        let case = json!({
+            "tokens": [
+                ["Token A", address(0)],
+                ["Token B", address(1)],
+            ],
+            "auction": {
+                "orders": {
+                    "Order 1": {
+                        "side": "sell",
+                        "sell_token": "Token A",
+                        "sell_amount": "32375066190000000000000000",
+                        "buy_token": "Token B",
+                        "buy_amount": "2161512119"
+                    }
+                },
+                "prices": {
+                    "Token A": "32429355240",
+                    "Token B": "480793239987749750742974464"
+                }
+            },
+            "solutions": {
+                "Solution 1": {
+                    "solver": "Solver 1",
+                    "trades": {},
+                },
+                "Solution 2": {
+                    "solver": "Solver 2",
+                    "trades": {
+                        "Order 1": {
+                            "sell_amount": "32375066190000000000000000",
+                            "buy_amount": "2205267875"
+                        }
+                    }
+                }
+            },
+            "expected_fair_solutions": ["Solution 2"],
+            "expected_winners": ["Solution 2"],
+            "expected_reference_scores": {
+                "Solver 2": "0",
+            },
+        });
+        TestCase::from_json(case).validate().await;
+    }
+
     #[serde_as]
     #[derive(Deserialize, Debug)]
     struct TestCase {

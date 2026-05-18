@@ -41,7 +41,6 @@ use {
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::NativePriceEstimating,
-        trade_verifier::code_fetching::CachedCodeFetcher,
     },
     shared::{
         order_quoting::{self, OrderQuoter},
@@ -296,8 +295,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         block_stream: eth.current_block().clone(),
     });
 
-    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
-
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &config.price_estimation,
         &config.native_price_estimation.shared,
@@ -324,7 +321,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
-            code_fetcher: code_fetcher.clone(),
         },
     )
     .instrument(info_span!("price_estimator_factory"))
@@ -472,8 +468,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             )
             .unwrap(),
         },
-        balance_fetcher.clone(),
-        config.price_estimation.quote_verification,
         config.price_estimation.quote_timeout,
         config.price_estimation.max_quote_timeout,
     ));
