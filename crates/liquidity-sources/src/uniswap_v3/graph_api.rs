@@ -5,9 +5,11 @@ use {
     crate::{
         json_map,
         subgraph::{ContainsId, SubgraphClient},
+        uniswap_v3::V3PoolDataSource,
     },
     alloy::primitives::{Address, U256},
     anyhow::Result,
+    async_trait::async_trait,
     event_indexing::event_handler::MAX_REORG_BLOCK_COUNT,
     num::BigInt,
     number::serialization::HexOrDecimalU256,
@@ -275,6 +277,21 @@ impl UniV3SubgraphClient {
             }}
             "#
         )
+    }
+}
+
+#[async_trait]
+impl V3PoolDataSource for UniV3SubgraphClient {
+    async fn get_registered_pools(&self) -> Result<RegisteredPools> {
+        Self::get_registered_pools(self).await
+    }
+
+    async fn get_pools_with_ticks_by_ids(
+        &self,
+        ids: &[Address],
+        block_number: u64,
+    ) -> Result<Vec<PoolData>> {
+        Self::get_pools_with_ticks_by_ids(self, ids, block_number).await
     }
 }
 
