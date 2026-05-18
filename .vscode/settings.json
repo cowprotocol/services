@@ -4,10 +4,8 @@
     "editor.defaultFormatter": "tombi-toml.tombi"
   },
   "rust-analyzer.rustfmt.overrideCommand": [
-    "rustup",
-    "run",
-    "nightly",
     "rustfmt",
+    "+nightly",
     "--edition=2024"
   ]
 }
