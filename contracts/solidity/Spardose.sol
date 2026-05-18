@@ -15,9 +15,10 @@ contract Spardose {
     /// @dev Request funds from the piggy bank to be transferred to the caller.
     /// Reverts if the transfer fails.
     ///
+    /// @param receiver - the account that should get the funds
     /// @param token - the token request funds for
     /// @param amount - the amount of `token` to transfer
-    function requestFunds(address token, uint256 amount) external {
-        IERC20(token).safeTransfer(msg.sender, amount);
+    function requestFunds(address receiver, address token, uint256 amount) external {
+        IERC20(token).safeTransfer(receiver, amount);
     }
 }

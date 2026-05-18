@@ -1,6 +1,6 @@
 use {
     alloy_primitives::{Address, FixedBytes},
-    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
+    balance_overrides::{BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     ethrpc::Web3,
     hex_literal::hex,
@@ -100,7 +100,7 @@ pub struct Contracts {
 pub fn validator(
     web3: &Web3,
     contracts: Contracts,
-    balance_overrider: Arc<dyn BalanceOverriding>,
+    balance_overrider: Arc<dyn StateOverriding>,
 ) -> Arc<dyn SignatureValidating> {
     Arc::new(simulation::Validator::new(
         web3,

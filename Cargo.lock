@@ -2559,7 +2559,6 @@ dependencies = [
  "cow-contract-swapper",
  "cow-contract-swaprrouter",
  "cow-contract-testnetuniswapv2router02",
- "cow-contract-trader",
  "cow-contract-uniswapv2factory",
  "cow-contract-uniswapv2router02",
  "cow-contract-uniswapv3pool",
@@ -3419,17 +3418,6 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-testnetuniswapv2router02"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-trader"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",

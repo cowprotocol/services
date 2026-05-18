@@ -68,6 +68,9 @@ impl Arbitrator {
         let (mut solutions, scores_by_solution) =
             self.compute_scores_by_solution(solutions, context);
 
+        // Discard any solutions with a score of 0 as they are invalid
+        solutions.retain(|solution| !solution.score().is_zero());
+
         // Sort by score descending
         solutions.sort_by_key(|solution| Reverse(solution.score()));
 

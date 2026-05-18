@@ -8,7 +8,8 @@
 //!   in a single slot per holder.
 
 use {
-    alloy_primitives::{Address, B256, U256, keccak256},
+    crate::detector::mapping_slot_hash,
+    alloy_primitives::{Address, B256, U256},
     alloy_rpc_types::state::AccountOverride,
     alloy_sol_types::sol,
     ethrpc::Web3,
@@ -73,21 +74,21 @@ sol! {
 /// Ray (1e27) — Aave's 27-decimal fixed-point unit.
 ///
 /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/libraries/math/WadRayMath.sol>
-pub const RAY: U256 = U256::from_limbs([0x9fd0803ce8000000, 0x33b2e3c, 0, 0]);
+const RAY: U256 = U256::from_limbs([0x9fd0803ce8000000, 0x33b2e3c, 0, 0]);
 
 /// Storage slot index of `_userState` in the Aave v3 `IncentivizedERC20`
 /// base contract. All canonical v3 aTokens inherit this layout, so the
 /// detector can try this slot directly without a `debug_traceCall`.
 ///
 /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/tokenization/base/IncentivizedERC20.sol>
-pub const USER_STATE_SLOT: u64 = 52;
+const USER_STATE_SLOT: u64 = 52;
 
 /// Ray-division: `(a * RAY + b/2) / b`, round-half-up. Matches Aave's
 /// `WadRayMath.rayDiv` bit-for-bit so the scaled amount we write into
 /// storage equals the one Aave will itself compute during a subsequent
 /// `_transfer`. Returns `None` if `b == 0` or the intermediate product
 /// overflows `U256`.
-pub fn ray_div(a: U256, b: U256) -> Option<U256> {
+fn ray_div(a: U256, b: U256) -> Option<U256> {
     if b.is_zero() {
         return None;
     }
@@ -97,19 +98,10 @@ pub fn ray_div(a: U256, b: U256) -> Option<U256> {
         .map(|num| num / b)
 }
 
-/// `keccak256(pad32(holder) ++ map_slot)` — the storage slot of
-/// `mapping(address => _)` entries in Solidity.
-pub fn mapping_slot_hash(holder: &Address, map_slot: &[u8; 32]) -> B256 {
-    let mut buf = [0u8; 64];
-    buf[12..32].copy_from_slice(holder.as_slice());
-    buf[32..64].copy_from_slice(map_slot);
-    keccak256(buf)
-}
-
 /// Packs a `UserState { uint128 balance; uint128 additionalData }` into a
 /// 32-byte word. The balance occupies the lower 128 bits; `additional_data`
 /// sits in the upper 128 bits.
-pub fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
+fn pack_user_state(balance: U256, additional_data: U256) -> B256 {
     let mask = (U256::from(1u64) << 128) - U256::from(1u64);
     let packed: U256 = ((additional_data & mask) << 128) | (balance & mask);
     B256::new(packed.to_be_bytes::<32>())
@@ -193,7 +185,8 @@ pub async fn build_override(
 mod tests {
     use {
         super::*,
-        alloy_primitives::{address, hex},
+        crate::balance::Strategy,
+        alloy_primitives::{address, b256, hex},
         alloy_provider::mock::Asserter,
         alloy_sol_types::SolValue,
     };
@@ -251,6 +244,46 @@ mod tests {
         asserter
     }
 
+    #[test]
+    fn ray_div_edge_cases() {
+        let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
+        assert_eq!(ray_div(U256::ZERO, index).unwrap(), U256::ZERO);
+        assert_eq!(
+            ray_div(U256::from(1_000_000_000_000_000_000u128), U256::ZERO),
+            None,
+        );
+    }
+
+    #[test]
+    fn pack_user_state_leaves_additional_data_intact() {
+        let balance = U256::from(0x1234_5678u64);
+        let extra = U256::from(0xabcd_ef01u64);
+        let packed = pack_user_state(balance, extra);
+        let word = U256::from_be_bytes(packed.0);
+
+        let mask = (U256::from(1u64) << 128) - U256::from(1u64);
+        assert_eq!(word & mask, balance);
+        assert_eq!(word >> 128, extra);
+    }
+
+    #[test]
+    fn pack_user_state_truncates_to_uint128() {
+        let overflow = (U256::from(1u64) << 128) + U256::from(7u64);
+        let packed = pack_user_state(overflow, U256::ZERO);
+        let word = U256::from_be_bytes(packed.0);
+        assert_eq!(word, U256::from(7u64));
+    }
+
+    #[test]
+    fn mapping_slot_hash_matches_solidity_layout() {
+        let holder = address!("18709E89BD403F470088aBDAcEbE86CC60dda12e");
+        let slot = mapping_slot_hash(&holder, &U256::from(52).to_be_bytes::<32>());
+        assert_eq!(
+            slot,
+            b256!("6785743a4ad9de6e692f819936c9d0b94b199ed36f2660e82404737b769718e5")
+        );
+    }
+
     /// A contract that doesn't expose the aToken selectors — `balanceOf`
     /// throws when the probe calls `UNDERLYING_ASSET_ADDRESS()` — is
     /// cleanly rejected so non-aToken ERC-20s don't accidentally pick up
@@ -291,5 +324,46 @@ mod tests {
             Some(real_a_token),
         ));
         assert_eq!(probe_aave_token(&web3, rogue).await, None);
+    }
+
+    #[tokio::test]
+    async fn aave_v3_a_token_override_scales_amount_and_writes_low_128() {
+        let a_token = address!("4d5F47FA6A74757f35C14fD3a6Ef8E3C9BC514E8");
+        let pool = address!("87870bca3f3fd6335c3f4ce8392d69350b4fa4e2");
+        let underlying = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+        let holder = address!("18709E89BD403F470088aBDAcEbE86CC60dda12e");
+        let amount = U256::from(1_000_000_000_000_000_000u128);
+
+        let asserter = Asserter::new();
+        let index = U256::from_str_radix("1063000000000000000000000000", 10).unwrap();
+        asserter.push_success(&format!("0x{:064x}", index));
+
+        let web3 = Web3::with_asserter(asserter);
+        let strategy = Strategy::AaveV3AToken {
+            target_contract: a_token,
+            pool,
+            underlying,
+            web3,
+        };
+
+        let (addr, override_) = strategy
+            .state_override(&holder, &amount)
+            .await
+            .into_iter()
+            .last()
+            .expect("override computed");
+
+        assert_eq!(addr, a_token);
+
+        let diff = override_.state_diff.expect("state diff present");
+        assert_eq!(diff.len(), 1);
+        let (slot, value) = diff.into_iter().next().unwrap();
+        assert_eq!(
+            slot,
+            b256!("6785743a4ad9de6e692f819936c9d0b94b199ed36f2660e82404737b769718e5")
+        );
+        let word = U256::from_be_bytes(value.0);
+        assert_eq!(word >> 128, U256::ZERO);
+        assert_eq!(word, ray_div(amount, index).unwrap());
     }
 }

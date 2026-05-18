@@ -381,18 +381,6 @@ mod tests {
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
             ],
-            QuoteVerificationMode::EnforceWhenPossible,
-        )
-        .await;
-        assert_eq!(best, worse_verified_quote.clone());
-
-        let best = best_response(
-            PriceRanking::MaxOutAmount,
-            OrderKind::Sell,
-            vec![
-                better_unverified_quote.clone(),
-                worse_verified_quote.clone(),
-            ],
             QuoteVerificationMode::Unverified,
         )
         .await;

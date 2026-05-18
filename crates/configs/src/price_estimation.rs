@@ -1,5 +1,5 @@
 use {
-    crate::{balance_overrides, rate_limit::Strategy},
+    crate::rate_limit::Strategy,
     alloy::primitives::{Address, U256, map::HashSet},
     bigdecimal::BigDecimal,
     serde::Deserialize,
@@ -18,9 +18,6 @@ pub enum QuoteVerificationMode {
     /// Quotes get verified whenever possible and verified
     /// quotes are preferred over unverified ones.
     Prefer,
-    /// Quotes get discarded if they can't be verified.
-    /// Some scenarios like missing sell token balance are exempt.
-    EnforceWhenPossible,
 }
 
 const fn default_quote_timeout() -> Duration {
@@ -148,7 +145,7 @@ impl crate::test_util::TestDefault for PriceEstimation {
                 1_000_000_000_000_000_000u64,
             )),
             quote_timeout: Duration::from_secs(10),
-            quote_verification: QuoteVerificationMode::EnforceWhenPossible,
+            quote_verification: QuoteVerificationMode::Prefer,
             ..Default::default()
         }
     }
@@ -229,17 +226,6 @@ fn default_detection_timeout() -> Duration {
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BalanceOverridesConfig {
-    /// Token configuration for simulated balances on verified quotes. This
-    /// allows the quote verification system to produce verified quotes for
-    /// traders without sufficient balance for the configured token pairs.
-    #[serde(default)]
-    pub token_overrides: balance_overrides::TokenConfiguration,
-
-    /// Enable automatic detection of token balance overrides. Pre-configured
-    /// values in `token_overrides` take precedence.
-    #[serde(default)]
-    pub autodetect: bool,
-
     /// Controls how many storage slots get probed per storage entry point
     /// for automatically detecting how to override the balances of a token.
     #[serde(default = "default_probing_depth")]
@@ -261,8 +247,6 @@ pub struct BalanceOverridesConfig {
 impl Default for BalanceOverridesConfig {
     fn default() -> Self {
         Self {
-            token_overrides: Default::default(),
-            autodetect: false,
             probing_depth: default_probing_depth(),
             cache_size: default_cache_size(),
             detection_timeout: default_detection_timeout(),
@@ -329,7 +313,6 @@ mod tests {
             QuoteVerificationMode::Unverified
         ));
         assert_eq!(config.quote_timeout, Duration::from_secs(5));
-        assert!(!config.balance_overrides.autodetect);
         assert_eq!(config.balance_overrides.probing_depth, 60);
         assert_eq!(config.balance_overrides.cache_size, 1000);
         assert!(config.tokens_without_verification.is_empty());
@@ -341,7 +324,7 @@ mod tests {
     fn deserialize_full() {
         let toml = r#"
         quote-inaccuracy-limit = "0.01"
-        quote-verification = "enforce-when-possible"
+        quote-verification = "prefer"
         quote-timeout = "10s"
         max-quote-timeout = "20s"
         tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
@@ -372,7 +355,6 @@ mod tests {
         broadcast-channel-capacity = 100
 
         [balance-overrides]
-        autodetect = true
         probing-depth = 30
         cache-size = 500
         "#;
@@ -402,11 +384,10 @@ mod tests {
         assert_eq!(config.quote_inaccuracy_limit.to_string(), "0.01");
         assert!(matches!(
             config.quote_verification,
-            QuoteVerificationMode::EnforceWhenPossible
+            QuoteVerificationMode::Prefer
         ));
         assert_eq!(config.quote_timeout, Duration::from_secs(10));
         assert_eq!(config.max_quote_timeout, Duration::from_secs(20));
-        assert!(config.balance_overrides.autodetect);
         assert_eq!(config.balance_overrides.probing_depth, 30);
         assert_eq!(config.balance_overrides.cache_size, 500);
         assert_eq!(config.tokens_without_verification.len(), 1);
