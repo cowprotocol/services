@@ -365,7 +365,7 @@ pub fn mempool_succeeded(
     mempool: &Mempool,
     settlement: &Settlement,
     submission: &SubmissionSuccess,
-    label: &'static str,
+    label: &str,
 ) {
     tracing::info!(
         txid = ?submission.tx_hash,
@@ -391,7 +391,7 @@ pub fn mempool_failed(
     mempool: &Mempool,
     settlement: &Settlement,
     err: &mempools::Error,
-    label: &'static str,
+    label: &str,
 ) {
     match err {
         mempools::Error::Disabled => {
@@ -424,7 +424,7 @@ pub fn mempool_failed(
 
 /// Record a mempool that was skipped for this settlement. Tagged `Disabled`
 /// to keep it out of the failure count.
-pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement, label: &'static str) {
+pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement, label: &str) {
     tracing::debug!(
         %mempool,
         ?settlement,
@@ -438,7 +438,7 @@ pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement, label: &'sta
 
 /// Record a mempool whose submission was superseded by another. The metric is
 /// tagged `Superseded` to distinguish lost races from genuine failures.
-pub fn mempool_superseded(mempool: &Mempool, settlement: &Settlement, label: &'static str) {
+pub fn mempool_superseded(mempool: &Mempool, settlement: &Settlement, label: &str) {
     tracing::debug!(
         %mempool,
         ?settlement,
