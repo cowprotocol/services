@@ -72,13 +72,24 @@ impl Outcome {
     /// superseded by another mempool. See `update_metrics` for how outcomes are
     /// coerced into this variant.
     fn observe(&self, mempool: &infra::Mempool, settlement: &Settlement) {
+        let label = self.metric_label();
         match self {
             Outcome::Success(submission) => {
-                observe::mempool_succeeded(mempool, settlement, submission)
+                observe::mempool_succeeded(mempool, settlement, submission, label)
             }
-            Outcome::Failed(err) => observe::mempool_failed(mempool, settlement, err),
-            Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
-            Outcome::Pending => observe::mempool_superseded(mempool, settlement),
+            Outcome::Failed(err) => observe::mempool_failed(mempool, settlement, err, label),
+            Outcome::Disabled => observe::mempool_disabled(mempool, settlement, label),
+            Outcome::Pending => observe::mempool_superseded(mempool, settlement, label),
+        }
+    }
+
+    /// Prometheus label for this outcome.
+    fn metric_label(&self) -> &'static str {
+        match self {
+            Outcome::Success(_) => "Success",
+            Outcome::Pending => "Superseded",
+            Outcome::Failed(err) => err.metric_label(),
+            Outcome::Disabled => "Disabled",
         }
     }
 }

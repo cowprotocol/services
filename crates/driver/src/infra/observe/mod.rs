@@ -360,17 +360,12 @@ pub fn solver_response(
         .observe(compute_time.as_secs_f64());
 }
 
-/// Label used for the `mempool_submission` metric when submission succeeds.
-const MEMPOOL_SUBMISSION_SUCCESS_LABEL: &str = "Success";
-/// Label used for the `mempool_submission` metric when a mempool loses the
-/// race to another mempool.
-const MEMPOOL_SUBMISSION_SUPERSEDED_LABEL: &str = "Superseded";
-
 /// Observe a successful mempool transaction execution.
 pub fn mempool_succeeded(
     mempool: &Mempool,
     settlement: &Settlement,
     submission: &SubmissionSuccess,
+    label: &'static str,
 ) {
     tracing::info!(
         txid = ?submission.tx_hash,
@@ -380,25 +375,24 @@ pub fn mempool_succeeded(
     );
     metrics::get()
         .mempool_submission
-        .with_label_values(&[
-            mempool.to_string().as_str(),
-            MEMPOOL_SUBMISSION_SUCCESS_LABEL,
-        ])
+        .with_label_values(&[mempool.to_string().as_str(), label])
         .inc();
     let blocks_passed = submission
         .included_in_block
         .saturating_sub(submission.submitted_at_block);
     metrics::get()
         .mempool_submission_results_blocks_passed
-        .with_label_values(&[
-            mempool.to_string().as_str(),
-            MEMPOOL_SUBMISSION_SUCCESS_LABEL,
-        ])
+        .with_label_values(&[mempool.to_string().as_str(), label])
         .inc_by(blocks_passed.0);
 }
 
 /// Observe a failed mempool transaction execution.
-pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools::Error) {
+pub fn mempool_failed(
+    mempool: &Mempool,
+    settlement: &Settlement,
+    err: &mempools::Error,
+    label: &'static str,
+) {
     match err {
         mempools::Error::Disabled => {
             tracing::debug!(
@@ -417,20 +411,20 @@ pub fn mempool_failed(mempool: &Mempool, settlement: &Settlement, err: &mempools
     }
     metrics::get()
         .mempool_submission
-        .with_label_values(&[mempool.to_string().as_str(), err.metric_label()])
+        .with_label_values(&[mempool.to_string().as_str(), label])
         .inc();
 
     if let Some(blocks_passed) = err.blocks_passed() {
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[mempool.to_string().as_str(), err.metric_label()])
+            .with_label_values(&[mempool.to_string().as_str(), label])
             .inc_by(blocks_passed);
     }
 }
 
 /// Record a mempool that was skipped for this settlement. Tagged `Disabled`
 /// to keep it out of the failure count.
-pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement) {
+pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement, label: &'static str) {
     tracing::debug!(
         %mempool,
         ?settlement,
@@ -438,16 +432,13 @@ pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement) {
     );
     metrics::get()
         .mempool_submission
-        .with_label_values(&[
-            mempool.to_string().as_str(),
-            mempools::Error::Disabled.metric_label(),
-        ])
+        .with_label_values(&[mempool.to_string().as_str(), label])
         .inc();
 }
 
 /// Record a mempool whose submission was superseded by another. The metric is
 /// tagged `Superseded` to distinguish lost races from genuine failures.
-pub fn mempool_superseded(mempool: &Mempool, settlement: &Settlement) {
+pub fn mempool_superseded(mempool: &Mempool, settlement: &Settlement, label: &'static str) {
     tracing::debug!(
         %mempool,
         ?settlement,
@@ -455,10 +446,7 @@ pub fn mempool_superseded(mempool: &Mempool, settlement: &Settlement) {
     );
     metrics::get()
         .mempool_submission
-        .with_label_values(&[
-            mempool.to_string().as_str(),
-            MEMPOOL_SUBMISSION_SUPERSEDED_LABEL,
-        ])
+        .with_label_values(&[mempool.to_string().as_str(), label])
         .inc();
 }
 
