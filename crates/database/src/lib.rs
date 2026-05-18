@@ -96,11 +96,15 @@ pub fn all_tables() -> impl Iterator<Item = &'static str> {
 }
 
 /// Delete all data in the database. Only used by tests.
+///
+/// Truncates all tables in a single statement so Postgres accepts foreign-key
+/// cycles between listed tables (e.g. `uniswap_v3_pool_states` →
+/// `uniswap_v3_pools`). Individual per-table `TRUNCATE`s error out when any
+/// other listed table references the one being truncated.
 #[expect(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in all_tables() {
-        ex.execute(format!("TRUNCATE {table};").as_str()).await?;
-    }
+    let tables = all_tables().collect::<Vec<_>>().join(", ");
+    ex.execute(format!("TRUNCATE {tables};").as_str()).await?;
     Ok(())
 }
 
