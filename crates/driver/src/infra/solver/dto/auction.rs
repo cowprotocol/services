@@ -421,8 +421,8 @@ fn apply_haircut(available: &mut Available, side: Side, haircut_bps: u32) {
         return;
     }
     debug_assert!(
-        haircut_bps < super::MAX_BASE_POINT,
-        "haircut_bps {haircut_bps} must be < {}",
+        haircut_bps <= super::MAX_BASE_POINT,
+        "haircut_bps {haircut_bps} must be <= {}",
         super::MAX_BASE_POINT,
     );
     let haircut_factor = f64::from(haircut_bps) / f64::from(super::MAX_BASE_POINT);
