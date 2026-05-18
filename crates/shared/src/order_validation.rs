@@ -2854,7 +2854,6 @@ mod tests {
             order_simulator,
             Arc::new(limit_order_counter),
             0,
-            Arc::new(MockCodeFetching::new()),
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
