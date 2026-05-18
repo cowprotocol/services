@@ -131,7 +131,14 @@ impl Mempools {
             .collect();
 
         while let Some((idx, outcome)) = submission_futures.next().await {
-            stats[idx] = outcome
+            let is_success = matches!(outcome, Outcome::Success(_));
+            stats[idx] = outcome;
+            if is_success {
+                // Stop polling remaining futures; their slots stay `Pending` and get
+                // reported as `Superseded` by `update_metrics`. This protects against a
+                // stuck mempool future hanging `execute` after a peer already succeeded.
+                break;
+            }
         }
 
         self.update_metrics(settlement, &stats);
