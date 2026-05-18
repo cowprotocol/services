@@ -67,6 +67,22 @@ impl From<Result<SubmissionSuccess, Error>> for Outcome {
     }
 }
 
+impl Outcome {
+    /// `Pending` means the mempool "lost the race" — its submission was
+    /// superseded by another mempool. See `update_metrics` for how outcomes are
+    /// coerced into this variant.
+    fn observe(&self, mempool: &infra::Mempool, settlement: &Settlement) {
+        match self {
+            Outcome::Success(submission) => {
+                observe::mempool_succeeded(mempool, settlement, submission)
+            }
+            Outcome::Failed(err) => observe::mempool_failed(mempool, settlement, err),
+            Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
+            Outcome::Pending => observe::mempool_superseded(mempool, settlement),
+        }
+    }
+}
+
 impl Mempools {
     pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
         if mempools.is_empty() {
@@ -414,54 +430,22 @@ impl Mempools {
         }
     }
 
-    /// Scores per-mempool submission metrics.
+    /// Update per-mempool metrics based on submission outcomes.
     ///
-    /// If a submission succeeded, the winning mempool is recorded as
-    /// `Succeeded` and all others are recorded as `Superseded`. Otherwise, each
-    /// mempool is recorded as `Failed` or `Disabled`.
-    ///
-    /// Heuristics: The mempool race within `Self::execute` can only result in
-    /// two sets of values: 1) a few errors, a success and some pending,
-    /// disabled; or 2) all errors plus disabled.
+    /// When a winner exists, `Failed` outcomes are reclassified as `Superseded`
+    /// since errors are typically race-condition false-positives. We reuse
+    /// `Pending` as the in-memory marker for "lost the race" (see
+    /// `Outcome::observe`).
     fn update_metrics(&self, settlement: &Settlement, stats: &[Outcome]) {
-        // SAFETY: using `zip_eq` instead of `zip` here to catch regressions early on
-        // tests. It should never panic because we constructed the `stats` slice out of
-        // `self.mempools`, so their sizes will always match.
-        let mut mempools_and_outcomes: Vec<_> = self.mempools.iter().zip_eq(stats.iter()).collect();
-
-        // If there's a winner, observe everything else as superseeded. Otherwise,
-        // everything should be observed as errors.
-        if let Some((winner, Outcome::Success(submission))) = mempools_and_outcomes
-            .iter()
-            .position(|(_, outcome)| matches!(outcome, Outcome::Success(_)))
-            .map(|i| mempools_and_outcomes.swap_remove(i))
-        {
-            observe::mempool_succeeded(winner, settlement, submission);
-            for (mempool, outcome) in mempools_and_outcomes.iter() {
-                match outcome {
-                    Outcome::Pending | Outcome::Failed(_) => {
-                        observe::mempool_superseded(mempool, winner, settlement)
-                    }
-                    Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
-                    Outcome::Success(_) => {
-                        unreachable!(
-                            "There's only a single successful outcome in the stats slice, and \
-                             we've already removed it"
-                        )
-                    }
-                }
-            }
-        } else {
-            for (mempool, outcome) in mempools_and_outcomes.iter() {
-                match outcome {
-                    Outcome::Failed(error) => observe::mempool_failed(mempool, settlement, error),
-                    Outcome::Disabled => observe::mempool_disabled(mempool, settlement),
-                    Outcome::Success(_) | Outcome::Pending => unreachable!(
-                        "No successful submission was found, and in that case all pending \
-                         submissions were either turned into errors or disabled"
-                    ),
-                }
-            }
+        let winner_exists = stats.iter().any(|o| matches!(o, Outcome::Success(_)));
+        // Using `zip_eq` to catch regressions in tests (sizes always match in
+        // practice).
+        for (mempool, outcome) in self.mempools.iter().zip_eq(stats.iter()) {
+            let effective = match outcome {
+                Outcome::Failed(_) if winner_exists => &Outcome::Pending,
+                _ => outcome,
+            };
+            effective.observe(mempool, settlement);
         }
     }
 }

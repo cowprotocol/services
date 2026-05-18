@@ -445,12 +445,11 @@ pub fn mempool_disabled(mempool: &Mempool, settlement: &Settlement) {
         .inc();
 }
 
-/// Record a mempool that lost the race. Tagged `Superseded` so the per-mempool
-/// metric separates lost races from failures.
-pub fn mempool_superseded(mempool: &Mempool, winner: &Mempool, settlement: &Settlement) {
+/// Record a mempool whose submission was superseded by another. The metric is
+/// tagged `Superseded` to distinguish lost races from genuine failures.
+pub fn mempool_superseded(mempool: &Mempool, settlement: &Settlement) {
     tracing::debug!(
         %mempool,
-        %winner,
         ?settlement,
         "mempool submission superseded by another mempool",
     );
