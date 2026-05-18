@@ -16,7 +16,7 @@ use {
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
     initialize_observability();
-    observe::metrics::setup_registry(Some("pool_indexer".into()), None);
+    observe::metrics::setup_registry(None, None);
     let config = Configuration::from_path(&args.config).expect("failed to load configuration");
     tracing::info!("pool-indexer starting");
     run(config).await;

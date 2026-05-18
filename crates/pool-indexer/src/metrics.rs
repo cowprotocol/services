@@ -1,18 +1,7 @@
-//! Prometheus metrics for pool-indexer.
-//!
-//! All metrics live under the `pool_indexer_` prefix (configured by
-//! `observe::metrics::setup_registry`) and are labelled by `network` where
-//! more than one network is active in the same process. Call `Metrics::get()`
-//! to reach the shared registry-backed instance.
-//!
-//! Note: no `#[metric(subsystem = ...)]` attribute is set on this struct
-//! because the service-level prefix already comes from `setup_registry`.
-//! Adding a subsystem here would produce names like `pool_indexer_<sub>_<name>`
-//! — we reserve that nesting for future per-component subdivision.
-
 use {prometheus::HistogramVec, prometheus_metric_storage::MetricStorage};
 
 #[derive(MetricStorage)]
+#[metric(subsystem = "pool_indexer")]
 pub struct Metrics {
     /// Chunks successfully committed to the DB.
     #[metric(labels("network"))]
