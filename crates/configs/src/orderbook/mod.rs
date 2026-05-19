@@ -40,6 +40,10 @@ const fn default_active_order_competition_threshold() -> u32 {
     5
 }
 
+const fn default_simulation_timeout() -> Duration {
+    Duration::from_secs(2)
+}
+
 /// Volume-based protocol fee applied to orders.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -114,10 +118,9 @@ pub struct Configuration {
     #[serde(default)]
     pub price_estimation: PriceEstimation,
 
-    /// Per-call timeout for order-creation shadow simulation. `None`
-    /// disables the simulation entirely.
-    #[serde(default, with = "humantime_serde::option")]
-    pub order_simulation_timeout: Option<Duration>,
+    /// Per-call timeout for order-creation shadow simulation.
+    #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
+    pub order_simulation_timeout: Duration,
 
     /// When enabled, solver competition endpoints return 404 until the
     /// auction's submission deadline block has been reached.
@@ -206,7 +209,7 @@ pub mod test_util {
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
                 price_estimation: PriceEstimation::test_default(),
-                order_simulation_timeout: Some(Duration::from_secs(2)),
+                order_simulation_timeout: Duration::from_secs(2),
                 hide_competition_before_deadline: false,
             }
         }
@@ -270,10 +273,7 @@ mod tests {
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
         assert!(config.hide_competition_before_deadline);
-        assert_eq!(
-            config.order_simulation_timeout,
-            Some(Duration::from_secs(3))
-        );
+        assert_eq!(config.order_simulation_timeout, Duration::from_secs(3));
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
@@ -378,7 +378,7 @@ mod tests {
             database: TestDefault::test_default(),
             http_client: Default::default(),
             price_estimation: Default::default(),
-            order_simulation_timeout: Default::default(),
+            order_simulation_timeout: default_simulation_timeout(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

@@ -380,17 +380,15 @@ pub async fn run(config: Configuration) {
 
     let order_simulator = price_estimator_factory.settlement_simulator().cloned();
 
-    let validator_simulator = config
-        .order_simulation_timeout
-        .zip(order_simulator.clone())
-        .map(|(timeout, settlement_simulator)| {
-            let simulator: Arc<dyn shared::order_creation_simulation::OrderSimulating> = Arc::new(
-                shared::order_creation_simulation::OrderCreationSimulator::new(
-                    settlement_simulator,
-                ),
-            );
-            OrderSimulator { simulator, timeout }
-        });
+    let validator_simulator = order_simulator.clone().map(|settlement_simulator| {
+        let simulator: Arc<dyn shared::order_creation_simulation::OrderSimulating> = Arc::new(
+            shared::order_creation_simulation::OrderCreationSimulator::new(settlement_simulator),
+        );
+        OrderSimulator {
+            simulator,
+            timeout: config.order_simulation_timeout,
+        }
+    });
 
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),

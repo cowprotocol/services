@@ -532,7 +532,6 @@ async fn simulation_not_enabled(web3: Web3) {
     let services = Services::new(&onchain).await;
     services
         .start_api(configs::orderbook::Configuration {
-            order_simulation_timeout: None,
             order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
                 "test_quoter",
                 "http://localhost:11088/test_solver",
