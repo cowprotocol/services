@@ -183,7 +183,7 @@ pub mod test_util {
     impl TestDefault for OrderSimulationConfig {
         fn test_default() -> Self {
             Self {
-                gas_limit: U256::try_from(16777215).expect("u64 can be converted to U256"),
+                gas_limit: U256::from(16777215),
                 tenderly: None,
                 timeout: std::time::Duration::from_secs(2),
             }

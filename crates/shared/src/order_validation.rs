@@ -56,22 +56,17 @@ pub struct OrderSimulator {
 
 /// Runs the simulation under the configured timeout, folding the timeout
 /// case into [`OrderSimulationError::Infra`].
-async fn timed_simulation(
+async fn simulation_with_timeout(
     config: &OrderSimulator,
     order: &Order,
-    full_app_data: String,
+    full_app_data: &str,
 ) -> Result<(), OrderSimulationError> {
-    match tokio::time::timeout(
+    tokio::time::timeout(
         config.timeout,
         config.simulator.simulate(order, full_app_data),
     )
     .await
-    {
-        Err(_) => Err(OrderSimulationError::Infra(anyhow!(
-            "order simulation timeout"
-        ))),
-        Ok(res) => res,
-    }
+    .map_err(|_| OrderSimulationError::Infra(anyhow!("order simulation timeout")))?
 }
 
 /// Logs the simulation result alongside the signature outcome. Disagreements
@@ -468,7 +463,8 @@ impl OrderValidator {
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
             if let Some(config) = &self.order_simulator {
-                let simulation = timed_simulation(config, preview_order, full_app_data).await;
+                let simulation =
+                    simulation_with_timeout(config, preview_order, &full_app_data).await;
                 // No signature outcome to compare against, so synthesize a
                 // signature-pass: only simulation reverts and infra errors log.
                 log_simulation_outcome(&Ok(0), &simulation, preview_order.metadata.uid);
@@ -506,7 +502,7 @@ impl OrderValidator {
         // are logged below and never affect the return value. The enforce-mode
         // follow-up will consume `simulation` here to reject orders whose
         // simulation reverts.
-        let simulation_fut = timed_simulation(config, preview_order, full_app_data);
+        let simulation_fut = simulation_with_timeout(config, preview_order, &full_app_data);
         let (signature_res, simulation) = tokio::join!(signature_fut, simulation_fut);
 
         log_simulation_outcome(&signature_res, &simulation, preview_order.metadata.uid);
@@ -2927,7 +2923,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn simulation_infra_error_is_fail_open() {
+    async fn simulation_infra_error_does_not_reject_order() {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
@@ -3006,7 +3002,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_simulator_configured_returns_invalid_eip1271_signature_on_invalid_signature() {
+    async fn invalid_signature_rejected_when_simulator_disabled() {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()

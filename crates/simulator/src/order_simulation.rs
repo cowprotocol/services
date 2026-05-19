@@ -33,7 +33,7 @@ pub trait OrderSimulating: Send + Sync {
     async fn simulate(
         &self,
         order: &Order,
-        full_app_data: String,
+        full_app_data: &str,
     ) -> Result<(), OrderSimulationError>;
 }
 
@@ -54,15 +54,17 @@ impl OrderSimulating for OrderSimulatorAdapter {
     async fn simulate(
         &self,
         order: &Order,
-        full_app_data: String,
+        full_app_data: &str,
     ) -> Result<(), OrderSimulationError> {
+        let sim_order = simulation_builder::Order::new(order.data)
+            .with_signature(order.metadata.owner, order.signature.clone())
+            .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice);
+
         let inputs = self
             .inner
             .new_simulation_builder()
-            .with_orders([simulation_builder::Order::new(order.data)
-                .with_signature(order.metadata.owner, order.signature.clone())
-                .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
-            .parameters_from_app_data(&full_app_data)
+            .with_orders([sim_order])
+            .parameters_from_app_data(full_app_data)
             .map_err(|err| OrderSimulationError::Infra(anyhow!(err).context("parse app data")))?
             .from_solver(Solver::Fake(None))
             .provide_sufficient_buy_tokens()
@@ -78,18 +80,16 @@ impl OrderSimulating for OrderSimulatorAdapter {
         let tenderly = inputs.simulator.tenderly();
         let tenderly_request = inputs.to_tenderly_request().ok();
 
-        match inputs.simulate().await {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                let tenderly_url = match (tenderly, tenderly_request) {
-                    (Some(api), Some(req)) => api.simulate_and_share(req).await.ok(),
-                    _ => None,
-                };
-                Err(OrderSimulationError::Reverted {
-                    reason: err.to_string(),
-                    tenderly_url,
-                })
-            }
-        }
+        let Err(err) = inputs.simulate().await else {
+            return Ok(());
+        };
+        let tenderly_url = match (tenderly, tenderly_request) {
+            (Some(api), Some(req)) => api.simulate_and_share(req).await.ok(),
+            _ => None,
+        };
+        Err(OrderSimulationError::Reverted {
+            reason: err.to_string(),
+            tenderly_url,
+        })
     }
 }

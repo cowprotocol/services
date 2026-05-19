@@ -189,11 +189,13 @@ async fn build_replay_simulation(rpc_url: &str, full_app_data: &str) -> EthCallI
         buy_token_balance: BuyTokenDestination::Erc20,
     };
 
+    let sim_order = simulation_builder::Order::new(order_data)
+        .with_signature(order_owner, Signature::Eip1271(signature_bytes))
+        .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice);
+
     simulator
         .new_simulation_builder()
-        .with_orders([simulation_builder::Order::new(order_data)
-            .with_signature(order_owner, Signature::Eip1271(signature_bytes))
-            .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
+        .with_orders([sim_order])
         .parameters_from_app_data(full_app_data)
         .expect("parameters_from_app_data should parse the app data")
         .from_solver(Solver::Fake(None))
@@ -298,11 +300,13 @@ async fn build_naturally_failing_replay_simulation(
         buy_token_balance: BuyTokenDestination::Erc20,
     };
 
+    let sim_order = simulation_builder::Order::new(order_data)
+        .with_signature(order_owner, Signature::Eip1271(signature_bytes))
+        .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice);
+
     simulator
         .new_simulation_builder()
-        .with_orders([simulation_builder::Order::new(order_data)
-            .with_signature(order_owner, Signature::Eip1271(signature_bytes))
-            .fill_at(ExecutionAmount::Full, PriceEncoding::LimitPrice)])
+        .with_orders([sim_order])
         .parameters_from_app_data(full_app_data)
         .expect("parameters_from_app_data should parse the app data")
         .from_solver(Solver::Fake(None))
