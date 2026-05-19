@@ -293,10 +293,9 @@ fn find_order<'a>(
         .iter()
         .find(|order| order.uid == uid.0)
         .ok_or_else(|| {
-            let uid: competition::order::Uid = uid.into();
             super::Error(format!(
                 "invalid order UID specified in fulfillment: {}",
-                uid.0
+                const_hex::encode_prefixed(&uid.0)
             ))
         })
 }
