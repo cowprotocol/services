@@ -1,5 +1,16 @@
+//! Order-creation simulation recipe.
+//!
+//! Lives next to its consumer (`order_validation`) rather than inside the
+//! `simulator` crate. The `simulator` crate is a flexible builder; this
+//! module hard-codes the specific options the orderbook uses at order
+//! creation (full fill, fake solver, sufficient buy-token override,
+//! Tenderly-on-revert).
+
 use {
-    crate::simulation_builder::{
+    anyhow::anyhow,
+    async_trait::async_trait,
+    model::order::Order,
+    simulator::simulation_builder::{
         self,
         Block,
         ExecutionAmount,
@@ -7,9 +18,6 @@ use {
         SettlementSimulator,
         Solver,
     },
-    anyhow::anyhow,
-    async_trait::async_trait,
-    model::order::Order,
 };
 
 /// Outcome of the order creation simulation.
@@ -39,18 +47,18 @@ pub trait OrderSimulating: Send + Sync {
 
 /// Drives [`SettlementSimulator`] to run a full-order simulation at order
 /// creation time, including pre/post hooks, swap, and any wrapper chain.
-pub struct OrderSimulatorAdapter {
+pub struct OrderCreationSimulator {
     inner: SettlementSimulator,
 }
 
-impl OrderSimulatorAdapter {
+impl OrderCreationSimulator {
     pub fn new(inner: SettlementSimulator) -> Self {
         Self { inner }
     }
 }
 
 #[async_trait]
-impl OrderSimulating for OrderSimulatorAdapter {
+impl OrderSimulating for OrderCreationSimulator {
     async fn simulate(
         &self,
         order: &Order,

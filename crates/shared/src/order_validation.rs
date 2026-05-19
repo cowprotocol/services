@@ -1,10 +1,13 @@
 use {
-    crate::order_quoting::{
-        CalculateQuoteError,
-        OrderQuoting,
-        Quote,
-        QuoteParameters,
-        QuoteSearchParameters,
+    crate::{
+        order_creation_simulation::{OrderSimulating, OrderSimulationError},
+        order_quoting::{
+            CalculateQuoteError,
+            OrderQuoting,
+            Quote,
+            QuoteParameters,
+            QuoteSearchParameters,
+        },
     },
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
@@ -39,7 +42,6 @@ use {
     },
     price_estimation::{PriceEstimationError, Verification},
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    simulator::order_simulation::{OrderSimulating, OrderSimulationError},
     std::{sync::Arc, time::Duration},
     tracing::instrument,
 };
@@ -1220,7 +1222,10 @@ pub fn convert_signing_scheme_into_quote_signing_scheme(
 mod tests {
     use {
         super::*,
-        crate::order_quoting::{FindQuoteError, MockOrderQuoting},
+        crate::{
+            order_creation_simulation::MockOrderSimulating,
+            order_quoting::{FindQuoteError, MockOrderQuoting},
+        },
         account_balances::MockBalanceFetching,
         alloy::{
             primitives::{Address, U160, U256, address, b256},
@@ -1237,7 +1242,6 @@ mod tests {
         number::nonzero::NonZeroU256,
         serde_json::json,
         signature_validator::MockSignatureValidating,
-        simulator::order_simulation::MockOrderSimulating,
     };
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);

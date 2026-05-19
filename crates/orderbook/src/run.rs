@@ -389,8 +389,10 @@ pub async fn run(config: Configuration) {
         .as_ref()
         .zip(order_simulator.clone())
         .map(|(sim_config, settlement_simulator)| {
-            let simulator: Arc<dyn simulator::order_simulation::OrderSimulating> = Arc::new(
-                simulator::order_simulation::OrderSimulatorAdapter::new(settlement_simulator),
+            let simulator: Arc<dyn shared::order_creation_simulation::OrderSimulating> = Arc::new(
+                shared::order_creation_simulation::OrderCreationSimulator::new(
+                    settlement_simulator,
+                ),
             );
             OrderSimulator {
                 simulator,
