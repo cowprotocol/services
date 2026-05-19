@@ -93,10 +93,6 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    /// The [`SettlementSimulator`] used internally for trade verification.
-    /// Exposed so other components (e.g. the orderbook's order-creation
-    /// simulator) can reuse the same instance instead of paying for state
-    /// override setup and contract calls a second time.
     pub fn settlement_simulator(&self) -> Option<&SettlementSimulator> {
         self.settlement_simulator.as_ref()
     }

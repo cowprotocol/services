@@ -50,22 +50,6 @@ pub struct VolumeFeeConfig {
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
-/// Order creation simulation runs against the same [`SettlementSimulator`]
-/// the price-estimation factory uses for quote verification. Gas limit and
-/// Tenderly are configured there (under `price-estimation`). The only knob
-/// specific to order creation is the per-call timeout.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct OrderSimulationConfig {
-    /// Per-call timeout for the order creation simulation.
-    #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
-    pub timeout: Duration,
-}
-
-fn default_simulation_timeout() -> Duration {
-    Duration::from_secs(2)
-}
-
 /// Top-level orderbook service configuration.
 // NOTE: cannot add deny_unknown_fields during the config migration
 #[derive(Debug, Deserialize)]
@@ -130,9 +114,10 @@ pub struct Configuration {
     #[serde(default)]
     pub price_estimation: PriceEstimation,
 
-    /// Order simulation configuration. If `None`, the endpoint is disabled.
-    #[serde(default)]
-    pub order_simulation: Option<OrderSimulationConfig>,
+    /// Per-call timeout for order-creation shadow simulation. `None`
+    /// disables the simulation entirely.
+    #[serde(default, with = "humantime_serde::option")]
+    pub order_simulation_timeout: Option<Duration>,
 
     /// When enabled, solver competition endpoints return 404 until the
     /// auction's submission deadline block has been reached.
@@ -163,7 +148,6 @@ pub mod test_util {
         crate::{
             orderbook::{
                 Configuration,
-                OrderSimulationConfig,
                 default_active_order_competition_threshold,
                 default_app_data_size_limit,
                 default_bind_address,
@@ -172,16 +156,8 @@ pub mod test_util {
             price_estimation::PriceEstimation,
             test_util::TestDefault,
         },
-        std::path::Path,
+        std::{path::Path, time::Duration},
     };
-
-    impl TestDefault for OrderSimulationConfig {
-        fn test_default() -> Self {
-            Self {
-                timeout: std::time::Duration::from_secs(2),
-            }
-        }
-    }
 
     impl Configuration {
         pub async fn to_path<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
@@ -230,8 +206,7 @@ pub mod test_util {
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
                 price_estimation: PriceEstimation::test_default(),
-                // Enable order simulation for testing
-                order_simulation: Some(TestDefault::test_default()),
+                order_simulation_timeout: Some(Duration::from_secs(2)),
                 hide_competition_before_deadline: false,
             }
         }
@@ -284,8 +259,7 @@ mod tests {
         [order-quoting]
         price-estimation-drivers = []
 
-        [order-simulation]
-        timeout = "3s"
+        order-simulation-timeout = "3s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -297,7 +271,7 @@ mod tests {
         assert!(config.eip1271_skip_creation_validation);
         assert!(config.hide_competition_before_deadline);
         assert_eq!(
-            config.order_simulation.map(|config| config.timeout),
+            config.order_simulation_timeout,
             Some(Duration::from_secs(3))
         );
 
@@ -404,7 +378,7 @@ mod tests {
             database: TestDefault::test_default(),
             http_client: Default::default(),
             price_estimation: Default::default(),
-            order_simulation: Default::default(),
+            order_simulation_timeout: Default::default(),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -440,21 +414,5 @@ mod tests {
             deserialized.hide_competition_before_deadline
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
-    }
-
-    #[test]
-    fn parses_order_simulation_defaults() {
-        let toml = "";
-        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.timeout, Duration::from_secs(2));
-    }
-
-    #[test]
-    fn parses_order_simulation_full() {
-        let toml = r#"
-            timeout = "5s"
-        "#;
-        let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.timeout, Duration::from_secs(5));
     }
 }

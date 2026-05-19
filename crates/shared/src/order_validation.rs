@@ -46,10 +46,8 @@ use {
     tracing::instrument,
 };
 
-/// Runs the full order simulation alongside the cheap EIP-1271 signature
-/// check. Disagreements are logged. The simulation never rejects the order
-/// (shadow-mode behaviour). An enforce-mode follow-up will use the same
-/// simulator output to reject orders whose simulation reverts.
+/// Shadow-mode order simulation paired with the EIP-1271 signature check.
+/// The simulation result is logged but does not affect order acceptance.
 #[derive(Clone)]
 pub struct OrderSimulator {
     pub simulator: Arc<dyn OrderSimulating>,
@@ -57,8 +55,6 @@ pub struct OrderSimulator {
 }
 
 impl OrderSimulator {
-    /// Runs the simulation under the configured timeout, folding the timeout
-    /// case into [`OrderSimulationError::Infra`].
     pub async fn simulate_with_timeout(
         &self,
         order: &Order,
@@ -70,11 +66,8 @@ impl OrderSimulator {
     }
 }
 
-/// Logs the simulation result alongside the signature outcome. Disagreements
-/// (signature pass + simulation revert, or vice versa) and infra errors are
-/// surfaced as warnings; agreement is silent. The warning lines carry the
-/// full order data, full appdata, signature, and owner so the case can be
-/// re-simulated locally without going back to the database.
+/// Logs disagreements (signature pass + simulation revert, or vice versa)
+/// and infra errors as warnings. Agreement is silent.
 fn log_simulation_outcome(
     signature: &Result<u64, SignatureValidationError>,
     simulation: &Result<(), OrderSimulationError>,
@@ -465,17 +458,9 @@ impl OrderValidator {
             .await
     }
 
-    /// Entry point for the EIP-1271 block of `validate_and_construct_order`.
-    ///
-    /// When the [`OrderValidator::eip1271_skip_creation_validation`] flag is:
-    ///
-    /// - `true`: the cheap `isValidSignature` check is bypassed by the
-    ///   operator, and we return a `verification_gas_limit` of `0` (no gas was
-    ///   spent on-chain verifying the signature). If the optional
-    ///   [`OrderSimulator`] is configured, the full simulation still runs for
-    ///   observability only and can never reject.
-    /// - `false`: delegates to
-    ///   [`OrderValidator::run_eip1271_with_signature_check`].
+    /// When `eip1271_skip_creation_validation` is set, the signature check is
+    /// skipped and the simulation runs for observability only. Otherwise the
+    /// signature check decides acceptance and the simulation runs alongside.
     async fn run_eip1271_checks(
         &self,
         check: SignatureCheck,
@@ -488,8 +473,7 @@ impl OrderValidator {
                 let simulation = config
                     .simulate_with_timeout(preview_order, &full_app_data)
                     .await;
-                // No signature outcome to compare against, so synthesize a
-                // signature-pass: only simulation reverts and infra errors log.
+                // Synthesize a signature-pass since there is no signature check.
                 log_simulation_outcome(&Ok(0), &simulation, preview_order, &full_app_data);
             }
             return Ok(0u64);
@@ -498,11 +482,9 @@ impl OrderValidator {
             .await
     }
 
-    /// Runs the cheap `isValidSignature` check and, when a simulator is
-    /// configured, the full order simulation concurrently. The signature
-    /// result decides whether the order is accepted. The simulation result
-    /// is logged for observability (shadow mode), it never rejects.
-    /// Simulation infra errors (RPC / Tenderly / timeout) are logged.
+    /// Runs the `isValidSignature` check and, when a simulator is configured,
+    /// the order simulation concurrently. The signature result decides
+    /// acceptance. The simulation runs in shadow mode and is logged.
     async fn run_eip1271_with_signature_check(
         &self,
         check: SignatureCheck,
@@ -521,10 +503,6 @@ impl OrderValidator {
             });
         };
 
-        // Shadow mode: the simulation runs for observability only. Disagreements
-        // are logged below and never affect the return value. The enforce-mode
-        // follow-up will consume `simulation` here to reject orders whose
-        // simulation reverts.
         let simulation_fut = config.simulate_with_timeout(preview_order, &full_app_data);
         let (signature_res, simulation) = tokio::join!(signature_fut, simulation_fut);
 
@@ -2843,7 +2821,7 @@ mod tests {
         eip1271_skip_creation_validation: bool,
     ) -> OrderValidator {
         // The quote lookup, balance fetch, and limit-order count are off the
-        // path under test here — stub them to always succeed so every test
+        // path under test here. Stub them to always succeed so every test
         // reaches the EIP-1271 block without tripping earlier validation.
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
@@ -2881,9 +2859,8 @@ mod tests {
         )
     }
 
-    /// Verifies the (signature × simulation) outcome matrix in shadow mode.
-    /// The signature result alone decides acceptance; the simulation result
-    /// is observed only.
+    /// Verifies that the signature result alone decides acceptance and the
+    /// simulation result is observed only.
     #[tokio::test]
     async fn signature_and_simulation_outcome_matrix() {
         #[derive(Copy, Clone, Debug)]
@@ -2998,7 +2975,7 @@ mod tests {
 
     #[tokio::test]
     async fn simulator_is_not_invoked_for_non_eip1271_orders() {
-        // Only EIP-1271 orders go through the simulation path; verify that an
+        // Only EIP-1271 orders go through the simulation path. Verify that an
         // EOA order does not invoke the simulator.
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator

@@ -1,11 +1,3 @@
-//! Order-creation simulation recipe.
-//!
-//! Lives next to its consumer (`order_validation`) rather than inside the
-//! `simulator` crate. The `simulator` crate is a flexible builder; this
-//! module hard-codes the specific options the orderbook uses at order
-//! creation (full fill, fake solver, sufficient buy-token override,
-//! Tenderly-on-revert).
-
 use {
     anyhow::anyhow,
     async_trait::async_trait,
@@ -76,9 +68,6 @@ impl OrderSimulating for OrderCreationSimulator {
             .map_err(|err| OrderSimulationError::Infra(anyhow!(err).context("parse app data")))?
             .from_solver(Solver::Fake(None))
             .provide_sufficient_buy_tokens()
-            // Inject a synthetic pre-signature so a PreSign order can be
-            // simulated before the user has actually signed it on-chain.
-            // No-op for orders using other signing schemes.
             .presign_orders()
             .at_block(Block::Latest)
             .build()

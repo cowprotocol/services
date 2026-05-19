@@ -378,26 +378,18 @@ pub async fn run(config: Configuration) {
         .await
         .ok();
 
-    // Reuse the simulator built inside the price-estimation factory rather
-    // than constructing a second one. Avoids paying for state override setup
-    // and a handful of contract calls (`authenticator`, `vaultRelayer`,
-    // `domainSeparator`, `chain_id`) a second time.
     let order_simulator = price_estimator_factory.settlement_simulator().cloned();
 
     let validator_simulator = config
-        .order_simulation
-        .as_ref()
+        .order_simulation_timeout
         .zip(order_simulator.clone())
-        .map(|(sim_config, settlement_simulator)| {
+        .map(|(timeout, settlement_simulator)| {
             let simulator: Arc<dyn shared::order_creation_simulation::OrderSimulating> = Arc::new(
                 shared::order_creation_simulation::OrderCreationSimulator::new(
                     settlement_simulator,
                 ),
             );
-            OrderSimulator {
-                simulator,
-                timeout: sim_config.timeout,
-            }
+            OrderSimulator { simulator, timeout }
         });
 
     let order_validator = Arc::new(OrderValidator::new(
