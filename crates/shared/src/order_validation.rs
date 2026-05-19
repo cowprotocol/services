@@ -2987,9 +2987,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn simulator_runs_for_non_eip1271_orders_in_shadow_mode() {
+    async fn simulator_runs_for_non_eip1271_orders() {
         // EOA orders skip the EIP-1271 signature check but still go through
-        // the shadow simulator for observability.
+        // the simulator for observability.
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
