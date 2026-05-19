@@ -57,27 +57,10 @@ enum Outcome {
         blocks_passed: u64,
     },
     Failed {
-        reason: FailureReason,
+        reason: &'static str,
         blocks_passed: Option<u64>,
     },
     Disabled,
-}
-
-#[derive(Clone, Copy)]
-enum FailureReason {
-    Revert,
-    Expired,
-    Other,
-}
-
-impl FailureReason {
-    fn metric_label(self) -> &'static str {
-        match self {
-            FailureReason::Revert => "Revert",
-            FailureReason::Expired => "Expired",
-            FailureReason::Other => "Other",
-        }
-    }
 }
 
 impl Outcome {
@@ -85,7 +68,7 @@ impl Outcome {
         match self {
             Outcome::Superseded => "Superseded",
             Outcome::Success { .. } => "Success",
-            Outcome::Failed { reason, .. } => reason.metric_label(),
+            Outcome::Failed { reason, .. } => reason,
             Outcome::Disabled => "Disabled",
         }
     }
@@ -107,15 +90,15 @@ impl From<&Result<SubmissionSuccess, Error>> for Outcome {
             },
             Err(Error::Disabled) => Outcome::Disabled,
             Err(err @ (Error::Revert { .. } | Error::SimulationRevert { .. })) => Outcome::Failed {
-                reason: FailureReason::Revert,
+                reason: "Revert",
                 blocks_passed: err.blocks_passed(),
             },
             Err(err @ Error::Expired { .. }) => Outcome::Failed {
-                reason: FailureReason::Expired,
+                reason: "Expired",
                 blocks_passed: err.blocks_passed(),
             },
             Err(Error::Other(_)) => Outcome::Failed {
-                reason: FailureReason::Other,
+                reason: "Other",
                 blocks_passed: None,
             },
         }
