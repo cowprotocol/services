@@ -411,8 +411,9 @@ impl OrderValidator {
         }
     }
 
-    /// Computes the `verification_gas_limit` for an order. Returns `0` for
-    /// non-EIP-1271 signatures, otherwise delegates to `run_eip1271_checks`.
+    /// Computes the `verification_gas_limit` for an order and runs the
+    /// shadow simulation. Returns `0` for orders without an EIP-1271
+    /// signature check, but the shadow simulation still runs.
     async fn calculate_verification_gas_limit(
         &self,
         order: &OrderCreation,
@@ -422,27 +423,6 @@ impl OrderValidator {
         owner: Address,
         uid: OrderUid,
     ) -> Result<u64, ValidationError> {
-        let Signature::Eip1271(signature) = &order.signature else {
-            return Ok(0u64);
-        };
-
-        let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
-        let check = SignatureCheck::new(
-            owner,
-            hash.0,
-            signature.to_owned(),
-            app_data.interactions.pre.clone(),
-            app_data
-                .inner
-                .protocol
-                .flashloan
-                .as_ref()
-                .map(|loan| BalanceOverrideRequest {
-                    token: loan.token,
-                    holder: loan.receiver,
-                    amount: loan.amount,
-                }),
-        );
         let preview_order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -454,8 +434,46 @@ impl OrderValidator {
             interactions: app_data.interactions.clone(),
         };
         let full_app_data = app_data.inner.document.clone();
-        self.run_eip1271_checks(check, &preview_order, full_app_data, hash)
-            .await
+        let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
+
+        if let Signature::Eip1271(signature) = &order.signature {
+            let check = SignatureCheck::new(
+                owner,
+                hash.0,
+                signature.to_owned(),
+                app_data.interactions.pre.clone(),
+                app_data
+                    .inner
+                    .protocol
+                    .flashloan
+                    .as_ref()
+                    .map(|loan| BalanceOverrideRequest {
+                        token: loan.token,
+                        holder: loan.receiver,
+                        amount: loan.amount,
+                    }),
+            );
+            return self
+                .run_eip1271_checks(check, &preview_order, full_app_data, hash)
+                .await;
+        }
+
+        self.run_shadow_simulation(&preview_order, &full_app_data)
+            .await;
+        Ok(0u64)
+    }
+
+    /// Runs the order simulation in shadow mode. Used for order types that
+    /// have no on-chain signature check (EOA, PreSign) and for the
+    /// `eip1271_skip_creation_validation` path.
+    async fn run_shadow_simulation(&self, preview_order: &Order, full_app_data: &str) {
+        let Some(config) = &self.order_simulator else {
+            return;
+        };
+        let simulation = config
+            .simulate_with_timeout(preview_order, full_app_data)
+            .await;
+        log_simulation_outcome(&Ok(0), &simulation, preview_order, full_app_data);
     }
 
     /// When `eip1271_skip_creation_validation` is set, the signature check is
@@ -469,13 +487,8 @@ impl OrderValidator {
         hash: B256,
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
-            if let Some(config) = &self.order_simulator {
-                let simulation = config
-                    .simulate_with_timeout(preview_order, &full_app_data)
-                    .await;
-                // Synthesize a signature-pass since there is no signature check.
-                log_simulation_outcome(&Ok(0), &simulation, preview_order, &full_app_data);
-            }
+            self.run_shadow_simulation(preview_order, &full_app_data)
+                .await;
             return Ok(0u64);
         }
         self.run_eip1271_with_signature_check(check, preview_order, full_app_data, hash)
@@ -2974,24 +2987,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn simulator_is_not_invoked_for_non_eip1271_orders() {
-        // Only EIP-1271 orders go through the simulation path. Verify that an
-        // EOA order does not invoke the simulator.
+    async fn simulator_runs_for_non_eip1271_orders_in_shadow_mode() {
+        // EOA orders skip the EIP-1271 signature check but still go through
+        // the shadow simulator for observability.
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .times(0);
         let mut sim = MockOrderSimulating::new();
-        sim.expect_simulate().times(0);
+        sim.expect_simulate().times(1).returning(|_, _| Ok(()));
         let validator =
             build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
 
         let eoa_order = OrderCreation {
+            // `from = None` so `verify_owner` accepts the address recovered
+            // from the non-zero ECDSA signature, letting the order reach the
+            // simulator path.
+            from: None,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..make_1271_order_creation()
         };
         // Ignore the final result (it will fail WrongOwner/etc. later in the
-        // pipeline - we only care that the sim was not invoked).
+        // pipeline - we only care that the sim was invoked).
         let _ = validator
             .validate_and_construct_order(
                 eoa_order,
@@ -3000,7 +3017,7 @@ mod tests {
                 None,
             )
             .await;
-        // `sim.expect_simulate().times(0)` asserts on drop.
+        // `sim.expect_simulate().times(1)` asserts on drop.
     }
 
     #[tokio::test]
