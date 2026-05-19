@@ -49,62 +49,6 @@ pub struct Mempools {
     ethereum: Ethereum,
 }
 
-#[derive(Clone, Copy)]
-enum Outcome {
-    /// Submission future was dropped because another mempool won the race.
-    Superseded,
-    Success {
-        blocks_passed: u64,
-    },
-    Failed {
-        reason: &'static str,
-        blocks_passed: Option<u64>,
-    },
-    Disabled,
-}
-
-impl Outcome {
-    fn metric_label(self) -> &'static str {
-        match self {
-            Outcome::Superseded => "Superseded",
-            Outcome::Success { .. } => "Success",
-            Outcome::Failed { reason, .. } => reason,
-            Outcome::Disabled => "Disabled",
-        }
-    }
-
-    fn blocks_passed(self) -> Option<u64> {
-        match self {
-            Outcome::Superseded | Outcome::Disabled => None,
-            Outcome::Success { blocks_passed } => Some(blocks_passed),
-            Outcome::Failed { blocks_passed, .. } => blocks_passed,
-        }
-    }
-}
-
-impl From<&Result<SubmissionSuccess, Error>> for Outcome {
-    fn from(result: &Result<SubmissionSuccess, Error>) -> Self {
-        match result {
-            Ok(s) => Outcome::Success {
-                blocks_passed: s.blocks_passed(),
-            },
-            Err(Error::Disabled) => Outcome::Disabled,
-            Err(err @ (Error::Revert { .. } | Error::SimulationRevert { .. })) => Outcome::Failed {
-                reason: "Revert",
-                blocks_passed: err.blocks_passed(),
-            },
-            Err(err @ Error::Expired { .. }) => Outcome::Failed {
-                reason: "Expired",
-                blocks_passed: err.blocks_passed(),
-            },
-            Err(Error::Other(_)) => Outcome::Failed {
-                reason: "Other",
-                blocks_passed: None,
-            },
-        }
-    }
-}
-
 impl Mempools {
     pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
         if mempools.is_empty() {
@@ -469,6 +413,62 @@ impl Mempools {
                 other => other.metric_label(),
             };
             observe::mempool_submission_result(mempool, label, outcome.blocks_passed());
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Outcome {
+    /// Submission future was dropped because another mempool won the race.
+    Superseded,
+    Success {
+        blocks_passed: u64,
+    },
+    Failed {
+        reason: &'static str,
+        blocks_passed: Option<u64>,
+    },
+    Disabled,
+}
+
+impl Outcome {
+    fn metric_label(self) -> &'static str {
+        match self {
+            Outcome::Superseded => "Superseded",
+            Outcome::Success { .. } => "Success",
+            Outcome::Failed { reason, .. } => reason,
+            Outcome::Disabled => "Disabled",
+        }
+    }
+
+    fn blocks_passed(self) -> Option<u64> {
+        match self {
+            Outcome::Superseded | Outcome::Disabled => None,
+            Outcome::Success { blocks_passed } => Some(blocks_passed),
+            Outcome::Failed { blocks_passed, .. } => blocks_passed,
+        }
+    }
+}
+
+impl From<&Result<SubmissionSuccess, Error>> for Outcome {
+    fn from(result: &Result<SubmissionSuccess, Error>) -> Self {
+        match result {
+            Ok(s) => Outcome::Success {
+                blocks_passed: s.blocks_passed(),
+            },
+            Err(Error::Disabled) => Outcome::Disabled,
+            Err(err @ (Error::Revert { .. } | Error::SimulationRevert { .. })) => Outcome::Failed {
+                reason: "Revert",
+                blocks_passed: err.blocks_passed(),
+            },
+            Err(err @ Error::Expired { .. }) => Outcome::Failed {
+                reason: "Expired",
+                blocks_passed: err.blocks_passed(),
+            },
+            Err(Error::Other(_)) => Outcome::Failed {
+                reason: "Other",
+                blocks_passed: None,
+            },
         }
     }
 }
