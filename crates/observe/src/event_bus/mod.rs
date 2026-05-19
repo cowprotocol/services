@@ -14,7 +14,8 @@ use {
         Environment,
         NoDedup,
         Producer,
-        types::{ByteCapacity, Message},
+        error::StreamCreateError,
+        types::{ByteCapacity, Message, ResponseCode},
     },
     serde::Serialize,
     std::future::Future,
@@ -60,16 +61,23 @@ pub async fn init(config: Config, shutdown: impl Future<Output = ()> + Send + 's
                 .await
                 .expect("failed to connect to rabbitmq");
 
-            environment
+            match environment
                 .stream_creator()
                 .max_length(config.channel.size)
                 .create(&config.channel.name)
                 .await
-                .expect("failed to create channel");
+            {
+                Ok(()) => {}
+                Err(StreamCreateError::Create {
+                    status: ResponseCode::StreamAlreadyExists,
+                    ..
+                }) => {}
+                Err(err) => panic!("failed to create channel: {err}"),
+            }
 
             let producer = environment
                 .producer()
-                .batch_size(config.channel.batch_size)
+                .batch_size(10)
                 .build(&config.channel.name)
                 .await
                 .expect("failed to create producer");
@@ -96,7 +104,7 @@ async fn send_batch(producer: &Producer<NoDedup>, messages: Vec<Message>) {
         })
         .await
     {
-        tracing::error!(?err, "failed to enqueue messages");
+        tracing::error!("failed to enqueue messages: {err:#?}");
     }
 }
 
@@ -114,6 +122,7 @@ async fn forward_messages_to_event_bus_client(
 
     // Normal mode: buffer messages and send in batches.
     loop {
+        tracing::debug!("poll futures");
         tokio::select! {
             _ = &mut shutdown => break,
             maybe_message = receiver.recv() => {
@@ -121,12 +130,12 @@ async fn forward_messages_to_event_bus_client(
                     tracing::debug!("event queue was closed");
                     return;
                 };
+                tracing::debug!("received new message");
                 buffer.push(message);
-                if buffer.len() >= batch_size {
-                    let mut messages = Vec::with_capacity(batch_size);
-                    std::mem::swap(&mut messages, &mut buffer);
-                    send_batch(&producer, messages).await;
-                }
+                tracing::debug!("send message");
+                let mut messages = Vec::with_capacity(batch_size);
+                std::mem::swap(&mut messages, &mut buffer);
+                send_batch(&producer, messages).await;
             }
         }
     }
@@ -167,5 +176,45 @@ pub fn publish(name: impl Into<String>, data: impl Serialize) {
 
     if let Err(err) = queue.send(message) {
         tracing::error!(?err, "failed to enqueue message");
+    }
+    tracing::debug!("pushed even to queue");
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, serde_json::json};
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn send_messages() {
+        crate::tracing::init::initialize(&crate::Config {
+            env_filter: "debug".to_string(),
+            stderr_threshold: None,
+            use_json_format: false,
+            tracing: None,
+        });
+        init(
+            Config {
+                client: ClientConfig {
+                    host: "localhost".to_string(),
+                    port: 5552,
+                },
+                channel: ChannelConfig {
+                    name: "test_stream".to_string(),
+                    size: ByteCapacity::GB(2),
+                    batch_size: 1,
+                },
+            },
+            futures::future::pending(),
+        )
+        .await;
+        tracing::debug!("connected to rabbit");
+
+        publish(
+            "name",
+            json!({
+                "estimator": "baseline",
+                "outAmount": 1234,
+            }),
+        );
     }
 }
