@@ -118,7 +118,7 @@ pub struct Configuration {
     #[serde(default)]
     pub price_estimation: PriceEstimation,
 
-    /// Per-call timeout for order-creation shadow simulation.
+    /// Per-call timeout for order-creation simulation.
     #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
     pub order_simulation_timeout: Duration,
 

@@ -46,8 +46,8 @@ use {
     tracing::instrument,
 };
 
-/// Shadow-mode order simulation paired with the EIP-1271 signature check.
-/// The simulation result is logged but does not affect order acceptance.
+/// Order simulation paired with the EIP-1271 signature check. The
+/// simulation result is logged but does not affect order acceptance.
 #[derive(Clone)]
 pub struct OrderSimulator {
     pub simulator: Arc<dyn OrderSimulating>,
@@ -412,8 +412,8 @@ impl OrderValidator {
     }
 
     /// Computes the `verification_gas_limit` for an order and runs the
-    /// shadow simulation. Returns `0` for orders without an EIP-1271
-    /// signature check, but the shadow simulation still runs.
+    /// simulation for observability. Returns `0` for orders without an
+    /// EIP-1271 signature check, but the simulation still runs.
     async fn calculate_verification_gas_limit(
         &self,
         order: &OrderCreation,
@@ -458,15 +458,16 @@ impl OrderValidator {
                 .await;
         }
 
-        self.run_shadow_simulation(&preview_order, &full_app_data)
+        self.observe_simulation(&preview_order, &full_app_data)
             .await;
         Ok(0u64)
     }
 
-    /// Runs the order simulation in shadow mode. Used for order types that
-    /// have no on-chain signature check (EOA, PreSign) and for the
+    /// Runs the order simulation for observability and discards the result
+    /// beyond logging it. Used for order types that have no on-chain
+    /// signature check (EOA, PreSign) and for the
     /// `eip1271_skip_creation_validation` path.
-    async fn run_shadow_simulation(&self, preview_order: &Order, full_app_data: &str) {
+    async fn observe_simulation(&self, preview_order: &Order, full_app_data: &str) {
         let Some(config) = &self.order_simulator else {
             return;
         };
@@ -487,8 +488,7 @@ impl OrderValidator {
         hash: B256,
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
-            self.run_shadow_simulation(preview_order, &full_app_data)
-                .await;
+            self.observe_simulation(preview_order, &full_app_data).await;
             return Ok(0u64);
         }
         self.run_eip1271_with_signature_check(check, preview_order, full_app_data, hash)
@@ -497,7 +497,7 @@ impl OrderValidator {
 
     /// Runs the `isValidSignature` check and, when a simulator is configured,
     /// the order simulation concurrently. The signature result decides
-    /// acceptance. The simulation runs in shadow mode and is logged.
+    /// acceptance. The simulation result is logged for observability only.
     async fn run_eip1271_with_signature_check(
         &self,
         check: SignatureCheck,
