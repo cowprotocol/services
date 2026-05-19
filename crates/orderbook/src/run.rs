@@ -378,33 +378,11 @@ pub async fn run(config: Configuration) {
         .await
         .ok();
 
-    let order_simulator = match &config.order_simulation {
-        Some(sim_config) => {
-            let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
-                sim_config.tenderly.as_ref().map(|tenderly_config| {
-                    Arc::new(simulator::tenderly::TenderlyApi::new(
-                        tenderly_config,
-                        &http_factory,
-                        chain.id().to_string(),
-                    )) as _
-                });
-            Some(
-                simulator::simulation_builder::SettlementSimulator::new(
-                    settlement_contract.clone(),
-                    flashloan_router_address,
-                    hooks_trampoline_address,
-                    *native_token.address(),
-                    sim_config.gas_limit.saturating_to(),
-                    balance_overrider.clone(),
-                    current_block_stream.clone(),
-                    tenderly,
-                )
-                .await
-                .expect("failed to create SettlementSimulator"),
-            )
-        }
-        None => None,
-    };
+    // Reuse the simulator built inside the price-estimation factory rather
+    // than constructing a second one. Avoids paying for state override setup
+    // and a handful of contract calls (`authenticator`, `vaultRelayer`,
+    // `domainSeparator`, `chain_id`) a second time.
+    let order_simulator = price_estimator_factory.settlement_simulator().cloned();
 
     let validator_simulator = config
         .order_simulation

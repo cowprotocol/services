@@ -54,19 +54,18 @@ pub struct OrderSimulator {
     pub timeout: Duration,
 }
 
-/// Runs the simulation under the configured timeout, folding the timeout
-/// case into [`OrderSimulationError::Infra`].
-async fn simulation_with_timeout(
-    config: &OrderSimulator,
-    order: &Order,
-    full_app_data: &str,
-) -> Result<(), OrderSimulationError> {
-    tokio::time::timeout(
-        config.timeout,
-        config.simulator.simulate(order, full_app_data),
-    )
-    .await
-    .map_err(|_| OrderSimulationError::Infra(anyhow!("order simulation timeout")))?
+impl OrderSimulator {
+    /// Runs the simulation under the configured timeout, folding the timeout
+    /// case into [`OrderSimulationError::Infra`].
+    pub async fn simulate_with_timeout(
+        &self,
+        order: &Order,
+        full_app_data: &str,
+    ) -> Result<(), OrderSimulationError> {
+        tokio::time::timeout(self.timeout, self.simulator.simulate(order, full_app_data))
+            .await
+            .map_err(|_| OrderSimulationError::Infra(anyhow!("order simulation timeout")))?
+    }
 }
 
 /// Logs the simulation result alongside the signature outcome. Disagreements
@@ -484,8 +483,9 @@ impl OrderValidator {
     ) -> Result<u64, ValidationError> {
         if self.eip1271_skip_creation_validation {
             if let Some(config) = &self.order_simulator {
-                let simulation =
-                    simulation_with_timeout(config, preview_order, &full_app_data).await;
+                let simulation = config
+                    .simulate_with_timeout(preview_order, &full_app_data)
+                    .await;
                 // No signature outcome to compare against, so synthesize a
                 // signature-pass: only simulation reverts and infra errors log.
                 log_simulation_outcome(&Ok(0), &simulation, preview_order, &full_app_data);
@@ -523,7 +523,7 @@ impl OrderValidator {
         // are logged below and never affect the return value. The enforce-mode
         // follow-up will consume `simulation` here to reject orders whose
         // simulation reverts.
-        let simulation_fut = simulation_with_timeout(config, preview_order, &full_app_data);
+        let simulation_fut = config.simulate_with_timeout(preview_order, &full_app_data);
         let (signature_res, simulation) = tokio::join!(signature_fut, simulation_fut);
 
         log_simulation_outcome(&signature_res, &simulation, preview_order, &full_app_data);

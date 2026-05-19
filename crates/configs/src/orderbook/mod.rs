@@ -13,7 +13,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::{Address, U256},
+    alloy::primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
@@ -50,17 +50,13 @@ pub struct VolumeFeeConfig {
     pub effective_from_timestamp: Option<DateTime<Utc>>,
 }
 
+/// Order creation simulation runs against the same [`SettlementSimulator`]
+/// the price-estimation factory uses for quote verification. Gas limit and
+/// Tenderly are configured there (under `price-estimation`). The only knob
+/// specific to order creation is the per-call timeout.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct OrderSimulationConfig {
-    pub gas_limit: U256,
-
-    /// Optional Tenderly configuration. When set, simulations are automatically
-    /// submitted and shared on Tenderly, and the response includes a dashboard
-    /// URL.
-    #[serde(default)]
-    pub tenderly: Option<crate::simulator::TenderlyConfig>,
-
     /// Per-call timeout for the order creation simulation.
     #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
     pub timeout: Duration,
@@ -176,15 +172,12 @@ pub mod test_util {
             price_estimation::PriceEstimation,
             test_util::TestDefault,
         },
-        alloy::primitives::U256,
         std::path::Path,
     };
 
     impl TestDefault for OrderSimulationConfig {
         fn test_default() -> Self {
             Self {
-                gas_limit: U256::from(16777215),
-                tenderly: None,
                 timeout: std::time::Duration::from_secs(2),
             }
         }
@@ -292,7 +285,7 @@ mod tests {
         price-estimation-drivers = []
 
         [order-simulation]
-        gas-limit = "123456789"
+        timeout = "3s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -304,8 +297,8 @@ mod tests {
         assert!(config.eip1271_skip_creation_validation);
         assert!(config.hide_competition_before_deadline);
         assert_eq!(
-            config.order_simulation.map(|config| config.gas_limit),
-            Some(U256::from(123456789u64))
+            config.order_simulation.map(|config| config.timeout),
+            Some(Duration::from_secs(3))
         );
 
         assert!(matches!(
@@ -451,16 +444,14 @@ mod tests {
 
     #[test]
     fn parses_order_simulation_defaults() {
-        let toml = r#"gas-limit = "16777216""#;
+        let toml = "";
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.timeout, Duration::from_secs(2));
-        assert!(cfg.tenderly.is_none());
     }
 
     #[test]
     fn parses_order_simulation_full() {
         let toml = r#"
-            gas-limit = "16777216"
             timeout = "5s"
         "#;
         let cfg: OrderSimulationConfig = toml::from_str(toml).unwrap();

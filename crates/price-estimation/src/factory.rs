@@ -65,6 +65,7 @@ pub struct PriceEstimatorFactory<'a> {
     config: &'a NativePriceConfig,
     network: Network,
     components: Components,
+    settlement_simulator: Option<SettlementSimulator>,
     trade_verifier: Option<Arc<dyn TradeVerifying>>,
     estimators: HashMap<String, EstimatorEntry>,
 }
@@ -76,8 +77,14 @@ impl<'a> PriceEstimatorFactory<'a> {
         network: Network,
         components: Components,
     ) -> Result<Self> {
+        let (settlement_simulator, tenderly) =
+            Self::build_simulator(args, &network, &components).await?;
+        let trade_verifier = settlement_simulator
+            .as_ref()
+            .map(|simulator| Self::build_trade_verifier(args, simulator.clone(), tenderly));
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, &network, &components).await?,
+            settlement_simulator,
+            trade_verifier,
             args,
             config,
             network,
@@ -86,13 +93,21 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    async fn trade_verifier(
-        args: &'a PriceEstimation,
+    /// The [`SettlementSimulator`] used internally for trade verification.
+    /// Exposed so other components (e.g. the orderbook's order-creation
+    /// simulator) can reuse the same instance instead of paying for state
+    /// override setup and contract calls a second time.
+    pub fn settlement_simulator(&self) -> Option<&SettlementSimulator> {
+        self.settlement_simulator.as_ref()
+    }
+
+    async fn build_simulator(
+        args: &PriceEstimation,
         network: &Network,
         components: &Components,
-    ) -> Result<Option<Arc<dyn TradeVerifying>>> {
+    ) -> Result<(Option<SettlementSimulator>, Option<Arc<dyn tenderly::Api>>)> {
         let Some(web3) = network.simulation_web3.clone() else {
-            return Ok(None);
+            return Ok((None, None));
         };
         let web3 = web3.labeled("simulator");
 
@@ -120,15 +135,22 @@ impl<'a> PriceEstimatorFactory<'a> {
         )
         .await?;
 
-        let verifier = TradeVerifier::new(
+        Ok((Some(simulator), tenderly))
+    }
+
+    fn build_trade_verifier(
+        args: &PriceEstimation,
+        simulator: SettlementSimulator,
+        tenderly: Option<Arc<dyn tenderly::Api>>,
+    ) -> Arc<dyn TradeVerifying> {
+        Arc::new(TradeVerifier::new(
             simulator,
             tenderly,
             args.quote_inaccuracy_limit.clone(),
             args.tokens_without_verification.iter().cloned().collect(),
             args.min_gas_amount_for_unverified_quotes,
             args.max_gas_amount_for_unverified_quotes,
-        );
-        Ok(Some(Arc::new(verifier)))
+        ))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {
