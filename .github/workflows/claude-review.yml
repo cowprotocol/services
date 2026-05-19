@@ -20,16 +20,20 @@ jobs:
     #   (b) someone posts an `@claude` comment on a PR (not on an issue).
     # Also skip bot authors and PRs explicitly labelled `skip-claude-review`,
     # so authors have an escape hatch for trivial changes.
+    # External contributors are excluded from both triggers by requiring an
+    # internal `author_association` (OWNER/MEMBER/COLLABORATOR).
     if: >
       (
         github.event_name == 'pull_request' &&
         github.event.pull_request.draft == false &&
         github.event.pull_request.user.type != 'Bot' &&
-        !contains(github.event.pull_request.labels.*.name, 'skip-claude-review')
+        !contains(github.event.pull_request.labels.*.name, 'skip-claude-review') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
       ) || (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
-        contains(github.event.comment.body, '@claude')
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
       )
     runs-on: ubuntu-latest
     permissions:
