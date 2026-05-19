@@ -6,7 +6,9 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+async-nats = { workspace = true }
 async-trait = { workspace = true }
+bytes = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true, features = ["now"] }
 console-subscriber = { workspace = true, optional = true }
@@ -19,7 +21,6 @@ opentelemetry_sdk = { workspace = true }
 pin-project-lite = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-rabbitmq-stream-client = { workspace = true }
 scopeguard = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -29,6 +30,7 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-serde = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
+url = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
