@@ -2910,6 +2910,7 @@ mod tests {
                 });
             let mut sim = MockOrderSimulating::new();
             sim.expect_simulate()
+                .times(1)
                 .returning(move |_, _| match simulation {
                     Sim::Pass => Ok(()),
                     Sim::Reverted => Err(OrderSimulationError::Reverted {
