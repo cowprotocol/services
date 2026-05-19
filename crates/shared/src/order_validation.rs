@@ -71,12 +71,19 @@ async fn simulation_with_timeout(
 
 /// Logs the simulation result alongside the signature outcome. Disagreements
 /// (signature pass + simulation revert, or vice versa) and infra errors are
-/// surfaced as warnings; agreement is silent.
+/// surfaced as warnings; agreement is silent. The warning lines carry the
+/// full order data, full appdata, signature, and owner so the case can be
+/// re-simulated locally without going back to the database.
 fn log_simulation_outcome(
     signature: &Result<u64, SignatureValidationError>,
     simulation: &Result<(), OrderSimulationError>,
-    order_uid: OrderUid,
+    preview_order: &Order,
+    full_app_data: &str,
 ) {
+    let order_uid = preview_order.metadata.uid;
+    let owner = preview_order.metadata.owner;
+    let order_data = &preview_order.data;
+    let order_signature = &preview_order.signature;
     match (signature, simulation) {
         (
             Ok(_),
@@ -86,17 +93,31 @@ fn log_simulation_outcome(
             }),
         ) => tracing::warn!(
             ?order_uid,
+            ?owner,
+            ?order_data,
+            full_app_data,
+            ?order_signature,
             ?reason,
             ?tenderly_url,
             "order simulation disagreement: signature passed, simulation reverted",
         ),
         (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
             ?order_uid,
+            ?owner,
+            ?order_data,
+            full_app_data,
+            ?order_signature,
             "order simulation disagreement: signature invalid, simulation passed",
         ),
-        (_, Err(OrderSimulationError::Infra(err))) => {
-            tracing::warn!(?order_uid, ?err, "order simulation infra error")
-        }
+        (_, Err(OrderSimulationError::Infra(err))) => tracing::warn!(
+            ?order_uid,
+            ?owner,
+            ?order_data,
+            full_app_data,
+            ?order_signature,
+            ?err,
+            "order simulation infra error",
+        ),
         _ => {}
     }
 }
@@ -467,7 +488,7 @@ impl OrderValidator {
                     simulation_with_timeout(config, preview_order, &full_app_data).await;
                 // No signature outcome to compare against, so synthesize a
                 // signature-pass: only simulation reverts and infra errors log.
-                log_simulation_outcome(&Ok(0), &simulation, preview_order.metadata.uid);
+                log_simulation_outcome(&Ok(0), &simulation, preview_order, &full_app_data);
             }
             return Ok(0u64);
         }
@@ -505,7 +526,7 @@ impl OrderValidator {
         let simulation_fut = simulation_with_timeout(config, preview_order, &full_app_data);
         let (signature_res, simulation) = tokio::join!(signature_fut, simulation_fut);
 
-        log_simulation_outcome(&signature_res, &simulation, preview_order.metadata.uid);
+        log_simulation_outcome(&signature_res, &simulation, preview_order, &full_app_data);
 
         signature_res.map_err(|err| match err {
             SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),

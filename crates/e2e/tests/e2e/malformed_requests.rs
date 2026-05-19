@@ -514,6 +514,11 @@ async fn http_validation(web3: Web3) {
         "error description should name the failing field. Got: {}",
         body.description
     );
+    assert!(
+        body.description.contains(bad_app_data),
+        "error description should include the bad value. Got: {}",
+        body.description
+    );
 }
 
 #[tokio::test]
