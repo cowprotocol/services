@@ -17,12 +17,15 @@ use {
         types::{ByteCapacity, Message},
     },
     serde::Serialize,
+    std::future::Future,
     tokio::sync::{
         OnceCell,
         mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     },
 };
 
+/// Channel to buffer emitted events until we have enough to send a bunch of
+/// them at once.
 static EVENT_QUEUE: OnceCell<UnboundedSender<Message>> = OnceCell::const_new();
 
 /// Configuration options describing to which RabbitMQ instance to connect to.
@@ -31,12 +34,13 @@ pub struct ClientConfig {
     port: u16,
 }
 
-/// Configuration options describing which RabbitMQ channel to publish messages in.
+/// Configuration options describing which RabbitMQ channel to publish messages
+/// in.
 pub struct ChannelConfig {
     name: String,
     size: ByteCapacity,
-    /// Number of messages to buffer in-memory before actually sending them to the
-    /// event bus service running in a different process.
+    /// Number of messages to buffer in-memory before actually sending them to
+    /// the event bus service running in a different process.
     batch_size: usize,
 }
 
@@ -46,7 +50,7 @@ pub struct Config {
 }
 
 /// Initializes the event bus and panics if it fails.
-pub async fn init(config: Config, shutdown: impl Future<Output = ()>) {
+pub async fn init(config: Config, shutdown: impl Future<Output = ()> + Send + 'static) {
     EVENT_QUEUE
         .get_or_init(|| async move {
             let environment = Environment::builder()
@@ -71,7 +75,7 @@ pub async fn init(config: Config, shutdown: impl Future<Output = ()>) {
                 .expect("failed to create producer");
 
             let (sender, receiver) = unbounded_channel();
-            tokio::task::spawn(publish_events(
+            tokio::task::spawn(forward_messages_to_event_bus_client(
                 receiver,
                 producer,
                 config.channel.batch_size,
@@ -82,35 +86,58 @@ pub async fn init(config: Config, shutdown: impl Future<Output = ()>) {
         .await;
 }
 
-/// Buffers incoming messages and sends a batch once the target batch size
-/// has been reached.
-// TODO: flush half filled buffer during program shutdown to not miss any
-// events
-async fn publish_events(
+async fn send_batch(producer: &Producer<NoDedup>, messages: Vec<Message>) {
+    if let Err(err) = producer
+        .batch_send(messages, |res| async move {
+            match res {
+                Ok(status) => tracing::trace!(?status, "messages confirmed"),
+                Err(err) => tracing::error!(?err, "failed to send messages"),
+            }
+        })
+        .await
+    {
+        tracing::error!(?err, "failed to enqueue messages");
+    }
+}
+
+/// Buffers incoming messages and sends a batch once the target batch size has
+/// been reached. When `shutdown` resolves, flushes any buffered messages and
+/// switches to publishing each subsequent message immediately.
+async fn forward_messages_to_event_bus_client(
     mut receiver: UnboundedReceiver<Message>,
     producer: Producer<NoDedup>,
     batch_size: usize,
-    shutdown: impl Future<Output = ()>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
 ) {
     let mut buffer = Vec::with_capacity(batch_size);
-    while let Some(message) = receiver.recv().await {
-        buffer.push(message);
+    tokio::pin!(shutdown);
 
-        if buffer.len() >= batch_size {
-            // swap out filled buffer with empty pre-allocated buffer
-            let mut messages = Vec::with_capacity(batch_size);
-            std::mem::swap(&mut messages, &mut buffer);
-
-            let send_messages = producer.batch_send(messages, |res| async move {
-                match res {
-                    Ok(status) => tracing::trace!(?status, "messages confirmed"),
-                    Err(err) => tracing::error!(?err, "failed to send messages"),
+    // Normal mode: buffer messages and send in batches.
+    loop {
+        tokio::select! {
+            _ = &mut shutdown => break,
+            maybe_message = receiver.recv() => {
+                let Some(message) = maybe_message else {
+                    tracing::debug!("event queue was closed");
+                    return;
+                };
+                buffer.push(message);
+                if buffer.len() >= batch_size {
+                    let mut messages = Vec::with_capacity(batch_size);
+                    std::mem::swap(&mut messages, &mut buffer);
+                    send_batch(&producer, messages).await;
                 }
-            });
-            if let Err(err) = send_messages.await {
-                tracing::error!(?err, "failed to enqueue messages");
             }
         }
+    }
+
+    // Shutdown mode: flush the buffer, then publish each subsequent message
+    // immediately without waiting to fill a batch.
+    if !buffer.is_empty() {
+        send_batch(&producer, std::mem::take(&mut buffer)).await;
+    }
+    while let Some(message) = receiver.recv().await {
+        send_batch(&producer, vec![message]).await;
     }
 }
 
