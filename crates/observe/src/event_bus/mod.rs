@@ -68,11 +68,15 @@ pub fn publish(name: impl Into<String>, data: impl Serialize) {
         return;
     };
 
-    let message = json!({
+    let mut message = json!({
+        "version": "v1",
         "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         "name": name.into(),
         "body": data,
     });
+    if let Some(id) = crate::tracing::distributed::request_id::from_current_span() {
+        message["requestId"] = id.into();
+    }
     let body = match serde_json::to_vec(&message) {
         Ok(body) => body,
         Err(err) => {
