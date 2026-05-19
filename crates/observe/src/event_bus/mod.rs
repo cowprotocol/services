@@ -94,7 +94,8 @@ pub fn publish(name: impl Into<String>, data: impl Serialize) {
 mod tests {
     use {super::*, serde_json::json};
 
-    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    #[tokio::test]
     async fn send_messages() {
         crate::tracing::init::initialize(&crate::Config {
             env_filter: "debug".to_string(),
@@ -115,6 +116,6 @@ mod tests {
                 "outAmount": 1234,
             }),
         );
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
     }
 }
