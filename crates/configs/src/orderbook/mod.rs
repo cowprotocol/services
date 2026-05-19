@@ -236,6 +236,7 @@ mod tests {
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
         hide-competition-before-deadline = true
+        order-simulation-timeout = "3s"
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
@@ -261,8 +262,6 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
-
-        order-simulation-timeout = "3s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
