@@ -12,7 +12,6 @@ use {
     futures::{FutureExt, StreamExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
-    std::iter,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -143,9 +142,7 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let mut stats: Vec<Outcome> = iter::repeat_with(|| Outcome::Pending)
-            .take(self.mempools.len())
-            .collect();
+        let mut stats = vec![Outcome::Pending; self.mempools.len()];
 
         let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
             |(mempool, stat)| {
