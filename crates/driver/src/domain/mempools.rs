@@ -51,9 +51,8 @@ pub struct Mempools {
 
 #[derive(Clone, Copy)]
 enum Outcome {
-    /// Future was dropped before completing — observed as `Superseded` at the
-    /// metric layer.
-    Pending,
+    /// Submission future was dropped because another mempool won the race.
+    Superseded,
     Success {
         blocks_passed: u64,
     },
@@ -84,7 +83,7 @@ impl FailureReason {
 impl Outcome {
     fn metric_label(self) -> &'static str {
         match self {
-            Outcome::Pending => "Superseded",
+            Outcome::Superseded => "Superseded",
             Outcome::Success { .. } => "Success",
             Outcome::Failed { reason, .. } => reason.metric_label(),
             Outcome::Disabled => "Disabled",
@@ -93,7 +92,7 @@ impl Outcome {
 
     fn blocks_passed(self) -> Option<u64> {
         match self {
-            Outcome::Pending | Outcome::Disabled => None,
+            Outcome::Superseded | Outcome::Disabled => None,
             Outcome::Success { blocks_passed } => Some(blocks_passed),
             Outcome::Failed { blocks_passed, .. } => blocks_passed,
         }
@@ -142,7 +141,7 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let mut stats = vec![Outcome::Pending; self.mempools.len()];
+        let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
         let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
             |(mempool, stat)| {
@@ -483,7 +482,7 @@ impl Mempools {
         // practice).
         for (mempool, &outcome) in self.mempools.iter().zip_eq(stats.iter()) {
             let label = match outcome {
-                Outcome::Failed { .. } if winner_exists => "Superseded",
+                Outcome::Failed { .. } if winner_exists => Outcome::Superseded.metric_label(),
                 other => other.metric_label(),
             };
             observe::mempool_submission_result(mempool, label, outcome.blocks_passed());
