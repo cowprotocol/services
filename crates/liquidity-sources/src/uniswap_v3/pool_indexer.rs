@@ -1,6 +1,6 @@
-//! HTTP client for CoW Protocol's own pool-indexer service. Implements
-//! [`V3PoolDataSource`] so the driver can swap this in place of the subgraph
-//! client without touching anything else.
+//! HTTP client for the Uniswap V3 pool-indexer service. Implements
+//! [`V3PoolDataSource`] so the driver can swap this in place of the
+//! subgraph client without touching anything else.
 //!
 //! The pool-indexer always returns at-head data — it doesn't support
 //! historical queries. `block_number` arguments are ignored; the block
