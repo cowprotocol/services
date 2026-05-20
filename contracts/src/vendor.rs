@@ -162,6 +162,10 @@ pub fn run(artifacts_dir: &Path) -> Result<()> {
             "ERC1271SignatureValidator",
             "Manually vendored ABI for ERC-1271 signature validation",
         )
+        .manual(
+            "IERC4626",
+            "Manually vendored ABI for ERC-4626 tokenized vault interface",
+        )
         .npm(
             "IUniswapLikePair",
             "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Pair.json",

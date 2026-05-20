@@ -279,19 +279,22 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        // Routes under `/restricted/api/` are not exposed publicly. WAF and
+        // infra rules restrict access to authenticated partners.
+        // New internal-only endpoints MUST use this prefix.
         (
             "GET",
-            "/api/v1/debug/order/{uid}",
+            "/restricted/api/v1/debug/order/{uid}",
             get(debug_order::debug_order_handler),
         ),
         (
             "GET",
-            "/api/v1/debug/simulation/{uid}",
+            "/restricted/api/v1/debug/simulation/{uid}",
             get(debug_simulation::debug_simulation_handler),
         ),
         (
             "POST",
-            "/api/v1/debug/simulation",
+            "/restricted/api/v1/debug/simulation",
             post(debug_simulation::debug_simulation_post_handler),
         ),
         // V2 routes
@@ -315,6 +318,11 @@ pub fn handle_all_routes(
             "GET",
             "/api/v2/trades",
             get(get_trades_v2::get_trades_handler),
+        ),
+        (
+            "GET",
+            "/restricted/api/v2/solver_competition/{auction_id}",
+            get(get_solver_competition_v2::get_solver_competition_by_id_unfiltered_handler),
         ),
     ];
 

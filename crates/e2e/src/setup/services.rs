@@ -143,6 +143,11 @@ impl<'a> Services<'a> {
                 native_token: Some(*self.contracts.weth.address()),
                 hooks: Some(*self.contracts.hooks.address()),
                 balancer_v2_vault: Some(*self.contracts.balancer_vault.address()),
+                flashloan_router: self
+                    .contracts
+                    .flashloan_router
+                    .as_ref()
+                    .map(|c| *c.address()),
             },
             ..Default::default()
         }
@@ -491,6 +496,28 @@ impl<'a> Services<'a> {
 
         let status = response.status();
         let body = response.text().await.unwrap();
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
+    pub async fn get_solver_competition_unfiltered(
+        &self,
+        auction_id: AuctionId,
+    ) -> Result<solver_competition_v2::Response, StatusCode> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}/restricted/api/v2/solver_competition/{auction_id}"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err(code),

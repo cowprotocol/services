@@ -10,7 +10,7 @@ Key steps:
 1. Parse the order UID and network from arguments (default: mainnet)
 2. **Start with the debug endpoint** — fetch the comprehensive debug report first:
    ```bash
-   source .env.claude && curl -s -H "X-API-Key: $COW_DEBUG_API_KEY" "https://partners.cow.fi/$NETWORK/api/v1/debug/order/$ORDER_UID" | jq .
+   source .env.claude && curl -s -H "X-API-Key: $COW_DEBUG_API_KEY" "https://partners.cow.fi/$NETWORK/restricted/api/v1/debug/order/$ORDER_UID" | jq .
    ```
    This returns order details, lifecycle events, auction participation, proposed solutions, executions, trades, and settlement attempts — all in one call.
 3. Analyze the debug report — key event meanings:

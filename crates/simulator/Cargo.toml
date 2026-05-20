@@ -25,6 +25,7 @@ contracts = { workspace = true }
 derive_more = { workspace = true }
 eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
+futures = { workspace = true }
 gas-price-estimation = { workspace = true }
 hex-literal = { workspace = true }
 http-client = { workspace = true }

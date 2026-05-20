@@ -51,6 +51,23 @@ pub async fn get_solver_competition_latest_handler(
         .map(Json)
 }
 
+/// Internal endpoint that skips deadline filtering (access restricted on
+/// infra level).
+pub async fn get_solver_competition_by_id_unfiltered_handler(
+    State(state): State<Arc<AppState>>,
+    Path(auction_id): Path<u64>,
+) -> Response {
+    if auction_id > AuctionId::MAX.cast_unsigned() {
+        return LoadSolverCompetitionError::NotFound.into_response();
+    }
+
+    db(&state)
+        .load_competition_by_id(auction_id.cast_signed(), None)
+        .await
+        .map(Json)
+        .into_response()
+}
+
 fn db(state: &AppState) -> &Postgres {
     // While these queries actually don't write to the DB
     // the latency incurred by the DB replication process

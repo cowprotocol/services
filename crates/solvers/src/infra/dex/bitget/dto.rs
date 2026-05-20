@@ -3,7 +3,7 @@
 
 use {
     crate::domain::{dex, eth},
-    bigdecimal::{BigDecimal, ToPrimitive},
+    bigdecimal::BigDecimal,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
@@ -98,7 +98,7 @@ impl SwapRequest {
             to_address: settlement_contract,
             // as per a suggestion by the BitGet team for the best routes on EVM chains
             market: "bgwevmaggregator".to_string(),
-            slippage: slippage.as_factor().to_f64().unwrap_or_default() * 100.0,
+            slippage: slippage.as_percent().unwrap_or_default(),
             request_mod: "rich".to_string(),
             fee_rate: Some(0.0),
         }
@@ -133,14 +133,116 @@ pub struct GasFee {
 pub struct SwapTransaction {
     /// Contract address (router/spender).
     pub to: eth::Address,
-    /// Hex-encoded calldata with "0x" prefix.
-    pub data: String,
+    /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
+    #[serde(deserialize_with = "bytes_hex::deserialize")]
+    pub data: Vec<u8>,
 }
 
-impl SwapTransaction {
-    pub fn decode_calldata(&self) -> Result<Vec<u8>, const_hex::FromHexError> {
-        const_hex::decode(&self.data)
+/// A Bitget API reverse-swap request (`requestMode = "minAmountOut"`).
+///
+/// Used for buy orders. The `amount` field carries the desired minimum amount
+/// of `to_contract` to receive, and the API returns the input amount of
+/// `from_contract` required (computed via reverse quoting).
+///
+/// See [API](https://web3.bitget.com/en/docs/trading/instruction-mode#reverse-quote-swap-api).
+#[serde_as]
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReverseSwapRequest {
+    /// Source token contract address.
+    pub from_contract: eth::Address,
+
+    /// Target token contract address.
+    pub to_contract: eth::Address,
+
+    /// Source chain name. The reverse-quote endpoint is single-chain only.
+    pub from_chain: ChainName,
+
+    /// For `requestMode = "minAmountOut"` this is the desired minimum output
+    /// amount in human-readable decimal units of `to_contract`.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub amount: BigDecimal,
+
+    /// Always `"minAmountOut"` here. We do not use this endpoint in
+    /// `"exactIn"` mode since the dedicated `/swap` endpoint covers that.
+    pub request_mode: String,
+
+    /// Debit address.
+    pub from_address: eth::Address,
+
+    /// Recipient address.
+    pub to_address: eth::Address,
+
+    /// Slippage tolerance percentage, sent as a string per the docs (e.g.
+    /// `"0.5"` for 0.5%).
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub slippage: f64,
+
+    /// Fee rate in per mille. Must be 0 or between 0.001 and 0.2.
+    pub fee_rate: f64,
+}
+
+impl ReverseSwapRequest {
+    pub fn from_order(
+        order: &dex::Order,
+        chain_name: ChainName,
+        settlement_contract: eth::Address,
+        slippage: &dex::Slippage,
+        buy_decimals: u8,
+    ) -> Self {
+        Self {
+            from_contract: order.sell.0,
+            to_contract: order.buy.0,
+            from_chain: chain_name,
+            amount: super::wei_to_decimal(order.amount.get(), buy_decimals),
+            request_mode: "minAmountOut".to_string(),
+            from_address: settlement_contract,
+            to_address: settlement_contract,
+            slippage: slippage.as_percent().unwrap_or_default(),
+            fee_rate: 0.0,
+        }
     }
+}
+
+/// A Bitget API reverse-swap response.
+#[serde_as]
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReverseSwapResponse {
+    /// Input amount the recursion converged on, in decimal units of the
+    /// `from_contract` token.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub amount_in: BigDecimal,
+
+    /// Expected output amount, in decimal units of the `to_contract` token.
+    /// Slightly above the requested `amount` (the on-chain minimum).
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub expected_amount_out: BigDecimal,
+
+    /// Transactions to execute. Typically a single entry.
+    pub txs: Vec<ReverseSwapTx>,
+}
+
+#[serde_as]
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReverseSwapTx {
+    /// Target contract address (router/spender).
+    pub to: eth::Address,
+
+    /// Decoded calldata bytes (Bitget sends a `"0x..."` hex string).
+    #[serde(deserialize_with = "bytes_hex::deserialize")]
+    pub calldata: Vec<u8>,
+
+    /// Function name. Observed values include `"swap"`. Other values
+    /// (e.g. `"approve"`) likely appear for setup transactions in
+    /// multi-tx responses.
+    #[serde(default)]
+    pub function: String,
+
+    /// Gas limit estimate.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub gas_limit: u64,
 }
 
 /// A Bitget API response wrapper.

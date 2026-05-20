@@ -23,17 +23,46 @@ const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
 
 /// Ensure EIP-7702 delegation and caller approval are set up for all solvers
 /// with parallel submission accounts. Called once at driver startup.
+///
+/// # Errors
+/// - `max-solutions-to-propose > 1` without any `submission-accounts`
+///   configured (parallel submission is required for multi-solution mode).
+/// - `submission-accounts` configured without a `forwarder-contract` address.
+/// - `submission-accounts` configured but the main solver account is read-only,
+///   so it cannot sign the EIP-7702 authorization.
+/// - The EIP-7702 delegation tx lands but the on-chain code does not reflect
+///   the expected designator (e.g. a concurrent tx shifted the nonce).
+/// - Any underlying RPC error (code fetch, chain id, tx send, receipt).
 #[instrument(name = "setup_eip7702", skip_all)]
 pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     for solver in solvers {
         let config = solver.config();
         if config.submission_accounts.is_empty() {
+            anyhow::ensure!(
+                config.max_solutions_to_propose.get() == 1,
+                "solver '{}': max-solutions-to-propose > 1 requires at least one \
+                 submission-account (EIP-7702 parallel submission must be enabled)",
+                config.name,
+            );
             continue;
         }
-        if matches!(config.account, super::Account::Address(_)) {
-            tracing::debug!(solver = %config.name, "read-only mode, skipping EIP-7702 setup");
+        if config
+            .submission_accounts
+            .iter()
+            .all(|a| matches!(a, super::Account::Address(_)))
+        {
+            tracing::debug!(
+                solver = %config.name,
+                "all submission accounts are read-only, skipping EIP-7702 setup"
+            );
             continue;
         }
+        anyhow::ensure!(
+            !matches!(config.account, super::Account::Address(_)),
+            "solver '{}': main account must be a signer to set up EIP-7702 delegation when \
+             submission accounts are configured",
+            config.name,
+        );
         let forwarder = config.forwarder_contract.ok_or_else(|| {
             anyhow::anyhow!(
                 "solver {}: submission_accounts configured but forwarder_contract missing",

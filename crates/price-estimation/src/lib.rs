@@ -3,11 +3,11 @@ pub use configs::{
     price_estimation::QuoteVerificationMode,
 };
 use {
-    crate::trade_finding::{Interaction, QuoteExecution},
+    crate::trade_finding::QuoteExecution,
     alloy::primitives::{Address, U256},
     anyhow::Result,
     futures::future::BoxFuture,
-    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    model::order::OrderKind,
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     serde::{Deserialize, Serialize},
@@ -169,14 +169,18 @@ pub struct Verification {
     pub from: Address,
     /// This address will receive the `buy_token`.
     pub receiver: Address,
-    /// These interactions will be executed before the trade.
-    pub pre_interactions: Vec<Interaction>,
-    /// These interactions will be executed after the trade.
-    pub post_interactions: Vec<Interaction>,
-    /// `sell_token` will be taken via this approach.
-    pub sell_token_source: SellTokenSource,
-    /// `buy_token` will be sent via this approach.
-    pub buy_token_destination: BuyTokenDestination,
+    /// App data provided with the quote that encodes things like
+    /// hooks and custom wrappers.
+    pub app_data: Arc<String>,
+}
+
+impl Verification {
+    pub fn effective_receiver(&self) -> &Address {
+        match self.receiver.is_zero() {
+            true => &self.from,
+            false => &self.receiver,
+        }
+    }
 }
 
 #[derive(Clone, derive_more::Debug, Default, Eq, PartialEq, Deserialize)]

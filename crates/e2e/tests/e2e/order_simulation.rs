@@ -1,10 +1,19 @@
 use {
-    alloy::{primitives::Address, providers::Provider},
+    alloy::{
+        primitives::{Address, ruint::aliases::U256},
+        providers::Provider,
+    },
     configs::test_util::TestDefault,
     e2e::setup::{API_HOST, OnchainComponents, Services, TIMEOUT, run_test, wait_for_condition},
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
-        order::{OrderCreation, OrderKind},
+        order::{
+            BuyTokenDestination,
+            OrderCreation,
+            OrderCreationAppData,
+            OrderKind,
+            SellTokenSource,
+        },
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
@@ -50,20 +59,58 @@ async fn custom_order_simulation(web3: Web3) {
         .await;
 
     let client = services.client();
+    let valid_to = model::time::now_in_epoch_seconds() + 100;
+
     let sell_amount = 1u64.eth();
-    let request = orderbook::dto::OrderSimulationRequest {
+    let app_data = "{}";
+
+    // Sign an OrderCreation with the same fields the simulation will encode.
+    // simulate_custom_order hashes `app_data` with keccak256; OrderCreation::Full
+    // does the same, so the signature covers exactly the same OrderData hash.
+    let signed = OrderCreation {
         sell_token: *token.address(),
         buy_token: *onchain.contracts().weth.address(),
-        sell_amount: sell_amount.try_into().expect("Sell amount is non zero"),
+        sell_amount,
         buy_amount: 1u64.eth(),
         kind: OrderKind::Sell,
-        owner: trader.address(),
+        receiver: Some(Address::default()),
+        sell_token_balance: SellTokenSource::Erc20,
+        buy_token_balance: BuyTokenDestination::Erc20,
+        fee_amount: U256::ZERO,
+        valid_to,
+        app_data: OrderCreationAppData::Full {
+            full: app_data.to_string(),
+        },
+        partially_fillable: false,
         ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+
+    let request = orderbook::dto::OrderSimulationRequest {
+        sell_token: signed.sell_token,
+        buy_token: signed.buy_token,
+        sell_amount: signed.sell_amount.try_into().unwrap(),
+        buy_amount: signed.buy_amount,
+        kind: signed.kind,
+        owner: trader.address(),
+        receiver: signed.receiver,
+        sell_token_balance: signed.sell_token_balance,
+        buy_token_balance: signed.buy_token_balance,
+        app_data: app_data.to_string(),
+        block_number: None,
+        signature: signed.signature,
+        fee_amount: signed.fee_amount,
+        valid_to: signed.valid_to,
+        partially_fillable: signed.partially_fillable,
     };
 
     // Trader has no sell tokens — simulation should revert.
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&request)
         .send()
         .await
@@ -87,7 +134,7 @@ async fn custom_order_simulation(web3: Web3) {
 
     // Simulation should now succeed.
     let response = client
-        .post(format!("{API_HOST}/api/v1/debug/simulation"))
+        .post(format!("{API_HOST}/restricted/api/v1/debug/simulation"))
         .json(&request)
         .send()
         .await
@@ -183,7 +230,7 @@ async fn order_simulation(web3: Web3) {
     // Simulation at the block where the trader had no WETH must fail.
     let response = client
         .get(format!(
-            "{API_HOST}/api/v1/debug/simulation/{uid}?block_number={block_no_funds}"
+            "{API_HOST}/restricted/api/v1/debug/simulation/{uid}?block_number={block_no_funds}"
         ))
         .send()
         .await
@@ -199,7 +246,7 @@ async fn order_simulation(web3: Web3) {
     // Simulation at the block where the trader has WETH must succeed.
     let response = client
         .get(format!(
-            "{API_HOST}/api/v1/debug/simulation/{uid}?block_number={block_with_funds}"
+            "{API_HOST}/restricted/api/v1/debug/simulation/{uid}?block_number={block_with_funds}"
         ))
         .send()
         .await
@@ -215,7 +262,9 @@ async fn order_simulation(web3: Web3) {
     // Simulation at the latest block (block_number parameter omitted), must
     // succeed.
     let response = client
-        .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
+        .get(format!(
+            "{API_HOST}/restricted/api/v1/debug/simulation/{uid}"
+        ))
         .send()
         .await
         .unwrap();
@@ -313,7 +362,9 @@ async fn order_simulation_partial_fill(web3: Web3) {
 
     // filledAmount=0 on-chain; full 4 WETH needed; trader only has 1 → must fail.
     let response = client
-        .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
+        .get(format!(
+            "{API_HOST}/restricted/api/v1/debug/simulation/{uid}"
+        ))
         .send()
         .await
         .unwrap();
@@ -356,7 +407,9 @@ async fn order_simulation_partial_fill(web3: Web3) {
     // Without reading on-chain fill state the simulator would need the full
     // 4 WETH from the trader (who only holds ~2) and revert.
     let response = client
-        .get(format!("{API_HOST}/api/v1/debug/simulation/{uid}"))
+        .get(format!(
+            "{API_HOST}/restricted/api/v1/debug/simulation/{uid}"
+        ))
         .send()
         .await
         .unwrap();

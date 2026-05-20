@@ -13,12 +13,14 @@ use {
 };
 
 mod coingecko;
+mod eip4626;
 pub mod fallback;
 mod forwarder;
 mod oneinch;
 
 pub use self::{
     coingecko::CoinGecko,
+    eip4626::Eip4626,
     fallback::FallbackNativePriceEstimator,
     forwarder::Forwarder,
     oneinch::OneInch,

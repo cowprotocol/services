@@ -10,7 +10,7 @@ use {
 };
 
 impl SolveResponse {
-    pub fn new(solved: Option<competition::Solved>, solver: &Solver) -> Self {
+    pub fn new(solved: Vec<competition::Solved>, solver: &Solver) -> Self {
         let solutions = solved
             .into_iter()
             .map(|solved| Solution::new(solved.id.get(), solved, solver))

@@ -170,7 +170,7 @@ mod tests {
     use {
         super::*,
         alloy_primitives::address,
-        balance_overrides::DummyOverrider,
+        balance_overrides::DummyStateOverrider,
         contracts::GPv2Settlement,
         ethrpc::Web3,
         model::order::SellTokenSource,
@@ -196,7 +196,7 @@ mod tests {
                 balances,
                 address!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
                 Some(address!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
-                Arc::new(DummyOverrider),
+                Arc::new(DummyStateOverrider),
             ),
         );
 

@@ -48,6 +48,7 @@ pub use {
     cow_contract_honeyswaprouter as HoneyswapRouter,
     cow_contract_hookstrampoline as HooksTrampoline,
     cow_contract_icowwrapper as ICowWrapper,
+    cow_contract_ierc4626 as IERC4626,
     cow_contract_iswaprpair as ISwaprPair,
     cow_contract_iuniswaplikepair as IUniswapLikePair,
     cow_contract_iuniswaplikerouter as IUniswapLikeRouter,
@@ -74,7 +75,6 @@ pub mod support {
         cow_contract_solver as Solver,
         cow_contract_spardose as Spardose,
         cow_contract_swapper as Swapper,
-        cow_contract_trader as Trader,
     };
 }
 pub mod test {
@@ -82,6 +82,7 @@ pub mod test {
         cow_contract_counter as Counter,
         cow_contract_cowprotocoltoken as CowProtocolToken,
         cow_contract_gashog as GasHog,
+        cow_contract_mockerc4626wrapper as MockERC4626Wrapper,
         cow_contract_nonstandarderc20balances as NonStandardERC20Balances,
         cow_contract_remoteerc20balances as RemoteERC20Balances,
     };

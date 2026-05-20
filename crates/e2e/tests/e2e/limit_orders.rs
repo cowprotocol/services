@@ -102,8 +102,8 @@ async fn local_node_buy_order_with_haircut() {
 
 /// The block number from which we will fetch state for the forked tests.
 const FORK_BLOCK_MAINNET: u64 = 24843565;
-/// USDC whale address as per [FORK_BLOCK_MAINNET].
-const USDC_WHALE_MAINNET: Address = address!("28c6c06298d514db089934071355e5743bf21d60");
+/// USDT whale address as per [FORK_BLOCK_MAINNET].
+const USDT_WHALE_MAINNET: Address = address!("F977814e90dA44bFA03b6295A0616a897441aceC");
 
 #[tokio::test]
 #[ignore]
@@ -981,12 +981,12 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         web3.provider.clone(),
     );
 
-    // Give trader some USDC
+    // Give trader some USDT
     web3.provider
         .anvil_send_impersonated_transaction_with_config(
-            token_usdc
+            token_usdt
                 .transfer(trader.address(), 1000u64.matom())
-                .from(USDC_WHALE_MAINNET)
+                .from(USDT_WHALE_MAINNET)
                 .into_transaction_request(),
             ImpersonateConfig {
                 fund_amount: None,
@@ -1000,7 +1000,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         .unwrap();
 
     // Approve GPv2 for trading
-    token_usdc
+    token_usdt
         .approve(onchain.contracts().allowance, 1000u64.matom())
         .from(trader.address())
         .send_and_watch()
@@ -1014,9 +1014,9 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     onchain.mint_block().await;
 
     let order = OrderCreation {
-        sell_token: *token_usdc.address(),
+        sell_token: *token_usdt.address(),
         sell_amount: 1000u64.matom(),
-        buy_token: *token_usdt.address(),
+        buy_token: *token_usdc.address(),
         buy_amount: 500u64.matom(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -1032,8 +1032,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: *token_usdc.address(),
-            buy_token: *token_usdt.address(),
+            sell_token: *token_usdt.address(),
+            buy_token: *token_usdc.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: (1000u64.matom()).try_into().unwrap(),
@@ -1043,8 +1043,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         })
         .await;
 
-    let sell_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
-    let buy_token_balance_before = token_usdt.balanceOf(trader.address()).call().await.unwrap();
+    let sell_token_balance_before = token_usdt.balanceOf(trader.address()).call().await.unwrap();
+    let buy_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
@@ -1054,8 +1054,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        let sell_token_balance_after = token_usdc.balanceOf(trader.address()).call().await.unwrap();
-        let buy_token_balance_after = token_usdt.balanceOf(trader.address()).call().await.unwrap();
+        let sell_token_balance_after = token_usdt.balanceOf(trader.address()).call().await.unwrap();
+        let buy_token_balance_after = token_usdc.balanceOf(trader.address()).call().await.unwrap();
 
         (sell_token_balance_before > sell_token_balance_after)
             && (buy_token_balance_after >= buy_token_balance_before + 500u64.matom())

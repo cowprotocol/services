@@ -1,11 +1,19 @@
 eip1271-skip-creation-validation = true
+bind-address = "0.0.0.0:80"
 
-[order-quoting]
-price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]
+[shared]
+node-url = "http://chain:8545"
+simulation-node-url = "http://chain:8545"
 
-[native-price-estimation]
-estimators = [[{ type = "Driver", name = "baseline", url = "http://driver/baseline" }]]
+[shared.tracing]
+collector-endpoint = "http://tempo:4317"
 
 [database]
 write-url = "%DB_WRITE_URL"
 read-url = "%DB_READ_URL"
+
+[native-price-estimation]
+estimators = [[{ type = "Driver", name = "baseline", url = "http://driver/baseline" }]]
+
+[order-quoting]
+price-estimation-drivers = [{ name = "baseline", url = "http://driver/baseline" }]

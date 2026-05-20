@@ -160,6 +160,21 @@ async fn solver_competition(web3: Web3) {
         StatusCode::NOT_FOUND,
     );
 
+    // The internal (unfiltered) endpoint returns the data regardless.
+    let auction_id: i64 = {
+        let mut db = services.db().acquire().await.unwrap();
+        sqlx::query_scalar("SELECT id FROM competition_auctions ORDER BY id DESC LIMIT 1")
+            .fetch_one(&mut *db)
+            .await
+            .unwrap()
+    };
+    assert!(
+        services
+            .get_solver_competition_unfiltered(auction_id)
+            .await
+            .is_ok()
+    );
+
     // The indexed_trades poll mints a block on every iteration, which will
     // advance past the 3-block deadline while also waiting for the event
     // indexer to pick up the settlement.

@@ -15,6 +15,7 @@ use {
             TradeKind,
             map_interactions_data,
         },
+        trade_verifier::PriceQuery,
     },
     anyhow::{Context, anyhow},
     ethrpc::block_stream::CurrentBlockWatcher,
@@ -337,12 +338,12 @@ impl TradeFinding for ExternalTradeFinder {
             .map_err(TradeError::Other)?;
         Ok(Quote {
             out_amount: trade
-                .out_amount(
-                    &query.buy_token,
-                    &query.sell_token,
-                    &query.in_amount.get(),
-                    &query.kind,
-                )
+                .out_amount(&PriceQuery {
+                    sell_token: query.sell_token,
+                    buy_token: query.buy_token,
+                    kind: query.kind,
+                    in_amount: query.in_amount,
+                })
                 .map_err(TradeError::Other)?,
             gas_estimate,
             solver: trade.solver(),

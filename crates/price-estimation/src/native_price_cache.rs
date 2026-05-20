@@ -193,13 +193,24 @@ impl Cache {
         self.0.max_age
     }
 
-    /// Returns a randomized `updated_at` timestamp that is 50-90% of max_age
-    /// in the past, to avoid spikes of expired prices all being fetched at
-    /// once.
+    /// Returns a timestamp that is a `percentage` of `max_age`
+    /// in the past. Clamps to `now` if an underflow occurs.
+    fn updated_at_percentage(max_age: Duration, now: Instant, percentage: u32) -> Instant {
+        let percentage = std::cmp::min(percentage, 100);
+        max_age
+            // Duration stores secs in u64, so overflow happens at u64::MAX
+            .checked_mul(percentage)
+            .and_then(|age| age.checked_div(100))
+            .and_then(|age| now.checked_sub(age))
+            .unwrap_or(now)
+    }
+
+    /// Returns a randomized `updated_at_percentage` timestamp that is 50–90% of
+    /// `max_age` in the past, to avoid spikes of expired prices all being
+    /// fetched at once.
     fn random_updated_at(max_age: Duration, now: Instant, rng: &mut impl Rng) -> Instant {
-        let percent_expired = rng.random_range(50..=90);
-        let age = max_age.as_secs() * percent_expired / 100;
-        now - Duration::from_secs(age)
+        let percent_expired: u32 = rng.random_range(50..=90);
+        Self::updated_at_percentage(max_age, now, percent_expired)
     }
 
     fn len(&self) -> usize {
@@ -544,6 +555,7 @@ mod tests {
         anyhow::anyhow,
         futures::FutureExt,
         num::ToPrimitive,
+        rand::{SeedableRng, rngs::StdRng},
     };
 
     fn token(u: u64) -> Address {
@@ -1142,5 +1154,46 @@ mod tests {
         assert!(!should_cache(&Err(PriceEstimationError::ProtocolInternal(
             anyhow!("protocol")
         ))));
+    }
+
+    #[test]
+    fn updated_at_percentage_overflow_check() {
+        let now = Instant::now();
+        let age = Duration::MAX;
+        let updated_at = Cache::updated_at_percentage(age, now, 90);
+        assert_eq!(updated_at, now);
+    }
+
+    #[test]
+    fn updated_at_percent_edges() {
+        let now = Instant::now();
+        let max_age = Duration::from_secs(600);
+        let cases = [
+            (0, now),                              // 0%
+            (50, now - Duration::from_secs(300)),  // 50%
+            (90, now - Duration::from_secs(540)),  // 90%
+            (100, now - Duration::from_secs(600)), // 100%
+        ];
+
+        for (percentage, expected) in cases {
+            assert_eq!(
+                Cache::updated_at_percentage(max_age, now, percentage),
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn random_updated_at_range() {
+        let now = Instant::now();
+        let max_age = Duration::from_secs(600);
+        let mut rng = StdRng::seed_from_u64(0);
+        let min = now - (max_age * 90 / 100);
+        let max = now - (max_age * 50 / 100);
+
+        for _ in 0..100 {
+            let updated_at = Cache::random_updated_at(max_age, now, &mut rng);
+            assert!(updated_at >= min && updated_at <= max);
+        }
     }
 }

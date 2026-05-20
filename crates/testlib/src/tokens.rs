@@ -34,3 +34,12 @@ pub const MKR: Address = address!("9f8F72aA9304c8B593d555F12eF6589cC3A579A2");
 
 /// Address for the `WBTC` token.
 pub const WBTC: Address = address!("2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599");
+
+/// Address for the `BNT` (Bancor Network Token) token.
+pub const BNT: Address = address!("1F573D6Fb3F13d689FF844B4cE37794d79a7FF1C");
+
+/// Address for the `stETH` (Lido Staked ETH) token.
+pub const STETH: Address = address!("ae7ab96520DE3A18E5e111B5EaAb095312D7fE84");
+
+/// Address for the `sUSDe` (Ethena Staked USDe) token, an EIP-4626 vault.
+pub const SUSDE: Address = address!("9D39A5DE30e57443BfF2A8307A4256c8797A3497");

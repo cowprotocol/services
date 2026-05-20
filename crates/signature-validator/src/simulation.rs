@@ -11,7 +11,7 @@ use {
     alloy_sol_types::{SolCall, sol_data},
     alloy_transport::RpcError,
     anyhow::{Context, Result},
-    balance_overrides::BalanceOverriding,
+    balance_overrides::StateOverriding,
     contracts::{
         ERC1271SignatureValidator::ERC1271SignatureValidator,
         GPv2Settlement,
@@ -27,7 +27,7 @@ pub struct Validator {
     settlement: GPv2Settlement::Instance,
     vault_relayer: Address,
     web3: Web3,
-    balance_overrider: Arc<dyn BalanceOverriding>,
+    balance_overrider: Arc<dyn StateOverriding>,
 }
 
 impl Validator {
@@ -39,7 +39,7 @@ impl Validator {
         settlement: GPv2Settlement::Instance,
         signatures_address: Address,
         vault_relayer: Address,
-        balance_overrider: Arc<dyn BalanceOverriding>,
+        balance_overrider: Arc<dyn StateOverriding>,
     ) -> Self {
         let web3 = web3.labeled("signatureValidation");
         Self {
@@ -96,7 +96,7 @@ impl Validator {
         let overrides: StateOverride = match &check.balance_override {
             Some(overrides) => self
                 .balance_overrider
-                .state_override(overrides.clone())
+                .balance_override(overrides.clone())
                 .await
                 .into_iter()
                 .collect(),

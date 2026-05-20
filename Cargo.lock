@@ -1863,6 +1863,7 @@ dependencies = [
 name = "balance-overrides"
 version = "0.1.0"
 dependencies = [
+ "alloy-contract",
  "alloy-eips",
  "alloy-primitives",
  "alloy-provider",
@@ -2539,12 +2540,14 @@ dependencies = [
  "cow-contract-honeyswaprouter",
  "cow-contract-hookstrampoline",
  "cow-contract-icowwrapper",
+ "cow-contract-ierc4626",
  "cow-contract-iswaprpair",
  "cow-contract-iuniswaplikepair",
  "cow-contract-iuniswaplikerouter",
  "cow-contract-iuniswapv3factory",
  "cow-contract-izeroex",
  "cow-contract-liquoricesettlement",
+ "cow-contract-mockerc4626wrapper",
  "cow-contract-nonstandarderc20balances",
  "cow-contract-pancakerouter",
  "cow-contract-permit2",
@@ -2556,7 +2559,6 @@ dependencies = [
  "cow-contract-swapper",
  "cow-contract-swaprrouter",
  "cow-contract-testnetuniswapv2router02",
- "cow-contract-trader",
  "cow-contract-uniswapv2factory",
  "cow-contract-uniswapv2router02",
  "cow-contract-uniswapv3pool",
@@ -3217,6 +3219,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cow-contract-ierc4626"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
 name = "cow-contract-iswaprpair"
 version = "0.1.0"
 dependencies = [
@@ -3273,6 +3286,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-liquoricesettlement"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-mockerc4626wrapper"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
@@ -3394,17 +3418,6 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-testnetuniswapv2router02"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-trader"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
@@ -3728,7 +3741,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.114",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -4004,6 +4017,7 @@ dependencies = [
  "solvers-dto",
  "sqlx",
  "tempfile",
+ "testlib",
  "tokio",
  "toml",
  "tracing",
@@ -4108,7 +4122,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6347,6 +6361,7 @@ dependencies = [
  "configs",
  "const-hex",
  "contracts",
+ "dashmap",
  "derive_more 1.0.0",
  "ethrpc",
  "futures",
@@ -7180,7 +7195,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7237,7 +7252,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7248,9 +7263,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.12"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -7677,6 +7692,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "signature-validator",
+ "simulator",
  "strum",
  "testlib",
  "thiserror 1.0.69",
@@ -7766,6 +7782,7 @@ dependencies = [
  "derive_more 1.0.0",
  "eth-domain-types",
  "ethrpc",
+ "futures",
  "gas-price-estimation",
  "hex-literal",
  "http-client",
@@ -8316,7 +8333,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

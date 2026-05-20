@@ -144,7 +144,7 @@ impl DataAggregator {
                 vault_relayer: *eth.contracts().vault_relayer(),
                 signatures: eth.contracts().signatures().clone(),
             },
-            eth.balance_overrider(),
+            eth.state_overrider(),
         );
 
         let cow_amm_helper_by_factory = eth
@@ -235,7 +235,11 @@ impl Utilities {
                 observe::metrics::metrics().on_auction_overhead_start("driver", "parse_dto");
             // deserialization takes tens of milliseconds so run it on a blocking task
             tokio::task::spawn_blocking(move || {
-                serde_json::from_slice(&solve_request).context("could not parse solve request")
+                serde_json::from_slice(&solve_request)
+                    .inspect_err(|err| {
+                        tracing::warn!(?err, "failed to parse /solve request body");
+                    })
+                    .context("could not parse solve request")
             })
             .await
             .context("failed to await blocking task")??

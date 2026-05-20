@@ -182,6 +182,9 @@ pub struct ContractAddresses {
 
     /// The Balancer V2 Vault contract used for liquidity sourcing.
     pub balancer_v2_vault: Option<Address>,
+
+    /// The flashloan router contract.
+    pub flashloan_router: Option<Address>,
 }
 
 /// Logging configuration (log filter, output format).

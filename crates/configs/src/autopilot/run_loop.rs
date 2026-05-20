@@ -24,7 +24,7 @@ const fn default_max_settlement_transaction_wait() -> Duration {
 }
 
 const fn default_solve_deadline() -> Duration {
-    Duration::from_mins(15)
+    Duration::from_secs(15)
 }
 
 /// Configuration for the autopilot run loop timing.

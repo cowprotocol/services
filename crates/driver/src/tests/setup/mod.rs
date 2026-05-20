@@ -361,6 +361,10 @@ pub struct Solver {
     merge_solutions: bool,
     /// Haircut in basis points (0-10000) for conservative bidding.
     haircut_bps: u32,
+    /// Maximum number of solutions the driver proposes per auction.
+    max_solutions_to_propose: usize,
+    /// Additional submission accounts for EIP-7702 parallel settlement.
+    submission_accounts: Vec<eth::Address>,
 }
 
 #[derive(Debug, Clone)]
@@ -388,6 +392,8 @@ pub fn test_solver() -> Solver {
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
         haircut_bps: 0,
+        max_solutions_to_propose: 1,
+        submission_accounts: vec![],
     }
 }
 
@@ -432,6 +438,16 @@ impl Solver {
             haircut_bps,
             ..self
         }
+    }
+
+    pub fn max_solutions_to_propose(mut self, n: usize) -> Self {
+        self.max_solutions_to_propose = n;
+        self
+    }
+
+    pub fn submission_account(mut self, address: eth::Address) -> Self {
+        self.submission_accounts.push(address);
+        self
     }
 }
 
@@ -1265,7 +1281,7 @@ impl<'a> Solve<'a> {
 }
 
 impl SolveOk<'_> {
-    fn solutions(&self) -> Vec<serde_json::Value> {
+    pub fn solutions(&self) -> Vec<serde_json::Value> {
         #[derive(serde::Deserialize)]
         struct Body {
             solutions: Vec<serde_json::Value>,
@@ -1285,9 +1301,8 @@ impl SolveOk<'_> {
             .to_owned()
     }
 
-    /// Extracts the first solution from the response. This is expected to be
-    /// always valid if there is a valid solution, as we expect from driver to
-    /// not send multiple solutions (yet).
+    /// Extracts the only solution from the response. Panics if the response
+    /// contains more than one solution (i.e. `max-solutions-to-propose > 1`).
     pub fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);

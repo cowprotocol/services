@@ -8,7 +8,7 @@ use {
         rpc::types::{TransactionReceipt, TransactionRequest},
         transports::TransportErrorKind,
     },
-    balance_overrides::{BalanceOverrides, BalanceOverriding},
+    balance_overrides::{StateOverrides, StateOverriding},
     chain::Chain,
     eth_domain_types as eth,
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
@@ -90,7 +90,8 @@ struct Inner {
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockWatcher,
     balance_simulator: BalanceSimulator,
-    balance_overrider: Arc<dyn BalanceOverriding>,
+    state_overrider: Arc<dyn StateOverriding>,
+    tx_gas_limit: eth::Gas,
 }
 
 impl Ethereum {
@@ -105,6 +106,7 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
         current_block_args: &shared::current_block::Arguments,
+        tx_gas_limit: eth::Gas,
     ) -> Self {
         let Rpc { web3, chain, args } = rpc;
         let current_block_stream = current_block_args
@@ -115,13 +117,13 @@ impl Ethereum {
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
             .expect("could not initialize important smart contracts");
-        let balance_overrider = Arc::new(BalanceOverrides::new(web3.clone()));
+        let state_overrider = Arc::new(StateOverrides::new(web3.clone()));
         let balance_simulator = BalanceSimulator::new(
             contracts.settlement().clone(),
             contracts.balance_helper().clone(),
             *contracts.vault_relayer(),
             Some(*contracts.vault().address()),
-            balance_overrider.clone(),
+            state_overrider.clone(),
         );
 
         Self {
@@ -131,7 +133,8 @@ impl Ethereum {
                 contracts,
                 gas,
                 balance_simulator,
-                balance_overrider,
+                state_overrider,
+                tx_gas_limit,
             }),
             web3,
         }
@@ -145,8 +148,8 @@ impl Ethereum {
         &self.inner.balance_simulator
     }
 
-    pub fn balance_overrider(&self) -> Arc<dyn BalanceOverriding> {
-        Arc::clone(&self.inner.balance_overrider)
+    pub fn state_overrider(&self) -> Arc<dyn StateOverriding> {
+        Arc::clone(&self.inner.state_overrider)
     }
 
     /// Clones self and returns an instance that captures metrics extended with
@@ -188,6 +191,12 @@ impl Ethereum {
 
     pub fn block_gas_limit(&self) -> eth::Gas {
         self.inner.current_block.borrow().gas_limit.into()
+    }
+
+    /// Per-transaction gas limit configured for this driver. Operators set
+    /// this per chain (e.g. EIP-7825's 16,777,215 cap on Fusaka chains).
+    pub fn tx_gas_limit(&self) -> eth::Gas {
+        self.inner.tx_gas_limit
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.

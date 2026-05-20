@@ -85,7 +85,7 @@ impl UniswapV2 {
     /// Returns the liquidity configuration for Honeyswap.
     pub fn honeyswap(chain: Chain) -> Option<Self> {
         Some(Self {
-            router: ContractAddress::from(contracts::BaoswapRouter::deployment_address(
+            router: ContractAddress::from(contracts::HoneyswapRouter::deployment_address(
                 &chain.id(),
             )?),
             pool_code: HONEYSWAP_INIT.into(),

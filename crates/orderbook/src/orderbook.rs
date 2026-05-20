@@ -5,25 +5,22 @@ use {
             trades::{TradeFilter, TradeRetrieving},
         },
         dto::{self, OrderSimulationRequest, OrderSimulationResult},
-        order_simulator::{self, OrderSimulator},
         solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     },
-    alloy::primitives::{Address, B256},
+    alloy::primitives::{Address, B256, keccak256},
     anyhow::{Context, Result, anyhow},
-    app_data::{AppDataHash, Validator, WrapperCall},
+    app_data::{AppDataHash, Validator},
     bigdecimal::ToPrimitive,
     chrono::Utc,
     database::order_events::OrderEventLabel,
     model::{
         DomainSeparator,
         order::{
-            Interactions,
             Order,
             OrderCancellation,
             OrderCreation,
             OrderCreationAppData,
             OrderData,
-            OrderMetadata,
             OrderStatus,
             OrderUid,
             SignedOrderCancellations,
@@ -42,6 +39,7 @@ use {
             is_order_outside_market_price,
         },
     },
+    simulator::simulation_builder::{self, SettlementSimulator},
     std::{borrow::Cow, sync::Arc},
     strum::Display,
     thiserror::Error,
@@ -239,7 +237,7 @@ pub struct Orderbook {
     order_validator: Arc<dyn OrderValidating>,
     app_data: Arc<crate::app_data::Registry>,
     active_order_competition_threshold: u32,
-    order_simulator: Option<Arc<OrderSimulator>>,
+    order_simulator: Option<SettlementSimulator>,
 }
 
 impl Orderbook {
@@ -252,7 +250,7 @@ impl Orderbook {
         order_validator: Arc<dyn OrderValidating>,
         app_data: Arc<crate::app_data::Registry>,
         active_order_competition_threshold: u32,
-        order_simulator: Option<Arc<OrderSimulator>>,
+        order_simulator: Option<SettlementSimulator>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -613,26 +611,6 @@ impl Orderbook {
         Ok(status)
     }
 
-    fn parse_interactions_and_wrappers(
-        &self,
-        full_app_data: &str,
-    ) -> Result<(Interactions, Vec<WrapperCall>)> {
-        if !full_app_data.is_empty() {
-            let app_data = self
-                .order_validator
-                .validate_app_data(
-                    &OrderCreationAppData::Full {
-                        full: full_app_data.to_string(),
-                    },
-                    &None,
-                )
-                .map_err(|err| anyhow::anyhow!("{:?}", err))?;
-            Ok((app_data.interactions, app_data.inner.protocol.wrappers))
-        } else {
-            Ok((Interactions::default(), Vec::default()))
-        }
-    }
-
     /// Simulates an order based on its Uid using the OrderSimulator.
     ///
     /// The returned value contains the simulation result and tenderly API
@@ -653,18 +631,48 @@ impl Orderbook {
             return Ok(None);
         };
 
-        let (_, wrappers) = self
-            .parse_interactions_and_wrappers(
-                order.metadata.full_app_data.as_deref().unwrap_or_default(),
+        let full_app_data = order.metadata.full_app_data.clone().ok_or_else(|| {
+            OrderSimulationError::Other(anyhow!(
+                "can't find the full app data for this order in the database, can't simulate the \
+                 order correctly without that"
+            ))
+        })?;
+
+        let sim = order_simulator
+            .new_simulation_builder()
+            .with_orders([simulation_builder::Order::new(order.data)
+                .with_signature(order.metadata.owner, order.signature)
+                .fill_at(
+                    simulation_builder::ExecutionAmount::Remaining,
+                    simulation_builder::PriceEncoding::LimitPrice,
+                )])
+            .parameters_from_app_data(&full_app_data)
+            .map_err(|err| {
+                OrderSimulationError::MalformedInput(anyhow!("app_data `{}`: {err}", full_app_data))
+            })?
+            .at_block(
+                block_number
+                    .map(simulation_builder::Block::Number)
+                    .unwrap_or(simulation_builder::Block::Latest),
             )
+            .provide_sufficient_buy_tokens()
+            .from_solver(simulation_builder::Solver::Fake(None))
+            .build()
+            .await
+            .context("failed to finalize simulation")
             .map_err(OrderSimulationError::Other)?;
 
-        let swap = order_simulator
-            .encode_order(&order, wrappers, block_number)
-            .await?;
-        Ok(Some(
-            order_simulator.simulate_swap(swap, block_number).await?,
-        ))
+        let simulation_result = sim
+            .simulate_with_tenderly_report()
+            .await
+            .context("failed to execute simulation")
+            .map_err(OrderSimulationError::Other)?;
+
+        Ok(Some(OrderSimulationResult {
+            tenderly_url: simulation_result.tenderly_url,
+            tenderly_request: simulation_result.tenderly_request,
+            error: simulation_result.error,
+        }))
     }
 
     /// Simulates an arbitrary order without requiring it to exist in the
@@ -676,19 +684,11 @@ impl Orderbook {
         let Some(order_simulator) = &self.order_simulator else {
             return Err(OrderSimulationError::NotEnabled);
         };
-        let full_app_data = request.app_data.unwrap_or_default();
-        let (interactions, wrappers) = self
-            .parse_interactions_and_wrappers(&full_app_data)
-            .map_err(|err| {
-                OrderSimulationError::MalformedInput(anyhow!("app_data `{}`: {err}", full_app_data))
-            })?;
-        let order = Order {
-            metadata: OrderMetadata {
-                owner: request.owner,
-                full_app_data: Some(full_app_data),
-                ..Default::default()
-            },
-            data: OrderData {
+        let app_data_hash = keccak256(&request.app_data);
+
+        let sim = order_simulator
+            .new_simulation_builder()
+            .with_orders([simulation_builder::Order::new(OrderData {
                 sell_token: request.sell_token,
                 buy_token: request.buy_token,
                 sell_amount: request.sell_amount.into(),
@@ -697,24 +697,47 @@ impl Orderbook {
                 receiver: request.receiver,
                 sell_token_balance: request.sell_token_balance,
                 buy_token_balance: request.buy_token_balance,
-                ..Default::default()
-            },
-            interactions,
-            ..Default::default()
-        };
-
-        let swap = order_simulator
-            .encode_order(&order, wrappers, request.block_number)
+                fee_amount: request.fee_amount,
+                valid_to: request.valid_to,
+                app_data: AppDataHash(app_data_hash.into()),
+                partially_fillable: request.partially_fillable,
+            })
+            .with_signature(request.owner, request.signature)
+            .fill_at(
+                simulation_builder::ExecutionAmount::Full,
+                simulation_builder::PriceEncoding::LimitPrice,
+            )])
+            .parameters_from_app_data(&request.app_data)
+            .map_err(|err| {
+                OrderSimulationError::MalformedInput(anyhow!(
+                    "app_data `{}`: {err}",
+                    request.app_data
+                ))
+            })?
+            .at_block(
+                request
+                    .block_number
+                    .map(simulation_builder::Block::Number)
+                    .unwrap_or(simulation_builder::Block::Latest),
+            )
+            .provide_sufficient_buy_tokens()
+            .from_solver(simulation_builder::Solver::Fake(None))
+            .build()
             .await
-            .map_err(|err| match err {
-                order_simulator::Error::Other(err) => OrderSimulationError::Other(err),
-                order_simulator::Error::MalformedInput(err) => {
-                    OrderSimulationError::MalformedInput(err)
-                }
-            })?;
-        Ok(order_simulator
-            .simulate_swap(swap, request.block_number)
-            .await?)
+            .context("failed to finalize simulation")
+            .map_err(OrderSimulationError::Other)?;
+
+        let simulation_result = sim
+            .simulate_with_tenderly_report()
+            .await
+            .context("failed to execute simulation")
+            .map_err(OrderSimulationError::Other)?;
+
+        Ok(OrderSimulationResult {
+            tenderly_url: simulation_result.tenderly_url,
+            tenderly_request: simulation_result.tenderly_request,
+            error: simulation_result.error,
+        })
     }
 }
 
@@ -743,15 +766,6 @@ pub enum OrderSimulationError {
     MalformedInput(anyhow::Error),
     #[error("simulation could not be created for order")]
     Other(anyhow::Error),
-}
-
-impl From<order_simulator::Error> for OrderSimulationError {
-    fn from(value: order_simulator::Error) -> Self {
-        match value {
-            order_simulator::Error::Other(err) => Self::Other(err),
-            order_simulator::Error::MalformedInput(err) => Self::MalformedInput(err),
-        }
-    }
 }
 
 #[async_trait::async_trait]

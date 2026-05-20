@@ -13,6 +13,7 @@ use {
     database::{orders::OrderKind, solver_competition_v2::Solution},
     eth_domain_types as eth,
     futures::TryFutureExt,
+    num::Zero,
     number::conversions::big_decimal_to_u256,
     std::collections::{HashMap, HashSet},
 };
@@ -27,6 +28,18 @@ pub use {
     trade::{Trade, TradeEvent, math},
     transaction::Transaction,
 };
+
+/// Summary of settlement metrics — used gas, gas price, surplus, fee, etc.
+#[derive(Debug)]
+pub(crate) struct SettlementMetrics<'a> {
+    pub(crate) gas: eth::Gas,
+    pub(crate) gas_price: eth::EffectiveGasPrice,
+    pub(crate) surplus: eth::Ether,
+    pub(crate) fee: eth::Ether,
+    /// Map between order and the respective fees.
+    pub(crate) fee_breakdown: HashMap<domain::OrderUid, trade::FeeBreakdown>,
+    pub(crate) jit_orders: Vec<&'a trade::Jit>,
+}
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
@@ -75,11 +88,16 @@ impl Settlement {
         self.solution_uid
     }
 
-    /// Total surplus for all trades in the settlement.
-    pub fn surplus_in_ether(&self) -> eth::Ether {
-        self.trades
-            .iter()
-            .map(|trade| {
+    /// Summarizes settlement data required by the autopilot, see
+    /// [`SettlementMetrics`] for details.
+    pub(crate) fn summarize(&self) -> SettlementMetrics<'_> {
+        let mut surplus = eth::Ether::zero();
+        let mut fee = eth::Ether::zero();
+        let mut fee_breakdown = HashMap::with_capacity(self.trades.len());
+        let mut jit_orders = Vec::new();
+
+        for trade in &self.trades {
+            let trade_surplus =
                 trade
                     .surplus_in_ether(&self.auction.prices)
                     .unwrap_or_else(|err| {
@@ -89,61 +107,50 @@ impl Settlement {
                             "possible incomplete surplus calculation",
                         );
                         num::zero()
-                    })
-            })
-            .sum()
-    }
+                    });
+            surplus = surplus + trade_surplus;
 
-    /// Total fee taken for all the trades in the settlement.
-    pub fn fee_in_ether(&self) -> eth::Ether {
-        self.trades
-            .iter()
-            .map(|trade| {
-                trade
-                    .fee_in_ether(&self.auction.prices)
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            ?err,
-                            trade = %trade.uid(),
-                            "possible incomplete fee calculation",
-                        );
-                        num::zero()
-                    })
-            })
-            .sum()
-    }
-
-    /// Per order fees breakdown. Contains all orders from the settlement
-    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, trade::FeeBreakdown> {
-        self.trades
-            .iter()
-            .map(|trade| {
-                let fee_breakdown = trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
+            let trade_fee = trade
+                .fee_in_ether(&self.auction.prices)
+                .unwrap_or_else(|err| {
                     tracing::warn!(
                         ?err,
                         trade = %trade.uid(),
-                        "possible incomplete fee breakdown calculation",
+                        "possible incomplete fee calculation",
                     );
-                    trade::FeeBreakdown {
-                        total: eth::Asset {
-                            // TODO surplus token
-                            token: trade.sell_token(),
-                            amount: num::zero(),
-                        },
-                        protocol: vec![],
-                    }
+                    num::zero()
                 });
-                (*trade.uid(), fee_breakdown)
-            })
-            .collect()
-    }
+            fee = fee + trade_fee;
 
-    /// Return all trades that are classified as Just-In-Time (JIT) orders.
-    pub fn jit_orders(&self) -> Vec<&trade::Jit> {
-        self.trades
-            .iter()
-            .filter_map(|trade| trade.as_jit())
-            .collect()
+            let breakdown = trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
+                tracing::warn!(
+                    ?err,
+                    trade = %trade.uid(),
+                    "possible incomplete fee breakdown calculation",
+                );
+                trade::FeeBreakdown {
+                    total: eth::Asset {
+                        token: trade.sell_token(),
+                        amount: num::zero(),
+                    },
+                    protocol: vec![],
+                }
+            });
+            fee_breakdown.insert(*trade.uid(), breakdown);
+
+            if let Some(jit) = trade.as_jit() {
+                jit_orders.push(jit);
+            }
+        }
+
+        SettlementMetrics {
+            gas: self.gas,
+            gas_price: self.gas_price,
+            surplus,
+            fee,
+            fee_breakdown,
+            jit_orders,
+        }
     }
 
     pub async fn new(

@@ -81,6 +81,11 @@ impl Slippage {
         bps.to_u32().and_then(|v| v.try_into().ok())
     }
 
+    /// Returns the slippage as a percentage. e.g. 0.01 → 1.0.
+    pub fn as_percent(&self) -> Option<f64> {
+        (&self.0 * BigDecimal::from(100)).to_f64()
+    }
+
     /// Rounds the slippage to the specified number of decimal places.
     pub fn round(&self, decimals: i64) -> Self {
         Self(self.0.round(decimals))

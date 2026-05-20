@@ -1,6 +1,6 @@
 use {
     alloy_primitives::{Address, FixedBytes},
-    balance_overrides::{BalanceOverrideRequest, BalanceOverriding},
+    balance_overrides::{BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     ethrpc::Web3,
     hex_literal::hex,
@@ -22,6 +22,22 @@ pub struct SignatureCheck {
 }
 
 impl SignatureCheck {
+    pub fn new(
+        signer: Address,
+        hash: [u8; 32],
+        signature: Vec<u8>,
+        interactions: Vec<InteractionData>,
+        balance_override: Option<BalanceOverrideRequest>,
+    ) -> Self {
+        Self {
+            signer,
+            hash,
+            signature,
+            interactions,
+            balance_override,
+        }
+    }
+
     /// A signature check requires setup when there are interactions to be taken
     /// into account or when the balance override is set.
     ///
@@ -100,7 +116,7 @@ pub struct Contracts {
 pub fn validator(
     web3: &Web3,
     contracts: Contracts,
-    balance_overrider: Arc<dyn BalanceOverriding>,
+    balance_overrider: Arc<dyn StateOverriding>,
 ) -> Arc<dyn SignatureValidating> {
     Arc::new(simulation::Validator::new(
         web3,
