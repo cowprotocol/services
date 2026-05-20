@@ -36,11 +36,7 @@ pub async fn init(config: Config) {
                 .expect("failed to connect to NATS service");
             let jetstream = async_nats::jetstream::new(client);
             let mut stream = jetstream
-                .get_or_create_stream(async_nats::jetstream::stream::Config {
-                    name: config.channel_name.clone(),
-                    max_bytes: 10_000_000,
-                    ..Default::default()
-                })
+                .get_stream(&config.channel_name)
                 .await
                 .expect("could not connect to jetstream");
             let info = stream.info().await.expect("failed to fetch stream info");
@@ -120,17 +116,19 @@ mod tests {
         });
         init(Config {
             client: "localhost:4222".parse().unwrap(),
-            channel_name: "test".to_string(),
+            channel_name: "main".to_string(),
         })
         .await;
 
-        publish(
-            "name",
-            json!({
-                "estimator": "baseline",
-                "outAmount": 1234,
-            }),
-        );
+        for _ in 0..1000 {
+            publish(
+                "name",
+                json!({
+                    "estimator": "baseline",
+                    "outAmount": 1234,
+                }),
+            );
+        }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
