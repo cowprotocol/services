@@ -1,9 +1,13 @@
 //! Banned user detection for order validation.
 //!
 //! Checks if addresses are banned using a hardcoded list and optionally the
-//! Chainalysis Oracle on-chain registry. On-chain results are cached (1-hour
-//! expiry, LRU eviction) with background refresh every 60 seconds.
+//! Chainalysis Oracle on-chain registry and/or the Hermod (zeroShadow) agent.
+//! Remote check results are cached (1-hour expiry, LRU eviction) with
+//! background refresh every 60 seconds.
 
+mod hermod;
+
+pub use hermod::HermodConfig;
 use {
     alloy_primitives::Address,
     contracts::ChainalysisOracle,
@@ -11,21 +15,87 @@ use {
     moka::sync::Cache,
     std::{
         collections::HashSet,
+        fmt::Debug,
+        future::Future,
         sync::Arc,
         time::{Duration, Instant},
     },
 };
 
-/// A list of banned users and an optional registry that can be checked onchain.
+/// A list of banned users and optional registries that can be checked.
 pub struct Users {
     list: HashSet<Address>,
     onchain: Option<Arc<Onchain>>,
+    hermod: Option<Arc<hermod::Hermod>>,
 }
 
 #[derive(Clone)]
-struct UserMetadata {
-    is_banned: bool,
-    last_updated: Instant,
+pub(crate) struct UserMetadata {
+    pub(crate) is_banned: bool,
+    pub(crate) last_updated: Instant,
+}
+
+/// A remote banned-user source backed by a cache. Each implementation only
+/// needs to provide the underlying lookup; the shared `check` flow takes
+/// care of cache hit/miss handling and writing fresh results back.
+pub(crate) trait Backend: Send + Sync + 'static {
+    type Error: Debug + Send;
+
+    /// Asks the underlying source whether the given address is banned.
+    fn fetch(&self, address: Address) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+
+    fn cache(&self) -> &Cache<Address, UserMetadata>;
+
+    fn name(&self) -> &'static str;
+
+    /// Checks the given addresses against this backend and inserts any
+    /// reported hits into `banned`. Addresses already in `banned` are skipped
+    /// to avoid an unnecessary lookup.
+    async fn check(&self, addresses: &HashSet<Address>, banned: &mut HashSet<Address>) {
+        let mut need_lookup = Vec::new();
+        for address in addresses {
+            if banned.contains(address) {
+                continue;
+            }
+            match self.cache().get(address) {
+                Some(metadata) => {
+                    metadata.is_banned.then(|| banned.insert(*address));
+                }
+                None => need_lookup.push(*address),
+            }
+        }
+
+        let to_cache = join_all(
+            need_lookup
+                .into_iter()
+                .map(|address| async move { (address, self.fetch(address).await) }),
+        )
+        .await;
+
+        let now = Instant::now();
+        for (address, result) in to_cache {
+            match result {
+                Ok(is_banned) => {
+                    self.cache().insert(
+                        address,
+                        UserMetadata {
+                            is_banned,
+                            last_updated: now,
+                        },
+                    );
+                    is_banned.then(|| banned.insert(address));
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        backend = self.name(),
+                        ?err,
+                        ?address,
+                        "failed to fetch banned status",
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// Onchain banned user checker using Chainalysis Oracle with caching and
@@ -122,18 +192,36 @@ impl Onchain {
     }
 }
 
+impl Backend for Onchain {
+    type Error = alloy_contract::Error;
+
+    async fn fetch(&self, address: Address) -> Result<bool, Self::Error> {
+        self.contract.isSanctioned(address).call().await
+    }
+
+    fn cache(&self) -> &Cache<Address, UserMetadata> {
+        &self.cache
+    }
+
+    fn name(&self) -> &'static str {
+        "chainalysis"
+    }
+}
+
 impl Users {
     /// Creates a new `Users` instance that checks the hardcoded list and uses
     /// the given `web3` instance to determine whether an onchain registry of
     /// banned addresses is available.
     pub fn new(
         contract: Option<ChainalysisOracle::Instance>,
+        hermod: Option<HermodConfig>,
         banned_users: Vec<Address>,
         cache_max_size: u64,
     ) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
             onchain: contract.map(|instance| Onchain::new(instance, cache_max_size)),
+            hermod: hermod.map(|config| hermod::Hermod::new(config, cache_max_size)),
         }
     }
 
@@ -142,6 +230,7 @@ impl Users {
         Self {
             list: HashSet::new(),
             onchain: None,
+            hermod: None,
         }
     }
 
@@ -151,12 +240,14 @@ impl Users {
         Self {
             list,
             onchain: None,
+            hermod: None,
         }
     }
 
     /// Returns a subset of addresses from the input iterator which are banned.
     ///
-    /// On cache-misses, it will use the Chainalysis oracle to fetch the users.
+    /// On cache-misses, it will use the Chainalysis oracle and/or the Hermod
+    /// agent to determine status.
     pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {
         let mut banned = HashSet::new();
 
@@ -173,55 +264,16 @@ impl Users {
             // Need to collect here to make sure filter gets executed and we insert addresses
             .collect::<HashSet<_>>();
 
-        let Some(onchain) = &self.onchain else {
-            return banned;
-        };
-        let need_lookup: Vec<_> = {
-            let mut filtered = Vec::new();
-            for address in need_lookup {
-                match onchain.cache.get(&address) {
-                    Some(metadata) => {
-                        metadata.is_banned.then(|| banned.insert(address));
-                    }
-                    None => {
-                        filtered.push(address);
-                    }
-                }
-            }
-            filtered
-        };
-
-        let to_cache = join_all(
-            need_lookup
-                .into_iter()
-                .map(|address| async move { (address, onchain.fetch(address).await) }),
-        )
-        .await;
-
-        let now = Instant::now();
-        for (address, result) in to_cache {
-            match result {
-                Ok(is_banned) => {
-                    onchain.cache.insert(
-                        address,
-                        UserMetadata {
-                            is_banned,
-                            last_updated: now,
-                        },
-                    );
-                    is_banned.then(|| banned.insert(address));
-                }
-                Err(err) => {
-                    tracing::warn!(?err, ?address, "failed to fetch banned status");
-                }
+        match (&self.onchain, &self.hermod) {
+            (None, None) => return banned,
+            (Some(onchain), None) => onchain.check(&need_lookup, &mut banned).await,
+            (None, Some(hermod)) => hermod.check(&need_lookup, &mut banned).await,
+            (Some(onchain), Some(hermod)) => {
+                onchain.check(&need_lookup, &mut banned).await;
+                hermod.check(&need_lookup, &mut banned).await;
             }
         }
-        banned
-    }
-}
 
-impl Onchain {
-    async fn fetch(&self, address: Address) -> Result<bool, alloy_contract::Error> {
-        self.contract.isSanctioned(address).call().await
+        banned
     }
 }

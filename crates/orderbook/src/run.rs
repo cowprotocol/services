@@ -394,6 +394,13 @@ pub async fn run(config: Configuration) {
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
+            config.banned_users.hermod.clone().map(|hermod| {
+                order_validation::banned::HermodConfig {
+                    url: hermod.url,
+                    hmac_key: hermod.hmac_key,
+                    api_key: hermod.api_key,
+                }
+            }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         )),

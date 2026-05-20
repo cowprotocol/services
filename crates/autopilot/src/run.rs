@@ -477,6 +477,15 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         persistence.clone(),
         infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
+            config
+                .banned_users
+                .hermod
+                .clone()
+                .map(|hermod| infra::banned::HermodConfig {
+                    url: hermod.url,
+                    hmac_key: hermod.hmac_key,
+                    api_key: hermod.api_key,
+                }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ),
