@@ -158,11 +158,10 @@ impl Swapr {
     }
 }
 
-/// Subgraph-specific Uniswap V3 config. Only consulted when no
-/// `pool_indexer_url` is set on [`UniswapV3`].
+/// Subgraph-specific Uniswap V3 config. Only consulted when
+/// [`UniswapV3::pool_indexer_url`] is unset.
 #[derive(Clone, Debug)]
 pub struct UniswapV3Subgraph {
-    /// URL of the Uniswap V3 subgraph.
     pub url: Url,
 
     /// How many pool IDs can be present in a where clause of a Tick query at
@@ -180,14 +179,12 @@ pub struct UniswapV3 {
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
 
-    /// Subgraph data source. One of `subgraph` or `pool_indexer_url` must be
-    /// set; when both are set the pool-indexer wins. Enforced by the config
-    /// loader.
+    /// One of `subgraph` or `pool_indexer_url` must be set; pool-indexer wins
+    /// when both are. Enforced by the config loader.
     pub subgraph: Option<UniswapV3Subgraph>,
 
-    /// Optional URL of a CoW pool-indexer service exposing the
-    /// `/api/v1/{network}/uniswap/v3/` endpoints. When set, it takes
-    /// precedence over `subgraph` for pool metadata and ticks.
+    /// CoW pool-indexer service exposing `/api/v1/{network}/uniswap/v3/`.
+    /// Takes precedence over `subgraph` when set.
     pub pool_indexer_url: Option<Url>,
 
     /// How often the liquidity source should be reinitialized to

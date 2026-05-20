@@ -3,13 +3,11 @@ use {
         config::{IndexerConfig, NetworkName},
         db::uniswap_v3 as db,
     },
-    alloy::{
-        primitives::{Address, B256, aliases::U160},
-        providers::Provider,
-        rpc::types::{BlockNumberOrTag, Filter, FilterSet, Log},
-        sol_types::SolEvent,
-        transports::RpcError,
-    },
+    alloy_primitives::{Address, B256, aliases::U160},
+    alloy_provider::Provider,
+    alloy_rpc_types_eth::{BlockNumberOrTag, Filter, FilterSet, Log},
+    alloy_sol_types::SolEvent,
+    alloy_transport::RpcError,
     anyhow::{Context, Result},
     contracts::{
         ERC20,
@@ -420,12 +418,12 @@ impl UniswapV3Indexer {
 /// invokes `on_giveup` with the accumulated errors and returns `None`.
 async fn retry_node_call<T, Fut>(
     f: impl Fn() -> Fut,
-    on_giveup: impl FnOnce(&[alloy::contract::Error]),
+    on_giveup: impl FnOnce(&[alloy_contract::Error]),
 ) -> Option<T>
 where
-    Fut: std::future::Future<Output = Result<T, alloy::contract::Error>>,
+    Fut: std::future::Future<Output = Result<T, alloy_contract::Error>>,
 {
-    match shared::retry::retry_with_sleep_if(f, |err: &alloy::contract::Error| err.is_node_error())
+    match shared::retry::retry_with_sleep_if(f, |err: &alloy_contract::Error| err.is_node_error())
         .await
     {
         Ok(v) => Some(v),
@@ -671,7 +669,7 @@ async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String
 /// errors (HTTP timeouts, DNS, connection resets) live in other `RpcError`
 /// variants and short-circuit to false, so client-side noise can't trigger
 /// pointless bisection.
-pub(crate) fn is_range_too_large(err: &alloy::transports::TransportError) -> bool {
+pub(crate) fn is_range_too_large(err: &alloy_transport::TransportError) -> bool {
     let RpcError::ErrorResp(payload) = err else {
         return false;
     };
@@ -992,14 +990,12 @@ fn collect_log_changes(
 mod tests {
     use {
         super::*,
-        alloy::{
-            primitives::{
-                I256,
-                U256,
-                aliases::{I24, U24, U160},
-            },
-            sol_types::SolEvent,
+        alloy_primitives::{
+            I256,
+            U256,
+            aliases::{I24, U24, U160},
         },
+        alloy_sol_types::SolEvent,
         contracts::{
             IUniswapV3Factory::IUniswapV3Factory::PoolCreated,
             UniswapV3Pool::UniswapV3Pool::{Burn, Initialize, Mint, Swap},

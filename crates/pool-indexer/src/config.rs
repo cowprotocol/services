@@ -100,15 +100,11 @@ pub struct NetworkConfig {
     /// Anvil).
     #[serde(skip)]
     pub use_latest: bool,
-    /// Subgraph GraphQL endpoint for seeding initial state. Required in this
-    /// release — cold-seed-from-genesis is a future addition.
+    /// Subgraph GraphQL endpoint for seeding initial state.
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub subgraph_url: Url,
-    /// Optional Bearer token sent as `Authorization: Bearer <token>` on every
-    /// subgraph request. Set this for authenticated endpoints (Goldsky, paid
-    /// Graph gateway proxies, etc.). Accepts `%ENV_VAR` for env-var injection
-    /// so the secret never lands in the TOML file. Public Graph Network
-    /// gateway URLs that embed the API key in the path don't need this.
+    /// Optional Bearer token for authenticated subgraph endpoints. Accepts
+    /// `%ENV_VAR` so the secret never lands in the TOML file.
     #[serde(
         default,
         deserialize_with = "configs::deserialize_env::deserialize_optional_string_from_env"
@@ -205,11 +201,8 @@ impl Configuration {
         Ok(config)
     }
 
-    /// Cross-network sanity checks that don't fit serde's per-field
-    /// validation: uniqueness of names / chain IDs and the exactly-one-factory
-    /// invariant. The single-factory limit is intentional for this release —
-    /// a V3 subgraph indexes one factory, so multi-factory must wait for the
-    /// cold-seed bootstrap path to return.
+    /// Cross-network sanity checks that don't fit serde's per-field validation:
+    /// uniqueness of names / chain IDs and the exactly-one-factory invariant.
     fn validate_networks(&self) -> Result<()> {
         anyhow::ensure!(
             !self.networks.is_empty(),

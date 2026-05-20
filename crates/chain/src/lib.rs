@@ -52,10 +52,9 @@ impl Chain {
 
     /// Kebab-case slug used in URLs and per-network configs (pool-indexer API
     /// routes, DB database names, etc). Stable — other services parse it.
-    pub fn slug(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match &self {
             Self::Mainnet => "mainnet",
-            Self::Goerli => "goerli",
             Self::Gnosis => "gnosis",
             Self::Sepolia => "sepolia",
             Self::ArbitrumOne => "arbitrum-one",

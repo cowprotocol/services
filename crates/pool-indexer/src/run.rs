@@ -5,7 +5,7 @@ use {
         config::{Configuration, NetworkConfig},
         indexer::uniswap_v3::UniswapV3Indexer,
     },
-    alloy::providers::Provider,
+    alloy_provider::Provider,
     clap::Parser,
     ethrpc::{AlloyProvider, Config as EthRpcConfig, web3},
     sqlx::{PgPool, postgres::PgPoolOptions},

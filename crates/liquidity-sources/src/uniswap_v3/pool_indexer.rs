@@ -38,7 +38,7 @@ pub struct PoolIndexerClient {
 
 impl PoolIndexerClient {
     pub fn new(base_url: Url, chain: Chain, http: Client) -> Self {
-        let prefix = format!("api/v1/{}/uniswap/v3/", chain.slug());
+        let prefix = format!("api/v1/{}/uniswap/v3/", chain.as_str());
         let base_url = url_join(&base_url, &prefix);
         Self { base_url, http }
     }
@@ -48,9 +48,8 @@ impl PoolIndexerClient {
     }
 }
 
-/// Join a path with a URL, ensuring exactly one slash between them. Mirrors
-/// `shared::url::join`, inlined here because `shared` already depends on
-/// `liquidity-sources` and adding the reverse dep would cycle.
+/// Joins path onto URL with exactly one slash. Inlined to avoid a
+/// `shared` → `liquidity-sources` dep cycle.
 fn url_join(url: &Url, mut path: &str) -> Url {
     let mut url = url.to_string();
     while url.ends_with('/') {
@@ -105,9 +104,8 @@ struct IndexerTick {
     liquidity_net: String,
 }
 
-/// Filter predicate: drop pools where either token's `decimals` is missing.
-/// `decimals = 0` reaching the solver would mis-scale prices by 10^18, so we
-/// fail closed (drop + warn) until the indexer backfills the value.
+/// Drop pools where either token's `decimals` is missing. Treating missing
+/// as `0` would mis-scale prices by 10^18; fail closed until backfill.
 fn pools_tokens_have_decimals(p: &IndexerPool) -> bool {
     if p.token0.decimals.is_none() || p.token1.decimals.is_none() {
         tracing::warn!(
@@ -168,11 +166,9 @@ impl IndexerTick {
 #[async_trait]
 impl V3PoolDataSource for PoolIndexerClient {
     async fn get_registered_pools(&self) -> Result<RegisteredPools> {
-        // Paginate through the full pool set. The block_number returned from
-        // the first page is what we pin the snapshot to — subsequent pages
-        // may report a higher block, which we tolerate as bounded drift: the
-        // driver's event replay picks up anything committed after this
-        // snapshot.
+        // We pin the snapshot to the first page's block_number; later pages
+        // may report a higher block — bounded drift, picked up by the
+        // driver's event replay.
         let mut cursor: Option<String> = None;
         let mut pools: Vec<PoolData> = Vec::new();
         let mut fetched_block_number: u64 = 0;

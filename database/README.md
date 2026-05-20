@@ -534,7 +534,7 @@ Indexes:
 
 ### pool\_indexer\_checkpoints
 
-Tracks the highest finalized block fully processed per `(chain_id, contract)` by the `pool-indexer` service. `contract` is the factory address (or, in the future, a pool address); shaped as `BYTEA` to leave room for per-pool checkpoints without a migration. The indexer reads this on startup to decide whether to seed from scratch or resume live indexing.
+Highest finalized block processed per `(chain_id, contract)` by the `pool-indexer` service. `contract` is the factory address.
 
  Column        | Type   | Nullable | Details
 ---------------|--------|----------|--------
@@ -547,7 +547,7 @@ Indexes:
 
 ### uniswap\_v3\_pools
 
-One row per Uniswap V3 pool the pool-indexer has discovered (from `PoolCreated` events on the factory). `token{0,1}_decimals` and `token{0,1}_symbol` are nullable to allow the pool to be inserted at discovery time before the on-chain `decimals()`/`symbol()` view calls succeed; the indexer's backfill task fills them on a later pass.
+One row per Uniswap V3 pool discovered from `PoolCreated` events. `token{0,1}_{decimals,symbol}` are nullable and populated by the backfill task.
 
  Column            | Type     | Nullable | Details
 -------------------|----------|----------|--------
@@ -565,11 +565,11 @@ One row per Uniswap V3 pool the pool-indexer has discovered (from `PoolCreated` 
 
 Indexes:
 - PRIMARY KEY: btree (`chain_id`, `address`)
-- Four partial indexes on `(chain_id, token{0,1})` with predicate `token{0,1}_{symbol,decimals} IS NULL` to power the backfill scan; each shrinks to near-empty once most rows are populated.
+- Four partial indexes on `(chain_id, token{0,1})` with predicate `token{0,1}_{symbol,decimals} IS NULL` to power the backfill scan.
 
 ### uniswap\_v3\_pool\_states
 
-Current `(sqrtPriceX96, liquidity, tick)` of each pool — updated on every `Swap` or `Initialize` event. References `uniswap_v3_pools` via FK so a state row can never refer to an unknown pool.
+Current `(sqrtPriceX96, liquidity, tick)` of each pool, updated on every `Swap` or `Initialize` event. FK → `uniswap_v3_pools`.
 
  Column            | Type    | Nullable | Details
 -------------------|---------|----------|--------
@@ -578,14 +578,14 @@ Current `(sqrtPriceX96, liquidity, tick)` of each pool — updated on every `Swa
  block\_number     | bigint  | not null | Block at which this state was captured (last Swap/Initialize)
  sqrt\_price\_x96  | numeric | not null | uint160 — pool price as `sqrt(price) * 2^96`
  liquidity         | numeric | not null | uint128 — in-range liquidity
- tick              | int     | not null | Pool's current price tick (signed int24), the discrete log-price coordinate. Not a DB index; the integer V3 tick coordinate
+ tick              | int     | not null | Current tick (signed int24)
 
 Indexes:
 - PRIMARY KEY: btree (`chain_id`, `pool_address`)
 
 ### uniswap\_v3\_ticks
 
-Active liquidity-delta ticks per pool (rows with `liquidity_net = 0` are pruned by the indexer to keep the table sized to the *active* tick set). `tick_idx` shares the same V3 coordinate space as `uniswap_v3_pool_states.tick`; the difference is that this table stores one row per tick boundary (where the active liquidity changes), not the pool's current tick. References `uniswap_v3_pools` via FK.
+Active liquidity-delta ticks per pool. Rows with `liquidity_net = 0` are pruned. FK → `uniswap_v3_pools`.
 
  Column         | Type    | Nullable | Details
 ----------------|---------|----------|--------
@@ -719,9 +719,3 @@ Migrations that require a long running process *must* be done manually, this is 
 To avoid extending the process, we resort to manually applying complicated migrations.
 
 The above also comes into play when dealing with indexes, as their construction with flyway may lock up rows, degrading SLI.
-
-### Reversibility
-
-We do not ship paired `down`/rollback scripts with our Flyway migrations. The release model (autopilot rolls forward, old pods drain after the new schema is in place) means rollback is handled by deploying a previous binary against the migrated schema, not by reversing the SQL. Migrations must therefore be **forward-compatible with the previous binary** for the duration of the rolling deployment.
-
-`V110__pool_indexer_uniswap_v3.sql` is purely additive: it introduces four new tables (`pool_indexer_checkpoints`, `uniswap_v3_pools`, `uniswap_v3_pool_states`, `uniswap_v3_ticks`) and four partial indexes. Nothing in the rest of the schema is touched, so the previous binary continues to function unchanged during the overlap window. If we ever need to undo it, the rollback is a `DROP TABLE ... CASCADE` on those four tables — but with `pool-indexer-url` unset on all chains (the default), nothing reads from them anyway, so a forward-only rollout is the expected path.

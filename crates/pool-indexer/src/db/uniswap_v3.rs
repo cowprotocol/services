@@ -74,8 +74,6 @@ pub async fn insert_pools(
     if pools.is_empty() {
         return Ok(());
     }
-    // Single pass over `pools` to build all the per-column vectors UNNEST
-    // expects. Saves rewalking the slice nine times.
     let len = pools.len();
     let mut addresses: Vec<&[u8]> = Vec::with_capacity(len);
     let mut token0s: Vec<&[u8]> = Vec::with_capacity(len);

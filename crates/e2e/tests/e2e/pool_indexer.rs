@@ -1,16 +1,7 @@
 //! End-to-end check that the driver consumes pool data from `pool-indexer`
-//! when `pool-indexer-url` is configured. Uses inline mock V3 contracts
-//! (bytecode embedded from PR #4349's solc 0.8.30 compilation — see
-//! comments below) instead of the full contracts-generated pipeline.
-//! Compared to the original `teamathon/indexer` harness this drops
-//! ~3000 LOC of generated bindings; the bytecode constants below are the
-//! only state that must be regenerated if the .sol sources ever change.
-//!
-//! Like the original harness, the test pre-seeds the pool-indexer
-//! checkpoint so the subgraph_seeder bootstrap path is skipped — Anvil has
-//! no subgraph to seed from. The test only exercises the live-indexing
-//! and HTTP-serving paths, which is exactly the wiring the driver depends
-//! on.
+//! when `pool-indexer-url` is set. Pre-seeds the indexer checkpoint so the
+//! subgraph_seeder bootstrap is skipped (Anvil has no subgraph); only the
+//! live-indexing and HTTP-serving paths are exercised.
 
 use {
     alloy::{
@@ -40,12 +31,8 @@ use {
     },
 };
 
-// Minimal V3 Factory mock — emits the canonical `PoolCreated` event the
-// indexer listens for. Bytecode below was compiled with solc 0.8.30,
-// --optimize --optimize-runs 1000000, evm-version shanghai, from the
-// source contracts/solidity/tests/MockUniswapV3Factory.sol on
-// teamathon/indexer (PR #4349). The .sol source is reproduced here so a
-// reviewer can verify the bytecode independently if needed.
+// Mock V3 factory. Bytecode compiled from the .sol source below with solc
+// 0.8.30 --optimize --optimize-runs 1000000, evm-version shanghai.
 //
 // // SPDX-License-Identifier: GPL-3.0-or-later
 // pragma solidity ^0.8.17;
@@ -85,9 +72,7 @@ sol! {
     }
 }
 
-// Minimal V3 Pool mock — emits `Initialize` and `Mint` events the indexer
-// processes. Compiled identically to the factory above. Source on
-// teamathon/indexer at contracts/solidity/tests/MockUniswapV3Pool.sol.
+// Mock V3 pool. Compiled identically to the factory above.
 //
 // // SPDX-License-Identifier: GPL-3.0-or-later
 // pragma solidity ^0.8.17;
@@ -140,8 +125,6 @@ sol! {
     }
 }
 
-// Holds the JoinHandle of any currently-running pool-indexer so we can
-// abort it even if a previous test panicked before stopping it.
 static CURRENT_HANDLE: Mutex<Option<tokio::task::JoinHandle<()>>> = Mutex::new(None);
 
 const POOL_INDEXER_PORT: u16 = 7778;
@@ -152,8 +135,7 @@ const LOCAL_DB_URL: &str = "postgresql://";
 // sqrt(1) * 2^96 — valid starting price
 const INITIAL_SQRT_PRICE: u128 = 79_228_162_514_264_337_593_543_950_336;
 
-// Pre-seeded checkpoint short-circuits the subgraph_seeder bootstrap.
-// Anvil has no V3 subgraph; this URL is never queried.
+// Never queried — the pre-seeded checkpoint short-circuits the seeder.
 const PLACEHOLDER_SUBGRAPH_URL: &str = "http://127.0.0.1:1/never-queried";
 
 async fn clear_pool_indexer_tables(db: &PgPool) {
@@ -320,9 +302,8 @@ async fn api_requests_counter(metrics_port: u16, route: &'static str) -> u64 {
             continue;
         }
         if let Some(idx) = line.find(&needle) {
+            // pool_indexer_api_requests{route="...",status="200"} 3
             let after = line[idx + needle.len()..].trim();
-            // line looks like:
-            //   pool_indexer_api_requests{route="...",status="200"} 3
             if let Some(value) = after.split_whitespace().last() {
                 return value.parse().unwrap_or(0);
             }
@@ -337,11 +318,9 @@ async fn local_node_pool_indexer_driver_integration() {
     run_test(driver_integration).await;
 }
 
-/// End-to-end: pool-indexer indexes a mock V3 factory, driver starts with
-/// `pool-indexer-url` pointing at the service, and we assert (via the
-/// indexer's own request counters) that the driver fetched both pools AND
-/// their ticks. The ticks call is the stronger signal — it fires only
-/// after `UniswapV3PoolFetcher::new` has a non-empty registered-pool set.
+/// Asserts (via the indexer's own request counters) that a driver pointed at
+/// `pool-indexer-url` fetched pools AND their ticks. Ticks is the stronger
+/// signal — only hit after `UniswapV3PoolFetcher::new` sees a non-empty set.
 async fn driver_integration(web3: Web3) {
     const POOLS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools";
     const POOLS_BY_IDS_ROUTE: &str = "/api/v1/{network}/uniswap/v3/pools/by-ids";
@@ -360,10 +339,9 @@ async fn driver_integration(web3: Web3) {
 
     start_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT).await;
 
-    // Wait until the indexer has both caught up to head AND surfaced the
-    // seeded pool. Without the has_pool gate, the driver could race in
-    // against an empty registered-pool set and silently skip the ticks
-    // fetch this test wants to assert on.
+    // Wait for the indexer to reach head AND surface the seeded pool —
+    // without the has_pool gate the driver could race against an empty set
+    // and skip the ticks fetch this test asserts on.
     wait_for_condition(TIMEOUT, || async {
         let resp = reqwest::get(format!(
             "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
@@ -378,12 +356,8 @@ async fn driver_integration(web3: Web3) {
     .await
     .expect("indexer did not reach head with pool visible");
 
-    // Mock tokens (`[1u8;20]`, `[2u8;20]`) don't have a real `decimals()`
-    // selector; the indexer stores NULL decimals and the driver-side
-    // `pools_tokens_have_decimals` filter drops them, leaving the top-N
-    // selection empty and skipping the bulk-by-ids/ticks fetch path this
-    // test wants to assert on. Backfill plausible decimals so the driver
-    // doesn't drop the pool.
+    // Mock tokens have no real `decimals()`; backfill plausible values so
+    // the driver's `pools_tokens_have_decimals` filter doesn't drop them.
     sqlx::query(
         "UPDATE uniswap_v3_pools SET token0_decimals = 18, token1_decimals = 6 WHERE chain_id = 1 \
          AND address = $1",
@@ -393,9 +367,7 @@ async fn driver_integration(web3: Web3) {
     .await
     .unwrap();
 
-    // Capture baselines after all test-side warm-up so the final
-    // assertions prove the bumps came from the driver, not the polling
-    // above.
+    // Baseline AFTER warm-up polling so bumps below are driver-attributable.
     let baseline_pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
     let baseline_pools_by_ids =
         api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
@@ -411,8 +383,7 @@ async fn driver_integration(web3: Web3) {
     )
     .await;
 
-    // The router address is only used at settlement time — any 20-byte
-    // value is fine for a pool-fetch-only integration test.
+    // Router address only used at settlement time; any 20-byte value works.
     let config_override = format!(
         r#"
 [[liquidity.uniswap-v3]]

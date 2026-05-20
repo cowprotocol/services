@@ -193,14 +193,8 @@ pub async fn get_pools(
 ///
 /// Returns the pools with addresses in `pool_ids` (order not guaranteed to
 /// match the request). Silently skips unknown addresses so callers can treat
-/// a partial response as "these are the ones I have".
-///
-/// Reads `block_number` *before* the pool rows (sequentially, not in parallel)
-/// so the response's `block_number` is never newer than the actual data — a
-/// parallel `tokio::join!` would let a chunk commit between the two queries
-/// and produce a block-N+1 envelope around block-N data. Clients use
-/// `block_number` to decide whether to refresh, so under-reporting here is
-/// safe (worst case: a slightly stale cache); over-reporting is not.
+/// a partial response as "these are the ones I have". `block_number` is read
+/// sequentially before the rows so the envelope is never newer than the data.
 pub async fn get_pools_by_ids(
     State(state): State<Arc<AppState>>,
     Path(network): Path<String>,

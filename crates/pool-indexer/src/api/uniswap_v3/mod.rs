@@ -23,12 +23,6 @@ pub(crate) struct PoolIds(pub Vec<Address>);
 
 impl<'de> Deserialize<'de> for PoolIds {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        // `String`, not `&str`: axum's query-string layer URL-decodes the
-        // raw bytes (e.g. `%2C` → `,`) into an owned String, so it can't
-        // hand out a borrowed `&'de str` slice. Asking for `&str` here
-        // produces the misleading "expected a borrowed string" error the
-        // moment any client URL-encodes the commas — which `reqwest`'s
-        // `query_pairs_mut().append_pair` does by default.
         let raw = String::deserialize(de)?;
         let mut out = Vec::new();
         for entry in raw.split(',').map(str::trim).filter(|s| {
