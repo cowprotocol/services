@@ -35,6 +35,16 @@ pub async fn init(config: Config) {
                 .await
                 .expect("failed to connect to NATS service");
             let jetstream = async_nats::jetstream::new(client);
+            let mut stream = jetstream
+                .get_or_create_stream(async_nats::jetstream::stream::Config {
+                    name: config.channel_name.clone(),
+                    max_bytes: 10_000_000,
+                    ..Default::default()
+                })
+                .await
+                .expect("could not connect to jetstream");
+            let info = stream.info().await.expect("failed to fetch stream info");
+            tracing::debug!(?info, "connected to jetstream");
 
             let (sender, receiver) = unbounded_channel();
             tokio::task::spawn(forward_messages_to_event_bus_client(
@@ -55,8 +65,13 @@ async fn forward_messages_to_event_bus_client(
     channel: Subject,
 ) {
     while let Some(message) = receiver.recv().await {
-        if let Err(err) = client.publish(channel.clone(), message).await {
-            tracing::debug!(?err, "failed to publish event");
+        match client.publish(channel.clone(), message).await {
+            Err(err) => {
+                tracing::debug!(?err, "failed to publish event");
+            }
+            Ok(_fut) => {
+                // let's assume the message arrived for now
+            }
         }
     }
 }
@@ -98,7 +113,7 @@ mod tests {
     #[tokio::test]
     async fn send_messages() {
         crate::tracing::init::initialize(&crate::Config {
-            env_filter: "debug".to_string(),
+            env_filter: "warn,observe=debug".to_string(),
             stderr_threshold: None,
             use_json_format: false,
             tracing: None,
@@ -116,6 +131,6 @@ mod tests {
                 "outAmount": 1234,
             }),
         );
-        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
