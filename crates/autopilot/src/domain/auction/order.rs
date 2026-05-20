@@ -208,3 +208,66 @@ impl From<TargetAmount> for eth::U256 {
         value.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        alloy::primitives::{address, b256},
+    };
+
+    // Canonical CoW Protocol order UID layout: 32B orderDigest || 20B owner ||
+    // 4B big-endian validTo. These tests guard against regressions to
+    // little-endian decoding, which would silently corrupt validTo without
+    // affecting owner().
+    #[test]
+    fn parts_decodes_valid_to_as_big_endian() {
+        let mut bytes = [0u8; 56];
+        bytes[0..32].copy_from_slice(&[0x11; 32]);
+        bytes[32..52].copy_from_slice(&[0x22; 20]);
+        // valid_to = 0x12345678 encoded big-endian as 0x12, 0x34, 0x56, 0x78.
+        // Little-endian decoding would yield 0x78563412 — exercised by the
+        // assertion below.
+        bytes[52..56].copy_from_slice(&[0x12, 0x34, 0x56, 0x78]);
+        let uid = OrderUid(bytes);
+
+        let (order_hash, owner, valid_to) = uid.parts();
+        assert_eq!(order_hash, B256::from([0x11; 32]));
+        assert_eq!(owner, Address::repeat_byte(0x22));
+        assert_eq!(valid_to, 0x1234_5678);
+    }
+
+    #[test]
+    fn parts_matches_canonical_model_encoding() {
+        // Same fixture as model::order::tests::order_uid_parts to ensure
+        // autopilot's decoding agrees with the canonical OrderUid layout.
+        let uid = OrderUid(
+            const_hex::decode_to_array::<_, 56>(
+                b"5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e89984d17af2f18f8c54873c0de68a56cc5a23e0f695ba915",
+            )
+            .unwrap(),
+        );
+        let (order_hash, owner, valid_to) = uid.parts();
+        assert_eq!(
+            order_hash,
+            b256!("0x5668997bd3fb981d1b3ec44e8483e7c369756df47d10241c1c7a26fde4d1090e")
+        );
+        assert_eq!(
+            owner,
+            address!("0x89984d17af2f18f8c54873c0de68a56cc5a23e0f")
+        );
+        assert_eq!(valid_to, 1767614741);
+    }
+
+    #[test]
+    fn owner_returns_address_slice() {
+        let mut bytes = [0u8; 56];
+        bytes[32..52].copy_from_slice(&[0xab; 20]);
+        // Set the trailing 4 bytes to a value that would differ in LE vs BE
+        // interpretation, ensuring owner() is unaffected either way.
+        bytes[52..56].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        let uid = OrderUid(bytes);
+
+        assert_eq!(uid.owner(), eth::Address::from([0xab; 20]));
+    }
+}
