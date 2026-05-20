@@ -28,14 +28,15 @@ jobs:
         github.event.pull_request.draft == false &&
         github.event.pull_request.user.type != 'Bot' &&
         !contains(github.event.pull_request.labels.*.name, 'skip-claude-review') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+        contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association)
       ) || (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
         contains(github.event.comment.body, '@claude') &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
