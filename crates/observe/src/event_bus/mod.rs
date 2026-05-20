@@ -75,7 +75,6 @@ async fn forward_messages_to_event_bus_client(
 /// Enqueues the event to be sent to the event bus in a background task.
 pub fn publish(name: impl Into<String>, data: impl Serialize) {
     let Some(queue) = EVENT_QUEUE.get() else {
-        tracing::error!("event queue not yet initialized");
         return;
     };
 
