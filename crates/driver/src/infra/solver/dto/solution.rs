@@ -295,7 +295,7 @@ fn find_order<'a>(
         .ok_or_else(|| {
             super::Error(format!(
                 "invalid order UID specified in fulfillment: {}",
-                const_hex::encode_prefixed(&uid.0)
+                const_hex::encode_prefixed(uid.0)
             ))
         })
 }
