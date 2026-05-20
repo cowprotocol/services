@@ -8,7 +8,6 @@ RUN corepack enable \
 
 # RPC URL args
 ARG REACT_APP_NETWORK_URL_1=https://rpc.mevblocker.io
-ARG REACT_APP_NETWORK_URL_5=https://ethereum-goerli.publicnode.com
 ARG REACT_APP_NETWORK_URL_100=https://gnosis.publicnode.com
 ARG REACT_APP_EXPLORER_URL_DEV=http://localhost:8001
 
@@ -16,7 +15,7 @@ ARG REACT_APP_EXPLORER_URL_DEV=http://localhost:8001
 ARG REACT_APP_BLOCK_EXPLORER_URL=http://localhost:8003
 
 # Orderbook URL args
-ARG REACT_APP_ORDER_BOOK_URLS='{"1":"https://api.cow.fi/mainnet","100":"https://api.cow.fi/goerli","5":"https://api.cow.fi/xdai"}'
+ARG REACT_APP_ORDER_BOOK_URLS='{"1":"https://api.cow.fi/mainnet","100":"https://api.cow.fi/xdai"}'
 
 # Install system dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
@@ -38,7 +37,6 @@ ENV ETH_RPC_URL="$ETH_RPC_URL"
 
 # Set default environment variables for network and order book URLs
 ENV REACT_APP_NETWORK_URL_1="$REACT_APP_NETWORK_URL_1"
-ENV REACT_APP_NETWORK_URL_5="$REACT_APP_NETWORK_URL_5"
 ENV REACT_APP_NETWORK_URL_100="$REACT_APP_NETWORK_URL_100"
 ENV REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"
 ENV REACT_APP_EXPLORER_URL_DEV="$REACT_APP_EXPLORER_URL_DEV"
@@ -52,20 +50,15 @@ RUN set -e; \
                 REACT_APP_NETWORK_URL_1="$ETH_RPC_URL"; \
                 REACT_APP_ORDER_BOOK_URLS=$(echo "$REACT_APP_ORDER_BOOK_URLS" | jq --arg chain "1" '.[$chain]="http://127.0.0.1:8080"'); \
                 ;; \
-            5) \
-                REACT_APP_NETWORK_URL_5="$ETH_RPC_URL"; \
-                REACT_APP_ORDER_BOOK_URLS=$(echo "$REACT_APP_ORDER_BOOK_URLS" | jq --arg chain "5" '.[$chain]="http://127.0.0.1:8080"'); \
-                ;; \
             100) \
                 REACT_APP_NETWORK_URL_100="$ETH_RPC_URL"; \
                 REACT_APP_ORDER_BOOK_URLS=$(echo "$REACT_APP_ORDER_BOOK_URLS" | jq --arg chain "100" '.[$chain]="http://127.0.0.1:8080"'); \
                 ;; \
         esac; \
     fi; \
-    export REACT_APP_NETWORK_URL_1 REACT_APP_NETWORK_URL_5 REACT_APP_NETWORK_URL_100 REACT_APP_ORDER_BOOK_URLS REACT_APP_EXPLORER_URL_DEV REACT_APP_BLOCK_EXPLORER_URL; \
+    export REACT_APP_NETWORK_URL_1 REACT_APP_NETWORK_URL_100 REACT_APP_ORDER_BOOK_URLS REACT_APP_EXPLORER_URL_DEV REACT_APP_BLOCK_EXPLORER_URL; \
     NODE_OPTIONS="--max-old-space-size=4096" NX_NO_CLOUD=true pnpm run build \
         --env REACT_APP_NETWORK_URL_1="$REACT_APP_NETWORK_URL_1" \
-        --env REACT_APP_NETWORK_URL_5="$REACT_APP_NETWORK_URL_5" \
         --env REACT_APP_NETWORK_URL_100="$REACT_APP_NETWORK_URL_100" \
         --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS" \
         --env REACT_APP_EXPLORER_URL_DEV="$REACT_APP_EXPLORER_URL_DEV" \
