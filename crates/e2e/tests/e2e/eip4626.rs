@@ -254,13 +254,14 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
 }
 
 /// Vault and underlying decimals must be threaded through `conversion_rate`
-/// correctly in both directions. Native prices are atomic-to-atomic, so the
-/// wrapper's price must equal the underlying's scaled by
+/// correctly in both directions. Native prices are quoted per *atom*, so a
+/// wrapper whose whole-share rate is 1:1 with its underlying must still be
+/// priced differently when their decimals differ — by exactly
 /// `10^(asset_decimals - vault_decimals)`. Exercises both asymmetries:
-///   - 18-decimal vault wrapping 6-decimal USDC → ratio = `10^-12` (lands the
-///     vault in DAI's `~10^-4 wei/atomic` range, not USDC's `~10^8
-///     wei/atomic`).
-///   - 6-decimal vault wrapping 18-decimal DAI → ratio = `10^12` (vice versa).
+///   - 18-decimal vault wrapping 6-decimal USDC → per-atom factor = `10^-12`
+///     (lands the vault in DAI's `~10^-4` wei/atom range, not USDC's `~10^8`).
+///   - 6-decimal vault wrapping 18-decimal DAI → per-atom factor = `10^12`
+///     (vice versa).
 #[tokio::test]
 #[ignore]
 async fn forked_node_mainnet_eip4626_decimal_mismatch_native_price() {
@@ -278,29 +279,36 @@ async fn eip4626_decimal_mismatch_native_price_test(web3: Web3) {
 
     let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
 
+    // `MockERC4626Wrapper` implements `convertToAssets(shares) = shares * num
+    // / den`. Setting `num` and `den` to the atom-count of one whole asset
+    // and one whole vault token (respectively) yields a 1:1 *whole-token*
+    // rate — `convertToAssets(one_whole_vault) = one_whole_asset`.
+    let one_whole_6_dec = 1u64.matom(); // 10^6 atoms = 1 whole 6-decimal token
+    let one_whole_18_dec = 1u64.eth(); //  10^18 atoms = 1 whole 18-decimal token
+
     // 18-decimal wrapper of 6-decimal USDC at a 1:1 whole-token rate.
-    // `convertToAssets(10^18) = 10^18 / 10^12 = 10^6` (= 1 whole USDC in
-    // atomic units), so the atomic-to-atomic factor is `10^-12`.
+    // `convertToAssets(10^18) = 10^18 * 10^6 / 10^18 = 10^6` (= 1 whole USDC
+    // in atoms), so the per-atom factor is `10^-12`.
     let wrapper_18_over_6 = contracts::test::MockERC4626Wrapper::Instance::deploy(
         web3.provider.clone(),
         USDC,
         18u8,
-        U256::from(1u64),
-        U256::from(1_000_000_000_000u64),
+        one_whole_6_dec,  // num: atoms in 1 whole asset (USDC)
+        one_whole_18_dec, // den: atoms in 1 whole vault share
     )
     .await
     .unwrap();
     let wrapper_18_over_6_addr = *wrapper_18_over_6.address();
 
     // 6-decimal wrapper of 18-decimal DAI at a 1:1 whole-token rate.
-    // `convertToAssets(10^6) = 10^6 * 10^12 = 10^18` (= 1 whole DAI in atomic
-    // units), so the atomic-to-atomic factor is `10^12`.
+    // `convertToAssets(10^6) = 10^6 * 10^18 / 10^6 = 10^18` (= 1 whole DAI in
+    // atoms), so the per-atom factor is `10^12`.
     let wrapper_6_over_18 = contracts::test::MockERC4626Wrapper::Instance::deploy(
         web3.provider.clone(),
         DAI,
         6u8,
-        U256::from(1_000_000_000_000u64),
-        U256::from(1u64),
+        one_whole_18_dec, // num: atoms in 1 whole asset (DAI)
+        one_whole_6_dec,  // den: atoms in 1 whole vault share
     )
     .await
     .unwrap();
@@ -346,7 +354,7 @@ async fn eip4626_decimal_mismatch_native_price_test(web3: Web3) {
     let usdc_price = fetch_price(&USDC, "USDC").await;
     let dai_price = fetch_price(&DAI, "DAI").await;
 
-    // 18→6: wrapper should be priced like an 18-decimal stablecoin (DAI's
+    // 18→6: wrapper is priced per-atom like an 18-decimal stablecoin (DAI's
     // range), so `wrapper_price / usdc_price ≈ 10^-12`.
     let wrapper_18_over_6_price = fetch_price(&wrapper_18_over_6_addr, "18→6 wrapper").await;
     let ratio = wrapper_18_over_6_price / usdc_price;
@@ -355,7 +363,7 @@ async fn eip4626_decimal_mismatch_native_price_test(web3: Web3) {
         "18→6 wrapper / USDC ratio should be 1e-12, got {ratio:e}",
     );
 
-    // 6→18: wrapper should be priced like a 6-decimal stablecoin (USDC's
+    // 6→18: wrapper is priced per-atom like a 6-decimal stablecoin (USDC's
     // range), so `wrapper_price / dai_price ≈ 10^12`.
     let wrapper_6_over_18_price = fetch_price(&wrapper_6_over_18_addr, "6→18 wrapper").await;
     let ratio = wrapper_6_over_18_price / dai_price;
