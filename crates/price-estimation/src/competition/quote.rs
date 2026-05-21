@@ -178,7 +178,7 @@ fn emit_quote_event(
         json!({
             "query": {
                 "sellToken": context.query.sell_token.to_string(),
-                "buyToken": context.query.sell_token.to_string(),
+                "buyToken": context.query.buy_token.to_string(),
                 "inAmount": context.query.in_amount.to_string(),
                 "kind": match context.query.kind {
                     OrderKind::Sell => "sell",
