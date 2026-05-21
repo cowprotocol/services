@@ -95,4 +95,6 @@ pub struct EventBusConfig {
     pub url: Url,
     /// Name of the channel to post events to
     pub channel: String,
+    /// Which chain this service operates on
+    pub chain_id: u64,
 }

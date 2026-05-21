@@ -18,34 +18,45 @@ use {
     },
 };
 
-/// Channel to buffer emitted events until we have enough to send a bunch of
-/// them at once.
-static EVENT_QUEUE: OnceCell<UnboundedSender<Bytes>> = OnceCell::const_new();
+struct EventBusConnector {
+    /// Unbounded channel to allow emitting events from synchrounous
+    /// contexts.
+    message_queue: UnboundedSender<Bytes>,
+    /// Chain id to disambiguate messages in globally shared event bus
+    /// service.
+    chain_id: u64,
+}
+
+/// Singleton event bus connection to allow publishing events
+/// conventiently from everywhere.
+static BUS: OnceCell<EventBusConnector> = OnceCell::const_new();
 
 /// Initializes the event bus and panics if it fails.
 pub async fn init(config: EventBusConfig) {
-    EVENT_QUEUE
-        .get_or_init(|| async move {
-            let client = async_nats::connect(config.url.as_str())
-                .await
-                .expect("failed to connect to NATS service");
-            let jetstream = async_nats::jetstream::new(client);
-            let mut stream = jetstream
-                .get_stream(&config.channel)
-                .await
-                .expect("could not connect to jetstream");
-            let info = stream.info().await.expect("failed to fetch stream info");
-            tracing::debug!(?info, "connected to jetstream");
+    BUS.get_or_init(|| async move {
+        let client = async_nats::connect(config.url.as_str())
+            .await
+            .expect("failed to connect to NATS service");
+        let jetstream = async_nats::jetstream::new(client);
+        let mut stream = jetstream
+            .get_stream(&config.channel)
+            .await
+            .expect("could not connect to jetstream");
+        let info = stream.info().await.expect("failed to fetch stream info");
+        tracing::debug!(?info, "connected to jetstream");
 
-            let (sender, receiver) = unbounded_channel();
-            tokio::task::spawn(forward_messages_to_event_bus_client(
-                receiver,
-                jetstream,
-                config.channel.into(),
-            ));
-            sender
-        })
-        .await;
+        let (sender, receiver) = unbounded_channel();
+        tokio::task::spawn(forward_messages_to_event_bus_client(
+            receiver,
+            jetstream,
+            config.channel.into(),
+        ));
+        EventBusConnector {
+            message_queue: sender,
+            chain_id: config.chain_id,
+        }
+    })
+    .await;
 }
 
 /// Monitors a message queue and forwards all messages to the event bus
@@ -69,12 +80,13 @@ async fn forward_messages_to_event_bus_client(
 
 /// Enqueues the event to be sent to the event bus in a background task.
 pub fn publish(name: impl Into<String>, data: impl Serialize) {
-    let Some(queue) = EVENT_QUEUE.get() else {
+    let Some(bus) = BUS.get() else {
         return;
     };
 
     let mut message = json!({
         "version": "v1",
+        "chainId": bus.chain_id,
         "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         "name": name.into(),
         "body": data,
@@ -90,7 +102,7 @@ pub fn publish(name: impl Into<String>, data: impl Serialize) {
         }
     };
 
-    if let Err(err) = queue.send(body.into()) {
+    if let Err(err) = bus.message_queue.send(body.into()) {
         tracing::error!(?err, "failed to enqueue message");
     }
 }
@@ -111,6 +123,7 @@ mod tests {
         init(EventBusConfig {
             url: "localhost:4222".parse().unwrap(),
             channel: "main".to_string(),
+            chain_id: 1,
         })
         .await;
 
