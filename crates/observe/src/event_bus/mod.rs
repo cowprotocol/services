@@ -7,7 +7,7 @@
 //! can be serialized to JSON as well.
 use {
     crate::config::EventBusConfig,
-    async_nats::{Subject, jetstream::Context as JetstreamClient},
+    async_nats::jetstream::Context as JetstreamClient,
     bytes::Bytes,
     chrono::Utc,
     serde::Serialize,
@@ -21,10 +21,15 @@ use {
 struct EventBusConnector {
     /// Unbounded channel to allow emitting events from synchrounous
     /// contexts.
-    message_queue: UnboundedSender<Bytes>,
-    /// Chain id to disambiguate messages in globally shared event bus
+    message_queue: UnboundedSender<Message>,
+    /// Subject prefix to disambiguate messages in globally shared event bus
     /// service.
-    chain_id: u64,
+    subject_prefix: String,
+}
+
+struct Message {
+    subject: String,
+    data: Bytes,
 }
 
 /// Singleton event bus connection to allow publishing events
@@ -46,14 +51,12 @@ pub async fn init(config: EventBusConfig) {
         tracing::debug!(?info, "connected to jetstream");
 
         let (sender, receiver) = unbounded_channel();
-        tokio::task::spawn(forward_messages_to_event_bus_client(
-            receiver,
-            jetstream,
-            config.channel.into(),
-        ));
+        tokio::task::spawn(forward_messages_to_event_bus_client(receiver, jetstream));
         EventBusConnector {
             message_queue: sender,
-            chain_id: config.chain_id,
+            // we prefix every subject with `event` to allow consumers to easily
+            // subscribe to all events without also seeing NATS internal events
+            subject_prefix: format!("event.{}.", config.chain_id),
         }
     })
     .await;
@@ -62,12 +65,11 @@ pub async fn init(config: EventBusConfig) {
 /// Monitors a message queue and forwards all messages to the event bus
 /// service.
 async fn forward_messages_to_event_bus_client(
-    mut receiver: UnboundedReceiver<Bytes>,
+    mut receiver: UnboundedReceiver<Message>,
     client: JetstreamClient,
-    channel: Subject,
 ) {
     while let Some(message) = receiver.recv().await {
-        match client.publish(channel.clone(), message).await {
+        match client.publish(message.subject, message.data).await {
             Err(err) => {
                 tracing::debug!(?err, "failed to publish event");
             }
@@ -79,16 +81,14 @@ async fn forward_messages_to_event_bus_client(
 }
 
 /// Enqueues the event to be sent to the event bus in a background task.
-pub fn publish(event_name: impl Into<String>, data: impl Serialize) {
+pub fn publish(subject: &str, data: impl Serialize) {
     let Some(bus) = BUS.get() else {
         return;
     };
 
     let mut message = json!({
         "version": "v1",
-        "chainId": bus.chain_id,
         "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        "event": event_name.into(),
         "body": data,
     });
     if let Some(id) = crate::tracing::distributed::request_id::from_current_span() {
@@ -102,7 +102,12 @@ pub fn publish(event_name: impl Into<String>, data: impl Serialize) {
         }
     };
 
-    if let Err(err) = bus.message_queue.send(body.into()) {
+    let message = Message {
+        subject: format!("{}{}", bus.subject_prefix, subject),
+        data: body.into(),
+    };
+
+    if let Err(err) = bus.message_queue.send(message) {
         tracing::error!(?err, "failed to enqueue message");
     }
 }
