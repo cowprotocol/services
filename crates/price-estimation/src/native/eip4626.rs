@@ -1,3 +1,19 @@
+//! Native price estimation for EIP-4626 vault tokens.
+//!
+//! The protocol's inner native price estimators only know about plain
+//! ERC-20s, so this module wraps one and adds support for vaults: it asks
+//! the vault for its underlying asset and conversion rate, prices the
+//! underlying through the inner estimator, then rescales by the vault's
+//! per-atom factor. Non-vault tokens pass through unchanged. See
+//! [`Eip4626`] for the step-by-step derivation.
+//!
+//! # Terminology
+//! - an *atom* is one U256 of a token — its smallest indivisible unit
+//! - a *whole* token is `10^decimals` atoms (e.g. one whole USDC = `10^6`
+//!   atoms)
+//! - a *native price* is denominated in **wei per atom** of the priced token,
+//!   where wei is one atom of the chain's native asset
+
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::PriceEstimationError,
@@ -13,15 +29,29 @@ use {
     std::time::{Duration, Instant},
 };
 
-/// Estimates the native price of EIP-4626 vault tokens by:
-/// 1. Querying `asset()` and `decimals()` on the vault
-/// 2. Querying `convertToAssets(10^vault_decimals)` and `decimals()` on the
-///    underlying asset
-/// 3. Computing the conversion rate accounting for decimal differences
-/// 4. Delegating to an inner estimator for the underlying token's native price
+/// Estimates the native price of EIP-4626 vault tokens.
 ///
-/// For non-vault tokens, delegates directly to the inner estimator
-/// (pass-through).
+/// To price one atom of a vault we need to know how many atoms of the
+/// underlying that atom is worth, then multiply by the underlying's own
+/// native price. The steps are:
+///
+/// 1. Call `asset()` and `decimals()` on the vault to identify the underlying
+///    asset and the vault's whole-token size.
+/// 2. Call `convertToAssets(10^vault_decimals)` to learn how many *atoms* of
+///    the underlying *one whole* vault token is worth.
+/// 3. Divide that result by `10^vault_decimals` to get the per-atom conversion
+///    factor.
+/// 4. Multiply by the underlying's native price (from the inner estimator) to
+///    obtain the vault's native price.
+///
+/// Worked example — `ynUSDx`, an 18-decimal yield-bearing vault wrapping
+/// USDC (6 decimals). The share price grows as yield accrues, so the rate is
+/// a snapshot at query time; assume here that 1 whole ynUSDx is currently
+/// worth 1.1 whole USDC at the queried block:
+/// - `ynUSDx.asset() == USDC`, `ynUSDx.decimals() == 18`
+/// - `convertToAssets(10^18) == 1_100_000` (= 1.1 whole USDC, in atoms)
+/// - per-atom factor: `1_100_000 / 10^18 == 1.1e-12`
+/// - if USDC's native price is `x`, then ynUSDx's is `x * 1.1e-12`
 ///
 /// Tokens whose `asset()` call reverts are remembered in a negative cache so
 /// subsequent requests skip the RPC and go straight to the inner estimator.
@@ -101,10 +131,8 @@ impl Eip4626 {
             tracing::debug!(%token, "eip4626: classified as non-vault");
             return Ok(None);
         };
-        let (assets, asset_decimals) = self
-            .fetch_conversion_data(token, asset, vault_decimals)
-            .await?;
-        let rate = conversion_rate(assets, asset_decimals)
+        let assets = self.fetch_conversion_data(token, vault_decimals).await?;
+        let rate = conversion_rate(assets, vault_decimals)
             .context("conversion rate is not representable as f64")
             .map_err(PriceEstimationError::EstimatorInternal)?;
         tracing::debug!(%token, %asset, rate, "eip4626: unwrapped vault layer");
@@ -149,14 +177,12 @@ impl Eip4626 {
     }
 
     /// Fetches `convertToAssets(10^vault_decimals)` — how many atomic units of
-    /// the underlying asset correspond to one full vault token — and the
-    /// asset's decimals.
+    /// the underlying asset correspond to one full vault token.
     async fn fetch_conversion_data(
         &self,
         token: Address,
-        asset: Address,
         vault_decimals: u8,
-    ) -> Result<(U256, u8), PriceEstimationError> {
+    ) -> Result<U256, PriceEstimationError> {
         let one_token = U256::from(10u64)
             .checked_pow(U256::from(vault_decimals))
             .ok_or_else(|| {
@@ -166,14 +192,15 @@ impl Eip4626 {
             })?;
 
         let vault = IERC4626::IERC4626::new(token, &self.provider);
-        let asset_erc20 = ERC20::ERC20::new(asset, &self.provider);
-        let convert_call = vault.convertToAssets(one_token);
-        let asset_decimals_call = asset_erc20.decimals();
-        tokio::try_join!(convert_call.call(), asset_decimals_call.call()).map_err(|err| {
-            PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
-                "failed to call convertToAssets()/decimals() on {token}: {err}"
-            ))
-        })
+        vault
+            .convertToAssets(one_token)
+            .call()
+            .await
+            .map_err(|err| {
+                PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                    "failed to call convertToAssets() on {token}: {err}"
+                ))
+            })
     }
 }
 
@@ -187,15 +214,17 @@ impl NativePriceEstimating for Eip4626 {
     }
 }
 
-/// Computes the full-asset-tokens per full-vault-token conversion rate.
+/// Converts the result of `convertToAssets(10^vault_decimals)` into the
+/// per-atom factor (atoms of underlying per atom of vault) by dividing by
+/// `10^vault_decimals`. See the module docstring for the full derivation.
 ///
-/// `assets` is the return value of `convertToAssets(10^vault_decimals)` — i.e.
-/// asset-atomic-units for exactly 1 full vault token. Dividing by
-/// `10^asset_decimals` converts to full asset tokens.
+/// This differs from the intuitive whole-to-whole share rate by
+/// `10^(asset_decimals - vault_decimals)` — they only coincide when vault
+/// and asset decimals match.
 ///
 /// Returns `None` when the result is not representable as `f64`.
-fn conversion_rate(assets: U256, asset_decimals: u8) -> Option<f64> {
-    let denominator = BigRational::from_integer(BigInt::from(10u64).pow(asset_decimals as u32));
+fn conversion_rate(assets: U256, vault_decimals: u8) -> Option<f64> {
+    let denominator = BigRational::from_integer(BigInt::from(10u64).pow(vault_decimals as u32));
     (u256_to_big_rational(&assets) / denominator).to_f64()
 }
 
@@ -231,31 +260,58 @@ mod tests {
         std::borrow::Cow,
     };
 
+    const TOLERANCE: f64 = 1e-9;
+
+    /// Asserts `computed_rate` is within a `tolerance` of `expected_rate`.
+    fn assert_rate_close(computed_rate: f64, expected_rate: f64, tolerance: f64) {
+        let slack = expected_rate.abs() * tolerance;
+        let expected_range = (expected_rate - slack)..(expected_rate + slack);
+        assert!(
+            expected_range.contains(&computed_rate),
+            "computed_rate={computed_rate}, expected_rate={expected_rate}, tolerance={tolerance}",
+        );
+    }
+
     #[test]
     fn rate_math_same_decimals() {
-        // 18-decimal vault wrapping 18-decimal asset, 1 share = 1.5 asset tokens.
-        // convertToAssets(10^18) = 1.5 * 10^18 asset-atomic-units
+        // 18-decimal vault wrapping 18-decimal asset:
+        // 1 whole share = 1.5 whole asset tokens.
+        // - vault.decimals() = 18, asset.decimals() = 18
+        // - convertToAssets(10^18) = 1.5 * 10^18 (in asset atoms)
+        // - per-atom factor = 1.5 * 10^18 / 10^18 = 1.5
+        // - matches the whole-to-whole rate exactly when decimals align.
         let assets = U256::from(15u64) * U256::from(10u64).pow(U256::from(17u64));
-        let rate = conversion_rate(assets, 18).unwrap();
-        assert!((rate - 1.5).abs() < 1e-9, "rate={rate}");
+        let computed_rate = conversion_rate(assets, 18).unwrap();
+
+        assert_rate_close(computed_rate, 1.5, TOLERANCE);
     }
 
     #[test]
     fn rate_math_vault_18_asset_6() {
-        // 18-decimal vault wrapping 6-decimal USDC, 1 share = 1.5 USDC.
-        // convertToAssets(10^18) = 1_500_000 asset-atomic-units (1.5 * 10^6)
+        // 18-decimal vault wrapping 6-decimal USDC:
+        // 1 whole share = 1.5 whole USDC.
+        // - vault.decimals() = 18, asset.decimals() = 6
+        // - convertToAssets(10^18) = 1_500_000 (= 1.5 whole USDC, in atoms)
+        // - per-atom factor = 1_500_000 / 10^18 = 1.5e-12
+        // - = whole-share rate (1.5) scaled by 10^(asset_dec - vault_dec) = 10^-12.
         let assets = U256::from(1_500_000u64);
-        let rate = conversion_rate(assets, 6).unwrap();
-        assert!((rate - 1.5).abs() < 1e-9, "rate={rate}");
+        let computed_rate = conversion_rate(assets, 18).unwrap();
+
+        assert_rate_close(computed_rate, 1.5e-12, TOLERANCE);
     }
 
     #[test]
     fn rate_math_vault_6_asset_18() {
-        // 6-decimal vault wrapping 18-decimal asset, 1 share = 2 asset tokens.
-        // convertToAssets(10^6) = 2 * 10^18 asset-atomic-units
+        // 6-decimal vault wrapping 18-decimal asset:
+        // 1 whole share = 2 whole asset tokens.
+        // - vault.decimals() = 6, asset.decimals() = 18
+        // - convertToAssets(10^6) = 2 * 10^18 (= 2 whole tokens, in atoms)
+        // - per-atom factor = 2 * 10^18 / 10^6 = 2e12
+        // - = whole-share rate (2) scaled by 10^(asset_dec - vault_dec) = 10^12.
         let assets = U256::from(2u64) * U256::from(10u64).pow(U256::from(18u64));
-        let rate = conversion_rate(assets, 18).unwrap();
-        assert!((rate - 2.0).abs() < 1e-9, "rate={rate}");
+        let computed_rate = conversion_rate(assets, 6).unwrap();
+
+        assert_rate_close(computed_rate, 2e12, TOLERANCE);
     }
 
     /// Tests two (related) things:
