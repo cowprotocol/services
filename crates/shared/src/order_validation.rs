@@ -1,10 +1,13 @@
 use {
-    crate::order_quoting::{
-        CalculateQuoteError,
-        OrderQuoting,
-        Quote,
-        QuoteParameters,
-        QuoteSearchParameters,
+    crate::{
+        order_creation_simulation::{OrderSimulating, OrderSimulationError},
+        order_quoting::{
+            CalculateQuoteError,
+            OrderQuoting,
+            Quote,
+            QuoteParameters,
+            QuoteSearchParameters,
+        },
     },
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
@@ -29,6 +32,7 @@ use {
             OrderData,
             OrderKind,
             OrderMetadata,
+            OrderUid,
             SellTokenSource,
             VerificationError,
         },
@@ -41,6 +45,76 @@ use {
     std::{sync::Arc, time::Duration},
     tracing::instrument,
 };
+
+/// Order simulation paired with the EIP-1271 signature check. The
+/// simulation result is logged but does not affect order acceptance.
+#[derive(Clone)]
+pub struct OrderSimulator {
+    pub simulator: Arc<dyn OrderSimulating>,
+    pub timeout: Duration,
+}
+
+impl OrderSimulator {
+    pub async fn simulate_with_timeout(
+        &self,
+        order: &Order,
+        full_app_data: &str,
+    ) -> Result<(), OrderSimulationError> {
+        tokio::time::timeout(self.timeout, self.simulator.simulate(order, full_app_data))
+            .await
+            .map_err(|_| OrderSimulationError::Infra(anyhow!("order simulation timeout")))?
+    }
+}
+
+/// Logs disagreements (signature pass + simulation revert, or vice versa)
+/// and infra errors as warnings. Agreement is silent.
+fn log_simulation_outcome(
+    signature: &Result<u64, SignatureValidationError>,
+    simulation: &Result<(), OrderSimulationError>,
+    preview_order: &Order,
+    full_app_data: &str,
+) {
+    let order_uid = preview_order.metadata.uid;
+    let owner = preview_order.metadata.owner;
+    let order_data = &preview_order.data;
+    let order_signature = &preview_order.signature;
+    match (signature, simulation) {
+        (
+            Ok(_),
+            Err(OrderSimulationError::Reverted {
+                reason,
+                tenderly_url,
+            }),
+        ) => tracing::warn!(
+            ?order_uid,
+            ?owner,
+            ?order_data,
+            full_app_data,
+            ?order_signature,
+            ?reason,
+            ?tenderly_url,
+            "order simulation disagreement: signature passed, simulation reverted",
+        ),
+        (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
+            ?order_uid,
+            ?owner,
+            ?order_data,
+            full_app_data,
+            ?order_signature,
+            "order simulation disagreement: signature invalid, simulation passed",
+        ),
+        (_, Err(OrderSimulationError::Infra(err))) => tracing::warn!(
+            ?order_uid,
+            ?owner,
+            ?order_data,
+            full_app_data,
+            ?order_signature,
+            ?err,
+            "order simulation infra error",
+        ),
+        _ => {}
+    }
+}
 
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
@@ -241,6 +315,7 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
+    order_simulator: Option<OrderSimulator>,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     app_data_validator: Validator,
@@ -310,6 +385,7 @@ impl OrderValidator {
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
+        order_simulator: Option<OrderSimulator>,
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         app_data_validator: Validator,
@@ -326,12 +402,129 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
+            order_simulator,
             limit_order_counter,
             max_limit_orders_per_user,
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
         }
+    }
+
+    /// Computes the `verification_gas_limit` for an order and runs the
+    /// simulation for observability. Returns `0` for orders without an
+    /// EIP-1271 signature check, but the simulation still runs.
+    async fn calculate_verification_gas_limit(
+        &self,
+        order: &OrderCreation,
+        data: &OrderData,
+        app_data: &OrderAppData,
+        domain_separator: &DomainSeparator,
+        owner: Address,
+        uid: OrderUid,
+    ) -> Result<u64, ValidationError> {
+        let preview_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid,
+                ..Default::default()
+            },
+            data: *data,
+            signature: order.signature.clone(),
+            interactions: app_data.interactions.clone(),
+        };
+        let full_app_data = app_data.inner.document.clone();
+        let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
+
+        if let Signature::Eip1271(signature) = &order.signature {
+            let check = SignatureCheck::new(
+                owner,
+                hash.0,
+                signature.to_owned(),
+                app_data.interactions.pre.clone(),
+                app_data
+                    .inner
+                    .protocol
+                    .flashloan
+                    .as_ref()
+                    .map(|loan| BalanceOverrideRequest {
+                        token: loan.token,
+                        holder: loan.receiver,
+                        amount: loan.amount,
+                    }),
+            );
+            return self
+                .run_eip1271_checks(check, &preview_order, full_app_data, hash)
+                .await;
+        }
+
+        self.observe_simulation(&preview_order, &full_app_data)
+            .await;
+        Ok(0u64)
+    }
+
+    /// Runs the order simulation for observability and discards the result
+    /// beyond logging it. Used for order types that have no on-chain
+    /// signature check (EOA, PreSign) and for the
+    /// `eip1271_skip_creation_validation` path.
+    async fn observe_simulation(&self, preview_order: &Order, full_app_data: &str) {
+        let Some(config) = &self.order_simulator else {
+            return;
+        };
+        let simulation = config
+            .simulate_with_timeout(preview_order, full_app_data)
+            .await;
+        log_simulation_outcome(&Ok(0), &simulation, preview_order, full_app_data);
+    }
+
+    /// When `eip1271_skip_creation_validation` is set, the signature check is
+    /// skipped and the simulation runs for observability only. Otherwise the
+    /// signature check decides acceptance and the simulation runs alongside.
+    async fn run_eip1271_checks(
+        &self,
+        check: SignatureCheck,
+        preview_order: &Order,
+        full_app_data: String,
+        hash: B256,
+    ) -> Result<u64, ValidationError> {
+        if self.eip1271_skip_creation_validation {
+            self.observe_simulation(preview_order, &full_app_data).await;
+            return Ok(0u64);
+        }
+        self.run_eip1271_with_signature_check(check, preview_order, full_app_data, hash)
+            .await
+    }
+
+    /// Runs the `isValidSignature` check and, when a simulator is configured,
+    /// the order simulation concurrently. The signature result decides
+    /// acceptance. The simulation result is logged for observability only.
+    async fn run_eip1271_with_signature_check(
+        &self,
+        check: SignatureCheck,
+        preview_order: &Order,
+        full_app_data: String,
+        hash: B256,
+    ) -> Result<u64, ValidationError> {
+        let signature_fut = self
+            .signature_validator
+            .validate_signature_and_get_additional_gas(check);
+
+        let Some(config) = &self.order_simulator else {
+            return signature_fut.await.map_err(|err| match err {
+                SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
+                SignatureValidationError::Other(err) => ValidationError::Other(err),
+            });
+        };
+
+        let simulation_fut = config.simulate_with_timeout(preview_order, &full_app_data);
+        let (signature_res, simulation) = tokio::join!(signature_fut, simulation_fut);
+
+        log_simulation_outcome(&signature_res, &simulation, preview_order, &full_app_data);
+
+        signature_res.map_err(|err| match err {
+            SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
+            SignatureValidationError::Other(err) => ValidationError::Other(err),
+        })
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -629,39 +822,16 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, owner);
 
-        let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
-            if self.eip1271_skip_creation_validation {
-                tracing::debug!(?signature, "skipping EIP-1271 signature validation");
-                // We don't care! Because we are skipping validation anyway
-                0u64
-            } else {
-                let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
-                self.signature_validator
-                    .validate_signature_and_get_additional_gas(SignatureCheck {
-                        signer: owner,
-                        hash: hash.0,
-                        signature: signature.to_owned(),
-                        interactions: app_data.interactions.pre.clone(),
-                        balance_override: app_data.inner.protocol.flashloan.as_ref().map(|loan| {
-                            BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
-                            }
-                        }),
-                    })
-                    .await
-                    .map_err(|err| match err {
-                        SignatureValidationError::Invalid => {
-                            ValidationError::InvalidEip1271Signature(hash)
-                        }
-                        SignatureValidationError::Other(err) => ValidationError::Other(err),
-                    })?
-            }
-        } else {
-            // in any other case, just apply 0
-            0u64
-        };
+        let verification_gas_limit = self
+            .calculate_verification_gas_limit(
+                &order,
+                &data,
+                &app_data,
+                domain_separator,
+                owner,
+                uid,
+            )
+            .await?;
 
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
@@ -1043,10 +1213,13 @@ pub fn convert_signing_scheme_into_quote_signing_scheme(
 mod tests {
     use {
         super::*,
-        crate::order_quoting::{FindQuoteError, MockOrderQuoting},
+        crate::{
+            order_creation_simulation::MockOrderSimulating,
+            order_quoting::{FindQuoteError, MockOrderQuoting},
+        },
         account_balances::MockBalanceFetching,
         alloy::{
-            primitives::{Address, U160, address, b256},
+            primitives::{Address, U160, U256, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
             signers::local::PrivateKeySigner,
         },
@@ -1061,6 +1234,8 @@ mod tests {
         serde_json::json,
         signature_validator::MockSignatureValidating,
     };
+
+    const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 
     #[tokio::test]
     async fn pre_validate_err() {
@@ -1083,7 +1258,7 @@ mod tests {
             false,
             DenyListedTokens::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1091,6 +1266,7 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -1238,7 +1414,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1246,6 +1422,7 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -1318,7 +1495,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1326,6 +1503,7 @@ mod tests {
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -1439,6 +1617,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             signature_validating,
+            None,
             Arc::new(limit_order_counter),
             max_limit_orders_per_user,
             Default::default(),
@@ -1518,13 +1697,13 @@ mod tests {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
-            .with(eq(SignatureCheck {
-                signer: creation.from.unwrap(),
-                hash: order_hash.0,
-                signature: vec![1, 2, 3],
-                interactions: pre_interactions.clone(),
-                balance_override: None,
-            }))
+            .with(eq(SignatureCheck::new(
+                creation.from.unwrap(),
+                order_hash.0,
+                vec![1, 2, 3],
+                pre_interactions.clone(),
+                None,
+            )))
             .returning(|_| Ok(0u64));
 
         let validator = OrderValidator {
@@ -1547,13 +1726,13 @@ mod tests {
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
-            .with(eq(SignatureCheck {
-                signer: creation.from.unwrap(),
-                hash: order_hash.0,
-                signature: vec![1, 2, 3],
-                interactions: pre_interactions.clone(),
-                balance_override: None,
-            }))
+            .with(eq(SignatureCheck::new(
+                creation.from.unwrap(),
+                order_hash.0,
+                vec![1, 2, 3],
+                pre_interactions.clone(),
+                None,
+            )))
             .returning(|_| Err(SignatureValidationError::Invalid));
 
         let validator = OrderValidator {
@@ -1643,7 +1822,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1651,6 +1830,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             signature_validating,
+            None,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
             Default::default(),
@@ -1715,7 +1895,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1723,6 +1903,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             signature_validating,
+            None,
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
             Default::default(),
@@ -1775,7 +1956,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1783,6 +1964,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -1828,7 +2010,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1836,6 +2018,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -1885,7 +2068,7 @@ mod tests {
             false,
             deny_listed_tokens,
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1893,6 +2076,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -1945,7 +2129,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -1953,6 +2137,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -2004,7 +2189,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2012,6 +2197,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -2078,6 +2264,7 @@ mod tests {
                 Arc::new(order_quoter),
                 Arc::new(balance_fetcher),
                 Arc::new(MockSignatureValidating::new()),
+                None,
                 Arc::new(limit_order_counter),
                 0,
                 Default::default(),
@@ -2160,7 +2347,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2168,6 +2355,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -2571,7 +2759,7 @@ mod tests {
             false,
             Default::default(),
             HooksTrampoline::Instance::new(
-                Address::from([0xcf; 20]),
+                Address::repeat_byte(0xcf),
                 ProviderBuilder::new()
                     .connect_mocked_client(Asserter::new())
                     .erased(),
@@ -2579,6 +2767,7 @@ mod tests {
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validating),
+            None,
             Arc::new(limit_order_counter),
             0,
             Default::default(),
@@ -2613,5 +2802,244 @@ mod tests {
             .unwrap();
 
         assert_eq!(quote_id, returned_quote_id.and_then(|quote| quote.id));
+    }
+
+    fn make_1271_order_creation() -> OrderCreation {
+        OrderCreation {
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: U256::ONE,
+            sell_amount: U256::ONE,
+            fee_amount: U256::ZERO,
+            from: Some(Address::repeat_byte(1)),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        }
+    }
+
+    fn order_simulator(sim: MockOrderSimulating) -> OrderSimulator {
+        OrderSimulator {
+            simulator: Arc::new(sim),
+            timeout: DEFAULT_ORDER_SIM_TIMEOUT,
+        }
+    }
+
+    fn build_1271_validator(
+        signature_validator: MockSignatureValidating,
+        order_simulator: Option<OrderSimulator>,
+        eip1271_skip_creation_validation: bool,
+    ) -> OrderValidator {
+        // The quote lookup, balance fetch, and limit-order count are off the
+        // path under test here. Stub them to always succeed so every test
+        // reaches the EIP-1271 block without tripping earlier validation.
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token =
+            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
+        OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration::any(),
+            eip1271_skip_creation_validation,
+            Default::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validator),
+            order_simulator,
+            Arc::new(limit_order_counter),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        )
+    }
+
+    /// Verifies that the signature result alone decides acceptance and the
+    /// simulation result is observed only.
+    #[tokio::test]
+    async fn signature_and_simulation_outcome_matrix() {
+        #[derive(Copy, Clone, Debug)]
+        enum Sig {
+            Pass,
+            Invalid,
+        }
+        #[derive(Copy, Clone, Debug)]
+        enum Sim {
+            Pass,
+            Reverted,
+        }
+        #[derive(Copy, Clone, Debug)]
+        enum Expected {
+            Accepted,
+            InvalidSignature,
+        }
+
+        let cases: &[(Sig, Sim, Expected)] = &[
+            (Sig::Pass, Sim::Pass, Expected::Accepted),
+            (Sig::Pass, Sim::Reverted, Expected::Accepted),
+            (Sig::Invalid, Sim::Pass, Expected::InvalidSignature),
+            (Sig::Invalid, Sim::Reverted, Expected::InvalidSignature),
+        ];
+
+        for &(sig, simulation, expected) in cases {
+            let label = format!("sig={sig:?} sim={simulation:?}");
+            let mut signature_validator = MockSignatureValidating::new();
+            signature_validator
+                .expect_validate_signature_and_get_additional_gas()
+                .returning(move |_| match sig {
+                    Sig::Pass => Ok(0u64),
+                    Sig::Invalid => Err(SignatureValidationError::Invalid),
+                });
+            let mut sim = MockOrderSimulating::new();
+            sim.expect_simulate()
+                .times(1)
+                .returning(move |_, _| match simulation {
+                    Sim::Pass => Ok(()),
+                    Sim::Reverted => Err(OrderSimulationError::Reverted {
+                        reason: "hook reverted".into(),
+                        tenderly_url: None,
+                    }),
+                });
+            let validator =
+                build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
+            let result = validator
+                .validate_and_construct_order(
+                    make_1271_order_creation(),
+                    &DomainSeparator::default(),
+                    Default::default(),
+                    None,
+                )
+                .await;
+            match expected {
+                Expected::Accepted => assert!(result.is_ok(), "{label}: got {result:?}"),
+                Expected::InvalidSignature => assert!(
+                    matches!(result, Err(ValidationError::InvalidEip1271Signature(_))),
+                    "{label}: got {result:?}"
+                ),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn simulation_infra_error_does_not_reject_order() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Ok(0u64));
+        let mut sim = MockOrderSimulating::new();
+        sim.expect_simulate()
+            .returning(|_, _| Err(OrderSimulationError::Infra(anyhow!("RPC down"))));
+        let validator =
+            build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
+        let result = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn skip_flag_runs_simulation_only_and_never_rejects() {
+        let mut signature_validator = MockSignatureValidating::new();
+        // With `eip1271_skip_creation_validation = true`, the signature
+        // validator must not be called.
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .times(0);
+        let mut sim = MockOrderSimulating::new();
+        sim.expect_simulate().returning(|_, _| {
+            Err(OrderSimulationError::Reverted {
+                reason: "x".into(),
+                tenderly_url: None,
+            })
+        });
+        let validator = build_1271_validator(signature_validator, Some(order_simulator(sim)), true);
+        let result = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(result.is_ok(), "got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn simulator_runs_for_non_eip1271_orders() {
+        // EOA orders skip the EIP-1271 signature check but still go through
+        // the simulator for observability.
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .times(0);
+        let mut sim = MockOrderSimulating::new();
+        sim.expect_simulate().times(1).returning(|_, _| Ok(()));
+        let validator =
+            build_1271_validator(signature_validator, Some(order_simulator(sim)), false);
+
+        let eoa_order = OrderCreation {
+            // `from = None` so `verify_owner` accepts the address recovered
+            // from the non-zero ECDSA signature, letting the order reach the
+            // simulator path.
+            from: None,
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            ..make_1271_order_creation()
+        };
+        // Ignore the final result (it will fail WrongOwner/etc. later in the
+        // pipeline - we only care that the sim was invoked).
+        let _ = validator
+            .validate_and_construct_order(
+                eoa_order,
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        // `sim.expect_simulate().times(1)` asserts on drop.
+    }
+
+    #[tokio::test]
+    async fn invalid_signature_rejected_when_simulator_disabled() {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .returning(|_| Err(SignatureValidationError::Invalid));
+        let validator = build_1271_validator(signature_validator, None, false);
+        let err = validator
+            .validate_and_construct_order(
+                make_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ValidationError::InvalidEip1271Signature(_)),
+            "got {err:?}"
+        );
     }
 }
