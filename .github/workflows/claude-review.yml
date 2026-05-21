@@ -21,7 +21,7 @@ jobs:
     # Also skip bot authors and PRs explicitly labelled `skip-claude-review`,
     # so authors have an escape hatch for trivial changes.
     # External contributors are excluded from both triggers by requiring an
-    # internal `author_association` (OWNER/MEMBER/COLLABORATOR).
+    # internal `author_association` (OWNER/MEMBER).
     if: >
       (
         github.event_name == 'pull_request' &&
