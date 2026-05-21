@@ -29,7 +29,10 @@ use {
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
-    observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
+    observe::{
+        config::EventBusConfig,
+        metrics::{DEFAULT_METRICS_PORT, serve_metrics},
+    },
     order_validation,
     price_estimation::{
         PriceEstimating,
@@ -74,6 +77,13 @@ pub async fn start(args: impl Iterator<Item = String>) {
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
+    if let Some(event_bus) = &config.shared.event_bus {
+        observe::event_bus::init(EventBusConfig {
+            url: event_bus.url.clone(),
+            channel: event_bus.channel.clone(),
+        })
+        .await;
+    }
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
     tracing::info!("file configuration:\n{:#?}", config);

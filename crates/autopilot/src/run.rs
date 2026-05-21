@@ -36,7 +36,7 @@ use {
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
-    observe::metrics::LivenessChecking,
+    observe::{config::EventBusConfig, metrics::LivenessChecking},
     price_estimation::{
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
@@ -153,6 +153,13 @@ pub async fn start(args: impl Iterator<Item = String>) {
     );
     observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
+    if let Some(event_bus) = &config.shared.event_bus {
+        observe::event_bus::init(EventBusConfig {
+            url: event_bus.url.clone(),
+            channel: event_bus.channel.clone(),
+        })
+        .await;
+    }
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
 

@@ -96,6 +96,9 @@ pub struct SharedConfig {
     /// By default, volume fees are NOT applied to same-token trades.
     #[serde(default)]
     pub enable_sell_equals_buy_volume_fee: bool,
+
+    /// Enables publishing events to a global events bus.
+    pub event_bus: Option<EventBusConfig>,
 }
 
 impl Default for SharedConfig {
@@ -112,6 +115,7 @@ impl Default for SharedConfig {
             contracts: Default::default(),
             volume_fee_bucket_overrides: Vec::new(),
             enable_sell_equals_buy_volume_fee: false,
+            event_bus: None,
         }
     }
 }
@@ -311,6 +315,17 @@ where
     serializer.serialize_str(level.as_str())
 }
 
+/// OpenTelemetry tracing configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[derive(serde::Serialize)]
+pub struct EventBusConfig {
+    /// Url of the event bus service.
+    pub url: Url,
+    /// Name of the channel to post events to.
+    pub channel: String,
+}
+
 /// Gas price estimation strategy.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
@@ -403,6 +418,10 @@ mod tests {
             "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
             "0x6B175474E89094C44Da98b954EedeAC495271d0F",
         ]
+
+        [event-bus]
+        url = "localhost:4222"
+        channel = "main"
         "#;
 
         let config: SharedConfig = toml::from_str(toml).unwrap();
@@ -430,5 +449,10 @@ mod tests {
         assert!(config.enable_sell_equals_buy_volume_fee);
         assert_eq!(config.volume_fee_bucket_overrides.len(), 1);
         assert_eq!(config.volume_fee_bucket_overrides[0].tokens.len(), 2);
+        assert_eq!(
+            config.event_bus.as_ref().unwrap().url,
+            "localhost:4222".parse().unwrap()
+        );
+        assert_eq!(config.event_bus.as_ref().unwrap().channel, "main");
     }
 }

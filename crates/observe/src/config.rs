@@ -1,4 +1,4 @@
-use {core::time::Duration, tracing::Level};
+use {core::time::Duration, tracing::Level, url::Url};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -87,4 +87,12 @@ impl TracingConfig {
             level,
         }
     }
+}
+
+/// Configures a backend wide event bus events can be posted to.
+pub struct EventBusConfig {
+    /// Url of the event bus service
+    pub url: Url,
+    /// Name of the channel to post events to
+    pub channel: String,
 }

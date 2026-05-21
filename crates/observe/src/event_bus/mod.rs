@@ -6,6 +6,7 @@
 //! Messages always get serialized as JSON so you can publish anything that
 //! can be serialized to JSON as well.
 use {
+    crate::config::EventBusConfig,
     async_nats::{Subject, jetstream::Context as JetstreamClient},
     bytes::Bytes,
     chrono::Utc,
@@ -15,28 +16,22 @@ use {
         OnceCell,
         mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     },
-    url::Url,
 };
 
 /// Channel to buffer emitted events until we have enough to send a bunch of
 /// them at once.
 static EVENT_QUEUE: OnceCell<UnboundedSender<Bytes>> = OnceCell::const_new();
 
-pub struct Config {
-    client: Url,
-    channel_name: String,
-}
-
 /// Initializes the event bus and panics if it fails.
-pub async fn init(config: Config) {
+pub async fn init(config: EventBusConfig) {
     EVENT_QUEUE
         .get_or_init(|| async move {
-            let client = async_nats::connect(config.client.as_str())
+            let client = async_nats::connect(config.url.as_str())
                 .await
                 .expect("failed to connect to NATS service");
             let jetstream = async_nats::jetstream::new(client);
             let mut stream = jetstream
-                .get_stream(&config.channel_name)
+                .get_stream(&config.channel)
                 .await
                 .expect("could not connect to jetstream");
             let info = stream.info().await.expect("failed to fetch stream info");
@@ -46,7 +41,7 @@ pub async fn init(config: Config) {
             tokio::task::spawn(forward_messages_to_event_bus_client(
                 receiver,
                 jetstream,
-                config.channel_name.into(),
+                config.channel.into(),
             ));
             sender
         })
@@ -113,9 +108,9 @@ mod tests {
             use_json_format: false,
             tracing: None,
         });
-        init(Config {
-            client: "localhost:4222".parse().unwrap(),
-            channel_name: "main".to_string(),
+        init(EventBusConfig {
+            url: "localhost:4222".parse().unwrap(),
+            channel: "main".to_string(),
         })
         .await;
 
