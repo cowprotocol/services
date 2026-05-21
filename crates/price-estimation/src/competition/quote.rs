@@ -12,6 +12,7 @@ use {
     anyhow::Context,
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
+    serde_json::json,
     std::{cmp::Ordering, sync::Arc, time::Duration},
     tracing::instrument,
 };
@@ -37,7 +38,12 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             };
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, |context| {
-                    context.estimator.estimate(context.query)
+                    async move {
+                        let res = context.estimator.estimate(context.query.clone()).await;
+                        emit_quote_event(&context.query, &res);
+                        res
+                    }
+                    .boxed()
                 })
                 .map(Result::Ok);
 
@@ -154,6 +160,34 @@ impl RankingContext {
             v => U256::from(v.trunc()),
         }
     }
+}
+
+fn emit_quote_event(query: &Query, result: &PriceEstimateResult) {
+    observe::event_bus::publish(
+        "priceEstimate",
+        json!({
+            "query": {
+                "sellToken": query.sell_token.to_string(),
+                "buyToken": query.sell_token.to_string(),
+                "inAmount": query.in_amount.to_string(),
+                "from": query.verification.from,
+                "timeout": query.timeout.as_millis(),
+                "kind": match query.kind {
+                    OrderKind::Sell => "sell",
+                    OrderKind::Buy => "buy",
+                }
+            },
+            "result": match result {
+                Ok(estimate) => json!({
+                    "outAmount": estimate.out_amount.to_string(),
+                    "gas": estimate.gas.to_string(),
+                    "solver": estimate.solver.to_string(),
+                    "verified": estimate.verified,
+                }),
+                Err(err) => json!({"error": err.to_string()}),
+            }
+        }),
+    );
 }
 
 #[cfg(test)]
