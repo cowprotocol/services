@@ -54,7 +54,8 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
+          track_progress: true
           claude_args: |
             --model claude-opus-4-7
-            --max-turns 10
-          prompt: "Review this PR"
+            --max-turns 30
+          prompt: "Review this PR. Use the pr-review skill if available."
