@@ -401,7 +401,23 @@ async fn haircut_test_case(test_case: HaircutTestCase) {
         .await;
 
     let result = test.solve().await.ok();
-    assert!(result.score().is_approx_eq(&test_case.expected_score, None));
+    // At the limit price the make-room math closes to zero surplus over the
+    // signed limit, but the integer-price encoding leaves a few wei of noise.
+    // `is_approx_eq` would divide-by-zero against `expected_score = 0`, so
+    // compare with an absolute wei tolerance instead.
+    let score = result.score();
+    let diff = if score > test_case.expected_score {
+        score - test_case.expected_score
+    } else {
+        test_case.expected_score - score
+    };
+    assert!(
+        diff <= eth::U256::from(1_000_000u64),
+        "score {} differs from expected {} by {} wei",
+        score,
+        test_case.expected_score,
+        diff,
+    );
     result.orders(&[order]);
 }
 
