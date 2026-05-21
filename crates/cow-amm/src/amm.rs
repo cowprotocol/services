@@ -67,13 +67,13 @@ impl Amm {
         // To avoid issues caused by that we check the validity of the signature.
         let hash = hashed_eip712_message(domain_separator, &template.order.hash_struct());
         validator
-            .validate_signature_and_get_additional_gas(SignatureCheck {
-                signer: self.address,
-                hash: hash.0,
-                signature: template.signature.to_bytes(),
-                interactions: template.pre_interactions.clone(),
-                balance_override: None,
-            })
+            .validate_signature_and_get_additional_gas(SignatureCheck::new(
+                self.address,
+                hash.0,
+                template.signature.to_bytes(),
+                template.pre_interactions.clone(),
+                None,
+            ))
             .await
             .context("invalid signature")?;
 
