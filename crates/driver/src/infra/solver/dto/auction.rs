@@ -411,12 +411,11 @@ fn scaling_factor_to_decimal(
 /// Sell orders: `buy.amount := buy.amount / (1 - h)`.
 /// Buy orders:  `sell.amount := sell.amount / (1 + h)`.
 ///
-/// If the factor multiplication fails (overflow, or `haircut_bps >= 10_000`
-/// making `(1 - h) <= 0`), the original limit is preserved rather than zeroed
-/// — a zero-limit order is silently unfillable — and a warning is logged so
-/// operators can spot misconfigurations. `haircut_bps` is expected to be well
-/// below `super::MAX_BASE_POINT`; a debug assertion catches misconfigs in dev
-/// builds.
+/// `haircut_bps` is expected to be well below `super::MAX_BASE_POINT`; a debug
+/// assertion catches misconfigs in dev builds. On `apply_factor` failure (only
+/// reachable on overflow when scaling buy_amount upward) we fall back to `0`
+/// — matching the volume-fee pre-processing above — and log a warning so
+/// operators can spot the misconfiguration.
 fn apply_haircut(available: &mut Available, side: Side, haircut_bps: u32, order_uid: &order::Uid) {
     if haircut_bps == 0 {
         return;
@@ -439,18 +438,19 @@ fn apply_haircut(available: &mut Available, side: Side, haircut_bps: u32, order_
             "buy",
         ),
     };
-    match amount.apply_factor(factor) {
-        Some(tightened) => *amount = tightened,
-        None => tracing::warn!(
+    let tightened = amount.apply_factor(factor);
+    if tightened.is_none() {
+        tracing::warn!(
             ?order_uid,
             haircut_bps,
             ?side,
             leg,
             factor,
             ?amount,
-            "failed to tighten order limit for haircut; preserving original",
-        ),
+            "failed to tighten order limit for haircut; falling back to default",
+        );
     }
+    *amount = tightened.unwrap_or_default();
 }
 
 #[cfg(test)]
@@ -563,29 +563,26 @@ mod tests {
         );
     }
 
-    /// `apply_factor` failure (here: 100% haircut producing `1/(1-1) = inf`
-    /// → `None`) must NOT silently zero the limit. Original is preserved so a
-    /// misconfigured solver doesn't quietly drop every order it sees. The
-    /// debug-assert above will fire in dev builds; this guards release builds.
+    /// On `apply_factor` failure (only reachable in practice via overflow
+    /// when scaling buy_amount upward), `apply_haircut` falls back to `0` to
+    /// match the volume-fee pre-processing's `unwrap_or_default()` behaviour.
+    /// The debug-assert above will fire in dev builds; this guards release
+    /// builds.
     #[test]
-    fn haircut_overflow_preserves_original_limit() {
-        let sell = eth::U256::from(500_000_000u64);
-        let signed_buy = eth::U256::from(441_289_983_646_158_011_001u128);
+    fn haircut_overflow_falls_back_to_default() {
+        let signed_buy = eth::TokenAmount(eth::U256::from(441_289_983_646_158_011_001u128));
+        assert!(
+            signed_buy.apply_factor(f64::INFINITY).is_none(),
+            "sanity: factor of inf must fail"
+        );
 
-        // Skip the debug-assert in release-style execution by calling with the
-        // boundary value just below; for the overflow case we exercise
-        // `apply_factor` returning None directly.
-        let mut a = available(sell, signed_buy);
-        let huge_factor = f64::INFINITY;
-        let result = a.buy.amount.apply_factor(huge_factor);
-        assert!(result.is_none(), "sanity: factor of inf must fail");
-
-        // Simulate the fallback path manually (mirrors what `apply_haircut`
-        // does on failure: keep the original).
-        a.buy.amount = result.unwrap_or(a.buy.amount);
+        // Mirrors the fallback path in `apply_haircut`: failed `apply_factor`
+        // → `unwrap_or_default()` → 0.
+        let fallback = signed_buy.apply_factor(f64::INFINITY).unwrap_or_default();
         assert_eq!(
-            a.buy.amount.0, signed_buy,
-            "fallback must preserve the original limit, not zero it"
+            fallback,
+            eth::TokenAmount::default(),
+            "fallback must be the type default (0)"
         );
     }
 }
