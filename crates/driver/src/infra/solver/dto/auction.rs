@@ -563,26 +563,27 @@ mod tests {
         );
     }
 
-    /// On `apply_factor` failure (only reachable in practice via overflow
-    /// when scaling buy_amount upward), `apply_haircut` falls back to `0` to
-    /// match the volume-fee pre-processing's `unwrap_or_default()` behaviour.
-    /// The debug-assert above will fire in dev builds; this guards release
-    /// builds.
+    /// `haircut_bps == MAX_BASE_POINT` makes `1 / (1 - 1) = inf`, the only
+    /// realistic way `apply_factor` returns `None` inside `apply_haircut`. The
+    /// fallback is `0` (matches the volume-fee pre-processing's
+    /// `unwrap_or_default()` behaviour). The debug-assert allows `<=
+    /// MAX_BASE_POINT` so this case is reachable in dev builds too.
     #[test]
     fn haircut_overflow_falls_back_to_default() {
-        let signed_buy = eth::TokenAmount(eth::U256::from(441_289_983_646_158_011_001u128));
-        assert!(
-            signed_buy.apply_factor(f64::INFINITY).is_none(),
-            "sanity: factor of inf must fail"
+        let sell = eth::U256::from(500_000_000u64);
+        let signed_buy = eth::U256::from(441_289_983_646_158_011_001u128);
+
+        let mut a = available(sell, signed_buy);
+        apply_haircut(
+            &mut a,
+            Side::Sell,
+            super::super::MAX_BASE_POINT,
+            &order::Uid::default(),
         );
 
-        // Mirrors the fallback path in `apply_haircut`: failed `apply_factor`
-        // → `unwrap_or_default()` → 0.
-        let fallback = signed_buy.apply_factor(f64::INFINITY).unwrap_or_default();
-        assert_eq!(
-            fallback,
-            eth::TokenAmount::default(),
-            "fallback must be the type default (0)"
-        );
+        // buy.amount tightened with an infinite factor → fallback to 0.
+        assert_eq!(a.buy.amount, eth::TokenAmount::default());
+        // sell.amount is untouched on the sell-side branch.
+        assert_eq!(a.sell.amount.0, sell);
     }
 }
