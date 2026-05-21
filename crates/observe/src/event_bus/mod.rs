@@ -79,7 +79,7 @@ async fn forward_messages_to_event_bus_client(
 }
 
 /// Enqueues the event to be sent to the event bus in a background task.
-pub fn publish(name: impl Into<String>, data: impl Serialize) {
+pub fn publish(event_name: impl Into<String>, data: impl Serialize) {
     let Some(bus) = BUS.get() else {
         return;
     };
@@ -88,7 +88,7 @@ pub fn publish(name: impl Into<String>, data: impl Serialize) {
         "version": "v1",
         "chainId": bus.chain_id,
         "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        "name": name.into(),
+        "event": event_name.into(),
         "body": data,
     });
     if let Some(id) = crate::tracing::distributed::request_id::from_current_span() {

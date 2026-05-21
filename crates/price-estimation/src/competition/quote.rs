@@ -7,13 +7,18 @@ use {
         PriceEstimationError,
         Query,
         QuoteVerificationMode,
+        competition::Context,
     },
     alloy::primitives::{Address, U256},
-    anyhow::Context,
+    anyhow::Context as _,
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
     serde_json::json,
-    std::{cmp::Ordering, sync::Arc, time::Duration},
+    std::{
+        cmp::Ordering,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tracing::instrument,
 };
 
@@ -39,8 +44,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             let get_results = self
                 .produce_results(query.clone(), is_reasonable, |context| {
                     async move {
+                        let start = Instant::now();
                         let res = context.estimator.estimate(context.query.clone()).await;
-                        emit_quote_event(&context.query, &res);
+                        emit_quote_event(&context, &res, start.elapsed());
                         res
                     }
                     .boxed()
@@ -162,26 +168,31 @@ impl RankingContext {
     }
 }
 
-fn emit_quote_event(query: &Query, result: &PriceEstimateResult) {
+fn emit_quote_event(
+    context: &Context<Arc<dyn PriceEstimating>, Arc<Query>>,
+    result: &PriceEstimateResult,
+    elapsed: Duration,
+) {
     observe::event_bus::publish(
         "priceEstimate",
         json!({
             "query": {
-                "sellToken": query.sell_token.to_string(),
-                "buyToken": query.sell_token.to_string(),
-                "inAmount": query.in_amount.to_string(),
-                "from": query.verification.from,
-                "timeout": query.timeout.as_millis(),
-                "kind": match query.kind {
+                "sellToken": context.query.sell_token.to_string(),
+                "buyToken": context.query.sell_token.to_string(),
+                "inAmount": context.query.in_amount.to_string(),
+                "kind": match context.query.kind {
                     OrderKind::Sell => "sell",
                     OrderKind::Buy => "buy",
                 }
             },
+            "from": context.query.verification.from,
+            "timeout": context.query.timeout.as_millis(),
+            "elapsed": elapsed.as_millis().to_string(),
+            "estimator": context.name.to_string(),
             "result": match result {
                 Ok(estimate) => json!({
                     "outAmount": estimate.out_amount.to_string(),
                     "gas": estimate.gas.to_string(),
-                    "solver": estimate.solver.to_string(),
                     "verified": estimate.verified,
                 }),
                 Err(err) => json!({"error": err.to_string()}),
