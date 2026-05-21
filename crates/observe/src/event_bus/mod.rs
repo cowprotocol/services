@@ -1,6 +1,6 @@
 //! Implements a simple globally available way to publish events to an event
 //! bus. Under the hood it's using NATS. To support publishing events from
-//! synchronous contexts we use an unbounded channel as an in-memory buffer.
+//! synchronous contexts we use a channel as an in-memory buffer.
 //! Whenever a message gets posted to this channel a background task wakes
 //! up and forwards it to the NATS service running in a different process.
 //! Messages always get serialized as JSON so you can publish anything that
@@ -14,14 +14,14 @@ use {
     serde_json::json,
     tokio::sync::{
         OnceCell,
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+        mpsc::{Receiver, Sender, channel},
     },
 };
 
 struct EventBusConnector {
-    /// Unbounded channel to allow emitting events from synchrounous
-    /// contexts.
-    message_queue: UnboundedSender<Message>,
+    /// Channel to decouple issuing events from actually sending them to the
+    /// event bus service.
+    message_queue: Sender<Message>,
     /// Subject prefix to disambiguate messages in globally shared event bus
     /// service.
     subject_prefix: String,
@@ -50,7 +50,8 @@ pub async fn init(config: EventBusConfig) {
         let info = stream.info().await.expect("failed to fetch stream info");
         tracing::debug!(?info, "connected to jetstream");
 
-        let (sender, receiver) = unbounded_channel();
+        const EVENT_BUS_SIZE: usize = 1_000;
+        let (sender, receiver) = channel(EVENT_BUS_SIZE);
         tokio::task::spawn(forward_messages_to_event_bus_client(receiver, jetstream));
         EventBusConnector {
             message_queue: sender,
@@ -65,7 +66,7 @@ pub async fn init(config: EventBusConfig) {
 /// Monitors a message queue and forwards all messages to the event bus
 /// service.
 async fn forward_messages_to_event_bus_client(
-    mut receiver: UnboundedReceiver<Message>,
+    mut receiver: Receiver<Message>,
     client: JetstreamClient,
 ) {
     while let Some(message) = receiver.recv().await {
@@ -107,7 +108,7 @@ pub fn publish(subject: &str, data: impl Serialize) {
         data: body.into(),
     };
 
-    if let Err(err) = bus.message_queue.send(message) {
+    if let Err(err) = bus.message_queue.try_send(message) {
         tracing::error!(?err, "failed to enqueue message");
     }
 }
