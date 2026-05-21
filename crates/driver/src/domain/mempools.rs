@@ -5,11 +5,12 @@ use {
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
-    anyhow::Context,
+    anyhow::{Context, anyhow},
     contracts::CowSettlementForwarder::CowSettlementForwarder,
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
+    itertools::Itertools,
     num::Saturating,
     thiserror::Error,
     tracing::Instrument,
@@ -57,26 +58,53 @@ impl Mempools {
         }
     }
 
+    /// Race the enabled mempools concurrently; first success wins. Pending
+    /// submission futures are dropped at that point and every other mempool is
+    /// recorded as `Superseded`. If every mempool fails, return one of the
+    /// failure errors.
     pub async fn execute(
         &self,
         settlement: &Settlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
-        let (submission, _remaining_futures) = select_ok(self.mempools.iter().map(|mempool| {
-            async move {
-                let result = self
-                    .submit(mempool, settlement, submission_deadline, mode)
-                    .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
-                    .await;
-                observe::mempool_executed(mempool, settlement, &result);
-                result
-            }
-            .boxed()
-        }))
-        .await?;
+        let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
-        Ok(submission.tx_hash)
+        let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
+            |(mempool, stat)| {
+                async move {
+                    let result = self
+                        .submit(mempool, settlement, submission_deadline, mode)
+                        .instrument(tracing::info_span!("mempool", kind = %mempool))
+                        .await;
+                    // Log inline so errors from mempools that later get superseded still surface;
+                    // metrics are emitted from `update_metrics` once the race outcome is known.
+                    observe::mempool_log(mempool, settlement, &result);
+                    *stat = Outcome::from(&result);
+                    result
+                }
+                .boxed()
+            },
+        ))
+        .await
+        // Drop the remaining futures (and the mutable borrow on `stats` they
+        // carry) so `update_metrics` can read `stats` below.
+        .map(|(success, _remaining)| success);
+
+        self.update_metrics(&stats);
+
+        Ok(res?.tx_hash)
+    }
+
+    /// A mempool is disabled if all of the following are true:
+    /// * the settlement may revert (see [`Settlement::may_revert`])
+    /// * the pool has revert protection enabled (see
+    ///   [`Self::revert_protection`])
+    /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
+    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
+        settlement.may_revert()
+            && matches!(self.revert_protection(), RevertProtection::Enabled)
+            && mempool.reverts_can_get_mined()
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -99,12 +127,7 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
-        // Don't submit risky transactions if revert protection is
-        // enabled and the settlement may revert in this mempool.
-        if settlement.may_revert()
-            && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.reverts_can_get_mined()
-        {
+        if self.is_disabled(mempool, settlement) {
             return Err(Error::Disabled);
         }
 
@@ -262,7 +285,7 @@ impl Mempools {
                     }
                 }
             }
-            Err(Error::Other(anyhow::anyhow!(
+            Err(Error::Other(anyhow!(
                 "Block stream finished unexpectedly"
             )))
         }
@@ -375,6 +398,79 @@ impl Mempools {
             Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
         }
     }
+
+    /// Update per-mempool metrics based on submission outcomes.
+    ///
+    /// When a winner exists, `Failed` outcomes are reclassified as `Superseded`
+    /// since errors are typically race-condition false-positives.
+    fn update_metrics(&self, stats: &[Outcome]) {
+        let winner_exists = stats.iter().any(|s| matches!(s, Outcome::Success { .. }));
+        // Using `zip_eq` to catch regressions in tests (sizes always match in
+        // practice).
+        for (mempool, &outcome) in self.mempools.iter().zip_eq(stats.iter()) {
+            let label = match outcome {
+                Outcome::Failed { .. } if winner_exists => Outcome::Superseded.metric_label(),
+                other => other.metric_label(),
+            };
+            observe::mempool_submission_result(mempool, label, outcome.blocks_passed());
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Outcome {
+    /// Submission future was dropped because another mempool won the race.
+    Superseded,
+    Success {
+        blocks_passed: u64,
+    },
+    Failed {
+        reason: &'static str,
+        blocks_passed: Option<u64>,
+    },
+    Disabled,
+}
+
+impl Outcome {
+    fn metric_label(self) -> &'static str {
+        match self {
+            Outcome::Superseded => "Superseded",
+            Outcome::Success { .. } => "Success",
+            Outcome::Failed { reason, .. } => reason,
+            Outcome::Disabled => "Disabled",
+        }
+    }
+
+    fn blocks_passed(self) -> Option<u64> {
+        match self {
+            Outcome::Superseded | Outcome::Disabled => None,
+            Outcome::Success { blocks_passed } => Some(blocks_passed),
+            Outcome::Failed { blocks_passed, .. } => blocks_passed,
+        }
+    }
+}
+
+impl From<&Result<SubmissionSuccess, Error>> for Outcome {
+    fn from(result: &Result<SubmissionSuccess, Error>) -> Self {
+        match result {
+            Ok(s) => Outcome::Success {
+                blocks_passed: s.blocks_passed(),
+            },
+            Err(Error::Disabled) => Outcome::Disabled,
+            Err(err @ (Error::Revert { .. } | Error::SimulationRevert { .. })) => Outcome::Failed {
+                reason: "Revert",
+                blocks_passed: err.blocks_passed(),
+            },
+            Err(err @ Error::Expired { .. }) => Outcome::Failed {
+                reason: "Expired",
+                blocks_passed: err.blocks_passed(),
+            },
+            Err(Error::Other(_)) => Outcome::Failed {
+                reason: "Other",
+                blocks_passed: None,
+            },
+        }
+    }
 }
 
 /// Applies the solver's gas fee override if present. When a replacement
@@ -444,6 +540,15 @@ pub struct SubmissionSuccess {
     pub submitted_at_block: eth::BlockNo,
 }
 
+impl SubmissionSuccess {
+    /// Number of blocks between submission start and on-chain inclusion.
+    pub fn blocks_passed(&self) -> u64 {
+        self.included_in_block
+            .saturating_sub(self.submitted_at_block)
+            .0
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("no mempools configured, cannot execute settlements")]
 pub struct NoMempools;
@@ -488,4 +593,29 @@ pub enum Error {
     Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
+}
+
+impl Error {
+    /// Number of blocks between the first submission and when the error was
+    /// returned, if the error carries that timing.
+    pub fn blocks_passed(&self) -> Option<u64> {
+        let (start, end) = match self {
+            Self::Revert {
+                submitted_at_block,
+                reverted_at_block,
+                ..
+            }
+            | Self::SimulationRevert {
+                submitted_at_block,
+                reverted_at_block,
+            } => (*submitted_at_block, *reverted_at_block),
+            Self::Expired {
+                submitted_at_block,
+                submission_deadline,
+                ..
+            } => (*submitted_at_block, *submission_deadline),
+            Self::Disabled | Self::Other(_) => return None,
+        };
+        Some(end.saturating_sub(start).0)
+    }
 }

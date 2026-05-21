@@ -42,6 +42,10 @@ const WETH: Address = address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
 /// revert with *empty* revert data — the regression case below.
 const USDC: Address = address!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
 
+/// DAI on mainnet — 18-decimal counterpart to USDC for testing the
+/// `6-decimal vault wrapping 18-decimal asset` direction.
+const DAI: Address = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
+
 #[tokio::test]
 #[ignore]
 async fn forked_node_mainnet_eip4626_native_price() {
@@ -246,6 +250,126 @@ async fn eip4626_recursive_native_price_test(web3: Web3) {
     assert!(
         (ratio - 2.0 / 9.0).abs() / (2.0 / 9.0) < 0.01,
         "wrapper (1/3) price ratio to baseline (3/2) should be 2/9: got {ratio:.6}",
+    );
+}
+
+/// Vault and underlying decimals must be threaded through `conversion_rate`
+/// correctly in both directions. Native prices are quoted per *atom*, so a
+/// wrapper whose whole-share rate is 1:1 with its underlying must still be
+/// priced differently when their decimals differ — by exactly
+/// `10^(asset_decimals - vault_decimals)`. Exercises both asymmetries:
+///   - 18-decimal vault wrapping 6-decimal USDC → per-atom factor = `10^-12`
+///     (lands the vault in DAI's `~10^-4` wei/atom range, not USDC's `~10^8`).
+///   - 6-decimal vault wrapping 18-decimal DAI → per-atom factor = `10^12`
+///     (vice versa).
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_eip4626_decimal_mismatch_native_price() {
+    run_forked_test_with_block_number(
+        eip4626_decimal_mismatch_native_price_test,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
+    )
+    .await;
+}
+
+async fn eip4626_decimal_mismatch_native_price_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers_forked(1u64.eth()).await;
+
+    // `MockERC4626Wrapper` implements `convertToAssets(shares) = shares * num
+    // / den`. Setting `num` and `den` to the atom-count of one whole asset
+    // and one whole vault token (respectively) yields a 1:1 *whole-token*
+    // rate — `convertToAssets(one_whole_vault) = one_whole_asset`.
+    let one_whole_6_dec = 1u64.matom(); // 10^6 atoms = 1 whole 6-decimal token
+    let one_whole_18_dec = 1u64.eth(); //  10^18 atoms = 1 whole 18-decimal token
+
+    // 18-decimal wrapper of 6-decimal USDC at a 1:1 whole-token rate.
+    // `convertToAssets(10^18) = 10^18 * 10^6 / 10^18 = 10^6` (= 1 whole USDC
+    // in atoms), so the per-atom factor is `10^-12`.
+    let wrapper_18_over_6 = contracts::test::MockERC4626Wrapper::Instance::deploy(
+        web3.provider.clone(),
+        USDC,
+        18u8,
+        one_whole_6_dec,  // num: atoms in 1 whole asset (USDC)
+        one_whole_18_dec, // den: atoms in 1 whole vault share
+    )
+    .await
+    .unwrap();
+    let wrapper_18_over_6_addr = *wrapper_18_over_6.address();
+
+    // 6-decimal wrapper of 18-decimal DAI at a 1:1 whole-token rate.
+    // `convertToAssets(10^6) = 10^6 * 10^18 / 10^6 = 10^18` (= 1 whole DAI in
+    // atoms), so the per-atom factor is `10^12`.
+    let wrapper_6_over_18 = contracts::test::MockERC4626Wrapper::Instance::deploy(
+        web3.provider.clone(),
+        DAI,
+        6u8,
+        one_whole_18_dec, // num: atoms in 1 whole asset (DAI)
+        one_whole_6_dec,  // den: atoms in 1 whole vault share
+    )
+    .await
+    .unwrap();
+    let wrapper_6_over_18_addr = *wrapper_6_over_18.address();
+
+    let driver_url: url::Url = "http://localhost:11088/test_solver".parse().unwrap();
+    let autopilot_config = Configuration {
+        native_price_estimation: NativePriceConfig {
+            eip4626: true,
+            estimators: NativePriceEstimators::new(vec![vec![NativePriceEstimator::driver(
+                "test_quoter".to_string(),
+                driver_url,
+            )]]),
+            shared: configs::native_price::NativePriceConfig {
+                results_required: 1.try_into().unwrap(),
+                ..Default::default()
+            },
+            ..NativePriceConfig::test_default()
+        },
+        ..Configuration::test("test_solver", solver.address())
+    };
+
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            autopilot_config,
+            configs::orderbook::Configuration::test_default(),
+            solver,
+        )
+        .await;
+
+    onchain.mint_block().await;
+
+    let fetch_price = async |addr: &Address, label: &str| -> f64 {
+        wait_for_condition(TIMEOUT, || async {
+            services.get_native_price(addr).await.is_ok()
+        })
+        .await
+        .unwrap_or_else(|_| panic!("native price for {label} should be available"));
+        services.get_native_price(addr).await.unwrap().price
+    };
+
+    let usdc_price = fetch_price(&USDC, "USDC").await;
+    let dai_price = fetch_price(&DAI, "DAI").await;
+
+    // 18→6: wrapper is priced per-atom like an 18-decimal stablecoin (DAI's
+    // range), so `wrapper_price / usdc_price ≈ 10^-12`.
+    let wrapper_18_over_6_price = fetch_price(&wrapper_18_over_6_addr, "18→6 wrapper").await;
+    let ratio = wrapper_18_over_6_price / usdc_price;
+    assert!(
+        (ratio - 1e-12).abs() / 1e-12 < 0.01,
+        "18→6 wrapper / USDC ratio should be 1e-12, got {ratio:e}",
+    );
+
+    // 6→18: wrapper is priced per-atom like a 6-decimal stablecoin (USDC's
+    // range), so `wrapper_price / dai_price ≈ 10^12`.
+    let wrapper_6_over_18_price = fetch_price(&wrapper_6_over_18_addr, "6→18 wrapper").await;
+    let ratio = wrapper_6_over_18_price / dai_price;
+    assert!(
+        (ratio - 1e12).abs() / 1e12 < 0.01,
+        "6→18 wrapper / DAI ratio should be 1e12, got {ratio:e}",
     );
 }
 
