@@ -114,7 +114,7 @@ pub fn new(
                     })
                 }
 
-                apply_haircut(&mut available, order.side, haircut_bps);
+                apply_haircut(&mut available, order.side, haircut_bps, &order.uid);
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),
                     sell_token: *available.sell.token,
@@ -412,11 +412,12 @@ fn scaling_factor_to_decimal(
 /// Buy orders:  `sell.amount := sell.amount / (1 + h)`.
 ///
 /// If the factor multiplication fails (overflow, or `haircut_bps >= 10_000`
-/// making `(1 - h) <= 0`), the original limit is preserved rather than zeroed,
-/// since a zero-limit order is silently unfillable. `haircut_bps` is expected
-/// to be well below `super::MAX_BASE_POINT`; a debug assertion catches
-/// misconfigs.
-fn apply_haircut(available: &mut Available, side: Side, haircut_bps: u32) {
+/// making `(1 - h) <= 0`), the original limit is preserved rather than zeroed
+/// — a zero-limit order is silently unfillable — and a warning is logged so
+/// operators can spot misconfigurations. `haircut_bps` is expected to be well
+/// below `super::MAX_BASE_POINT`; a debug assertion catches misconfigs in dev
+/// builds.
+fn apply_haircut(available: &mut Available, side: Side, haircut_bps: u32, order_uid: &order::Uid) {
     if haircut_bps == 0 {
         return;
     }
@@ -426,21 +427,29 @@ fn apply_haircut(available: &mut Available, side: Side, haircut_bps: u32) {
         super::MAX_BASE_POINT,
     );
     let haircut_factor = f64::from(haircut_bps) / f64::from(super::MAX_BASE_POINT);
-    match side {
-        Side::Buy => {
-            available.sell.amount = available
-                .sell
-                .amount
-                .apply_factor(1.0 / (1.0 + haircut_factor))
-                .unwrap_or(available.sell.amount);
-        }
-        Side::Sell => {
-            available.buy.amount = available
-                .buy
-                .amount
-                .apply_factor(1.0 / (1.0 - haircut_factor))
-                .unwrap_or(available.buy.amount);
-        }
+    let (amount, factor, leg) = match side {
+        Side::Buy => (
+            &mut available.sell.amount,
+            1.0 / (1.0 + haircut_factor),
+            "sell",
+        ),
+        Side::Sell => (
+            &mut available.buy.amount,
+            1.0 / (1.0 - haircut_factor),
+            "buy",
+        ),
+    };
+    match amount.apply_factor(factor) {
+        Some(tightened) => *amount = tightened,
+        None => tracing::warn!(
+            ?order_uid,
+            haircut_bps,
+            ?side,
+            leg,
+            factor,
+            ?amount,
+            "failed to tighten order limit for haircut; preserving original",
+        ),
     }
 }
 
@@ -469,12 +478,12 @@ mod tests {
         let buy = eth::U256::from(441_289_983_646_158_011_001u128);
 
         let mut a = available(sell, buy);
-        apply_haircut(&mut a, Side::Sell, 0);
+        apply_haircut(&mut a, Side::Sell, 0, &order::Uid::default());
         assert_eq!(a.sell.amount.0, sell);
         assert_eq!(a.buy.amount.0, buy);
 
         let mut a = available(sell, buy);
-        apply_haircut(&mut a, Side::Buy, 0);
+        apply_haircut(&mut a, Side::Buy, 0, &order::Uid::default());
         assert_eq!(a.sell.amount.0, sell);
         assert_eq!(a.buy.amount.0, buy);
     }
@@ -495,7 +504,7 @@ mod tests {
         let signed_buy = eth::U256::from(441_289_983_646_158_011_001u128);
 
         let mut a = available(sell, signed_buy);
-        apply_haircut(&mut a, Side::Sell, 100); // 1% haircut
+        apply_haircut(&mut a, Side::Sell, 100, &order::Uid::default()); // 1% haircut
 
         // sell amount is untouched for sell orders.
         assert_eq!(a.sell.amount.0, sell);
@@ -531,7 +540,7 @@ mod tests {
         let buy = eth::U256::from(441_289_983_646_158_011_001u128);
 
         let mut a = available(signed_sell, buy);
-        apply_haircut(&mut a, Side::Buy, 100); // 1% haircut
+        apply_haircut(&mut a, Side::Buy, 100, &order::Uid::default()); // 1% haircut
 
         // buy amount is untouched for buy orders.
         assert_eq!(a.buy.amount.0, buy);
