@@ -36,31 +36,43 @@ struct Message {
 /// conventiently from everywhere.
 static BUS: OnceCell<EventBusConnector> = OnceCell::const_new();
 
-/// Initializes the event bus and panics if it fails.
+/// Initializes the event bus. Connection failures are logged but do not
+/// abort startup: the event bus is purely observational, so a misconfigured
+/// or unreachable NATS must not take the binary down. When init fails the
+/// global `BUS` stays uninitialized and [`publish`] becomes a no-op.
 pub async fn init(config: EventBusConfig) {
-    BUS.get_or_init(|| async move {
-        let client = async_nats::connect(config.url.as_str())
-            .await
-            .expect("failed to connect to NATS service");
-        let jetstream = async_nats::jetstream::new(client);
-        let mut stream = jetstream
-            .get_stream(&config.channel)
-            .await
-            .expect("could not connect to jetstream");
-        let info = stream.info().await.expect("failed to fetch stream info");
-        tracing::debug!(?info, "connected to jetstream");
-
-        const EVENT_BUS_SIZE: usize = 1_000;
-        let (sender, receiver) = channel(EVENT_BUS_SIZE);
-        tokio::task::spawn(forward_messages_to_event_bus_client(receiver, jetstream));
-        EventBusConnector {
-            message_queue: sender,
-            // we prefix every subject with `event` to allow consumers to easily
-            // subscribe to all events without also seeing NATS internal events
-            subject_prefix: format!("event.{}.", config.chain_id),
-        }
+    let mut initialized = false;
+    BUS.get_or_try_init(|| async {
+        let connector = connect(&config).await?;
+        initialized = true;
+        Ok::<_, async_nats::Error>(connector)
     })
-    .await;
+    .await
+    .inspect_err(|err| {
+        tracing::error!(?err, url = %config.url, channel = %config.channel, "failed to initialize event bus; events will be dropped");
+    })
+    .ok();
+    if initialized {
+        tracing::info!(channel = %config.channel, chain_id = config.chain_id, "event bus connected");
+    }
+}
+
+async fn connect(config: &EventBusConfig) -> Result<EventBusConnector, async_nats::Error> {
+    let client = async_nats::connect(config.url.as_str()).await?;
+    let jetstream = async_nats::jetstream::new(client);
+    // Make sure the stream exists up-front; otherwise every publish would fail
+    // server-side and we'd only find out at runtime.
+    jetstream.get_stream(&config.channel).await?;
+
+    const EVENT_BUS_SIZE: usize = 1_000;
+    let (sender, receiver) = channel(EVENT_BUS_SIZE);
+    tokio::task::spawn(forward_messages_to_event_bus_client(receiver, jetstream));
+    Ok(EventBusConnector {
+        message_queue: sender,
+        // we prefix every subject with `event` to allow consumers to easily
+        // subscribe to all events without also seeing NATS internal events
+        subject_prefix: format!("event.{}.", config.chain_id),
+    })
 }
 
 /// Monitors a message queue and forwards all messages to the event bus
