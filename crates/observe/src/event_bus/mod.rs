@@ -7,7 +7,7 @@
 //! can be serialized to JSON as well.
 use {
     crate::config::EventBusConfig,
-    async_nats::jetstream::Context as JetstreamClient,
+    async_nats::jetstream::{Context as JetstreamClient, stream},
     bytes::Bytes,
     chrono::Utc,
     futures::stream::{FuturesUnordered, StreamExt},
@@ -64,10 +64,6 @@ struct Message {
 /// Singleton event bus connection to allow publishing events
 /// conveniently from everywhere.
 static BUS: OnceCell<EventBusConnector> = OnceCell::const_new();
-/// Latches once a call to [`init`] has successfully connected. Lets repeat
-/// calls return immediately without re-running `get_or_try_init` (which
-/// would otherwise retry `connect` whenever a previous attempt failed).
-static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Initializes the event bus. Connection failures are logged but do not
 /// abort startup: the event bus is purely observational, so a misconfigured
@@ -78,7 +74,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// subsequent ones short-circuit. A failed call leaves the bus uninitialized
 /// so the next call gets another chance.
 pub async fn init(config: EventBusConfig) {
-    if INITIALIZED.load(Ordering::Acquire) {
+    if BUS.initialized() {
         return;
     }
     let result = BUS
@@ -86,9 +82,8 @@ pub async fn init(config: EventBusConfig) {
         .await;
     match result {
         Ok(_) => {
-            INITIALIZED.store(true, Ordering::Release);
             tracing::info!(
-                channel = %config.channel,
+                channel = %config.stream_name,
                 chain_id = config.chain_id,
                 "event bus connected",
             );
@@ -97,7 +92,7 @@ pub async fn init(config: EventBusConfig) {
             tracing::error!(
                 ?err,
                 url = %config.url,
-                channel = %config.channel,
+                channel = %config.stream_name,
                 "failed to initialize event bus; events will be dropped",
             );
         }
@@ -105,11 +100,29 @@ pub async fn init(config: EventBusConfig) {
 }
 
 async fn connect(config: &EventBusConfig) -> Result<EventBusConnector, async_nats::Error> {
+    // we prefix every subject with `event` to allow consumers to easily
+    // subscribe to all events without also seeing NATS internal events
+    let subject_prefix = format!("event.{}.", config.chain_id);
+
+    let name = config.stream_name.clone();
     let client = async_nats::connect(config.url.as_str()).await?;
     let jetstream = async_nats::jetstream::new(client);
+
     // Make sure the stream exists up-front; otherwise every publish would fail
     // server-side and we'd only find out at runtime.
-    jetstream.get_stream(&config.channel).await?;
+    if let Err(err) = jetstream
+        .create_stream(stream::Config {
+            name: name.clone(),
+            subjects: vec![subject_prefix.clone()],
+            ..Default::default()
+        })
+        .await
+    {
+        // Ignore error on stream creation (can be that the stream exists), if we're
+        // then unable to get the stream, that's were the issue lies.
+        tracing::warn!(?err, "error creating the stream {name}");
+    }
+    jetstream.get_stream(&config.stream_name).await?;
 
     // JetStream publish completes in two stages: the call to `publish()`
     // returns once the client has buffered the message, the returned
@@ -121,9 +134,7 @@ async fn connect(config: &EventBusConfig) -> Result<EventBusConnector, async_nat
 
     Ok(EventBusConnector {
         message_queue: message_tx,
-        // we prefix every subject with `event` to allow consumers to easily
-        // subscribe to all events without also seeing NATS internal events
-        subject_prefix: format!("event.{}.", config.chain_id),
+        subject_prefix,
     })
 }
 
@@ -182,7 +193,7 @@ async fn await_acks(mut acks: Receiver<PendingAck>) {
 
 async fn log_ack(subject: String, ack_fut: async_nats::jetstream::context::PublishAckFuture) {
     if let Err(err) = ack_fut.await {
-        tracing::debug!(?err, %subject, "NATS did not acknowledge event");
+        tracing::warn!(?err, %subject, "NATS did not acknowledge event");
         record_dropped(DropReason::Ack);
     }
 }
@@ -297,33 +308,5 @@ mod tests {
         };
         let serialized: serde_json::Value = serde_json::to_value(&envelope).unwrap();
         assert!(serialized.get("requestId").is_none());
-    }
-
-    #[ignore]
-    #[tokio::test]
-    async fn send_messages() {
-        crate::tracing::init::initialize(&crate::Config {
-            env_filter: "warn,observe=debug".to_string(),
-            stderr_threshold: None,
-            use_json_format: false,
-            tracing: None,
-        });
-        init(EventBusConfig {
-            url: "localhost:4222".parse().unwrap(),
-            channel: "main".to_string(),
-            chain_id: 1,
-        })
-        .await;
-
-        for _ in 0..1000 {
-            publish(
-                "name",
-                json!({
-                    "estimator": "baseline",
-                    "outAmount": 1234,
-                }),
-            );
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }

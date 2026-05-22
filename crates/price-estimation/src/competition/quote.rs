@@ -12,7 +12,7 @@ use {
     anyhow::Context as _,
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
-    serde_json::json,
+    serde::Serialize,
     std::{
         cmp::Ordering,
         sync::Arc,
@@ -179,32 +179,67 @@ fn emit_quote_event(
     result: &PriceEstimateResult,
     elapsed: Duration,
 ) {
-    observe::event_bus::publish(
-        "priceEstimate",
-        json!({
-            "query": {
-                "sellToken": query.sell_token.to_string(),
-                "buyToken": query.buy_token.to_string(),
-                "inAmount": query.in_amount.to_string(),
-                "kind": match query.kind {
-                    OrderKind::Sell => "sell",
-                    OrderKind::Buy => "buy",
-                }
+    let event = PriceEstimateEvent {
+        query: QueryFields {
+            sell_token: query.sell_token.to_string(),
+            buy_token: query.buy_token.to_string(),
+            in_amount: query.in_amount.to_string(),
+            kind: match query.kind {
+                OrderKind::Sell => "sell",
+                OrderKind::Buy => "buy",
             },
-            "from": query.verification.from,
-            "timeout": query.timeout.as_millis(),
-            "elapsed": elapsed.as_millis(),
-            "estimator": estimator_name,
-            "result": match result {
-                Ok(estimate) => json!({
-                    "outAmount": estimate.out_amount.to_string(),
-                    "gas": estimate.gas.to_string(),
-                    "verified": estimate.verified,
-                }),
-                Err(err) => json!({"error": err.to_string()}),
-            }
-        }),
-    );
+        },
+        from: query.verification.from,
+        timeout: query.timeout.as_millis(),
+        elapsed: elapsed.as_millis(),
+        estimator: estimator_name,
+        result: match result {
+            Ok(estimate) => EstimateResult::Ok {
+                out_amount: estimate.out_amount.to_string(),
+                gas: estimate.gas.to_string(),
+                verified: estimate.verified,
+            },
+            Err(err) => EstimateResult::Err {
+                error: err.to_string(),
+            },
+        },
+    };
+    observe::event_bus::publish("priceEstimate", event);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PriceEstimateEvent<'a> {
+    query: QueryFields,
+    from: Address,
+    timeout: u128,
+    elapsed: u128,
+    estimator: &'a str,
+    result: EstimateResult,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryFields {
+    sell_token: String,
+    buy_token: String,
+    in_amount: String,
+    kind: &'static str,
+}
+
+/// Mirrors the previous JSON: either the estimate fields or an `error`.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum EstimateResult {
+    #[serde(rename_all = "camelCase")]
+    Ok {
+        out_amount: String,
+        gas: String,
+        verified: bool,
+    },
+    Err {
+        error: String,
+    },
 }
 
 #[cfg(test)]
@@ -215,7 +250,60 @@ mod tests {
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
         gas_price_estimation::FakeGasPriceEstimator,
         model::order::OrderKind,
+        serde_json::json,
     };
+
+    #[test]
+    fn price_estimate_event_matches_wire_format() {
+        let event = PriceEstimateEvent {
+            query: QueryFields {
+                sell_token: "0x01".into(),
+                buy_token: "0x02".into(),
+                in_amount: "100".into(),
+                kind: "sell",
+            },
+            from: Address::ZERO,
+            timeout: 5000,
+            elapsed: 12,
+            estimator: "baseline",
+            result: EstimateResult::Ok {
+                out_amount: "99".into(),
+                gas: "21000".into(),
+                verified: true,
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            json!({
+                "query": {
+                    "sellToken": "0x01",
+                    "buyToken": "0x02",
+                    "inAmount": "100",
+                    "kind": "sell",
+                },
+                "from": Address::ZERO,
+                "timeout": 5000,
+                "elapsed": 12,
+                "estimator": "baseline",
+                "result": {
+                    "outAmount": "99",
+                    "gas": "21000",
+                    "verified": true,
+                },
+            }),
+        );
+    }
+
+    #[test]
+    fn price_estimate_event_error_variant() {
+        let result = EstimateResult::Err {
+            error: "boom".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&result).unwrap(),
+            json!({ "error": "boom" }),
+        );
+    }
 
     fn price(out_amount: u128, gas: u64) -> PriceEstimateResult {
         Ok(Estimate {

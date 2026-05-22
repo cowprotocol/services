@@ -82,7 +82,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     if let Some(event_bus) = &config.shared.event_bus {
         observe::event_bus::init(EventBusConfig {
             url: event_bus.url.clone(),
-            channel: event_bus.channel.clone(),
+            stream_name: event_bus.channel.clone(),
             // Presence of `chain-id` alongside `event_bus` is enforced by
             // `SharedConfig::validate` at startup.
             chain_id: config.shared.chain_id.unwrap(),

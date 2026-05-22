@@ -94,7 +94,7 @@ pub struct EventBusConfig {
     /// Url of the event bus service
     pub url: Url,
     /// Name of the channel to post events to
-    pub channel: String,
+    pub stream_name: String,
     /// Which chain this service operates on. The service-level `chain-id`
     /// must be set when the event bus is configured; this is checked at
     /// config validation time, so callers can pass it through directly.

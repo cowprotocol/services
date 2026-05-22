@@ -333,8 +333,25 @@ where
 pub struct EventBusConfig {
     /// Url of the event bus service.
     pub url: Url,
-    /// Name of the channel to post events to.
+    /// Name of the channel to post events to. Must not contain spaces, tabs,
+    /// or `.` — NATS uses `.` as its subject hierarchy separator and disallows
+    /// whitespace in stream/subject names.
+    #[serde(deserialize_with = "deserialize_channel_name")]
     pub channel: String,
+}
+
+fn deserialize_channel_name<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    if raw.contains(|c: char| matches!(c, ' ' | '\t' | '.')) {
+        return Err(serde::de::Error::invalid_value(
+            Unexpected::Str(&raw),
+            &"a channel name without spaces, tabs, or '.'",
+        ));
+    }
+    Ok(raw)
 }
 
 /// Gas price estimation strategy.
@@ -465,6 +482,37 @@ mod tests {
             "localhost:4222".parse().unwrap()
         );
         assert_eq!(config.event_bus.as_ref().unwrap().channel, "main");
+    }
+
+    #[test]
+    fn rejects_invalid_event_bus_channel_at_deserialization() {
+        for bad in ["with space", "with\ttab", "with.dot"] {
+            let toml = format!(
+                r#"
+                chain-id = 1
+
+                [event-bus]
+                url = "localhost:4222"
+                channel = "{bad}"
+                "#,
+            );
+            assert!(
+                toml::from_str::<SharedConfig>(&toml).is_err(),
+                "channel {bad:?} should be rejected",
+            );
+        }
+
+        let ok = toml::from_str::<SharedConfig>(
+            r#"
+            chain-id = 1
+
+            [event-bus]
+            url = "localhost:4222"
+            channel = "main"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(ok.event_bus.unwrap().channel, "main");
     }
 
     #[test]
