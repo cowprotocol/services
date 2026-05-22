@@ -262,7 +262,7 @@ fn get_vol_fee_adjusted_quote_data(
             // For BUY orders, fee is calculated on sell amount + network fee.
             // Network fee is already in sell token, so it is added to get the total volume.
             let total_sell_volume = quote.sell_amount.saturating_add(quote.fee_amount);
-            let numerator: Uint<512, 8> = total_sell_volume.widening_mul(scaled_factor);
+            let numerator = total_sell_volume.widening_mul(scaled_factor);
             let protocol_fee = U256::uint_try_from(numerator.div_ceil(scale))
                 .map_err(|_| anyhow::anyhow!("volume fee calculation overflow"))?;
 
