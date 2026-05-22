@@ -83,6 +83,15 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         address settleCallTarget,
         bytes calldata settlementCall
     ) internal returns (uint256 gasUsed) {
+        // EVM `call` to an EOA returns success with empty output, so the inner
+        // settle (including the `storeBalance` interactions that record trader
+        // balances) would silently no-op. The caller would then see a
+        // `queriedBalances` array with only the pre/post settlement contract
+        // balances and a missing pair of trader balances, breaking the layout
+        // documented in `SettleOutput::from_swap`. Reject the EOA case up
+        // front so the Rust side treats this as a normal simulation failure.
+        require(settleCallTarget.code.length > 0, "settle target has no code");
+
         uint256 gasStart = gasleft();
         // In order to call a function we need to copy the arguments into memory.
         // In a regular transaction that would actually not happen because the arguments
