@@ -1,6 +1,6 @@
 use {
     crate::app_data,
-    alloy::primitives::{U256, U512, Uint, ruint::UintTryFrom},
+    alloy::primitives::{U256, U512, ruint::UintTryFrom},
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
@@ -610,8 +610,7 @@ mod tests {
 
     #[test]
     fn test_volume_fee_rounds_up_buy_order() {
-        // factor 0.0001, sell_amount 12345, network fee 0: 12345/10000 = 1.2345 -> ceil
-        // 2.
+        // factor 0.0001, sell 10_000, network fee 5: ceil((10000 + 5)/10000) = ceil(1.0005) = 2
         let volume_fee = FeeFactor::try_from(0.0001).unwrap();
         let volume_fee_config = VolumeFeeConfig {
             factor: Some(volume_fee),
@@ -619,7 +618,9 @@ mod tests {
         };
         let volume_fee_policy = VolumeFeePolicy::new(vec![], Some(volume_fee), false);
 
-        let quote = create_test_quote(U256::from(12345u64), U256::from(100u64));
+        let mut quote = create_test_quote(U256::from(10_000u64), U256::from(100u64));
+        quote.fee_amount = U256::from(5u64);
+
         let side = OrderQuoteSide::Buy {
             buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(U256::from(100u64))
                 .unwrap(),
@@ -635,7 +636,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.sell_amount, U256::from(12345u64 + 2));
+        assert_eq!(result.sell_amount, U256::from(10_000u64 + 2));
         assert_eq!(result.buy_amount, U256::from(100u64));
     }
 
