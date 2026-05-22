@@ -187,7 +187,7 @@ fn emit_quote_event(
             },
             "from": context.query.verification.from,
             "timeout": context.query.timeout.as_millis(),
-            "elapsed": elapsed.as_millis().to_string(),
+            "elapsed": elapsed.as_millis(),
             "estimator": context.name.to_string(),
             "result": match result {
                 Ok(estimate) => json!({

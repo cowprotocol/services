@@ -2,7 +2,7 @@ use {
     crate::fee_factor::FeeFactor,
     alloy::primitives::Address,
     anyhow::ensure,
-    serde::{Deserialize, Deserializer, de::Unexpected},
+    serde::{Deserialize, Deserializer, Serialize, de::Unexpected},
     std::{collections::HashSet, str::FromStr, time::Duration},
     tracing::Level,
     url::Url,
@@ -327,10 +327,9 @@ where
     serializer.serialize_str(level.as_str())
 }
 
-/// OpenTelemetry tracing configuration.
-#[derive(Debug, Deserialize)]
+/// Event bus configuration for a backend service.
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[derive(serde::Serialize)]
 pub struct EventBusConfig {
     /// Url of the event bus service.
     pub url: Url,

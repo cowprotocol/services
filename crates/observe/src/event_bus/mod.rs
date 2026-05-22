@@ -36,6 +36,17 @@ struct Envelope<T: Serialize> {
     body: T,
 }
 
+impl<T: Serialize> Envelope<T> {
+    fn new(request_id: Option<String>, body: T) -> Self {
+        Self {
+            version: ENVELOPE_VERSION,
+            timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            request_id,
+            body,
+        }
+    }
+}
+
 struct EventBusConnector {
     /// Channel to decouple issuing events from actually sending them to the
     /// event bus service.
@@ -102,10 +113,7 @@ async fn connect(config: &EventBusConfig) -> Result<EventBusConnector, async_nat
 
     // JetStream publish completes in two stages: the call to `publish()`
     // returns once the client has buffered the message, the returned
-    // PubAck future resolves once the server has stored it. Splitting those
-    // stages into separate tasks keeps each loop linear, gives the runtime
-    // two units of work to schedule across cores, and applies natural
-    // back-pressure via the bounded channel between them.
+    // PubAck future resolves once the server has stored it.
     let (message_tx, message_rx) = channel(EVENT_BUS_SIZE);
     let (ack_tx, ack_rx) = channel(EVENT_BUS_SIZE);
     tokio::task::spawn(publish_messages(message_rx, jetstream, ack_tx));
@@ -137,13 +145,13 @@ async fn publish_messages(
         let ack_fut = match client.publish(subject.clone(), message.data).await {
             Ok(fut) => fut,
             Err(err) => {
-                tracing::debug!(?err, %subject, "failed to enqueue event with NATS client");
+                tracing::warn!(?err, %subject, "failed to enqueue event with NATS client");
                 record_dropped(DropReason::Publish);
                 continue;
             }
         };
         if acks.send((subject, ack_fut)).await.is_err() {
-            // ack task has shut down; nothing useful left to do
+            tracing::warn!("ack task was shut down; returning");
             return;
         }
     }
@@ -166,6 +174,9 @@ async fn await_acks(mut acks: Receiver<PendingAck>) {
             }
         }
     }
+    // Only reached on publisher panic (steady state keeps both tasks alive).
+    // Drain pending futures so `log_ack` still runs for any in-flight publish
+    // — otherwise dropping them unpolled silently loses the log + metric.
     while pending.next().await.is_some() {}
 }
 
@@ -183,12 +194,10 @@ pub fn publish(subject: &str, data: impl Serialize) {
         return;
     };
 
-    let envelope = Envelope {
-        version: ENVELOPE_VERSION,
-        timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        request_id: crate::tracing::distributed::request_id::from_current_span(),
-        body: data,
-    };
+    let envelope = Envelope::new(
+        crate::tracing::distributed::request_id::from_current_span(),
+        data,
+    );
     let body = match serde_json::to_vec(&envelope) {
         Ok(body) => body,
         Err(err) => {
