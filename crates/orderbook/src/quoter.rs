@@ -245,7 +245,7 @@ fn get_vol_fee_adjusted_quote_data(
     // BPS)
     let scaled_factor = U256::from(factor.to_high_precision());
     let scale = U512::from(FeeFactor::HIGH_PRECISION_SCALE);
-    // Round the fee up so we never undercharge the user.
+    // Round the fee up so we never overpromise the user.
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
         OrderQuoteSide::Sell { .. } => {
             // For SELL orders, fee is calculated on buy amount
