@@ -13,6 +13,7 @@ use {
     futures::stream::{FuturesUnordered, StreamExt},
     serde::Serialize,
     serde_json::json,
+    std::sync::atomic::{AtomicBool, Ordering},
     tokio::sync::{
         OnceCell,
         mpsc::{Receiver, Sender, channel},
@@ -36,25 +37,43 @@ struct Message {
 /// Singleton event bus connection to allow publishing events
 /// conventiently from everywhere.
 static BUS: OnceCell<EventBusConnector> = OnceCell::const_new();
+/// Latches once a call to [`init`] has successfully connected. Lets repeat
+/// calls return immediately without re-running `get_or_try_init` (which
+/// would otherwise retry `connect` whenever a previous attempt failed).
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Initializes the event bus. Connection failures are logged but do not
 /// abort startup: the event bus is purely observational, so a misconfigured
 /// or unreachable NATS must not take the binary down. When init fails the
 /// global `BUS` stays uninitialized and [`publish`] becomes a no-op.
+///
+/// Safe to call multiple times: once a previous call has succeeded the
+/// subsequent ones short-circuit. A failed call leaves the bus uninitialized
+/// so the next call gets another chance.
 pub async fn init(config: EventBusConfig) {
-    let mut initialized = false;
-    BUS.get_or_try_init(|| async {
-        let connector = connect(&config).await?;
-        initialized = true;
-        Ok::<_, async_nats::Error>(connector)
-    })
-    .await
-    .inspect_err(|err| {
-        tracing::error!(?err, url = %config.url, channel = %config.channel, "failed to initialize event bus; events will be dropped");
-    })
-    .ok();
-    if initialized {
-        tracing::info!(channel = %config.channel, chain_id = config.chain_id, "event bus connected");
+    if INITIALIZED.load(Ordering::Acquire) {
+        return;
+    }
+    let result = BUS
+        .get_or_try_init(|| async { connect(&config).await })
+        .await;
+    match result {
+        Ok(_) => {
+            INITIALIZED.store(true, Ordering::Release);
+            tracing::info!(
+                channel = %config.channel,
+                chain_id = config.chain_id,
+                "event bus connected",
+            );
+        }
+        Err(err) => {
+            tracing::error!(
+                ?err,
+                url = %config.url,
+                channel = %config.channel,
+                "failed to initialize event bus; events will be dropped",
+            );
+        }
     }
 }
 
