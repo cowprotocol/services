@@ -24,10 +24,10 @@ use {
 /// Bypasses the autopilot (which settles one solution per auction) and sends
 /// two /solve + /settle requests directly to the driver.
 ///
-/// Uses EIP-7702 delegation: a forwarder contract is deployed and the
-/// solver EOA delegates its code to it. Two whitelisted submission accounts
-/// send settlement txs through the solver EOA in parallel, each using their own
-/// nonce.
+/// Uses EIP-7702 delegation: the driver deploys Solver7702Delegate for the
+/// submission accounts and delegates the solver EOA to it. Two submission
+/// accounts send settlement txs through the solver EOA in parallel, each using
+/// their own nonce.
 #[tokio::test]
 #[ignore]
 async fn local_node_parallel_settlement_submission() {
@@ -159,7 +159,7 @@ async fn test_parallel_settlement_submission(web3: Web3) {
 
     // Assert that TWO settlement txs are pending simultaneously: one direct
     // (solver EOA → settlement contract) and one delegated (submission EOA →
-    // solver EOA via EIP-7702 forwarding). The driver uses the direct slot
+    // solver EOA via EIP-7702 delegation). The driver uses the direct slot
     // when no settlement is in flight (cheaper), and falls back to 7702 for
     // concurrent submissions.
     let solver_address = solver.address();

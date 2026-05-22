@@ -8,6 +8,10 @@ endpoint = "http://baseline"
 absolute-slippage = "40000000000000000"  # Denominated in wei, optional
 relative-slippage = "0.1"  # Percentage in the [0, 1] range
 account = "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"  # Known test private key
+submission-accounts = [
+  "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+  "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+]
 
 [submission]
 gas-price-cap = "1000000000000"

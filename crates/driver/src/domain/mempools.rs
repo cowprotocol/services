@@ -4,9 +4,8 @@ use {
         domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::{Context, anyhow},
-    contracts::CowSettlementForwarder::CowSettlementForwarder,
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
@@ -31,12 +30,12 @@ pub enum SubmissionMode {
     /// Solver EOA signs and submits directly to the settlement contract.
     Direct(eth::Address),
     /// A dedicated submission EOA signs and pays for the tx while routing it
-    /// through the solver's EIP-7702 delegated forwarder contract.
+    /// through the solver's EIP-7702 delegate.
     Delegated {
         /// The address that signs the transaction and whose nonce is used.
         submitter_eoa: eth::Address,
         /// The solver EOA address. In EIP-7702 mode tx.to is set to this
-        /// address (which delegates to a forwarder contract), instead of the
+        /// address (which delegates to Solver7702Delegate), instead of the
         /// settlement contract.
         solver_eoa: eth::Address,
     },
@@ -503,10 +502,7 @@ fn apply_gas_fee_override(
     }
 }
 
-/// In EIP-7702 mode, reroute the tx through the solver EOA's delegated
-/// forwarder contract. The original target and calldata are wrapped in a
-/// `forward()` call. `from` is set to the submission EOA so that simulations
-/// see the correct `msg.sender` for the forwarder's caller whitelist.
+/// In EIP-7702 mode, reroute the tx through the solver EOA's delegate. Its fallback expects the target address prefix followed by target calldata. `from` is set to one of the allowed EOAs so simulations see the correct `msg.sender`, which is the solver EOA.
 fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
     let mut tx = tx.clone();
     match mode {
@@ -521,15 +517,17 @@ fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
             let original_target = tx.to;
             tx.from = *submitter_eoa;
             tx.to = *solver_eoa;
-            tx.input = CowSettlementForwarder::forwardCall {
-                target: original_target,
-                data: tx.input.clone(),
-            }
-            .abi_encode()
-            .into();
+            tx.input = delegated_calldata(original_target, &tx.input);
             tx
         }
     }
+}
+
+fn delegated_calldata(target: eth::Address, calldata: &Bytes) -> Bytes {
+    let mut input = Vec::with_capacity(target.len() + calldata.len());
+    input.extend_from_slice(target.as_slice());
+    input.extend_from_slice(calldata);
+    input.into()
 }
 
 pub struct SubmissionSuccess {
@@ -619,3 +617,6 @@ impl Error {
         Some(end.saturating_sub(start).0)
     }
 }
+
+#[cfg(test)]
+mod tests;

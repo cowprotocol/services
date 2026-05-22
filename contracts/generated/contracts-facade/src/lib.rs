@@ -56,6 +56,7 @@ pub use {
     cow_contract_liquoricesettlement as LiquoriceSettlement,
     cow_contract_pancakerouter as PancakeRouter,
     cow_contract_permit2 as Permit2,
+    cow_contract_solver7702delegate as Solver7702Delegate,
     cow_contract_sushiswaprouter as SushiSwapRouter,
     cow_contract_swaprrouter as SwaprRouter,
     cow_contract_testnetuniswapv2router02 as TestnetUniswapV2Router02,

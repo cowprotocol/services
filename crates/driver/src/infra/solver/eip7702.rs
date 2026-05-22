@@ -1,17 +1,16 @@
 use {
-    super::{Config, Solver},
+    super::{Account, Config, Solver},
     crate::infra::blockchain::Ethereum,
     alloy::{
         eips::eip7702::Authorization,
         network::{TransactionBuilder7702, TxSigner},
-        primitives::{Address, U256},
+        primitives::{Address, B256, Bytes, U256, address},
         providers::Provider,
         rpc::types::TransactionRequest,
-        sol_types::SolCall,
+        sol_types::SolConstructor,
     },
     anyhow::Context,
-    contracts::CowSettlementForwarder::CowSettlementForwarder,
-    futures::future::try_join_all,
+    contracts::Solver7702Delegate::Solver7702Delegate,
     std::time::Duration,
     tracing::instrument,
 };
@@ -20,55 +19,39 @@ use {
 /// eth_getCode on a delegated EOA, instead of getting empty bytes (normal EOA),
 /// you get 0xef0100<20-byte contract address>.
 const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
+/// The maximum number of approved callers allowed by the Solver7702Delegate ABI.
+const MAX_APPROVED_CALLERS: usize = 5;
+type ApprovedCallers = [Address; MAX_APPROVED_CALLERS];
+// Arachnid's deterministic-deployment-proxy. It is deployed at this same
+// address on many EVM chains. Sending 32-byte salt || init code to it deploys
+// that init code with CREATE2. We use it to derive and deploy the exact
+// Solver7702Delegate address from this proxy address, zero salt, and init code.
+const CREATE2_DEPLOYER: Address = address!("4e59b44847b379578588920cA78FbF26c0B4956C");
+// The ordered caller slots and zero salt are part of the CREATE2 input, so the
+// same caller set keeps resolving to the same delegate target.
+const CREATE2_SALT: B256 = B256::ZERO;
 
-/// Ensure EIP-7702 delegation and caller approval are set up for all solvers
-/// with parallel submission accounts. Called once at driver startup.
-///
-/// # Errors
-/// - `max-solutions-to-propose > 1` without any `submission-accounts`
-///   configured (parallel submission is required for multi-solution mode).
-/// - `submission-accounts` configured without a `forwarder-contract` address.
-/// - `submission-accounts` configured but the main solver account is read-only,
-///   so it cannot sign the EIP-7702 authorization.
-/// - The EIP-7702 delegation tx lands but the on-chain code does not reflect
-///   the expected designator (e.g. a concurrent tx shifted the nonce).
-/// - Any underlying RPC error (code fetch, chain id, tx send, receipt).
+/// Ensure EIP-7702 delegate deployment and solver delegation are set up for all
+/// solvers with parallel submission accounts. Called once at driver startup.
 #[instrument(name = "setup_eip7702", skip_all)]
 pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     for solver in solvers {
         let config = solver.config();
-        if config.submission_accounts.is_empty() {
-            anyhow::ensure!(
-                config.max_solutions_to_propose.get() == 1,
-                "solver '{}': max-solutions-to-propose > 1 requires at least one \
-                 submission-account (EIP-7702 parallel submission must be enabled)",
-                config.name,
-            );
+        let Some(deployment) = validate_config(
+            config.name.as_str(),
+            config.max_solutions_to_propose,
+            &config.submission_accounts,
+        )?
+        else {
             continue;
-        }
-        if config
-            .submission_accounts
-            .iter()
-            .all(|a| matches!(a, super::Account::Address(_)))
-        {
-            tracing::debug!(
-                solver = %config.name,
-                "all submission accounts are read-only, skipping EIP-7702 setup"
-            );
-            continue;
-        }
+        };
+
         anyhow::ensure!(
             !matches!(config.account, super::Account::Address(_)),
             "solver '{}': main account must be a signer to set up EIP-7702 delegation when \
              submission accounts are configured",
             config.name,
         );
-        let forwarder = config.forwarder_contract.ok_or_else(|| {
-            anyhow::anyhow!(
-                "solver {}: submission_accounts configured but forwarder_contract missing",
-                config.name
-            )
-        })?;
 
         // Register solver + submission accounts with the main wallet so we can
         // send transactions via the provider during setup.
@@ -78,77 +61,182 @@ pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
             web3.wallet.register_signer(acc.clone());
         }
 
-        setup_solver(config, forwarder, eth).await?;
+        setup_solver(config, deployment, eth).await?;
     }
     Ok(())
 }
 
-#[instrument(skip_all)]
-async fn setup_solver(config: &Config, forwarder: Address, eth: &Ethereum) -> anyhow::Result<()> {
-    let solver_address: Address = config.account.address();
-    let provider = &eth.web3().provider;
+fn validate_config(
+    solver_name: &str,
+    max_solutions_to_propose: std::num::NonZeroUsize,
+    submission_accounts: &[Account],
+) -> anyhow::Result<Option<DelegateDeployment>> {
+    if submission_accounts.is_empty() {
+        anyhow::ensure!(
+            max_solutions_to_propose.get() == 1,
+            "solver '{solver_name}': max-solutions-to-propose > 1 requires at least one \
+             submission-account (EIP-7702 parallel submission must be enabled)",
+        );
+        return Ok(None);
+    }
 
-    // Check delegation status.
-    let code = provider.get_code_at(solver_address).await?;
-    let needs_delegation = !is_delegated_to(&code, forwarder);
+    anyhow::ensure!(
+        submission_accounts
+            .iter()
+            .all(|account| !matches!(account, Account::Address(_))),
+        "solver '{solver_name}': EIP-7702 submission accounts must be signers; address-only \
+         accounts cannot sign delegated settlement transactions",
+    );
 
-    let submission_addresses: Vec<Address> = config
-        .submission_accounts
+    let submission_addresses = submission_accounts
         .iter()
         .map(TxSigner::address)
-        .collect();
+        .collect::<Vec<_>>();
 
-    if needs_delegation {
-        setup_delegation_and_approve(config, forwarder, &submission_addresses, eth).await?;
-    } else {
-        // Skip delegation, but make sure submission accounts are approved callers.
-        let unapproved =
-            check_unapproved_callers(eth, solver_address, &submission_addresses).await?;
-        approve_submitters(config, &unapproved, eth).await?;
+    DelegateDeployment::new(&submission_addresses).map(Some)
+}
+
+#[derive(Debug, Clone)]
+struct DelegateDeployment {
+    target: Address,
+    approved_callers: ApprovedCallers,
+    init_code: Bytes,
+}
+
+impl DelegateDeployment {
+    fn new(callers: &[Address]) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            callers.len() <= MAX_APPROVED_CALLERS,
+            "Solver7702Delegate supports at most {MAX_APPROVED_CALLERS} submission accounts"
+        );
+
+        let mut approved_callers = [Address::ZERO; MAX_APPROVED_CALLERS];
+        approved_callers[..callers.len()].copy_from_slice(callers);
+
+        anyhow::ensure!(
+            !Solver7702Delegate::BYTECODE.is_empty(),
+            "Solver7702Delegate creation bytecode is missing"
+        );
+        let init_code = Solver7702Delegate::BYTECODE
+            .iter()
+            .chain(&SolConstructor::abi_encode(
+                &Solver7702Delegate::constructorCall {
+                    approvedCallers: approved_callers,
+                },
+            ))
+            .copied()
+            .collect::<Bytes>();
+
+        let target = CREATE2_DEPLOYER.create2_from_code(CREATE2_SALT, &init_code);
+
+        Ok(Self {
+            target,
+            approved_callers,
+            init_code,
+        })
     }
+}
+
+#[instrument(skip_all, fields(delegate = ?deployment.target))]
+async fn setup_solver(
+    config: &Config,
+    deployment: DelegateDeployment,
+    eth: &Ethereum,
+) -> anyhow::Result<()> {
+    deploy_delegate_if_missing(config, &deployment, eth).await?;
+
+    let solver_address = config.account.address();
+    let code = eth.web3().provider.get_code_at(solver_address).await?;
+    if is_delegated_to(&code, deployment.target) {
+        tracing::info!(
+            solver = %config.name,
+            delegate = ?deployment.target,
+            "solver EOA already delegates to Solver7702Delegate"
+        );
+        return Ok(());
+    }
+
+    setup_delegation(config, deployment.target, eth).await
+}
+
+#[instrument(skip_all, fields(delegate = ?deployment.target))]
+async fn deploy_delegate_if_missing(
+    config: &Config,
+    deployment: &DelegateDeployment,
+    eth: &Ethereum,
+) -> anyhow::Result<()> {
+    let provider = &eth.web3().provider;
+    let code = provider.get_code_at(deployment.target).await?;
+    if !code.is_empty() {
+        tracing::info!(
+            delegate = ?deployment.target,
+            approved_callers = ?deployment.approved_callers,
+            "reusing existing Solver7702Delegate CREATE2 deployment"
+        );
+        return Ok(());
+    }
+
+    let deployer_code = provider.get_code_at(CREATE2_DEPLOYER).await?;
+    anyhow::ensure!(
+        !deployer_code.is_empty(),
+        "CREATE2 deployer {CREATE2_DEPLOYER:?} has no code"
+    );
+
+    let tx_sender = config.account.address();
+    let tx_nonce = wait_for_pending_txs(provider, tx_sender).await?;
+    let input = CREATE2_SALT
+        .iter()
+        .chain(&deployment.init_code)
+        .copied()
+        .collect::<Bytes>();
+
+    tracing::info!(
+        delegate = ?deployment.target,
+        approved_callers = ?deployment.approved_callers,
+        tx_sender = ?tx_sender,
+        tx_nonce,
+        "deploying Solver7702Delegate with CREATE2"
+    );
+    let pending = provider
+        .send_transaction(
+            TransactionRequest::default()
+                .from(tx_sender)
+                .to(CREATE2_DEPLOYER)
+                .nonce(tx_nonce)
+                .input(input.into()),
+        )
+        .await?;
+    let receipt = pending.get_receipt().await?;
+
+    let code = provider.get_code_at(deployment.target).await?;
+    anyhow::ensure!(
+        !code.is_empty(),
+        "Solver7702Delegate deployment tx {:?} did not create code at {:?}",
+        receipt.transaction_hash,
+        deployment.target,
+    );
+    tracing::info!(
+        tx_hash = ?receipt.transaction_hash,
+        block = ?receipt.block_number,
+        delegate = ?deployment.target,
+        "Solver7702Delegate CREATE2 deployment confirmed"
+    );
 
     Ok(())
 }
 
 /// Check whether the account's code is an EIP-7702 delegation to
-/// `expected_forwarder`.
-fn is_delegated_to(code: &[u8], expected_forwarder: Address) -> bool {
+/// `expected_delegate`.
+fn is_delegated_to(code: &[u8], expected_delegate: Address) -> bool {
     // EIP-7702 delegation designator: 0xef0100 || 20-byte address
-    code.len() == 23 && code.starts_with(&DELEGATION_PREFIX) && code[3..] == expected_forwarder.0.0
+    code.len() == 23 && code.starts_with(&DELEGATION_PREFIX) && code[3..] == expected_delegate.0.0
 }
 
-/// Check which submission accounts are already approved callers on the
-/// solver's delegated forwarder. Uses `join_all` which auto-batches through
-/// ethrpc's batching layer.
+/// Set up EIP-7702 delegation with a zero-address authorization transaction.
 #[instrument(skip_all)]
-async fn check_unapproved_callers(
-    eth: &Ethereum,
-    solver: Address,
-    callers: &[Address],
-) -> anyhow::Result<Vec<Address>> {
-    let provider = &eth.web3().provider;
-
-    let unapproved: Vec<Address> =
-        try_join_all(callers.iter().copied().map(move |caller| async move {
-            let forwarder = CowSettlementForwarder::new(solver, provider);
-            let approved = forwarder.isApprovedCaller(caller).call().await?;
-            Ok::<_, anyhow::Error>((!approved).then_some(caller))
-        }))
-        .await?
-        .into_iter()
-        .flatten()
-        .collect();
-
-    Ok(unapproved)
-}
-
-/// Set up EIP-7702 delegation and approve callers in a single transaction.
-/// The solver signs the authorization and self-calls `setApprovedCallers`.
-#[instrument(skip_all)]
-async fn setup_delegation_and_approve(
+async fn setup_delegation(
     config: &Config,
-    forwarder: Address,
-    unapproved: &[Address],
+    delegate: Address,
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
     let provider = &eth.web3().provider;
@@ -161,11 +249,10 @@ async fn setup_delegation_and_approve(
     let solver_nonce = wait_for_pending_txs(provider, solver_address).await?;
 
     tracing::info!(
-        ?forwarder,
+        ?delegate,
         solver_nonce,
         auth_nonce = solver_nonce + 1,
-        unapproved_callers = unapproved.len(),
-        "setting up EIP-7702 delegation"
+        "setting up EIP-7702 solver delegation"
     );
 
     // The auth nonce must be solver_nonce + 1: in EIP-7702 the sender's nonce
@@ -174,7 +261,7 @@ async fn setup_delegation_and_approve(
     // solver_nonce + 1 by the time the auth is checked.
     let auth = Authorization {
         chain_id: U256::from(chain_id),
-        address: forwarder,
+        address: delegate,
         nonce: solver_nonce + 1,
     };
     let sig = config
@@ -184,22 +271,15 @@ async fn setup_delegation_and_approve(
         .context("failed to sign EIP-7702 authorization")?;
     let signed_auth = auth.into_signed(sig);
 
-    // Explicitly set the tx nonce to `solver_nonce` so the provider's nonce
-    // filler cannot assign a different value.
-    let mut tx = TransactionRequest::default()
+    // Do not combine this with CREATE2 deployment: if execution reverts,
+    // EIP-7702 keeps the delegation. This tx only carries the auth, so use an
+    // inert zero-value call.
+    let tx = TransactionRequest::default()
         .from(solver_address)
-        .to(solver_address)
+        .to(Address::ZERO)
+        .value(U256::ZERO)
         .nonce(solver_nonce)
         .with_authorization_list(vec![signed_auth]);
-
-    if !unapproved.is_empty() {
-        let calldata = CowSettlementForwarder::setApprovedCallersCall {
-            callers: unapproved.to_vec(),
-            approved: true,
-        }
-        .abi_encode();
-        tx = tx.input(calldata.into());
-    }
 
     let pending = provider.send_transaction(tx).await?;
     let receipt = pending.get_receipt().await?;
@@ -212,7 +292,7 @@ async fn setup_delegation_and_approve(
     // Verify the delegation was actually applied (EIP-7702 silently skips
     // authorizations with mismatched nonces).
     let code = provider.get_code_at(solver_address).await?;
-    if !is_delegated_to(&code, forwarder) {
+    if !is_delegated_to(&code, delegate) {
         anyhow::bail!(
             "EIP-7702 delegation not applied after tx {:?}. Expected auth_nonce={} \
              (solver_nonce={} + 1). Check that no pending txs changed the nonce between query and \
@@ -222,46 +302,6 @@ async fn setup_delegation_and_approve(
             solver_nonce,
         );
     }
-
-    Ok(())
-}
-
-/// Approve callers via a solver self-call (delegation already active).
-#[instrument(skip_all)]
-async fn approve_submitters(
-    config: &Config,
-    unapproved: &[Address],
-    eth: &Ethereum,
-) -> anyhow::Result<()> {
-    if unapproved.is_empty() {
-        tracing::info!("no sumitters to approve, skipping");
-        return Ok(());
-    }
-    tracing::info!(
-        unapproved_callers = unapproved.len(),
-        "approving new submission callers"
-    );
-    let provider = &eth.web3().provider;
-    let solver_address: Address = config.account.address();
-
-    let calldata = CowSettlementForwarder::setApprovedCallersCall {
-        callers: unapproved.to_vec(),
-        approved: true,
-    }
-    .abi_encode();
-
-    let tx = TransactionRequest::default()
-        .from(solver_address)
-        .to(solver_address)
-        .input(calldata.into());
-
-    let pending = provider.send_transaction(tx).await?;
-    let receipt = pending.get_receipt().await?;
-    tracing::info!(
-        tx_hash = ?receipt.transaction_hash,
-        block = ?receipt.block_number,
-        "setApprovedCallers tx confirmed"
-    );
 
     Ok(())
 }
@@ -298,3 +338,6 @@ async fn wait_for_pending_txs(provider: &impl Provider, address: Address) -> any
         tokio::time::sleep(POLL_INTERVAL).await;
     }
 }
+
+#[cfg(test)]
+mod tests;

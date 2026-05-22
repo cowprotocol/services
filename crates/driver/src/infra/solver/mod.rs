@@ -214,7 +214,7 @@ pub struct Config {
     pub haircut_bps: u32,
     /// Additional EOAs for parallel settlement submission via EIP-7702.
     /// When non-empty, these accounts submit txs to the solver EOA (which
-    /// delegates to a forwarder contract), enabling concurrent submissions.
+    /// delegates to Solver7702Delegate), enabling concurrent submissions.
     pub submission_accounts: Vec<Account>,
     /// Maximum number of solutions the driver proposes to the autopilot per
     /// auction. When 1 (the default), only the best-scoring solution is sent.

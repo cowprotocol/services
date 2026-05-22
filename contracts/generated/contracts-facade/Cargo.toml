@@ -72,6 +72,7 @@ cow-contract-permit2 = { path = "../contracts-generated/permit2" }
 cow-contract-remoteerc20balances = { path = "../contracts-generated/remoteerc20balances" }
 cow-contract-signatures = { path = "../contracts-generated/signatures" }
 cow-contract-solver = { path = "../contracts-generated/solver" }
+cow-contract-solver7702delegate = { path = "../contracts-generated/solver7702delegate" }
 cow-contract-spardose = { path = "../contracts-generated/spardose" }
 cow-contract-sushiswaprouter = { path = "../contracts-generated/sushiswaprouter" }
 cow-contract-swapper = { path = "../contracts-generated/swapper" }
