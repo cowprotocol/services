@@ -12,13 +12,29 @@ use {
     chrono::Utc,
     futures::stream::{FuturesUnordered, StreamExt},
     serde::Serialize,
-    serde_json::json,
     std::sync::atomic::{AtomicBool, Ordering},
     tokio::sync::{
         OnceCell,
         mpsc::{Receiver, Sender, channel},
     },
 };
+
+/// Wire format version of the JSON envelope sent on every event. Bump
+/// alongside any breaking change to [`Envelope`].
+const ENVELOPE_VERSION: &str = "v1";
+
+/// JSON envelope wrapping every event published to the bus. Consumers can
+/// rely on `version` to evolve their parsers, on `timestamp` for ordering,
+/// and on `requestId` to correlate events to a single inbound request.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Envelope<T: Serialize> {
+    version: &'static str,
+    timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
+    body: T,
+}
 
 struct EventBusConnector {
     /// Channel to decouple issuing events from actually sending them to the
@@ -35,7 +51,7 @@ struct Message {
 }
 
 /// Singleton event bus connection to allow publishing events
-/// conventiently from everywhere.
+/// conveniently from everywhere.
 static BUS: OnceCell<EventBusConnector> = OnceCell::const_new();
 /// Latches once a call to [`init`] has successfully connected. Lets repeat
 /// calls return immediately without re-running `get_or_try_init` (which
@@ -139,18 +155,17 @@ async fn forward_messages_to_event_bus_client(
 /// Enqueues the event to be sent to the event bus in a background task.
 pub fn publish(subject: &str, data: impl Serialize) {
     let Some(bus) = BUS.get() else {
+        tracing::warn!("attempting to publish events without initializing the event bus");
         return;
     };
 
-    let mut message = json!({
-        "version": "v1",
-        "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        "body": data,
-    });
-    if let Some(id) = crate::tracing::distributed::request_id::from_current_span() {
-        message["requestId"] = id.into();
-    }
-    let body = match serde_json::to_vec(&message) {
+    let envelope = Envelope {
+        version: ENVELOPE_VERSION,
+        timestamp: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        request_id: crate::tracing::distributed::request_id::from_current_span(),
+        body: data,
+    };
+    let body = match serde_json::to_vec(&envelope) {
         Ok(body) => body,
         Err(err) => {
             tracing::error!(?err, "failed to serialize event");
@@ -218,6 +233,38 @@ fn record_dropped(reason: DropReason) {
 #[cfg(test)]
 mod tests {
     use {super::*, serde_json::json};
+
+    #[test]
+    fn envelope_matches_wire_format() {
+        let envelope = Envelope {
+            version: ENVELOPE_VERSION,
+            timestamp: "2026-05-22T12:00:00.000Z".to_string(),
+            request_id: Some("req-1".to_string()),
+            body: json!({"outAmount": 1234}),
+        };
+        let serialized: serde_json::Value = serde_json::to_value(&envelope).unwrap();
+        assert_eq!(
+            serialized,
+            json!({
+                "version": "v1",
+                "timestamp": "2026-05-22T12:00:00.000Z",
+                "requestId": "req-1",
+                "body": {"outAmount": 1234},
+            })
+        );
+    }
+
+    #[test]
+    fn envelope_omits_missing_request_id() {
+        let envelope = Envelope {
+            version: ENVELOPE_VERSION,
+            timestamp: "2026-05-22T12:00:00.000Z".to_string(),
+            request_id: None,
+            body: json!({}),
+        };
+        let serialized: serde_json::Value = serde_json::to_value(&envelope).unwrap();
+        assert!(serialized.get("requestId").is_none());
+    }
 
     #[ignore]
     #[tokio::test]
