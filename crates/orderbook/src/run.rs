@@ -53,7 +53,9 @@ pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
     let config = Configuration::from_path(&args.config)
         .await
-        .expect("failed to load configuration file");
+        .expect("failed to load configuration file")
+        .validate()
+        .expect("failed to validate configuration file");
     let tracing_config = config
         .shared
         .tracing
@@ -81,10 +83,9 @@ pub async fn start(args: impl Iterator<Item = String>) {
         observe::event_bus::init(EventBusConfig {
             url: event_bus.url.clone(),
             channel: event_bus.channel.clone(),
-            chain_id: config
-                .shared
-                .chain_id
-                .expect("when the event bus is configured 'chain-id' is required"),
+            // Presence of `chain-id` alongside `event_bus` is enforced by
+            // `SharedConfig::validate` at startup.
+            chain_id: config.shared.chain_id.unwrap(),
         })
         .await;
     }

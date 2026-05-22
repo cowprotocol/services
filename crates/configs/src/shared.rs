@@ -1,6 +1,7 @@
 use {
     crate::fee_factor::FeeFactor,
     alloy::primitives::Address,
+    anyhow::ensure,
     serde::{Deserialize, Deserializer, de::Unexpected},
     std::{collections::HashSet, str::FromStr, time::Duration},
     tracing::Level,
@@ -99,6 +100,17 @@ pub struct SharedConfig {
 
     /// Enables publishing events to a global events bus.
     pub event_bus: Option<EventBusConfig>,
+}
+
+impl SharedConfig {
+    /// Cross-field invariants that cannot be expressed in the serde schema.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.event_bus.is_none() || self.chain_id.is_some(),
+            "`chain-id` is required when the event bus is configured",
+        );
+        Ok(())
+    }
 }
 
 impl Default for SharedConfig {
@@ -454,5 +466,33 @@ mod tests {
             "localhost:4222".parse().unwrap()
         );
         assert_eq!(config.event_bus.as_ref().unwrap().channel, "main");
+    }
+
+    #[test]
+    fn validate_event_bus_requires_chain_id() {
+        let with_event_bus_only = toml::from_str::<SharedConfig>(
+            r#"
+            [event-bus]
+            url = "localhost:4222"
+            channel = "main"
+            "#,
+        )
+        .unwrap();
+        assert!(with_event_bus_only.validate().is_err());
+
+        let with_both = toml::from_str::<SharedConfig>(
+            r#"
+            chain-id = 1
+
+            [event-bus]
+            url = "localhost:4222"
+            channel = "main"
+            "#,
+        )
+        .unwrap();
+        with_both.validate().unwrap();
+
+        // Default config has neither set; validation should pass.
+        SharedConfig::default().validate().unwrap();
     }
 }
