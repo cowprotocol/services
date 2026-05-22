@@ -20,6 +20,13 @@ fn sql_i128(value: i128) -> BigDecimal {
     BigDecimal::from(BigInt::from(value))
 }
 
+fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128> {
+    use num::ToPrimitive;
+    value
+        .to_u128()
+        .context("pool_states.liquidity value overflows u128")
+}
+
 fn address_bytes_list(addresses: &[Address]) -> Vec<&[u8]> {
     addresses.iter().map(|address| address.as_slice()).collect()
 }
@@ -226,6 +233,45 @@ pub async fn batch_update_pool_liquidity(
     .await
     .context("batch_update_pool_liquidity")?;
     Ok(())
+}
+
+/// Bulk-loads `(tick, liquidity)` for pools the caller is about to touch with
+/// `Mint`/`Burn` events. Pools absent from `uniswap_v3_pool_states` (not yet
+/// initialised) are omitted from the result — callers must treat absence as
+/// "skip the liquidity update for this pool."
+pub async fn get_base_pool_states(
+    db: &PgPool,
+    chain_id: u64,
+    factory: &Address,
+    addresses: &[Address],
+) -> Result<std::collections::HashMap<Address, (i32, u128)>> {
+    if addresses.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows = sqlx::query(
+        "SELECT s.pool_address, s.tick, s.liquidity
+         FROM uniswap_v3_pool_states s
+         JOIN uniswap_v3_pools p
+             ON p.chain_id = s.chain_id AND p.address = s.pool_address
+         WHERE s.chain_id = $1
+           AND p.factory = $2
+           AND s.pool_address = ANY($3)",
+    )
+    .bind(chain_id.cast_signed())
+    .bind(factory.as_slice())
+    .bind(address_bytes_list(addresses))
+    .fetch_all(db)
+    .await
+    .context("get_base_pool_states")?;
+
+    rows.into_iter()
+        .map(|r| {
+            let addr = bytes_to_addr(r.get("pool_address"))?;
+            let tick: i32 = r.get("tick");
+            let liquidity = bigdecimal_to_u128(r.get::<BigDecimal, _>("liquidity"))?;
+            Ok((addr, (tick, liquidity)))
+        })
+        .collect()
 }
 
 pub async fn batch_update_ticks(

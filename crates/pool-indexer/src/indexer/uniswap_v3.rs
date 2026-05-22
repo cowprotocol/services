@@ -21,7 +21,13 @@ use {
     tracing::instrument,
 };
 
-type LiquidityCache = HashMap<(Address, u64), u128>;
+/// Per-pool snapshot of `(tick, liquidity)` loaded from
+/// `uniswap_v3_pool_states` before processing a chunk's logs. Used as the
+/// *starting point* when a `Mint`/`Burn` arrives without a prior
+/// `Swap`/`Initialize` in the same chunk to set the in-memory tick. Pools
+/// missing from this map (not yet initialised) cause the liquidity update for
+/// that event to be skipped.
+type BasePoolStates = HashMap<Address, (i32, u128)>;
 type DecimalsCache = HashMap<Address, u8>;
 
 const SYMBOL_BACKFILL_BATCH_SIZE: usize = 500;
@@ -85,11 +91,6 @@ struct ChunkChanges {
 struct ChunkRange {
     start: u64,
     end: u64,
-}
-
-struct PrefetchedChunkData {
-    liquidities: LiquidityCache,
-    decimals: DecimalsCache,
 }
 
 /// Indexes Uniswap V3 events for a single factory contract, persisting pool
@@ -291,21 +292,21 @@ impl UniswapV3Indexer {
 
     #[instrument(skip(self, logs), fields(chunk_start = chunk.start, chunk_end = chunk.end))]
     async fn commit_chunk(&self, chunk: ChunkRange, logs: Vec<Log>) -> Result<()> {
-        // Pre-fetch all I/O (liquidity + decimals eth_calls) in parallel before
-        // opening the DB transaction. Symbols are intentionally excluded — a
-        // hung `symbol()` call must never block pool inserts. They're populated
-        // later by the async backfill task.
+        // Pre-fetch `decimals` via eth_call and load base pool states from the
+        // DB in parallel before opening the chunk transaction. Symbols are
+        // intentionally excluded — a hung `symbol()` call must never block
+        // pool inserts; they're populated later by the async backfill task.
         let metrics = crate::metrics::Metrics::get();
         let chunk_timer_labels = [self.network.as_str()];
         let _chunk_timer =
             crate::metrics::Metrics::timer(&metrics.chunk_commit_seconds, &chunk_timer_labels);
-        let prefetched = self.prefetch_chunk_data(&logs).await;
-        let changes = collect_log_changes(
-            self.factory,
-            &logs,
-            &prefetched.liquidities,
-            &prefetched.decimals,
+        let mint_burn_pools = mint_burn_pool_addresses(&logs);
+        let (decimals, base_states) = tokio::join!(
+            self.prefetch_decimals(&logs),
+            db::get_base_pool_states(&self.db, self.chain_id, &self.factory, &mint_burn_pools),
         );
+        let base_states = base_states?;
+        let changes = collect_log_changes(self.factory, &logs, &base_states, &decimals);
 
         tracing::debug!(
             chunk_start = chunk.start,
@@ -359,44 +360,6 @@ impl UniswapV3Indexer {
         Ok(())
     }
 
-    async fn prefetch_chunk_data(&self, logs: &[Log]) -> PrefetchedChunkData {
-        let (liquidities, decimals) = tokio::join!(
-            self.prefetch_liquidities(logs),
-            self.prefetch_decimals(logs),
-        );
-
-        PrefetchedChunkData {
-            liquidities,
-            decimals,
-        }
-    }
-
-    /// Parallel-fetch liquidity for every unique (pool, block) pair from
-    /// Mint/Burn events.
-    async fn prefetch_liquidities(&self, logs: &[Log]) -> LiquidityCache {
-        let pairs: std::collections::HashSet<_> = logs
-            .iter()
-            .filter_map(|log| {
-                let t = log.topic0()?;
-                if *t == Mint::SIGNATURE_HASH || *t == Burn::SIGNATURE_HASH {
-                    Some((log.address(), log.block_number?))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        futures::stream::iter(pairs)
-            .map(|(addr, block)| async move {
-                let liq = fetch_pool_liquidity(&self.provider, addr, block).await;
-                ((addr, block), liq)
-            })
-            .buffer_unordered(self.prefetch_concurrency)
-            .filter_map(|(key, opt)| async move { opt.map(|v| (key, v)) })
-            .collect()
-            .await
-    }
-
     /// Parallel-fetch ERC-20 decimals for all tokens referenced in PoolCreated
     /// events.
     async fn prefetch_decimals(&self, logs: &[Log]) -> DecimalsCache {
@@ -434,18 +397,19 @@ where
     }
 }
 
-async fn fetch_pool_liquidity(provider: &AlloyProvider, pool: Address, block: u64) -> Option<u128> {
-    retry_node_call(
-        || async move {
-            contracts::UniswapV3Pool::Instance::new(pool, provider.clone())
-                .liquidity()
-                .block(block.into())
-                .call()
-                .await
-        },
-        |errors| tracing::warn!(%pool, block, ?errors, "fetch_pool_liquidity gave up"),
-    )
-    .await
+/// Returns the de-duplicated set of pool addresses with `Mint` or `Burn` events
+/// in the chunk. The pool-indexer pre-loads `(tick, liquidity)` for these from
+/// the DB so the in-event delta formula can compute the post-event liquidity
+/// without a historical RPC call.
+fn mint_burn_pool_addresses(logs: &[Log]) -> Vec<Address> {
+    logs.iter()
+        .filter_map(|log| {
+            let t = log.topic0()?;
+            (*t == Mint::SIGNATURE_HASH || *t == Burn::SIGNATURE_HASH).then(|| log.address())
+        })
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> {
@@ -774,8 +738,10 @@ struct LogAccumulator {
     /// Latest full state per pool, established by `Initialize` or `Swap`.
     full_states: HashMap<Address, PoolStateData>,
     /// Liquidity-only update per pool, used when no full state exists yet in
-    /// the chunk (i.e. neither `Initialize` nor `Swap` has been seen).
-    liq_only: HashMap<Address, (u64, u128)>,
+    /// the chunk (i.e. neither `Initialize` nor `Swap` has been seen). Stored
+    /// as `(block, liquidity, tick)`; the `tick` is carried so consecutive
+    /// `Mint`/`Burn`s in the same chunk reuse it (Mint/Burn don't change tick).
+    liq_only: HashMap<Address, (u64, u128, i32)>,
     /// Accumulated signed tick-liquidity deltas, keyed by `(pool, tick_idx)`.
     tick_deltas: HashMap<(Address, i32), i128>,
 }
@@ -870,9 +836,10 @@ impl LogAccumulator {
         self.liq_only.remove(&pool);
     }
 
-    /// Applies positive tick-liquidity deltas from a `Mint` and refreshes
-    /// pool liquidity from the prefetch cache.
-    fn handle_mint(&mut self, log: &Log, liq_cache: &LiquidityCache) {
+    /// Applies positive tick-liquidity deltas from a `Mint` and updates pool
+    /// liquidity from the event's `amount` (no chain call needed — see
+    /// [`Self::apply_position_delta_to_pool_liq`]).
+    fn handle_mint(&mut self, log: &Log, base_states: &BasePoolStates) {
         let decoded = match Mint::decode_log(&log.inner) {
             Ok(d) => d,
             Err(err) => {
@@ -883,14 +850,23 @@ impl LogAccumulator {
         let e = &decoded.data;
         let pool = log.address();
         let block = log.block_number.unwrap_or_default();
+        let tick_lower = e.tickLower.as_i32();
+        let tick_upper = e.tickUpper.as_i32();
         let amount = e.amount.cast_signed();
-        self.record_tick_range_delta(pool, e.tickLower.as_i32(), e.tickUpper.as_i32(), amount);
-        self.update_liquidity_from_cache(pool, block, liq_cache);
+        self.record_tick_range_delta(pool, tick_lower, tick_upper, amount);
+        self.apply_position_delta_to_pool_liq(
+            pool,
+            block,
+            tick_lower,
+            tick_upper,
+            amount,
+            base_states,
+        );
     }
 
-    /// Applies negative tick-liquidity deltas from a `Burn` and refreshes
-    /// pool liquidity from the prefetch cache.
-    fn handle_burn(&mut self, log: &Log, liq_cache: &LiquidityCache) {
+    /// Applies negative tick-liquidity deltas from a `Burn` and updates pool
+    /// liquidity from the event's `amount`.
+    fn handle_burn(&mut self, log: &Log, base_states: &BasePoolStates) {
         let decoded = match Burn::decode_log(&log.inner) {
             Ok(d) => d,
             Err(err) => {
@@ -901,9 +877,18 @@ impl LogAccumulator {
         let e = &decoded.data;
         let pool = log.address();
         let block = log.block_number.unwrap_or_default();
+        let tick_lower = e.tickLower.as_i32();
+        let tick_upper = e.tickUpper.as_i32();
         let amount = e.amount.cast_signed();
-        self.record_tick_range_delta(pool, e.tickLower.as_i32(), e.tickUpper.as_i32(), -amount);
-        self.update_liquidity_from_cache(pool, block, liq_cache);
+        self.record_tick_range_delta(pool, tick_lower, tick_upper, -amount);
+        self.apply_position_delta_to_pool_liq(
+            pool,
+            block,
+            tick_lower,
+            tick_upper,
+            -amount,
+            base_states,
+        );
     }
 
     fn record_tick_range_delta(
@@ -917,22 +902,60 @@ impl LogAccumulator {
         *self.tick_deltas.entry((pool, upper_tick)).or_default() -= liquidity_delta;
     }
 
-    /// Refreshes the stored liquidity for `pool` at `block` using the
-    /// prefetch cache. Updates the existing full state in-place if one exists,
-    /// otherwise stores a liquidity-only record.
-    fn update_liquidity_from_cache(
+    /// Applies a position-liquidity delta from a `Mint` (+amount) or `Burn`
+    /// (-amount) to the pool's *active* liquidity. The Uniswap V3 rule is that
+    /// `pool.liquidity` only moves when the current `tick` falls within the
+    /// position's `[lower, upper)` range; positions outside the active range
+    /// affect ticks only, not the pool-level liquidity.
+    ///
+    /// The pre-event `(tick, liquidity)` comes from, in priority order:
+    /// `full_states[pool]` (a prior `Swap`/`Initialize` in this chunk) →
+    /// `liq_only[pool]` (a prior `Mint`/`Burn` in this chunk) →
+    /// `base_states[pool]` (loaded from `uniswap_v3_pool_states`).
+    /// Pools missing from all three are skipped with a warn — Uniswap V3
+    /// invariants prevent `Mint`/`Burn` before `Initialize`, so this should
+    /// only fire if we somehow missed an `Initialize` event.
+    fn apply_position_delta_to_pool_liq(
         &mut self,
         pool: Address,
         block: u64,
-        liq_cache: &LiquidityCache,
+        tick_lower: i32,
+        tick_upper: i32,
+        delta: i128,
+        base_states: &BasePoolStates,
     ) {
-        if let Some(&liq) = liq_cache.get(&(pool, block)) {
-            if let Some(state) = self.full_states.get_mut(&pool) {
-                state.liquidity = liq;
-                state.block_number = block;
+        let (tick, prev_liq) = if let Some(state) = self.full_states.get(&pool) {
+            (state.tick, state.liquidity)
+        } else if let Some(&(_, liq, tick)) = self.liq_only.get(&pool) {
+            (tick, liq)
+        } else if let Some(&(tick, liq)) = base_states.get(&pool) {
+            (tick, liq)
+        } else {
+            tracing::warn!(
+                %pool,
+                block,
+                "Mint/Burn for pool with no known state; skipping liquidity update",
+            );
+            return;
+        };
+
+        let new_liq = if tick_lower <= tick && tick < tick_upper {
+            let signed = prev_liq.cast_signed().saturating_add(delta);
+            if signed < 0 {
+                tracing::error!(%pool, block, prev_liq, delta, "negative pool liquidity computed; clamping to 0");
+                0
             } else {
-                self.liq_only.insert(pool, (block, liq));
+                signed.cast_unsigned()
             }
+        } else {
+            prev_liq
+        };
+
+        if let Some(state) = self.full_states.get_mut(&pool) {
+            state.liquidity = new_liq;
+            state.block_number = block;
+        } else {
+            self.liq_only.insert(pool, (block, new_liq, tick));
         }
     }
 
@@ -943,7 +966,7 @@ impl LogAccumulator {
             liquidity_updates: self
                 .liq_only
                 .into_iter()
-                .map(|(pool, (block, liq))| LiquidityUpdateData {
+                .map(|(pool, (block, liq, _tick))| LiquidityUpdateData {
                     pool_address: pool,
                     block_number: block,
                     liquidity: liq,
@@ -966,7 +989,7 @@ impl LogAccumulator {
 fn collect_log_changes(
     factory: Address,
     logs: &[Log],
-    liq_cache: &LiquidityCache,
+    base_states: &BasePoolStates,
     dec_cache: &DecimalsCache,
 ) -> ChunkChanges {
     let mut acc = LogAccumulator::default();
@@ -978,8 +1001,8 @@ fn collect_log_changes(
             }
             t if t == Initialize::SIGNATURE_HASH => acc.handle_initialize(log),
             t if t == Swap::SIGNATURE_HASH => acc.handle_swap(log),
-            t if t == Mint::SIGNATURE_HASH => acc.handle_mint(log, liq_cache),
-            t if t == Burn::SIGNATURE_HASH => acc.handle_burn(log, liq_cache),
+            t if t == Mint::SIGNATURE_HASH => acc.handle_mint(log, base_states),
+            t if t == Burn::SIGNATURE_HASH => acc.handle_burn(log, base_states),
             _ => {}
         }
     }
@@ -1115,9 +1138,12 @@ mod tests {
             amount0: U256::ZERO,
             amount1: U256::ZERO,
         };
-        let liq_cache: LiquidityCache = HashMap::from([((POOL, 100u64), amount)]);
+        // Pool is initialised at tick 0 with 0 liquidity. The Mint's
+        // position spans [-100, 100), which contains tick 0, so the active
+        // liquidity grows by `amount`.
+        let base_states: BasePoolStates = HashMap::from([(POOL, (0i32, 0u128))]);
         let log = make_log(POOL, 100, event);
-        let c = collect_log_changes(FACTORY, &[log], &liq_cache, &Default::default());
+        let c = collect_log_changes(FACTORY, &[log], &base_states, &Default::default());
 
         assert_eq!(c.tick_deltas.len(), 2);
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
@@ -1125,7 +1151,7 @@ mod tests {
         assert_eq!(lower.delta, amount.cast_signed());
         assert_eq!(upper.delta, -amount.cast_signed());
 
-        // No prior full state → goes into liq_only
+        // No prior full state → goes into liq_only with event-derived liquidity.
         assert_eq!(c.liquidity_updates.len(), 1);
         assert_eq!(c.liquidity_updates[0].liquidity, amount);
         assert!(c.pool_states.is_empty());
@@ -1154,12 +1180,15 @@ mod tests {
             amount0: U256::ZERO,
             amount1: U256::ZERO,
         };
-        let liq_cache: LiquidityCache = HashMap::from([((POOL, 201u64), after_mint_liq)]);
+        // No base_states needed: the Swap establishes `full_states[POOL]`
+        // with liquidity=500_000, tick=0, so the Mint applies its delta
+        // against that in-memory state.
         let logs = vec![make_log(POOL, 200, swap), make_log(POOL, 201, mint)];
-        let c = collect_log_changes(FACTORY, &logs, &liq_cache, &Default::default());
+        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
 
         assert_eq!(c.pool_states.len(), 1);
-        // Swap established full_state; Mint updated its liquidity from the cache.
+        // Swap established full_state; Mint added 100_000 to active liquidity
+        // (tick 0 falls in [-100, 100)).
         assert_eq!(c.pool_states[0].liquidity, after_mint_liq);
         assert_eq!(c.pool_states[0].block_number, 201);
         assert!(c.liquidity_updates.is_empty());
