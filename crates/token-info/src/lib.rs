@@ -92,10 +92,7 @@ impl TokenInfoFetching for TokenInfoFetcher {
                 if let Err(err) = &info {
                     tracing::debug!(?err, token = ?address, "failed to fetch token info");
                 }
-                (
-                    address,
-                    self.get_token_info(address).await.unwrap_or_default(),
-                )
+                (address, info.unwrap_or_default())
             })
             .buffer_unordered(TOKEN_INFO_FETCH_CONCURRENCY)
             .collect()
