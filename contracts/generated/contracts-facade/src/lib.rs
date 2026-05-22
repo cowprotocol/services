@@ -32,7 +32,6 @@ pub use {
     cow_contract_balancerv3batchrouter as BalancerV3BatchRouter,
     cow_contract_baoswaprouter as BaoswapRouter,
     cow_contract_chainalysisoracle as ChainalysisOracle,
-    cow_contract_cowsettlementforwarder as CowSettlementForwarder,
     cow_contract_cowswapethflow as CoWSwapEthFlow,
     cow_contract_cowswaponchainorders as CoWSwapOnchainOrders,
     cow_contract_erc20 as ERC20,

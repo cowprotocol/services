@@ -323,10 +323,6 @@ struct SolverConfig {
     #[serde(default)]
     submission_accounts: Vec<Account>,
 
-    /// Address of the deployed CowSettlementForwarder contract for EIP-7702
-    /// delegation. Required when `submission_accounts` is non-empty.
-    forwarder_contract: Option<eth::Address>,
-
     /// Maximum number of solutions the driver proposes to the autopilot per
     /// auction. Defaults to 1 (only the best-scoring solution). Values > 1
     /// require `submission-accounts` to be configured; the driver will refuse

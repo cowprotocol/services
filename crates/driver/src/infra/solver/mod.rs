@@ -216,9 +216,6 @@ pub struct Config {
     /// When non-empty, these accounts submit txs to the solver EOA (which
     /// delegates to a forwarder contract), enabling concurrent submissions.
     pub submission_accounts: Vec<Account>,
-    /// Address of the deployed CowSettlementForwarder contract for EIP-7702
-    /// delegation. Required when `submission_accounts` is non-empty.
-    pub forwarder_contract: Option<eth::Address>,
     /// Maximum number of solutions the driver proposes to the autopilot per
     /// auction. When 1 (the default), only the best-scoring solution is sent.
     pub max_solutions_to_propose: std::num::NonZeroUsize,
@@ -321,11 +318,6 @@ impl Solver {
     /// Additional submission accounts for EIP-7702 parallel settlement.
     pub fn submission_accounts(&self) -> &[Account] {
         &self.config.submission_accounts
-    }
-
-    /// Address of the CowSettlementForwarder contract for EIP-7702 delegation.
-    pub fn forwarder_contract(&self) -> Option<eth::Address> {
-        self.config.forwarder_contract
     }
 
     pub fn max_solutions_to_propose(&self) -> usize {
