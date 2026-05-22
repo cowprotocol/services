@@ -121,6 +121,31 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
         ));
     }
 
+    // Symbol/decimals backfill is per-network (iterates all tokens missing the
+    // field, regardless of which factory owns the pool that referenced them),
+    // so a single pair per network is enough. Spawned into the same
+    // `factory_set` so a panic in either task surfaces through the same
+    // supervisor as the live indexers and crashes the process — kubernetes
+    // restarts the pod, and the existing `restarts` metric pages on-call.
+    let backfill_concurrency = network.prefetch_concurrency;
+    let backfill_interval = network.poll_interval();
+    factory_set.spawn(crate::indexer::uniswap_v3::backfill_symbols(
+        provider.clone(),
+        db.clone(),
+        network.name.clone(),
+        network.chain_id,
+        backfill_concurrency,
+        backfill_interval,
+    ));
+    factory_set.spawn(crate::indexer::uniswap_v3::backfill_decimals(
+        provider.clone(),
+        db.clone(),
+        network.name.clone(),
+        network.chain_id,
+        backfill_concurrency,
+        backfill_interval,
+    ));
+
     if let Some(result) = factory_set.join_next().await {
         panic!("pool-indexer factory task exited: {result:?}");
     }

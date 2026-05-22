@@ -126,23 +126,11 @@ impl UniswapV3Indexer {
         }
     }
 
+    /// Per-factory live indexing loop. Symbol/decimals backfill tasks live at
+    /// the network level (see `run_network_indexer`) and are spawned into the
+    /// caller's `JoinSet` so a panic in either propagates as a process exit
+    /// rather than being silently dropped.
     pub async fn run(self, poll_interval: std::time::Duration) -> ! {
-        tokio::spawn(backfill_symbols(
-            self.provider.clone(),
-            self.db.clone(),
-            self.network.clone(),
-            self.chain_id,
-            self.prefetch_concurrency,
-            poll_interval,
-        ));
-        tokio::spawn(backfill_decimals(
-            self.provider.clone(),
-            self.db.clone(),
-            self.network.clone(),
-            self.chain_id,
-            self.prefetch_concurrency,
-            poll_interval,
-        ));
         loop {
             if let Err(err) = self.run_once().await {
                 crate::metrics::Metrics::get()
@@ -433,14 +421,14 @@ async fn fetch_decimals(provider: &AlloyProvider, token: Address) -> Option<u8> 
 /// persisted as the empty string so subsequent passes skip them — otherwise we
 /// would hammer known-broken tokens on every tick. A process restart re-probes
 /// them once (cheap, and useful if the earlier failure was transient).
-async fn backfill_symbols(
+pub(crate) async fn backfill_symbols(
     provider: AlloyProvider,
     db: sqlx::PgPool,
     network: NetworkName,
     chain_id: u64,
     prefetch_concurrency: usize,
     poll_interval: std::time::Duration,
-) -> ! {
+) {
     loop {
         if let Err(err) =
             run_symbol_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency).await
@@ -522,14 +510,14 @@ async fn run_symbol_backfill_pass(
 /// `poll_interval` between passes, persists `-1` as the "tried and failed"
 /// sentinel for tokens whose `decimals()` call fails so subsequent passes
 /// skip them. A process restart re-probes them once.
-async fn backfill_decimals(
+pub(crate) async fn backfill_decimals(
     provider: AlloyProvider,
     db: sqlx::PgPool,
     network: NetworkName,
     chain_id: u64,
     prefetch_concurrency: usize,
     poll_interval: std::time::Duration,
-) -> ! {
+) {
     loop {
         if let Err(err) =
             run_decimals_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency)
