@@ -41,7 +41,17 @@ use {
 };
 
 pub mod dto;
-pub mod eip7702;
+// The old implementation still lives in eip7702.rs for the stacked delegate PR,
+// but it depends on the removed forwarder binding. This minimal stub allows the
+// CI to pass.
+pub mod eip7702 {
+    use {super::Solver, crate::infra::blockchain::Ethereum, tracing::instrument};
+
+    #[instrument(name = "setup_eip7702", skip_all)]
+    pub async fn setup(_solvers: &[Solver], _eth: &Ethereum) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
 
 // TODO At some point I should be checking that the names are unique, I don't
 // think I'm doing that.
