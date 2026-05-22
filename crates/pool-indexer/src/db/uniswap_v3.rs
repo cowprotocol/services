@@ -476,12 +476,6 @@ pub struct TickRow {
     pub liquidity_net: BigDecimal,
 }
 
-/// Upper bound on ticks returned per pool query. Sized ~3× the largest known
-/// mainnet pool: USDC/WETH 0.05% (0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640)
-/// had 1533 active ticks on 2026-04-22. Callers that hit this limit get a
-/// `warn_truncated` log; bump if that starts firing on real pools.
-pub const MAX_TICKS_PER_POOL: u32 = 5_000;
-
 /// A tick tagged with its owning pool, used by bulk-tick queries that span
 /// multiple pools.
 pub struct PoolTickRow {
@@ -522,12 +516,17 @@ pub async fn get_pools_by_ids(
     decode_pool_rows(rows)
 }
 
-/// Fetches ticks for multiple pools in one query, capped at
-/// [`MAX_TICKS_PER_POOL`] per pool. Uses a `LATERAL` join so each pool's
-/// limit is applied individually via the PK prefix index — a flat
-/// `WHERE pool_address = ANY($2)` with a single outer `LIMIT` could starve
-/// later pools when one has many ticks. Rows are ordered by
+/// Fetches ticks for multiple pools in one query. Rows are ordered by
 /// `(pool_address, tick_idx)` so callers can group in a single pass.
+///
+/// No per-pool cap is applied: bulk callers already limit the number of pool
+/// addresses they request (see the driver-side `POOL_IDS_PER_REQUEST`), and
+/// real-world active-tick counts (~1500 on today's largest mainnet pool) are
+/// far below any number where the response size becomes a concern. If that
+/// changes, the right response is to surface truncation explicitly to the
+/// caller (e.g. a `truncated: bool` per pool in the API response) rather than
+/// silently drop tick rows — silently truncated tick data produces an
+/// incorrect price curve that the driver can't detect.
 pub async fn get_ticks_for_pools(
     pool: &PgPool,
     chain_id: u64,
@@ -537,36 +536,26 @@ pub async fn get_ticks_for_pools(
         return Ok(Vec::new());
     }
     let rows = sqlx::query(
-        "SELECT t.pool_address, t.tick_idx, t.liquidity_net
-         FROM UNNEST($2::BYTEA[]) AS p(addr)
-         JOIN LATERAL (
-             SELECT pool_address, tick_idx, liquidity_net
-             FROM uniswap_v3_ticks
-             WHERE chain_id = $1 AND pool_address = p.addr
-             ORDER BY tick_idx
-             LIMIT $3
-         ) t ON TRUE
-         ORDER BY t.pool_address, t.tick_idx",
+        "SELECT pool_address, tick_idx, liquidity_net
+         FROM uniswap_v3_ticks
+         WHERE chain_id = $1 AND pool_address = ANY($2)
+         ORDER BY pool_address, tick_idx",
     )
     .bind(chain_id.cast_signed())
     .bind(address_bytes_list(addresses))
-    .bind(i64::from(MAX_TICKS_PER_POOL))
     .fetch_all(pool)
     .await
     .context("get_ticks_for_pools")?;
 
-    let out: Vec<PoolTickRow> = rows
-        .into_iter()
+    rows.into_iter()
         .map(|r| {
-            Ok::<_, anyhow::Error>(PoolTickRow {
+            Ok(PoolTickRow {
                 pool_address: bytes_to_addr(r.get("pool_address"))?,
                 tick_idx: r.get("tick_idx"),
                 liquidity_net: r.get("liquidity_net"),
             })
         })
-        .collect::<Result<_>>()?;
-    warn_on_truncated_pools(&out);
-    Ok(out)
+        .collect()
 }
 
 pub async fn get_ticks(
@@ -574,52 +563,26 @@ pub async fn get_ticks(
     chain_id: u64,
     pool_address: &Address,
 ) -> Result<Vec<TickRow>> {
-    let ticks: Vec<TickRow> = sqlx::query(
+    sqlx::query(
         "SELECT tick_idx, liquidity_net
          FROM uniswap_v3_ticks
          WHERE chain_id = $1
            AND pool_address = $2
-         ORDER BY tick_idx
-         LIMIT $3",
+         ORDER BY tick_idx",
     )
     .bind(chain_id.cast_signed())
     .bind(pool_address.as_slice())
-    .bind(i64::from(MAX_TICKS_PER_POOL))
     .fetch_all(pool)
     .await
-    .context("get_ticks")?
-    .into_iter()
-    .map(|r| TickRow {
-        tick_idx: r.get("tick_idx"),
-        liquidity_net: r.get("liquidity_net"),
+    .context("get_ticks")
+    .map(|rows| {
+        rows.into_iter()
+            .map(|r| TickRow {
+                tick_idx: r.get("tick_idx"),
+                liquidity_net: r.get("liquidity_net"),
+            })
+            .collect()
     })
-    .collect();
-
-    if ticks.len() >= MAX_TICKS_PER_POOL as usize {
-        warn_truncated(pool_address);
-    }
-    Ok(ticks)
-}
-
-fn warn_on_truncated_pools(rows: &[PoolTickRow]) {
-    let mut tick_count: std::collections::HashMap<&Address, usize> =
-        std::collections::HashMap::new();
-    for row in rows {
-        *tick_count.entry(&row.pool_address).or_default() += 1;
-    }
-    for (addr, count) in tick_count {
-        if count >= MAX_TICKS_PER_POOL as usize {
-            warn_truncated(addr);
-        }
-    }
-}
-
-fn warn_truncated(pool: &Address) {
-    tracing::warn!(
-        %pool,
-        limit = MAX_TICKS_PER_POOL,
-        "tick query hit MAX_TICKS_PER_POOL limit; results may be truncated",
-    );
 }
 
 /// Returns all distinct token addresses that have no symbol recorded yet.

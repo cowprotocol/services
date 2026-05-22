@@ -85,8 +85,8 @@ pub async fn get_ticks(
 ///
 /// Bulk tick fetch for many pools in one round trip. Replaces the subgraph's
 /// `TICKS_BY_POOL_IDS_QUERY`. Ticks are grouped by pool and sorted by
-/// `tick_idx` within each group. Per-pool tick count is bounded by the DB
-/// helper (see [`db::MAX_TICKS_PER_POOL`]).
+/// `tick_idx` within each group. No per-pool cap is applied; callers limit
+/// fan-out via [`super::MAX_POOL_IDS_PER_REQUEST`].
 pub async fn get_ticks_bulk(
     State(state): State<Arc<AppState>>,
     Path(network): Path<String>,

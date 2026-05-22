@@ -134,14 +134,29 @@ struct PoolsCheckpointHandler {
 impl PoolsCheckpointHandler {
     /// Fetches the list of existing UniswapV3 pools and their metadata (without
     /// state/ticks). Then fetches state/ticks for the most deepest pools
-    /// (subset of all existing pools)
+    /// (subset of all existing pools).
+    ///
+    /// `block_retriever` is used to pick the snapshot's `target_block` from
+    /// chain head — both `get_registered_pools` and
+    /// `get_pools_with_ticks_by_ids` then promise data at or after that
+    /// block. The event-replay anchor is taken from the *tick* call's
+    /// response (the later of the two), which is what closes the init-time
+    /// double-application race that the indexer otherwise has.
     pub async fn new(
         source: Arc<dyn V3PoolDataSource>,
+        block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
-        let mut registered_pools = source.get_registered_pools().await?;
+        let target_block = block_retriever
+            .current_block()
+            .await
+            .context("read chain head for snapshot target_block")?
+            .number;
+        let mut registered_pools = source.get_registered_pools(target_block).await?;
         tracing::debug!(
-            block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
+            target_block,
+            block = %registered_pools.fetched_block_number,
+            pools = %registered_pools.pools.len(),
             "initialized registered pools",
         );
 
@@ -166,15 +181,23 @@ impl PoolsCheckpointHandler {
             .rev()
             .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
-        let pools = source
+        let pools_with_ticks = source
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
-            .await?
+            .await?;
+        let pools = pools_with_ticks
+            .pools
             .into_iter()
             .filter_map(|pool| Some((pool.id, Arc::new(pool.try_into().ok()?))))
             .collect::<HashMap<_, _>>();
+        // Anchor the checkpoint at the *tick* call's snapshot block, which is
+        // `>= registered_pools.fetched_block_number`. For pool-indexer-backed
+        // sources this is later than the `get_registered_pools` call; using it
+        // (not the earlier block) prevents the driver's event replay from
+        // double-applying Mint/Burn events that the indexer already reflected
+        // by the time the tick fetch returned.
         let pools_checkpoint = Mutex::new(PoolsCheckpoint {
             pools,
-            block_number: registered_pools.fetched_block_number,
+            block_number: pools_with_ticks.fetched_block_number,
             ..Default::default()
         });
 
@@ -237,19 +260,19 @@ impl PoolsCheckpointHandler {
 
         let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
         let start = std::time::Instant::now();
-        let pools = self
+        let pools_with_ticks = self
             .source
             .get_pools_with_ticks_by_ids(&pool_ids, block_number)
             .await;
         tracing::debug!(
             requested_pools = pool_ids.len(),
             time = ?start.elapsed(),
-            request_successful = pools.is_ok(),
+            request_successful = pools_with_ticks.is_ok(),
             "fetched pool ticks"
         );
 
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
-        for pool in pools? {
+        for pool in pools_with_ticks?.pools {
             checkpoint.missing_pools.remove(&pool.id);
             checkpoint.pools.insert(pool.id, Arc::new(pool.try_into()?));
         }
@@ -283,7 +306,9 @@ impl UniswapV3PoolFetcher {
         max_pools_to_initialize: usize,
     ) -> Result<Self> {
         let web3 = web3.labeled("uniswapV3");
-        let checkpoint = PoolsCheckpointHandler::new(source, max_pools_to_initialize).await?;
+        let checkpoint =
+            PoolsCheckpointHandler::new(source, block_retriever.clone(), max_pools_to_initialize)
+                .await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = block_retriever.block(init_block).await?;

@@ -2,16 +2,18 @@
 //! [`V3PoolDataSource`] so the driver can swap this in place of the subgraph
 //! client without touching anything else.
 //!
-//! The pool-indexer always returns at-head data — it doesn't support
-//! historical queries. `block_number` arguments are ignored; the block
-//! actually served is returned in the response envelope. For the driver's
-//! current use this is fine: it pins the snapshot to whatever block the
-//! indexer reports, and its own event-replay layer covers anything later.
+//! The pool-indexer doesn't support historical queries; it always serves
+//! at-head data. To give callers a consistent snapshot, each method takes a
+//! `target_block` and blocks (via [`PoolIndexerClient::wait_until`]) until the
+//! indexer's envelope reports a block at or after it. The actual snapshot
+//! block — which can be later than `target_block` if the indexer advanced
+//! during the call — is returned alongside the data so callers can anchor
+//! their event-replay at the right place.
 
 use {
     crate::uniswap_v3::{
         V3PoolDataSource,
-        graph_api::{PoolData, RegisteredPools, TickData, Token},
+        graph_api::{PoolData, PoolsWithTicks, RegisteredPools, TickData, Token},
     },
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
@@ -20,8 +22,15 @@ use {
     num::BigInt,
     reqwest::{Client, Url},
     serde::Deserialize,
-    std::{collections::HashMap, str::FromStr},
+    std::{collections::HashMap, str::FromStr, time::Duration},
 };
+
+/// How often [`PoolIndexerClient::wait_until`] polls `/pools?limit=1` while
+/// waiting for the indexer's head to catch up. Kept short so the init path
+/// returns promptly once the indexer is in range; there is no upper bound on
+/// total wait time — the surrounding `BackgroundInitLiquiditySource` caps the
+/// init at 10 minutes.
+const WAIT_UNTIL_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Pool-indexer's server-side cap on `pool_ids=` query param size; keep our
 /// per-request chunk at or below this.
@@ -163,15 +172,49 @@ impl IndexerTick {
     }
 }
 
+impl PoolIndexerClient {
+    /// Blocks until the indexer's `/pools` envelope reports `block_number >=
+    /// target_block`. Polls every [`WAIT_UNTIL_POLL_INTERVAL`]; returns
+    /// immediately if the indexer is already in range. The probe is a
+    /// `?limit=1` listing so the round-trip stays cheap.
+    async fn wait_until(&self, target_block: u64) -> Result<()> {
+        loop {
+            let mut url = self.path("pools");
+            url.query_pairs_mut().append_pair("limit", "1");
+            let probe: PoolsResponse = self
+                .http
+                .get(url)
+                .send()
+                .await
+                .context("GET /pools?limit=1 (wait_until probe)")?
+                .error_for_status()
+                .context("wait_until probe HTTP status")?
+                .json()
+                .await
+                .context("wait_until probe body")?;
+            if probe.block_number >= target_block {
+                return Ok(());
+            }
+            tracing::debug!(
+                indexer_block = probe.block_number,
+                %target_block,
+                "pool-indexer not yet at target block; waiting",
+            );
+            tokio::time::sleep(WAIT_UNTIL_POLL_INTERVAL).await;
+        }
+    }
+}
+
 #[async_trait]
 impl V3PoolDataSource for PoolIndexerClient {
-    async fn get_registered_pools(&self) -> Result<RegisteredPools> {
+    async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
+        self.wait_until(target_block).await?;
         // We pin the snapshot to the first page's block_number; later pages
         // may report a higher block — bounded drift, picked up by the
         // driver's event replay.
         let mut cursor: Option<String> = None;
         let mut pools: Vec<PoolData> = Vec::new();
-        let mut fetched_block_number: u64 = 0;
+        let mut fetched_block_number: Option<u64> = None;
         loop {
             let mut url = self.path("pools");
             url.query_pairs_mut()
@@ -191,9 +234,7 @@ impl V3PoolDataSource for PoolIndexerClient {
                 .await
                 .context("pools body")?;
 
-            if fetched_block_number == 0 {
-                fetched_block_number = page.block_number;
-            }
+            fetched_block_number.get_or_insert(page.block_number);
             // Skip zero-liquidity pools (fully-burned LP, never-minted, etc.)
             let filtered = page
                 .pools
@@ -209,7 +250,7 @@ impl V3PoolDataSource for PoolIndexerClient {
             }
         }
         Ok(RegisteredPools {
-            fetched_block_number,
+            fetched_block_number: fetched_block_number.context("pool-indexer returned no pages")?,
             pools,
         })
     }
@@ -217,29 +258,51 @@ impl V3PoolDataSource for PoolIndexerClient {
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
-        // pool-indexer is at-head only — see trait doc on `V3PoolDataSource`.
-        _block_number: u64,
-    ) -> Result<Vec<PoolData>> {
+        target_block: u64,
+    ) -> Result<PoolsWithTicks> {
         if ids.is_empty() {
-            return Ok(Vec::new());
+            // Still anchor at the indexer's head so the caller has a coherent
+            // event-replay block even when no pools are requested.
+            self.wait_until(target_block).await?;
+            return Ok(PoolsWithTicks {
+                fetched_block_number: target_block,
+                pools: Vec::new(),
+            });
         }
 
+        self.wait_until(target_block).await?;
+
         let mut out: Vec<PoolData> = Vec::with_capacity(ids.len());
+        let mut fetched_block_number: Option<u64> = None;
         for batch in ids.chunks(POOL_IDS_PER_REQUEST) {
-            let (pools, ticks_by_pool) = futures::try_join!(
+            let (pools_page, ticks_by_pool) = futures::try_join!(
                 fetch_pools_by_ids(self, batch),
                 fetch_ticks_by_pool_ids(self, batch),
             )?;
 
-            for mut pool in pools {
+            fetched_block_number.get_or_insert(pools_page.block_number);
+            for mut pool in pools_page.pools {
                 if let Some(ticks) = ticks_by_pool.get(&pool.id) {
                     pool.ticks = Some(ticks.clone());
                 }
                 out.push(pool);
             }
         }
-        Ok(out)
+        Ok(PoolsWithTicks {
+            // For non-empty `ids` the loop always runs at least once, so
+            // `fetched_block_number` is always populated. Fall back to
+            // `target_block` defensively rather than panicking.
+            fetched_block_number: fetched_block_number.unwrap_or(target_block),
+            pools: out,
+        })
     }
+}
+
+/// First-page result of a `pools/by-ids` fetch, plus the indexer's response
+/// envelope block_number captured for the caller's event-replay anchor.
+struct PoolsByIdsPage {
+    block_number: u64,
+    pools: Vec<PoolData>,
 }
 
 fn ids_param(ids: &[Address]) -> String {
@@ -249,7 +312,7 @@ fn ids_param(ids: &[Address]) -> String {
         .join(",")
 }
 
-async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Result<Vec<PoolData>> {
+async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Result<PoolsByIdsPage> {
     let mut url = client.path("pools/by-ids");
     url.query_pairs_mut()
         .append_pair("pool_ids", &ids_param(ids));
@@ -264,11 +327,16 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .json()
         .await
         .context("pools-by-ids body")?;
-    resp.pools
+    let pools = resp
+        .pools
         .into_iter()
         .filter(pools_tokens_have_decimals)
         .map(PoolData::try_from)
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+    Ok(PoolsByIdsPage {
+        block_number: resp.block_number,
+        pools,
+    })
 }
 
 async fn fetch_ticks_by_pool_ids(

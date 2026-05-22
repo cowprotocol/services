@@ -113,16 +113,17 @@ impl UniV3SubgraphClient {
             .collect())
     }
 
-    /// Retrieves the pool data for all existing pools from the subgraph.
-    pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
-        let block_number = self.get_safe_block().await?;
+    /// Retrieves the pool data for all existing pools from the subgraph as of
+    /// `target_block`. The subgraph supports historical queries, so the
+    /// returned snapshot is at exactly `target_block`.
+    pub async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
         let variables = json_map! {
-            "block" => block_number,
+            "block" => target_block,
         };
         let query = Self::all_pools_query(self.use_liquidity_net_filter);
         let pools = self.get_pools(query, variables).await?;
         Ok(RegisteredPools {
-            fetched_block_number: block_number,
+            fetched_block_number: target_block,
             pools,
         })
     }
@@ -166,15 +167,17 @@ impl UniV3SubgraphClient {
         Ok(all)
     }
 
-    /// Retrieves the pool data and ticks data for pools with given pool ids
+    /// Retrieves the pool data and ticks data for pools with given pool ids as
+    /// of `target_block`. The subgraph supports historical queries, so the
+    /// returned snapshot is at exactly `target_block`.
     pub async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
-        block_number: u64,
-    ) -> Result<Vec<PoolData>> {
+        target_block: u64,
+    ) -> Result<PoolsWithTicks> {
         let (pools, ticks) = futures::try_join!(
-            self.get_pools_by_pool_ids(ids, block_number),
-            self.get_ticks_by_pools_ids(ids, block_number)
+            self.get_pools_by_pool_ids(ids, target_block),
+            self.get_ticks_by_pools_ids(ids, target_block)
         )?;
 
         // group ticks by pool ids
@@ -186,7 +189,7 @@ impl UniV3SubgraphClient {
                 .push(tick);
         }
 
-        Ok(pools
+        let pools = pools
             .into_iter()
             .filter_map(|mut pool| {
                 ticks_mapped.get(&pool.id).map(|ticks| {
@@ -194,7 +197,11 @@ impl UniV3SubgraphClient {
                     pool
                 })
             })
-            .collect())
+            .collect();
+        Ok(PoolsWithTicks {
+            fetched_block_number: target_block,
+            pools,
+        })
     }
 
     /// Retrieves a recent block number for which it is safe to assume no
@@ -282,16 +289,16 @@ impl UniV3SubgraphClient {
 
 #[async_trait]
 impl V3PoolDataSource for UniV3SubgraphClient {
-    async fn get_registered_pools(&self) -> Result<RegisteredPools> {
-        Self::get_registered_pools(self).await
+    async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
+        Self::get_registered_pools(self, target_block).await
     }
 
     async fn get_pools_with_ticks_by_ids(
         &self,
         ids: &[Address],
-        block_number: u64,
-    ) -> Result<Vec<PoolData>> {
-        Self::get_pools_with_ticks_by_ids(self, ids, block_number).await
+        target_block: u64,
+    ) -> Result<PoolsWithTicks> {
+        Self::get_pools_with_ticks_by_ids(self, ids, target_block).await
     }
 }
 
@@ -301,6 +308,15 @@ pub struct RegisteredPools {
     /// The block number that the data was fetched
     pub fetched_block_number: u64,
     /// The registered Pools
+    pub pools: Vec<PoolData>,
+}
+
+/// Result of fetching pool state + active ticks for a given set of pools. The
+/// returned `fetched_block_number` is the actual snapshot block (which may be
+/// later than the caller's `target_block` for indexer-backed sources).
+#[derive(Debug, Default, PartialEq)]
+pub struct PoolsWithTicks {
+    pub fetched_block_number: u64,
     pub pools: Vec<PoolData>,
 }
 
