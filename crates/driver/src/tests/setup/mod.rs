@@ -364,7 +364,7 @@ pub struct Solver {
     /// Maximum number of solutions the driver proposes per auction.
     max_solutions_to_propose: usize,
     /// Additional submission accounts for EIP-7702 parallel settlement.
-    submission_accounts: Vec<eth::Address>,
+    submission_accounts: Vec<PrivateKeySigner>,
 }
 
 #[derive(Debug, Clone)]
@@ -445,8 +445,8 @@ impl Solver {
         self
     }
 
-    pub fn submission_account(mut self, address: eth::Address) -> Self {
-        self.submission_accounts.push(address);
+    pub fn submission_account(mut self, signer: PrivateKeySigner) -> Self {
+        self.submission_accounts.push(signer);
         self
     }
 }

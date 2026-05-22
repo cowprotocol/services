@@ -19,7 +19,8 @@ use {
 /// eth_getCode on a delegated EOA, instead of getting empty bytes (normal EOA),
 /// you get 0xef0100<20-byte contract address>.
 const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
-/// The maximum number of approved callers allowed by the Solver7702Delegate ABI.
+/// The maximum number of approved callers allowed by the Solver7702Delegate
+/// ABI.
 const MAX_APPROVED_CALLERS: usize = 5;
 type ApprovedCallers = [Address; MAX_APPROVED_CALLERS];
 // Arachnid's deterministic-deployment-proxy. It is deployed at this same

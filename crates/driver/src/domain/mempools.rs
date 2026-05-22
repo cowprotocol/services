@@ -502,7 +502,10 @@ fn apply_gas_fee_override(
     }
 }
 
-/// In EIP-7702 mode, reroute the tx through the solver EOA's delegate. Its fallback expects the target address prefix followed by target calldata. `from` is set to one of the allowed EOAs so simulations see the correct `msg.sender`, which is the solver EOA.
+/// In EIP-7702 mode, reroute the tx through the solver EOA's delegate. Its
+/// fallback expects the target address prefix followed by target calldata.
+/// `from` is set to one of the allowed EOAs so simulations see the correct
+/// `msg.sender`, which is the solver EOA.
 fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
     let mut tx = tx.clone();
     match mode {
