@@ -156,6 +156,39 @@ impl SubgraphClient {
         Ok(page.meta.block.number)
     }
 
+    /// Fetches the factory address of any one pool from the subgraph at
+    /// `block`. Used as a pre-seed sanity check: every row the seeder writes
+    /// is stamped with the *configured* factory address, so if the subgraph
+    /// URL is actually serving pools from a different factory (e.g. operator
+    /// pointed a Uniswap V3 config at a PancakeSwap V3 subgraph), seeding
+    /// would silently corrupt the DB with mis-stamped pools. The probe is one
+    /// HTTP round-trip per seeding pass — cheap insurance.
+    async fn fetch_factory_attestation(&self, block: u64) -> Result<Address> {
+        #[derive(Deserialize)]
+        struct ProbePage {
+            pools: Vec<FactoryProbe>,
+        }
+        #[derive(Deserialize)]
+        struct FactoryProbe {
+            factory: String,
+        }
+        let query = "query($block: Int!) {
+            pools(first: 1, block: {number: $block}) {
+                factory
+            }
+        }";
+        let page: ProbePage = self.query(query, json!({ "block": block })).await?;
+        let probe = page
+            .pools
+            .into_iter()
+            .next()
+            .context("subgraph returned no pools — cannot attest factory address")?;
+        probe
+            .factory
+            .parse::<Address>()
+            .context("parse factory address from subgraph probe")
+    }
+
     /// Fetches one page of pools at `block`, ordered by id and starting after
     /// `cursor` (empty string to start from the beginning).
     async fn fetch_pools_page(&self, block: u64, cursor: &str) -> Result<Vec<SubgraphPool>> {
@@ -269,6 +302,23 @@ impl<'a> SubgraphSeeder<'a> {
         info!(
             block = self.snapshot_block,
             "seeding pool-indexer from subgraph"
+        );
+
+        // Verify the subgraph actually serves pools from our configured
+        // factory before writing anything. Without this, a misconfigured
+        // subgraph URL would silently produce DB rows whose `factory` column
+        // doesn't match the on-chain origin of the pool data they describe.
+        let subgraph_factory = self
+            .subgraph
+            .fetch_factory_attestation(self.snapshot_block)
+            .await
+            .context("factory attestation probe failed")?;
+        anyhow::ensure!(
+            subgraph_factory == self.factory,
+            "subgraph factory mismatch: configured {configured:#x}, subgraph reports {actual:#x} \
+             — verify the subgraph URL matches the configured factory",
+            configured = self.factory,
+            actual = subgraph_factory,
         );
 
         let pool_ids = self.seed_pools().await?;
