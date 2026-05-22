@@ -59,10 +59,10 @@ members = [
 ]
 
 [workspace.dependencies]
-alloy-primitives = { version =  \"1.5.7\", default-features = false }
-alloy-sol-types = { version =  \"1.5.7\", default-features = false }
-alloy-contract = { version =  \"1.7.3\" }
-alloy-provider = { version =  \"1.7.3\", default-features = false }
+alloy-primitives = { version =  \"1.6.0\", default-features = false }
+alloy-sol-types = { version =  \"1.6.0\", default-features = false }
+alloy-contract = { version =  \"2.0.5\" }
+alloy-provider = { version =  \"2.0.5\", default-features = false }
 anyhow = \"1.0.100\"
 
 [workspace.lints.clippy]
