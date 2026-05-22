@@ -10,6 +10,7 @@ use {
     async_nats::jetstream::Context as JetstreamClient,
     bytes::Bytes,
     chrono::Utc,
+    futures::stream::{FuturesUnordered, StreamExt},
     serde::Serialize,
     serde_json::json,
     tokio::sync::{
@@ -81,13 +82,34 @@ async fn forward_messages_to_event_bus_client(
     mut receiver: Receiver<Message>,
     client: JetstreamClient,
 ) {
-    while let Some(message) = receiver.recv().await {
-        match client.publish(message.subject, message.data).await {
-            Err(err) => {
-                tracing::debug!(?err, "failed to publish event");
+    // JetStream publish completes in two stages: the inner future returns
+    // once the client has buffered the publish, the outer ack future resolves
+    // once the server has accepted and stored it. We need the second stage to
+    // observe server-side rejections (subject mismatch, stream limits, ...),
+    // but awaiting it inline would add a full round-trip to every publish.
+    // Instead we drive pending acks concurrently and only log failures.
+    let mut pending_acks = FuturesUnordered::new();
+    loop {
+        tokio::select! {
+            biased;
+            // Drain pending acks alongside new messages so failures are
+            // logged promptly and the set doesn't grow without bound.
+            Some((subject, ack)) = pending_acks.next(), if !pending_acks.is_empty() => {
+                if let Err(err) = ack {
+                    tracing::debug!(?err, %subject, "NATS did not acknowledge event");
+                }
             }
-            Ok(_fut) => {
-                // let's assume the message arrived for now
+            maybe_message = receiver.recv() => {
+                let Some(message) = maybe_message else { break };
+                let subject = message.subject;
+                let ack_fut = match client.publish(subject.clone(), message.data).await {
+                    Ok(ack) => ack,
+                    Err(err) => {
+                        tracing::debug!(?err, %subject, "failed to enqueue event with NATS client");
+                        continue;
+                    }
+                };
+                pending_acks.push(async move { (subject, ack_fut.await) });
             }
         }
     }
