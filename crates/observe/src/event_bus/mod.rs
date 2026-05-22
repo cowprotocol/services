@@ -97,6 +97,7 @@ async fn forward_messages_to_event_bus_client(
             Some((subject, ack)) = pending_acks.next(), if !pending_acks.is_empty() => {
                 if let Err(err) = ack {
                     tracing::debug!(?err, %subject, "NATS did not acknowledge event");
+                    record_dropped(DropReason::Ack);
                 }
             }
             maybe_message = receiver.recv() => {
@@ -106,6 +107,7 @@ async fn forward_messages_to_event_bus_client(
                     Ok(ack) => ack,
                     Err(err) => {
                         tracing::debug!(?err, %subject, "failed to enqueue event with NATS client");
+                        record_dropped(DropReason::Publish);
                         continue;
                     }
                 };
@@ -133,6 +135,7 @@ pub fn publish(subject: &str, data: impl Serialize) {
         Ok(body) => body,
         Err(err) => {
             tracing::error!(?err, "failed to serialize event");
+            record_dropped(DropReason::Serialize);
             return;
         }
     };
@@ -144,7 +147,53 @@ pub fn publish(subject: &str, data: impl Serialize) {
 
     if let Err(err) = bus.message_queue.try_send(message) {
         tracing::error!(?err, "failed to enqueue message");
+        record_dropped(DropReason::ChannelFull);
     }
+}
+
+/// Why an event was not delivered to the event bus. Used as a Prometheus
+/// label so the failure modes can be alerted on independently.
+#[derive(Copy, Clone, Debug)]
+enum DropReason {
+    /// In-memory queue between [`publish`] and the background forwarder was
+    /// saturated.
+    ChannelFull,
+    /// The payload could not be encoded as JSON.
+    Serialize,
+    /// The NATS client rejected the publish locally (e.g. disconnected).
+    Publish,
+    /// JetStream did not acknowledge the publish.
+    Ack,
+}
+
+impl DropReason {
+    fn as_label(self) -> &'static str {
+        match self {
+            DropReason::ChannelFull => "channel_full",
+            DropReason::Serialize => "serialize",
+            DropReason::Publish => "publish",
+            DropReason::Ack => "ack",
+        }
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "event_bus")]
+struct Metrics {
+    /// Events that were not delivered to the event bus, by failure mode.
+    /// See [`DropReason`] for the meaning of each label value.
+    #[metric(labels("reason"))]
+    dropped_events: prometheus::IntCounterVec,
+}
+
+fn record_dropped(reason: DropReason) {
+    let Ok(metrics) = Metrics::instance(crate::metrics::get_storage_registry()) else {
+        return;
+    };
+    metrics
+        .dropped_events
+        .with_label_values(&[reason.as_label()])
+        .inc();
 }
 
 #[cfg(test)]
