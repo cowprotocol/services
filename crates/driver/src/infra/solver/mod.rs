@@ -223,6 +223,8 @@ pub struct Config {
 
 impl Solver {
     pub async fn try_new(config: Config, eth: Ethereum) -> Result<Self> {
+        config.validate()?;
+
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -508,6 +510,104 @@ impl Solver {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+}
+
+impl Config {
+    fn validate(&self) -> Result<()> {
+        if self.submission_accounts.is_empty() {
+            anyhow::ensure!(
+                self.max_solutions_to_propose.get() == 1,
+                "solver '{}': max-solutions-to-propose > 1 requires at least one \
+                 submission-account (EIP-7702 parallel submission must be enabled)",
+                self.name,
+            );
+            return Ok(());
+        }
+
+        anyhow::ensure!(
+            self.submission_accounts
+                .iter()
+                .all(|account| !matches!(account, Account::Address(_))),
+            "solver '{}': EIP-7702 submission accounts must be signers; address-only accounts \
+             cannot sign delegated settlement transactions",
+            self.name,
+        );
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, alloy::primitives::address, std::num::NonZeroUsize};
+
+    const SOLVER: Address = address!("0000000000000000000000000000000000000001");
+    const SUBMITTER: Address = address!("0000000000000000000000000000000000000002");
+
+    fn config() -> Config {
+        Config {
+            endpoint: "http://localhost/solve".parse().unwrap(),
+            name: Name("solver".to_string()),
+            slippage: Slippage {
+                relative: BigRational::from_integer(0.into()),
+                absolute: None,
+            },
+            liquidity: Liquidity::Fetch,
+            account: Account::Address(SOLVER),
+            timeouts: Timeouts {
+                http_delay: chrono::Duration::seconds(1),
+                solving_share_of_deadline: 1.0.try_into().unwrap(),
+            },
+            request_headers: Default::default(),
+            fee_handler: FeeHandler::Driver,
+            quote_using_limit_orders: false,
+            merge_solutions: SolutionMerging::Forbidden,
+            s3: None,
+            solver_native_token: ManageNativeToken {
+                wrap_address: false,
+                insert_unwraps: false,
+            },
+            quote_tx_origin: None,
+            response_size_limit_max_bytes: 1024,
+            bad_order_detection: BadOrderDetection {
+                tokens_supported: Default::default(),
+                enable_simulation_strategy: false,
+                enable_metrics_strategy: false,
+                metrics_strategy_failure_ratio: 0.9,
+                metrics_strategy_required_measurements: 20,
+                metrics_strategy_log_only: true,
+                metrics_strategy_order_freeze_time: Duration::ZERO,
+                metrics_strategy_cache_gc_interval: Duration::ZERO,
+                metrics_strategy_cache_max_age: Duration::ZERO,
+            },
+            settle_queue_size: 0,
+            flashloans_enabled: false,
+            fetch_liquidity_at_block: infra::liquidity::AtBlock::Latest,
+            haircut_bps: 0,
+            submission_accounts: vec![],
+            max_solutions_to_propose: NonZeroUsize::new(1).unwrap(),
+        }
+    }
+
+    #[test]
+    fn rejects_multiple_proposed_solutions_without_submission_accounts() {
+        let mut config = config();
+        config.max_solutions_to_propose = NonZeroUsize::new(2).unwrap();
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("max-solutions-to-propose > 1"));
+    }
+
+    #[test]
+    fn rejects_read_only_submission_accounts() {
+        let mut config = config();
+        config.submission_accounts = vec![Account::Address(SUBMITTER)];
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("must be signers"));
     }
 }
 

@@ -1,9 +1,11 @@
 use {
     ::alloy::{
         consensus::Transaction as _,
-        primitives::{Address, U256},
+        primitives::{Address, B256, Bytes, U256, address},
         providers::{Provider, ext::TxPoolApi},
+        sol_types::SolConstructor,
     },
+    contracts::Solver7702Delegate::Solver7702Delegate,
     e2e::setup::{colocation, *},
     ethrpc::{
         Web3,
@@ -16,6 +18,9 @@ use {
     number::units::EthUnit,
     std::time::Duration,
 };
+
+const CREATE2_DEPLOYER: Address = address!("4e59b44847b379578588920cA78FbF26c0B4956C");
+const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
 
 /// Tests that the driver can process two settlement requests concurrently,
 /// resulting in both settlement transactions being pending in the mempool
@@ -94,6 +99,12 @@ async fn test_parallel_settlement_submission(web3: Web3) {
     })
     .await
     .expect("driver did not start in time");
+    assert_solver_delegates_to_expected_contract(
+        &web3,
+        solver.address(),
+        [submitter_a.address(), submitter_b.address()],
+    )
+    .await;
 
     let valid_to = model::time::now_in_epoch_seconds() + 300;
     let make_buy_order = |buy_token: Address| {
@@ -217,6 +228,44 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         .await
         .unwrap();
     }
+}
+
+async fn assert_solver_delegates_to_expected_contract(
+    web3: &Web3,
+    solver: Address,
+    callers: [Address; 2],
+) {
+    let delegate = solver_delegate_address(callers);
+    let delegate_code = web3.provider.get_code_at(delegate).await.unwrap();
+    assert!(
+        !delegate_code.is_empty(),
+        "delegate contract was not deployed"
+    );
+
+    let solver_code = web3.provider.get_code_at(solver).await.unwrap();
+    let mut expected_solver_code = Vec::from(DELEGATION_PREFIX);
+    expected_solver_code.extend_from_slice(delegate.as_slice());
+    assert_eq!(
+        solver_code.as_ref(),
+        expected_solver_code,
+        "solver EOA does not delegate to expected Solver7702Delegate"
+    );
+}
+
+fn solver_delegate_address(callers: [Address; 2]) -> Address {
+    let mut approved_callers = [Address::ZERO; 5];
+    approved_callers[..callers.len()].copy_from_slice(&callers);
+    let init_code = Solver7702Delegate::BYTECODE
+        .iter()
+        .chain(&SolConstructor::abi_encode(
+            &Solver7702Delegate::constructorCall {
+                approvedCallers: approved_callers,
+            },
+        ))
+        .copied()
+        .collect::<Bytes>();
+
+    CREATE2_DEPLOYER.create2_from_code(B256::ZERO, &init_code)
 }
 
 /// Sends a /solve request to the driver for a single order and returns the

@@ -1,5 +1,5 @@
 use {
-    super::{Account, Config, Solver},
+    super::{Config, Solver},
     crate::infra::blockchain::Ethereum,
     alloy::{
         eips::eip7702::Authorization,
@@ -11,6 +11,7 @@ use {
     },
     anyhow::Context,
     contracts::Solver7702Delegate::Solver7702Delegate,
+    hex_literal::hex,
     std::time::Duration,
     tracing::instrument,
 };
@@ -28,6 +29,9 @@ type ApprovedCallers = [Address; MAX_APPROVED_CALLERS];
 // that init code with CREATE2. We use it to derive and deploy the exact
 // Solver7702Delegate address from this proxy address, zero salt, and init code.
 const CREATE2_DEPLOYER: Address = address!("4e59b44847b379578588920cA78FbF26c0B4956C");
+const CREATE2_DEPLOYER_CODE: &[u8] = &hex!(
+    "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3"
+);
 // The ordered caller slots and zero salt are part of the CREATE2 input, so the
 // same caller set keeps resolving to the same delegate target.
 const CREATE2_SALT: B256 = B256::ZERO;
@@ -38,14 +42,9 @@ const CREATE2_SALT: B256 = B256::ZERO;
 pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     for solver in solvers {
         let config = solver.config();
-        let Some(deployment) = validate_config(
-            config.name.as_str(),
-            config.max_solutions_to_propose,
-            &config.submission_accounts,
-        )?
-        else {
+        if config.submission_accounts.is_empty() {
             continue;
-        };
+        }
 
         anyhow::ensure!(
             !matches!(config.account, super::Account::Address(_)),
@@ -62,116 +61,84 @@ pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
             web3.wallet.register_signer(acc.clone());
         }
 
-        setup_solver(config, deployment, eth).await?;
+        let submission_addresses = config
+            .submission_accounts
+            .iter()
+            .map(TxSigner::address)
+            .collect::<Vec<_>>();
+        let (delegate, approved_callers, init_code) = delegate_deployment(&submission_addresses)?;
+
+        setup_solver(config, delegate, &approved_callers, &init_code, eth).await?;
     }
     Ok(())
 }
 
-fn validate_config(
-    solver_name: &str,
-    max_solutions_to_propose: std::num::NonZeroUsize,
-    submission_accounts: &[Account],
-) -> anyhow::Result<Option<DelegateDeployment>> {
-    if submission_accounts.is_empty() {
-        anyhow::ensure!(
-            max_solutions_to_propose.get() == 1,
-            "solver '{solver_name}': max-solutions-to-propose > 1 requires at least one \
-             submission-account (EIP-7702 parallel submission must be enabled)",
-        );
-        return Ok(None);
-    }
-
+fn delegate_deployment(callers: &[Address]) -> anyhow::Result<(Address, ApprovedCallers, Bytes)> {
     anyhow::ensure!(
-        submission_accounts
-            .iter()
-            .all(|account| !matches!(account, Account::Address(_))),
-        "solver '{solver_name}': EIP-7702 submission accounts must be signers; address-only \
-         accounts cannot sign delegated settlement transactions",
+        callers.len() <= MAX_APPROVED_CALLERS,
+        "Solver7702Delegate supports at most {MAX_APPROVED_CALLERS} submission accounts"
     );
 
-    let submission_addresses = submission_accounts
+    let mut approved_callers = [Address::ZERO; MAX_APPROVED_CALLERS];
+    approved_callers[..callers.len()].copy_from_slice(callers);
+
+    anyhow::ensure!(
+        !Solver7702Delegate::BYTECODE.is_empty(),
+        "Solver7702Delegate creation bytecode is missing"
+    );
+    let init_code = Solver7702Delegate::BYTECODE
         .iter()
-        .map(TxSigner::address)
-        .collect::<Vec<_>>();
+        .chain(&SolConstructor::abi_encode(
+            &Solver7702Delegate::constructorCall {
+                approvedCallers: approved_callers,
+            },
+        ))
+        .copied()
+        .collect::<Bytes>();
 
-    DelegateDeployment::new(&submission_addresses).map(Some)
+    let target = CREATE2_DEPLOYER.create2_from_code(CREATE2_SALT, &init_code);
+
+    Ok((target, approved_callers, init_code))
 }
 
-#[derive(Debug, Clone)]
-struct DelegateDeployment {
-    target: Address,
-    approved_callers: ApprovedCallers,
-    init_code: Bytes,
-}
-
-impl DelegateDeployment {
-    fn new(callers: &[Address]) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            callers.len() <= MAX_APPROVED_CALLERS,
-            "Solver7702Delegate supports at most {MAX_APPROVED_CALLERS} submission accounts"
-        );
-
-        let mut approved_callers = [Address::ZERO; MAX_APPROVED_CALLERS];
-        approved_callers[..callers.len()].copy_from_slice(callers);
-
-        anyhow::ensure!(
-            !Solver7702Delegate::BYTECODE.is_empty(),
-            "Solver7702Delegate creation bytecode is missing"
-        );
-        let init_code = Solver7702Delegate::BYTECODE
-            .iter()
-            .chain(&SolConstructor::abi_encode(
-                &Solver7702Delegate::constructorCall {
-                    approvedCallers: approved_callers,
-                },
-            ))
-            .copied()
-            .collect::<Bytes>();
-
-        let target = CREATE2_DEPLOYER.create2_from_code(CREATE2_SALT, &init_code);
-
-        Ok(Self {
-            target,
-            approved_callers,
-            init_code,
-        })
-    }
-}
-
-#[instrument(skip_all, fields(delegate = ?deployment.target))]
+#[instrument(skip_all, fields(delegate = ?delegate))]
 async fn setup_solver(
     config: &Config,
-    deployment: DelegateDeployment,
+    delegate: Address,
+    approved_callers: &ApprovedCallers,
+    init_code: &Bytes,
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
-    deploy_delegate_if_missing(config, &deployment, eth).await?;
+    deploy_delegate_if_missing(config, delegate, approved_callers, init_code, eth).await?;
 
     let solver_address = config.account.address();
     let code = eth.web3().provider.get_code_at(solver_address).await?;
-    if is_delegated_to(&code, deployment.target) {
+    if is_delegated_to(&code, delegate) {
         tracing::info!(
             solver = %config.name,
-            delegate = ?deployment.target,
+            delegate = ?delegate,
             "solver EOA already delegates to Solver7702Delegate"
         );
         return Ok(());
     }
 
-    setup_delegation(config, deployment.target, eth).await
+    setup_delegation(config, delegate, eth).await
 }
 
-#[instrument(skip_all, fields(delegate = ?deployment.target))]
+#[instrument(skip_all, fields(delegate = ?delegate))]
 async fn deploy_delegate_if_missing(
     config: &Config,
-    deployment: &DelegateDeployment,
+    delegate: Address,
+    approved_callers: &ApprovedCallers,
+    init_code: &Bytes,
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
     let provider = &eth.web3().provider;
-    let code = provider.get_code_at(deployment.target).await?;
+    let code = provider.get_code_at(delegate).await?;
     if !code.is_empty() {
         tracing::info!(
-            delegate = ?deployment.target,
-            approved_callers = ?deployment.approved_callers,
+            delegate = ?delegate,
+            approved_callers = ?approved_callers,
             "reusing existing Solver7702Delegate CREATE2 deployment"
         );
         return Ok(());
@@ -179,21 +146,21 @@ async fn deploy_delegate_if_missing(
 
     let deployer_code = provider.get_code_at(CREATE2_DEPLOYER).await?;
     anyhow::ensure!(
-        !deployer_code.is_empty(),
-        "CREATE2 deployer {CREATE2_DEPLOYER:?} has no code"
+        deployer_code.as_ref() == CREATE2_DEPLOYER_CODE,
+        "CREATE2 deployer {CREATE2_DEPLOYER:?} has unexpected code",
     );
 
     let tx_sender = config.account.address();
     let tx_nonce = wait_for_pending_txs(provider, tx_sender).await?;
     let input = CREATE2_SALT
         .iter()
-        .chain(&deployment.init_code)
+        .chain(init_code)
         .copied()
         .collect::<Bytes>();
 
     tracing::info!(
-        delegate = ?deployment.target,
-        approved_callers = ?deployment.approved_callers,
+        delegate = ?delegate,
+        approved_callers = ?approved_callers,
         tx_sender = ?tx_sender,
         tx_nonce,
         "deploying Solver7702Delegate with CREATE2"
@@ -209,17 +176,17 @@ async fn deploy_delegate_if_missing(
         .await?;
     let receipt = pending.get_receipt().await?;
 
-    let code = provider.get_code_at(deployment.target).await?;
+    let code = provider.get_code_at(delegate).await?;
     anyhow::ensure!(
         !code.is_empty(),
         "Solver7702Delegate deployment tx {:?} did not create code at {:?}",
         receipt.transaction_hash,
-        deployment.target,
+        delegate,
     );
     tracing::info!(
         tx_hash = ?receipt.transaction_hash,
         block = ?receipt.block_number,
-        delegate = ?deployment.target,
+        delegate = ?delegate,
         "Solver7702Delegate CREATE2 deployment confirmed"
     );
 
@@ -316,6 +283,8 @@ async fn wait_for_pending_txs(provider: &impl Provider, address: Address) -> any
 
     let deadline = tokio::time::Instant::now() + MAX_WAIT;
     loop {
+        // Startup can happen while transactions from the previous driver process
+        // are still pending. Reusing that nonce would replace them.
         // only counts txs in mined blocks
         let latest = provider.get_transaction_count(address).await?;
         // also count txs in the mempool
