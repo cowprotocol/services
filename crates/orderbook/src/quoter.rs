@@ -610,7 +610,8 @@ mod tests {
 
     #[test]
     fn test_volume_fee_rounds_up_buy_order() {
-        // factor 0.0001, sell 10_000, network fee 5: ceil((10000 + 5)/10000) = ceil(1.0005) = 2
+        // factor 0.0001, sell 10_000, network fee 5: ceil((10000 + 5)/10000) =
+        // ceil(1.0005) = 2
         let volume_fee = FeeFactor::try_from(0.0001).unwrap();
         let volume_fee_config = VolumeFeeConfig {
             factor: Some(volume_fee),
