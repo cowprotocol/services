@@ -290,6 +290,23 @@ pub async fn batch_update_ticks(
     let tick_idxs: Vec<i32> = deltas.iter().map(|delta| delta.tick_idx).collect();
     let delta_values: Vec<BigDecimal> = deltas.iter().map(|delta| sql_i128(delta.delta)).collect();
 
+    // Two-pronged invariant for zero-net ticks (we never keep a row with
+    // `liquidity_net = 0`):
+    //
+    //   1. INSERT path: skip rows whose aggregated delta is zero entirely, so no
+    //      row with `liquidity_net = 0` is ever inserted. The `DELETE` at the
+    //      bottom of the CTE can't see freshly-inserted rows in the same statement
+    //      (Postgres modifying-CTE snapshot rules — sibling CTEs run against the
+    //      pre-statement snapshot of the target table), so we have to gate this
+    //      case at the INSERT side instead.
+    //   2. UPDATE path: when an existing row's `+ EXCLUDED.liquidity_net` lands at
+    //      zero, the row is in the pre-statement snapshot, so the `DELETE ... USING
+    //      upserted` *can* see it and removes it.
+    //
+    // `into_chunk_changes` already filters `delta != 0` upstream, but that
+    // filter only blocks single zero entries — two in-batch entries summing
+    // to zero for the same `(pool, tick)` would still reach the SQL. The
+    // `AND i.total_delta <> 0` clause closes that gap.
     sqlx::query(
         "WITH input AS (
              SELECT t.addr, t.tick_idx, SUM(t.delta) AS total_delta
@@ -300,10 +317,11 @@ pub async fn batch_update_ticks(
              INSERT INTO uniswap_v3_ticks (chain_id, pool_address, tick_idx, liquidity_net)
              SELECT $1, i.addr, i.tick_idx, i.total_delta
              FROM input i
-             WHERE EXISTS (
-                 SELECT 1 FROM uniswap_v3_pools
-                 WHERE chain_id = $1 AND address = i.addr AND factory = $2
-             )
+             WHERE i.total_delta <> 0
+               AND EXISTS (
+                   SELECT 1 FROM uniswap_v3_pools
+                   WHERE chain_id = $1 AND address = i.addr AND factory = $2
+               )
              ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
                  SET liquidity_net = uniswap_v3_ticks.liquidity_net + EXCLUDED.liquidity_net
              RETURNING chain_id, pool_address, tick_idx, liquidity_net
