@@ -345,7 +345,7 @@ where
     D: Deserializer<'de>,
 {
     let raw = String::deserialize(deserializer)?;
-    if raw.contains(|c: char| matches!(c, ' ' | '\t' | '.')) {
+    if raw.contains([' ', '\t', '.']) {
         return Err(serde::de::Error::invalid_value(
             Unexpected::Str(&raw),
             &"a channel name without spaces, tabs, or '.'",
