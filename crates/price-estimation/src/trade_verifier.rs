@@ -644,6 +644,15 @@ impl SettleOutput {
     ) -> Result<Self> {
         // The balances are stored in the following order:
         // [...tokens_before, user_balance_before, user_balance_after, ...tokens_after]
+        let expected_len = tokens_vec.len() * 2 + 2;
+        anyhow::ensure!(
+            queriedBalances.len() == expected_len,
+            "Solver returned {} balances, expected {} (tokens={})",
+            queriedBalances.len(),
+            expected_len,
+            tokens_vec.len(),
+        );
+
         let mut i = 0;
         let mut tokens_lost = HashMap::new();
         // Get settlement contract balances before the trade
@@ -980,5 +989,39 @@ mod tests {
         let estimate =
             ensure_quote_accuracy(&low_threshold, &query, &Default::default(), &pay_out_less);
         assert!(estimate.is_ok());
+    }
+
+    /// Regression test: when the on-chain `Solver` helper returns fewer
+    /// balance entries than expected (observed for wrapper-bearing orders
+    /// that revert inside the helper), `from_swap` must return an error
+    /// instead of panicking with `index out of bounds`.
+    #[test]
+    fn from_swap_returns_error_on_short_balances() {
+        let tokens_vec = vec![Address::repeat_byte(1), Address::repeat_byte(2)];
+        // Expected length is `2 * tokens.len() + 2 = 6`. We feed 4, which is
+        // what the verifier observed in production for a wrapper order.
+        let swap_return = Solver::Solver::swapReturn {
+            gasUsed: U256::ZERO,
+            queriedBalances: vec![U256::ZERO; 4],
+        };
+        let err = SettleOutput::from_swap(swap_return, OrderKind::Sell, &tokens_vec)
+            .expect_err("from_swap must surface a short response as an error rather than panic");
+        let msg = err.to_string();
+        assert!(msg.contains("4"), "error must mention actual length: {msg}");
+        assert!(
+            msg.contains("6"),
+            "error must mention expected length: {msg}"
+        );
+    }
+
+    #[test]
+    fn from_swap_accepts_expected_length() {
+        let tokens_vec = vec![Address::repeat_byte(1), Address::repeat_byte(2)];
+        let swap_return = Solver::Solver::swapReturn {
+            gasUsed: U256::ZERO,
+            queriedBalances: vec![U256::ZERO; 6],
+        };
+        SettleOutput::from_swap(swap_return, OrderKind::Sell, &tokens_vec)
+            .expect("well-formed response must parse");
     }
 }
