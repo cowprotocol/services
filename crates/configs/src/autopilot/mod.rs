@@ -190,6 +190,7 @@ impl Configuration {
             !self.drivers.is_empty(),
             "colocation is enabled but no drivers are configured"
         );
+        self.shared.validate()?;
         Ok(self)
     }
 }

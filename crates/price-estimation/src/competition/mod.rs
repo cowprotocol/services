@@ -108,9 +108,10 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
 
             while stage_index < self.stages.len() && requests.len() < requests_for_batch {
                 let stage = &self.stages.get(stage_index).expect("index checked by loop");
-                let futures = stage.iter().enumerate().map(|(index, (_name, estimator))| {
+                let futures = stage.iter().enumerate().map(|(index, (name, estimator))| {
                     get_single_result(Context {
                         estimator,
+                        name,
                         query: query.clone(),
                         remaining_stages: Arc::clone(&remaining_stages),
                     })
@@ -175,6 +176,8 @@ struct Context<'a, ESTIMATOR, QUERY> {
     /// the number of stages that are left after the queries
     /// produced by this Context's stages.
     remaining_stages: Arc<OnceLock<usize>>,
+    /// Name of the estimator
+    name: &'a str,
 }
 
 impl<'a, E, Q> Context<'a, E, Q> {
