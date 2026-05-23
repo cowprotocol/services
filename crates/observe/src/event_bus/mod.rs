@@ -7,12 +7,11 @@
 //! can be serialized to JSON as well.
 use {
     crate::config::EventBusConfig,
-    async_nats::jetstream::{Context as JetstreamClient, stream},
+    async_nats::jetstream::Context as JetstreamClient,
     bytes::Bytes,
     chrono::Utc,
     futures::stream::{FuturesUnordered, StreamExt},
     serde::Serialize,
-    std::sync::atomic::{AtomicBool, Ordering},
     tokio::sync::{
         OnceCell,
         mpsc::{Receiver, Sender, channel},
@@ -100,28 +99,16 @@ pub async fn init(config: EventBusConfig) {
 }
 
 async fn connect(config: &EventBusConfig) -> Result<EventBusConnector, async_nats::Error> {
-    // we prefix every subject with `event` to allow consumers to easily
-    // subscribe to all events without also seeing NATS internal events
+    // We prefix every subject with `event` so consumers can subscribe to all
+    // events (e.g. `event.>`) without also seeing NATS internal events. The
+    // trailing dot is significant: see [`publish`] for how it's concatenated
+    // with the per-event subject suffix.
     let subject_prefix = format!("event.{}.", config.chain_id);
 
-    let name = config.stream_name.clone();
     let client = async_nats::connect(config.url.as_str()).await?;
     let jetstream = async_nats::jetstream::new(client);
-
     // Make sure the stream exists up-front; otherwise every publish would fail
     // server-side and we'd only find out at runtime.
-    if let Err(err) = jetstream
-        .create_stream(stream::Config {
-            name: name.clone(),
-            subjects: vec![subject_prefix.clone()],
-            ..Default::default()
-        })
-        .await
-    {
-        // Ignore error on stream creation (can be that the stream exists), if we're
-        // then unable to get the stream, that's were the issue lies.
-        tracing::warn!(?err, "error creating the stream {name}");
-    }
     jetstream.get_stream(&config.stream_name).await?;
 
     // JetStream publish completes in two stages: the call to `publish()`
