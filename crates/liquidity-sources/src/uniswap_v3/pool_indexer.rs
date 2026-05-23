@@ -113,21 +113,29 @@ struct IndexerTick {
     liquidity_net: String,
 }
 
-/// Drop pools where either token's `decimals` is missing. Treating missing
-/// as `0` would mis-scale prices by 10^18; fail closed until backfill.
-fn pools_tokens_have_decimals(p: &IndexerPool) -> bool {
-    if p.token0.decimals.is_none() || p.token1.decimals.is_none() {
-        tracing::warn!(
-            pool = %format!("{:#x}", p.id),
-            token0 = %format!("{:#x}", p.token0.id),
-            token1 = %format!("{:#x}", p.token1.id),
-            token0_decimals_set = p.token0.decimals.is_some(),
-            token1_decimals_set = p.token1.decimals.is_some(),
-            "pool dropped from response: missing token decimals"
+/// Drops pools where either token's `decimals` is missing. Treating missing
+/// as `0` would mis-scale prices by 10^18; fail closed until the indexer's
+/// decimals backfill catches up.
+///
+/// On a fresh deploy the indexer's backfill can take a few minutes, during
+/// which every page can carry hundreds of decimals-missing pools — so we
+/// aggregate the drops into a single `debug!` per call rather than logging
+/// `warn!` per pool. Steady-state this should be a no-op.
+fn drop_pools_missing_decimals(pools: Vec<IndexerPool>) -> Vec<IndexerPool> {
+    let total = pools.len();
+    let kept: Vec<_> = pools
+        .into_iter()
+        .filter(|p| p.token0.decimals.is_some() && p.token1.decimals.is_some())
+        .collect();
+    let dropped = total - kept.len();
+    if dropped > 0 {
+        tracing::debug!(
+            dropped,
+            total,
+            "pool-indexer returned pools missing token decimals; filtered out",
         );
-        return false;
     }
-    true
+    kept
 }
 
 impl TryFrom<IndexerPool> for PoolData {
@@ -236,11 +244,13 @@ impl V3PoolDataSource for PoolIndexerClient {
 
             fetched_block_number.get_or_insert(page.block_number);
             // Skip zero-liquidity pools (fully-burned LP, never-minted, etc.)
-            let filtered = page
+            let liq_filtered: Vec<_> = page
                 .pools
                 .into_iter()
                 .filter(|p| p.liquidity != "0")
-                .filter(pools_tokens_have_decimals)
+                .collect();
+            let filtered = drop_pools_missing_decimals(liq_filtered)
+                .into_iter()
                 .map(PoolData::try_from)
                 .collect::<Result<Vec<_>>>()?;
             pools.extend(filtered);
@@ -327,10 +337,8 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .json()
         .await
         .context("pools-by-ids body")?;
-    let pools = resp
-        .pools
+    let pools = drop_pools_missing_decimals(resp.pools)
         .into_iter()
-        .filter(pools_tokens_have_decimals)
         .map(PoolData::try_from)
         .collect::<Result<Vec<_>>>()?;
     Ok(PoolsByIdsPage {
