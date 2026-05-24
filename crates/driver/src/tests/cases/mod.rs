@@ -14,6 +14,7 @@ pub mod fees;
 mod flashloan_hints;
 pub mod gas_fee_override;
 pub mod haircut;
+pub mod haircut_pre_processing;
 pub mod internalization;
 pub mod jit_orders;
 pub mod merge_settlements;
