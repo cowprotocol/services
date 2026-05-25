@@ -2,8 +2,8 @@ use {
     super::{Config, Solver},
     crate::infra::blockchain::Ethereum,
     alloy::{
-        eips::eip7702::Authorization,
-        network::{TransactionBuilder7702, TxSigner},
+        eips::eip7702::{Authorization, SignedAuthorization},
+        network::{ReceiptResponse, TransactionBuilder7702, TxSigner},
         primitives::{Address, B256, Bytes, U256, address},
         providers::Provider,
         rpc::types::TransactionRequest,
@@ -109,42 +109,116 @@ async fn setup_solver(
     init_code: &Bytes,
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
-    deploy_delegate_if_missing(config, delegate, approved_callers, init_code, eth).await?;
-
+    let provider = &eth.web3().provider;
     let solver_address = config.account.address();
-    let code = eth.web3().provider.get_code_at(solver_address).await?;
-    if is_delegated_to(&code, delegate) {
-        tracing::info!(
-            solver = %config.name,
-            delegate = ?delegate,
-            "solver EOA already delegates to Solver7702Delegate"
-        );
-        return Ok(());
-    }
+    let delegate_code = provider
+        .get_code_at(delegate)
+        .await
+        .context("reading Solver7702Delegate code")?;
+    let solver_code = provider
+        .get_code_at(solver_address)
+        .await
+        .context("reading solver EOA code")?;
 
-    setup_delegation(config, delegate, eth).await
+    let delegate_missing = delegate_code.is_empty();
+    match (delegation_status(&solver_code), delegate_missing) {
+        // The solver EOA already delegates somewhere else. Do not silently undo
+        // a manual change or incident response action.
+        (DelegationStatus::DelegatedTo(target), _) if target != delegate => anyhow::bail!(
+            "solver '{}': solver EOA {:?} already delegates to {:?}, expected {:?}; refusing to \
+             re-delegate automatically on startup. Clear the existing delegation manually if this \
+             is intentional.",
+            config.name,
+            solver_address,
+            target,
+            delegate,
+        ),
+        // The solver account has code that is not an EIP-7702 delegation. This
+        // is unexpected for an EOA, so fail instead of overwriting it.
+        (DelegationStatus::OtherCode, _) => anyhow::bail!(
+            "solver '{}': solver EOA {:?} has non-empty code that is not an EIP-7702 delegation; \
+             refusing to overwrite it on startup",
+            config.name,
+            solver_address,
+        ),
+        // A previous setup attempt may have set the delegation but failed
+        // before CREATE2 deployment succeeded. The EOA already points to the
+        // right counterfactual address, so only deploy the missing code.
+        (DelegationStatus::DelegatedTo(_), true) => {
+            deploy_delegate(
+                config,
+                delegate,
+                approved_callers,
+                init_code,
+                DeploymentMode::DeployOnly,
+                eth,
+            )
+            .await
+        }
+        // Everything is already set up.
+        (DelegationStatus::DelegatedTo(_), false) => {
+            tracing::info!(
+                solver = %config.name,
+                delegate = ?delegate,
+                "solver EOA already delegates to Solver7702Delegate"
+            );
+            Ok(())
+        }
+        // Fresh setup: neither the EOA delegation nor the CREATE2 delegate
+        // exists, so deploy and delegate in one transaction.
+        (DelegationStatus::Empty, true) => {
+            deploy_delegate(
+                config,
+                delegate,
+                approved_callers,
+                init_code,
+                DeploymentMode::DeployAndDelegate,
+                eth,
+            )
+            .await
+        }
+        // The delegate was deployed already, but this solver EOA has no
+        // delegation yet. This can happen when another startup process deployed
+        // the shared CREATE2 target first, so warn and set delegation now.
+        (DelegationStatus::Empty, false) => {
+            tracing::warn!(
+                solver = %config.name,
+                solver_eoa = ?solver_address,
+                delegate = ?delegate,
+                "solver EOA has no EIP-7702 delegation but expected delegate already exists; \
+                 setting delegation"
+            );
+            setup_delegation(config, delegate, eth).await
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeploymentMode {
+    DeployOnly,
+    DeployAndDelegate,
+}
+
+impl DeploymentMode {
+    fn includes_delegation(self) -> bool {
+        matches!(self, Self::DeployAndDelegate)
+    }
 }
 
 #[instrument(skip_all, fields(delegate = ?delegate))]
-async fn deploy_delegate_if_missing(
+async fn deploy_delegate(
     config: &Config,
     delegate: Address,
     approved_callers: &ApprovedCallers,
     init_code: &Bytes,
+    mode: DeploymentMode,
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
     let provider = &eth.web3().provider;
-    let code = provider.get_code_at(delegate).await?;
-    if !code.is_empty() {
-        tracing::info!(
-            delegate = ?delegate,
-            approved_callers = ?approved_callers,
-            "reusing existing Solver7702Delegate CREATE2 deployment"
-        );
-        return Ok(());
-    }
-
-    let deployer_code = provider.get_code_at(CREATE2_DEPLOYER).await?;
+    let deployer_code = provider
+        .get_code_at(CREATE2_DEPLOYER)
+        .await
+        .context("reading CREATE2 deployer code")?;
     anyhow::ensure!(
         deployer_code.as_ref() == CREATE2_DEPLOYER_CODE,
         "CREATE2 deployer {CREATE2_DEPLOYER:?} has unexpected code",
@@ -152,6 +226,15 @@ async fn deploy_delegate_if_missing(
 
     let tx_sender = config.account.address();
     let tx_nonce = wait_for_pending_txs(provider, tx_sender).await?;
+    let signed_auth = if mode.includes_delegation() {
+        let chain_id = provider
+            .get_chain_id()
+            .await
+            .context("reading chain id for EIP-7702 authorization")?;
+        Some(sign_authorization(config, chain_id, delegate, tx_nonce + 1).await?)
+    } else {
+        None
+    };
     let input = CREATE2_SALT
         .iter()
         .chain(init_code)
@@ -163,41 +246,89 @@ async fn deploy_delegate_if_missing(
         approved_callers = ?approved_callers,
         tx_sender = ?tx_sender,
         tx_nonce,
+        mode = ?mode,
         "deploying Solver7702Delegate with CREATE2"
     );
-    let pending = provider
-        .send_transaction(
-            TransactionRequest::default()
-                .from(tx_sender)
-                .to(CREATE2_DEPLOYER)
-                .nonce(tx_nonce)
-                .input(input.into()),
-        )
-        .await?;
-    let receipt = pending.get_receipt().await?;
+    let mut tx = TransactionRequest::default()
+        .from(tx_sender)
+        .to(CREATE2_DEPLOYER)
+        .nonce(tx_nonce)
+        .input(input.into());
+    if let Some(signed_auth) = signed_auth {
+        tx = tx.with_authorization_list(vec![signed_auth]);
+    }
 
-    let code = provider.get_code_at(delegate).await?;
+    let pending = provider
+        .send_transaction(tx)
+        .await
+        .context("sending Solver7702Delegate CREATE2 deployment tx")?;
+    let receipt = pending
+        .get_receipt()
+        .await
+        .context("waiting for Solver7702Delegate CREATE2 deployment receipt")?;
+    receipt
+        .ensure_success()
+        .context("Solver7702Delegate CREATE2 deployment tx reverted")?;
+
+    let code = provider
+        .get_code_at(delegate)
+        .await
+        .context("reading Solver7702Delegate code after deployment")?;
     anyhow::ensure!(
         !code.is_empty(),
         "Solver7702Delegate deployment tx {:?} did not create code at {:?}",
         receipt.transaction_hash,
         delegate,
     );
+    if mode.includes_delegation() {
+        let solver_code = provider
+            .get_code_at(tx_sender)
+            .await
+            .context("reading solver EOA code after combined deployment and delegation")?;
+        anyhow::ensure!(
+            is_delegated_to(&solver_code, delegate),
+            "Solver7702Delegate deployment tx {:?} did not delegate solver EOA {:?} to {:?}. \
+             Expected auth_nonce={} (solver_nonce={} + 1). Check that no pending txs changed the \
+             nonce between query and submission.",
+            receipt.transaction_hash,
+            tx_sender,
+            delegate,
+            tx_nonce + 1,
+            tx_nonce,
+        );
+    }
     tracing::info!(
         tx_hash = ?receipt.transaction_hash,
         block = ?receipt.block_number,
         delegate = ?delegate,
+        mode = ?mode,
         "Solver7702Delegate CREATE2 deployment confirmed"
     );
 
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DelegationStatus {
+    Empty,
+    DelegatedTo(Address),
+    OtherCode,
+}
+
+fn delegation_status(code: &[u8]) -> DelegationStatus {
+    if code.is_empty() {
+        DelegationStatus::Empty
+    } else if code.len() == 23 && code.starts_with(&DELEGATION_PREFIX) {
+        DelegationStatus::DelegatedTo(Address::from_slice(&code[3..]))
+    } else {
+        DelegationStatus::OtherCode
+    }
+}
+
 /// Check whether the account's code is an EIP-7702 delegation to
 /// `expected_delegate`.
 fn is_delegated_to(code: &[u8], expected_delegate: Address) -> bool {
-    // EIP-7702 delegation designator: 0xef0100 || 20-byte address
-    code.len() == 23 && code.starts_with(&DELEGATION_PREFIX) && code[3..] == expected_delegate.0.0
+    matches!(delegation_status(code), DelegationStatus::DelegatedTo(delegate) if delegate == expected_delegate)
 }
 
 /// Set up EIP-7702 delegation with a zero-address authorization transaction.
@@ -208,7 +339,10 @@ async fn setup_delegation(
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
     let provider = &eth.web3().provider;
-    let chain_id = provider.get_chain_id().await?;
+    let chain_id = provider
+        .get_chain_id()
+        .await
+        .context("reading chain id for EIP-7702 authorization")?;
     let solver_address: Address = config.account.address();
 
     // Wait for any pending solver txs to clear (e.g. in-flight settlements
@@ -227,21 +361,10 @@ async fn setup_delegation(
     // is incremented before the authorization list is processed. Since the
     // solver is both sender and authority, the nonce will already be
     // solver_nonce + 1 by the time the auth is checked.
-    let auth = Authorization {
-        chain_id: U256::from(chain_id),
-        address: delegate,
-        nonce: solver_nonce + 1,
-    };
-    let sig = config
-        .account
-        .sign_hash(&auth.signature_hash())
-        .await
-        .context("failed to sign EIP-7702 authorization")?;
-    let signed_auth = auth.into_signed(sig);
+    let signed_auth = sign_authorization(config, chain_id, delegate, solver_nonce + 1).await?;
 
-    // Do not combine this with CREATE2 deployment: if execution reverts,
-    // EIP-7702 keeps the delegation. This tx only carries the auth, so use an
-    // inert zero-value call.
+    // This path is used when the CREATE2 delegate already exists. The tx only
+    // carries the auth, so use an inert zero-value call.
     let tx = TransactionRequest::default()
         .from(solver_address)
         .to(Address::ZERO)
@@ -249,8 +372,17 @@ async fn setup_delegation(
         .nonce(solver_nonce)
         .with_authorization_list(vec![signed_auth]);
 
-    let pending = provider.send_transaction(tx).await?;
-    let receipt = pending.get_receipt().await?;
+    let pending = provider
+        .send_transaction(tx)
+        .await
+        .context("sending EIP-7702 delegation tx")?;
+    let receipt = pending
+        .get_receipt()
+        .await
+        .context("waiting for EIP-7702 delegation receipt")?;
+    receipt
+        .ensure_success()
+        .context("EIP-7702 delegation tx reverted")?;
     tracing::info!(
         tx_hash = ?receipt.transaction_hash,
         block = ?receipt.block_number,
@@ -259,7 +391,10 @@ async fn setup_delegation(
 
     // Verify the delegation was actually applied (EIP-7702 silently skips
     // authorizations with mismatched nonces).
-    let code = provider.get_code_at(solver_address).await?;
+    let code = provider
+        .get_code_at(solver_address)
+        .await
+        .context("reading solver EOA code after EIP-7702 delegation tx")?;
     if !is_delegated_to(&code, delegate) {
         anyhow::bail!(
             "EIP-7702 delegation not applied after tx {:?}. Expected auth_nonce={} \
@@ -274,6 +409,26 @@ async fn setup_delegation(
     Ok(())
 }
 
+async fn sign_authorization(
+    config: &Config,
+    chain_id: u64,
+    delegate: Address,
+    auth_nonce: u64,
+) -> anyhow::Result<SignedAuthorization> {
+    let auth = Authorization {
+        chain_id: U256::from(chain_id),
+        address: delegate,
+        nonce: auth_nonce,
+    };
+    let sig = config
+        .account
+        .sign_hash(&auth.signature_hash())
+        .await
+        .context("failed to sign EIP-7702 authorization")?;
+
+    Ok(auth.into_signed(sig))
+}
+
 /// Wait until the solver has no pending transactions in the mempool.
 /// Returns the confirmed nonce (safe to use for the next tx).
 #[instrument(skip_all)]
@@ -286,9 +441,16 @@ async fn wait_for_pending_txs(provider: &impl Provider, address: Address) -> any
         // Startup can happen while transactions from the previous driver process
         // are still pending. Reusing that nonce would replace them.
         // only counts txs in mined blocks
-        let latest = provider.get_transaction_count(address).await?;
+        let latest = provider
+            .get_transaction_count(address)
+            .await
+            .context("reading latest solver nonce before EIP-7702 setup")?;
         // also count txs in the mempool
-        let pending = provider.get_transaction_count(address).pending().await?;
+        let pending = provider
+            .get_transaction_count(address)
+            .pending()
+            .await
+            .context("reading pending solver nonce before EIP-7702 setup")?;
         if pending <= latest {
             return Ok(latest);
         }
@@ -310,4 +472,64 @@ async fn wait_for_pending_txs(provider: &impl Provider, address: Address) -> any
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use {super::*, alloy::primitives::address};
+
+    const CALLER_A: Address = address!("0000000000000000000000000000000000000001");
+    const CALLER_B: Address = address!("0000000000000000000000000000000000000002");
+    const CALLER_C: Address = address!("0000000000000000000000000000000000000003");
+    const CALLER_D: Address = address!("0000000000000000000000000000000000000004");
+    const CALLER_E: Address = address!("0000000000000000000000000000000000000005");
+    const CALLER_F: Address = address!("0000000000000000000000000000000000000006");
+
+    #[test]
+    fn delegate_target_is_stable_and_caller_sensitive() {
+        let (first, _, _) = delegate_deployment(&[CALLER_A, CALLER_B]).unwrap();
+        let (same, _, _) = delegate_deployment(&[CALLER_A, CALLER_B]).unwrap();
+        let (reordered, _, _) = delegate_deployment(&[CALLER_B, CALLER_A]).unwrap();
+
+        assert_eq!(first, same);
+        assert_ne!(first, reordered);
+    }
+
+    #[test]
+    fn pads_approved_callers_to_contract_capacity() {
+        let (_, approved_callers, _) = delegate_deployment(&[CALLER_A, CALLER_B]).unwrap();
+
+        assert_eq!(
+            approved_callers,
+            [
+                CALLER_A,
+                CALLER_B,
+                Address::ZERO,
+                Address::ZERO,
+                Address::ZERO
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_more_callers_than_the_delegate_supports() {
+        let err =
+            delegate_deployment(&[CALLER_A, CALLER_B, CALLER_C, CALLER_D, CALLER_E, CALLER_F])
+                .unwrap_err();
+
+        assert!(err.to_string().contains("at most 5"));
+    }
+
+    #[test]
+    fn detects_eip7702_delegation_target() {
+        let delegate = address!("0000000000000000000000000000000000000007");
+        let other = address!("0000000000000000000000000000000000000008");
+        let mut code = Vec::from(DELEGATION_PREFIX);
+        code.extend_from_slice(delegate.as_slice());
+
+        assert_eq!(delegation_status(&[]), DelegationStatus::Empty);
+        assert_eq!(
+            delegation_status(&[0x60, 0x00]),
+            DelegationStatus::OtherCode
+        );
+        assert!(is_delegated_to(&code, delegate));
+        assert!(!is_delegated_to(&code, other));
+    }
+}
