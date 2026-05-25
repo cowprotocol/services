@@ -87,12 +87,6 @@ fn log_simulation_outcome(
                 tenderly_request,
             }),
         ) => {
-            // `Debug` would print the calldata `Vec<u8>` as decimal bytes and
-            // the state-override map as a verbose struct dump. The request
-            // already derives `Serialize` with hex-encoded calldata, so a
-            // single JSON serialization gives a compact, replayable payload.
-            // Empty string indicates "no request available" (e.g. when the
-            // simulation builder failed to produce one before the revert).
             let tenderly_request_json = tenderly_request
                 .as_deref()
                 .and_then(|r| serde_json::to_string(r).ok())
