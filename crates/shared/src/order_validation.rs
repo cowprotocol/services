@@ -84,6 +84,7 @@ fn log_simulation_outcome(
             Err(OrderSimulationError::Reverted {
                 reason,
                 tenderly_url,
+                tenderly_request,
             }),
         ) => tracing::warn!(
             ?order_uid,
@@ -93,6 +94,7 @@ fn log_simulation_outcome(
             ?order_signature,
             ?reason,
             ?tenderly_url,
+            ?tenderly_request,
             "order simulation disagreement: signature passed, simulation reverted",
         ),
         (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
@@ -2916,6 +2918,7 @@ mod tests {
                     Sim::Reverted => Err(OrderSimulationError::Reverted {
                         reason: "hook reverted".into(),
                         tenderly_url: None,
+                        tenderly_request: None,
                     }),
                 });
             let validator =
@@ -2973,6 +2976,7 @@ mod tests {
             Err(OrderSimulationError::Reverted {
                 reason: "x".into(),
                 tenderly_url: None,
+                tenderly_request: None,
             })
         });
         let validator = build_1271_validator(signature_validator, Some(order_simulator(sim)), true);
