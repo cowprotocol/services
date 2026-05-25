@@ -822,6 +822,10 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, owner);
 
+        // Cheap in-memory rejection checks run before the eth_call-driven
+        // verification step below so banned users, forbidden tokens, and
+        // zero-amount orders fail fast without consuming a simulation-node
+        // round-trip.
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
