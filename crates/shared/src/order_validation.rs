@@ -411,18 +411,6 @@ impl OrderValidator {
         }
     }
 
-    /// Runs the EIP-1271 `isValidSignature` check against the on-chain
-    /// signature contract and returns the gas it consumed. The result decides
-    /// order acceptance for EIP-1271 orders.
-    async fn verify_eip1271_signature(
-        &self,
-        check: SignatureCheck,
-    ) -> Result<u64, SignatureValidationError> {
-        self.signature_validator
-            .validate_signature_and_get_additional_gas(check)
-            .await
-    }
-
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
         let num_limit_orders = self
             .limit_order_counter
@@ -759,7 +747,9 @@ impl OrderValidating for OrderValidator {
 
         let verification_gas_limit = match eip1271_check {
             Some(check) => {
-                let signature_fut = self.verify_eip1271_signature(check);
+                let signature_fut = self
+                    .signature_validator
+                    .validate_signature_and_get_additional_gas(check);
                 let (signature_res, simulation_opt) = tokio::join!(signature_fut, simulation_fut);
 
                 if let Some(simulation) = &simulation_opt {
