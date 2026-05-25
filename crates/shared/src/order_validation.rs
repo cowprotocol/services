@@ -86,17 +86,29 @@ fn log_simulation_outcome(
                 tenderly_url,
                 tenderly_request,
             }),
-        ) => tracing::warn!(
-            ?order_uid,
-            ?owner,
-            ?order_data,
-            full_app_data,
-            ?order_signature,
-            ?reason,
-            ?tenderly_url,
-            ?tenderly_request,
-            "order simulation disagreement: signature passed, simulation reverted",
-        ),
+        ) => {
+            // `Debug` would print the calldata `Vec<u8>` as decimal bytes and
+            // the state-override map as a verbose struct dump. The request
+            // already derives `Serialize` with hex-encoded calldata, so a
+            // single JSON serialization gives a compact, replayable payload.
+            // Empty string indicates "no request available" (e.g. when the
+            // simulation builder failed to produce one before the revert).
+            let tenderly_request_json = tenderly_request
+                .as_deref()
+                .and_then(|r| serde_json::to_string(r).ok())
+                .unwrap_or_default();
+            tracing::warn!(
+                ?order_uid,
+                ?owner,
+                ?order_data,
+                full_app_data,
+                ?order_signature,
+                ?reason,
+                ?tenderly_url,
+                tenderly_request = %tenderly_request_json,
+                "order simulation disagreement: signature passed, simulation reverted",
+            );
+        }
         (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
             ?order_uid,
             ?owner,

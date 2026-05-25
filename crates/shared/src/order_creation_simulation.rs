@@ -60,7 +60,7 @@ impl OrderCreationSimulator {
 
 #[async_trait]
 impl OrderSimulating for OrderCreationSimulator {
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, fields(order_uid = %order.metadata.uid))]
     async fn simulate(
         &self,
         order: &Order,
