@@ -1,7 +1,10 @@
 use {
-    crate::{api::AppState, dto::OrderSimulationRequest, orderbook::OrderSimulationError},
+    crate::{
+        api::{AppState, extract::Json},
+        dto::OrderSimulationRequest,
+        orderbook::OrderSimulationError,
+    },
     axum::{
-        Json,
         extract::{Path, Query, State},
         http::StatusCode,
         response::{IntoResponse, Response},

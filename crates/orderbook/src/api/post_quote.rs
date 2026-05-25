@@ -1,11 +1,10 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
     crate::{
-        api::{AppState, error, rich_error},
+        api::{AppState, error, extract::Json, rich_error},
         quoter::OrderQuoteError,
     },
     axum::{
-        Json,
         extract::State,
         response::{IntoResponse, Response},
     },
