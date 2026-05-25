@@ -42,7 +42,6 @@ cow-contract-cowammfactorygetter = { path = "../contracts-generated/cowammfactor
 cow-contract-cowammlegacyhelper = { path = "../contracts-generated/cowammlegacyhelper" }
 cow-contract-cowammuniswapv2priceoracle = { path = "../contracts-generated/cowammuniswapv2priceoracle" }
 cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoken" }
-cow-contract-cowsettlementforwarder = { path = "../contracts-generated/cowsettlementforwarder" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }
 cow-contract-cowswaponchainorders = { path = "../contracts-generated/cowswaponchainorders" }
 cow-contract-erc20 = { path = "../contracts-generated/erc20" }

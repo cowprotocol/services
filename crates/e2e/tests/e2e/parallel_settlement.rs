@@ -4,7 +4,6 @@ use {
         primitives::{Address, U256},
         providers::{Provider, ext::TxPoolApi},
     },
-    contracts::CowSettlementForwarder::CowSettlementForwarder,
     e2e::setup::{colocation, *},
     ethrpc::{
         Web3,
@@ -68,10 +67,6 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         .await
         .unwrap();
 
-    // Deploy the settlement forwarder. The driver handles EIP-7702
-    // delegation and caller approval automatically at startup.
-    let forwarder_addr = deploy_forwarder(onchain.web3(), &submitter_a).await;
-
     // Start driver + baseline solver. Each /solve call is a separate auction
     // so solutions are independent regardless of merge_solutions.
     let mut solver_engine = colocation::start_baseline_solver(
@@ -84,7 +79,6 @@ async fn test_parallel_settlement_submission(web3: Web3) {
     )
     .await;
     solver_engine.submission_keys = vec![submitter_a.clone(), submitter_b.clone()];
-    solver_engine.forwarder_contract = Some(forwarder_addr);
 
     colocation::start_driver(
         onchain.contracts(),
@@ -310,14 +304,4 @@ async fn assert_settle_success(
         status.is_success(),
         "/settle failed for auction {auction_id} ({status}): {body}"
     );
-}
-
-/// Deploy the CowSettlementForwarder contract (target-agnostic, with caller
-/// whitelist). No constructor arguments — storage lives in the delegating EOA.
-async fn deploy_forwarder(web3: &Web3, deployer: &TestAccount) -> Address {
-    CowSettlementForwarder::deploy_builder(web3.provider.clone())
-        .from(deployer.address())
-        .deploy()
-        .await
-        .expect("failed to deploy CowSettlementForwarder")
 }

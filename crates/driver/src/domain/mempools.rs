@@ -4,9 +4,8 @@ use {
         domain::{blockchain::TxStatus, competition::solution::Settlement},
         infra::{self, Ethereum, observe},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, sol_types::SolCall},
+    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation},
     anyhow::{Context, anyhow},
-    contracts::CowSettlementForwarder::CowSettlementForwarder,
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
@@ -518,15 +517,8 @@ fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
             submitter_eoa,
             solver_eoa,
         } => {
-            let original_target = tx.to;
             tx.from = *submitter_eoa;
             tx.to = *solver_eoa;
-            tx.input = CowSettlementForwarder::forwardCall {
-                target: original_target,
-                data: tx.input.clone(),
-            }
-            .abi_encode()
-            .into();
             tx
         }
     }
