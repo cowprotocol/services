@@ -17,6 +17,7 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
     contracts::{HooksTrampoline, WETH9},
+    futures::future::OptionFuture,
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -410,9 +411,6 @@ impl OrderValidator {
         }
     }
 
-    /// Computes the `verification_gas_limit` for an order and runs the
-    /// simulation for observability. Returns `0` for orders without an
-    /// EIP-1271 signature check, but the simulation still runs.
     /// Runs the EIP-1271 `isValidSignature` check against the on-chain
     /// signature contract and returns the gas it consumed. The result decides
     /// order acceptance for EIP-1271 orders.
@@ -423,26 +421,6 @@ impl OrderValidator {
         self.signature_validator
             .validate_signature_and_get_additional_gas(check)
             .await
-    }
-
-    /// Runs the shadow-mode order-creation simulation against the simulation
-    /// node and returns the outcome. The caller is responsible for logging
-    /// the result via [`log_simulation_outcome`] and for deciding whether to
-    /// act on it (today: never, shadow mode is observation-only).
-    ///
-    /// Returns `None` when no simulator is configured for the running
-    /// environment, in which case the caller has nothing to log either.
-    async fn run_shadow_simulation(
-        &self,
-        preview_order: &Order,
-        full_app_data: &str,
-    ) -> Option<Result<(), OrderSimulationError>> {
-        let config = self.order_simulator.as_ref()?;
-        Some(
-            config
-                .simulate_with_timeout(preview_order, full_app_data)
-                .await,
-        )
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -773,10 +751,15 @@ impl OrderValidating for OrderValidator {
                 _ => None,
             };
 
+        let simulation_fut = OptionFuture::from(
+            self.order_simulator
+                .as_ref()
+                .map(|c| c.simulate_with_timeout(&preview_order, &full_app_data)),
+        );
+
         let verification_gas_limit = match eip1271_check {
             Some(check) => {
                 let signature_fut = self.verify_eip1271_signature(check);
-                let simulation_fut = self.run_shadow_simulation(&preview_order, &full_app_data);
                 let (signature_res, simulation_opt) = tokio::join!(signature_fut, simulation_fut);
 
                 if let Some(simulation) = &simulation_opt {
@@ -796,10 +779,7 @@ impl OrderValidating for OrderValidator {
                 })?
             }
             None => {
-                if let Some(simulation) = self
-                    .run_shadow_simulation(&preview_order, &full_app_data)
-                    .await
-                {
+                if let Some(simulation) = simulation_fut.await {
                     log_simulation_outcome(&Ok(0), &simulation, &preview_order, &full_app_data);
                 }
                 0
