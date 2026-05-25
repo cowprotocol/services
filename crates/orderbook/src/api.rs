@@ -32,6 +32,7 @@ mod cancel_order;
 mod cancel_orders;
 mod debug_order;
 mod debug_simulation;
+mod extract;
 mod get_app_data;
 mod get_auction;
 mod get_native_price;

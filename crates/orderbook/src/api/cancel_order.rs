@@ -1,7 +1,9 @@
 use {
-    crate::{api::AppState, orderbook::OrderCancellationError},
+    crate::{
+        api::{AppState, extract::Json},
+        orderbook::OrderCancellationError,
+    },
     axum::{
-        Json,
         extract::{Path, State},
         http::StatusCode,
         response::{IntoResponse, Response},
