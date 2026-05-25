@@ -5,9 +5,9 @@
 //! Chainalysis `Onchain` checker: same cache, same background refresh task.
 
 use {
-    super::{Backend, UserMetadata},
+    super::{Backend, MAX_CONCURRENT_LOOKUPS, UserMetadata},
     alloy_primitives::Address,
-    futures::future::join_all,
+    futures::{StreamExt, stream},
     hmac::{Hmac, Mac},
     moka::sync::Cache,
     sha2::Sha256,
@@ -20,6 +20,7 @@ use {
 
 const CACHE_EXPIRY: Duration = Duration::from_secs(60 * 60);
 const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Configuration for the Hermod (zeroShadow) sanctioned-address checker.
 #[derive(Debug, Clone)]
@@ -66,7 +67,10 @@ impl Hermod {
             url.set_path(&with_slash);
         }
         let hermod = Arc::new(Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .expect("reqwest client builder with default TLS settings is infallible"),
             url,
             hmac_key: config.hmac_key.into_bytes(),
             api_key: config.api_key,
@@ -78,10 +82,6 @@ impl Hermod {
         hermod
     }
 
-    /// Returns the cache entries whose age is close enough to expiry that
-    /// they should be refreshed during this maintenance cycle. Computed
-    /// relative to `start` (rather than `Instant::now()`) so the threshold
-    /// is consistent across one iteration of the maintenance loop.
     fn expired_data(&self, start: Instant) -> Vec<(Arc<Address>, UserMetadata)> {
         self.cache
             .iter()
@@ -90,67 +90,33 @@ impl Hermod {
                     .checked_duration_since(metadata.last_updated)
                     .unwrap_or_default()
                     >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
-
                 expired.then_some((address, metadata))
             })
             .collect()
     }
 
-    /// Re-fetches the ban status for a single expired cache entry during
-    /// background maintenance, returning the refreshed `(address, metadata)`
-    /// pair on success. Fetch errors are logged and yield `None` so the
-    /// existing cache entry is left in place rather than being overwritten
-    /// with stale or wrong data.
     async fn determine_status(
         &self,
         address: Address,
         metadata: UserMetadata,
     ) -> Option<(Address, UserMetadata)> {
-        self.fetch(address)
-            .await
-            .inspect_err(|err| {
+        match self.fetch(address).await {
+            Ok(is_banned) => Some((
+                address,
+                UserMetadata {
+                    is_banned,
+                    ..metadata
+                },
+            )),
+            Err(err) => {
                 tracing::warn!(
-                    address = ?*address,
+                    ?address,
                     ?err,
-                    "unable to determine hermod banned status in the background task"
-                )
-            })
-            .ok()
-            .map(|is_banned| {
-                (
-                    address,
-                    UserMetadata {
-                        is_banned,
-                        ..metadata
-                    },
-                )
-            })
-    }
-
-    fn spawn_maintenance_task(self: Arc<Self>) {
-        let detector = Arc::clone(&self);
-
-        tokio::task::spawn(async move {
-            loop {
-                let start = Instant::now();
-                let expired_data: Vec<_> = detector.expired_data(start);
-
-                let results = join_all(
-                    expired_data
-                        .into_iter()
-                        .map(|(address, metadata)| detector.determine_status(*address, metadata)),
-                )
-                .await
-                .into_iter()
-                .flatten();
-                detector.insert_many_into_cache(results);
-
-                let remaining_sleep = MAINTENANCE_TIMEOUT
-                    .checked_sub(start.elapsed())
-                    .unwrap_or_default();
-                tokio::time::sleep(remaining_sleep).await;
+                    "unable to determine hermod banned status in the background task",
+                );
+                None
             }
-        });
+        }
     }
 
     fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (Address, UserMetadata)>) {
@@ -164,6 +130,28 @@ impl Hermod {
                 },
             );
         }
+    }
+
+    fn spawn_maintenance_task(self: Arc<Self>) {
+        tokio::task::spawn(async move {
+            let mut interval = tokio::time::interval(MAINTENANCE_TIMEOUT);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                interval.tick().await;
+                let start = Instant::now();
+                let expired_data = self.expired_data(start);
+
+                let results = stream::iter(expired_data)
+                    .map(|(address, metadata)| self.determine_status(*address, metadata))
+                    .buffer_unordered(MAX_CONCURRENT_LOOKUPS)
+                    .collect::<Vec<_>>()
+                    .await
+                    .into_iter()
+                    .flatten();
+
+                self.insert_many_into_cache(results);
+            }
+        });
     }
 
     /// HMAC-SHA256 of the address textual payload, encoded as lowercase hex.

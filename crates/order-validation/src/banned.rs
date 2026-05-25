@@ -11,7 +11,12 @@ pub use hermod::HermodConfig;
 use {
     alloy_primitives::Address,
     contracts::ChainalysisOracle,
-    futures::future::join_all,
+    futures::{
+        FutureExt,
+        StreamExt,
+        future::{BoxFuture, join_all},
+        stream,
+    },
     moka::sync::Cache,
     std::{
         collections::HashSet,
@@ -21,6 +26,12 @@ use {
         time::{Duration, Instant},
     },
 };
+
+/// Caps the number of in-flight per-address fetches so a large batch of cache
+/// misses (or a large maintenance refresh) does not burst the backend.
+pub(crate) const MAX_CONCURRENT_LOOKUPS: usize = 10;
+const CACHE_EXPIRY: Duration = Duration::from_secs(60 * 60);
+const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A list of banned users and optional registries that can be checked.
 pub struct Users {
@@ -65,12 +76,11 @@ pub(crate) trait Backend: Send + Sync + 'static {
             }
         }
 
-        let to_cache = join_all(
-            need_lookup
-                .into_iter()
-                .map(|address| async move { (address, self.fetch(address).await) }),
-        )
-        .await;
+        let to_cache: Vec<_> = stream::iter(need_lookup)
+            .map(|address| async move { (address, self.fetch(address).await) })
+            .buffer_unordered(MAX_CONCURRENT_LOOKUPS)
+            .collect()
+            .await;
 
         let now = Instant::now();
         for (address, result) in to_cache {
@@ -118,64 +128,41 @@ impl Onchain {
         onchain
     }
 
-    /// Spawns a background task that periodically checks the cache for expired
-    /// entries and re-run checks for them.
-    fn spawn_maintenance_task(self: Arc<Self>) {
-        let cache_expiry = Duration::from_secs(60 * 60);
-        let maintenance_timeout = Duration::from_secs(60);
-        let detector = Arc::clone(&self);
+    fn expired_data(&self, start: Instant) -> Vec<(Arc<Address>, UserMetadata)> {
+        self.cache
+            .iter()
+            .filter_map(|(address, metadata)| {
+                let expired = start
+                    .checked_duration_since(metadata.last_updated)
+                    .unwrap_or_default()
+                    >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
+                expired.then_some((address, metadata))
+            })
+            .collect()
+    }
 
-        tokio::task::spawn(async move {
-            loop {
-                let start = Instant::now();
-
-                let expired_data: Vec<_> = detector
-                    .cache
-                    .iter()
-                    .filter_map(|(address, metadata)| {
-                        let expired = start
-                            .checked_duration_since(metadata.last_updated)
-                            .unwrap_or_default()
-                            >= cache_expiry - maintenance_timeout;
-
-                        expired.then_some((address, metadata))
-                    })
-                    .collect();
-
-                let results = join_all(expired_data.into_iter().map(|(address, metadata)| {
-                    let detector = detector.clone();
-                    async move {
-                        match detector.fetch(*address).await {
-                            Ok(result) => Some((
-                                *address,
-                                UserMetadata {
-                                    is_banned: result,
-                                    ..metadata
-                                },
-                            )),
-                            Err(err) => {
-                                tracing::warn!(
-                                    address = ?*address,
-                                    ?err,
-                                    "unable to determine banned status in the background task"
-                                );
-                                None
-                            }
-                        }
-                    }
-                }))
-                .await
-                .into_iter()
-                .flatten();
-
-                detector.insert_many_into_cache(results);
-
-                let remaining_sleep = maintenance_timeout
-                    .checked_sub(start.elapsed())
-                    .unwrap_or_default();
-                tokio::time::sleep(remaining_sleep).await;
+    async fn determine_status(
+        &self,
+        address: Address,
+        metadata: UserMetadata,
+    ) -> Option<(Address, UserMetadata)> {
+        match self.fetch(address).await {
+            Ok(is_banned) => Some((
+                address,
+                UserMetadata {
+                    is_banned,
+                    ..metadata
+                },
+            )),
+            Err(err) => {
+                tracing::warn!(
+                    ?address,
+                    ?err,
+                    "unable to determine banned status in the background task",
+                );
+                None
             }
-        });
+        }
     }
 
     fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (Address, UserMetadata)>) {
@@ -189,6 +176,28 @@ impl Onchain {
                 },
             );
         }
+    }
+
+    fn spawn_maintenance_task(self: Arc<Self>) {
+        tokio::task::spawn(async move {
+            let mut interval = tokio::time::interval(MAINTENANCE_TIMEOUT);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                interval.tick().await;
+                let start = Instant::now();
+                let expired_data = self.expired_data(start);
+
+                let results = stream::iter(expired_data)
+                    .map(|(address, metadata)| self.determine_status(*address, metadata))
+                    .buffer_unordered(MAX_CONCURRENT_LOOKUPS)
+                    .collect::<Vec<_>>()
+                    .await
+                    .into_iter()
+                    .flatten();
+
+                self.insert_many_into_cache(results);
+            }
+        });
     }
 }
 
@@ -264,16 +273,30 @@ impl Users {
             // Need to collect here to make sure filter gets executed and we insert addresses
             .collect::<HashSet<_>>();
 
-        match (&self.onchain, &self.hermod) {
-            (None, None) => return banned,
-            (Some(onchain), None) => onchain.check(&need_lookup, &mut banned).await,
-            (None, Some(hermod)) => hermod.check(&need_lookup, &mut banned).await,
-            (Some(onchain), Some(hermod)) => {
-                onchain.check(&need_lookup, &mut banned).await;
-                hermod.check(&need_lookup, &mut banned).await;
-            }
+        let lookups: Vec<BoxFuture<'_, HashSet<Address>>> = [
+            self.onchain
+                .as_deref()
+                .map(|b| check_into_new(b, &need_lookup).boxed()),
+            self.hermod
+                .as_deref()
+                .map(|b| check_into_new(b, &need_lookup).boxed()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        for found in join_all(lookups).await {
+            banned.extend(found);
         }
 
         banned
     }
+}
+
+/// Runs `backend.check` against a fresh result set so multiple backends can be
+/// driven concurrently without sharing a `&mut HashSet`.
+async fn check_into_new<B: Backend>(backend: &B, addresses: &HashSet<Address>) -> HashSet<Address> {
+    let mut out = HashSet::new();
+    backend.check(addresses, &mut out).await;
+    out
 }

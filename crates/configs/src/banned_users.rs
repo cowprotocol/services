@@ -1,7 +1,7 @@
 use {
     crate::deserialize_env::{deserialize_optional_string_from_env, deserialize_string_from_env},
     alloy::primitives::Address,
-    serde::{Deserialize, Serialize},
+    serde::Deserialize,
     std::{fmt::Debug, num::NonZeroUsize},
     url::Url,
 };
@@ -13,7 +13,8 @@ fn default_max_cache_size() -> NonZeroUsize {
 }
 
 /// Addresses banned from creating orders, with a local cache.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BannedUsersConfig {
     /// List of account addresses to be denied from order creation.
@@ -42,7 +43,8 @@ impl Default for BannedUsersConfig {
 /// Hermod is zeroShadow's self-hosted sanctioned-address checker. Queries
 /// are made against an HMAC-SHA256 obfuscated form of the address using a
 /// per-customer key.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct HermodConfig {
     /// Base URL of the Hermod agent (e.g. `http://hermod:3000`).
