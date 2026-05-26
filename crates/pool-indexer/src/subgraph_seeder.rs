@@ -156,35 +156,40 @@ impl SubgraphClient {
         Ok(page.meta.block.number)
     }
 
-    /// Fetches the factory address of any one pool from the subgraph at
-    /// `block`. Used as a pre-seed sanity check: every row the seeder writes
-    /// is stamped with the *configured* factory address, so if the subgraph
-    /// URL is actually serving pools from a different factory (e.g. operator
-    /// pointed a Uniswap V3 config at a PancakeSwap V3 subgraph), seeding
-    /// would silently corrupt the DB with mis-stamped pools. The probe is one
-    /// HTTP round-trip per seeding pass — cheap insurance.
+    /// Fetches the factory entity from the subgraph at `block`. Used as a
+    /// pre-seed sanity check: every row the seeder writes is stamped with
+    /// the *configured* factory address, so if the subgraph URL is actually
+    /// serving pools from a different factory (e.g. operator pointed a
+    /// Uniswap V3 config at a PancakeSwap V3 subgraph), seeding would
+    /// silently corrupt the DB with mis-stamped pools.
+    ///
+    /// We query the top-level `factories` entity rather than `pool.factory`
+    /// because some forks of the Uniswap V3 subgraph schema (e.g. the
+    /// Goldsky-hosted Ink deployment) drop the per-pool `factory` field
+    /// while keeping the singleton `Factory` entity. The `Factory.id` is the
+    /// factory address — that's the canonical place to look.
     async fn fetch_factory_attestation(&self, block: u64) -> Result<Address> {
         #[derive(Deserialize)]
         struct ProbePage {
-            pools: Vec<FactoryProbe>,
+            factories: Vec<FactoryProbe>,
         }
         #[derive(Deserialize)]
         struct FactoryProbe {
-            factory: String,
+            id: String,
         }
         let query = "query($block: Int!) {
-            pools(first: 1, block: {number: $block}) {
-                factory
+            factories(first: 1, block: {number: $block}) {
+                id
             }
         }";
         let page: ProbePage = self.query(query, json!({ "block": block })).await?;
         let probe = page
-            .pools
+            .factories
             .into_iter()
             .next()
-            .context("subgraph returned no pools — cannot attest factory address")?;
+            .context("subgraph returned no factory entity — cannot attest factory address")?;
         probe
-            .factory
+            .id
             .parse::<Address>()
             .context("parse factory address from subgraph probe")
     }
