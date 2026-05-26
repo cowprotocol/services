@@ -1,11 +1,12 @@
 use {
     ::alloy::{
         consensus::Transaction as _,
-        primitives::{Address, B256, Bytes, U256, address},
+        primitives::{Address, Bytes, U256},
         providers::{Provider, ext::TxPoolApi},
         sol_types::SolConstructor,
     },
     contracts::Solver7702Delegate::Solver7702Delegate,
+    driver::infra::solver::eip7702::{DELEGATION_PREFIX, MAX_APPROVED_CALLERS, delegate_address},
     e2e::setup::{colocation, *},
     ethrpc::{
         Web3,
@@ -18,9 +19,6 @@ use {
     number::units::EthUnit,
     std::time::Duration,
 };
-
-const CREATE2_DEPLOYER: Address = address!("4e59b44847b379578588920cA78FbF26c0B4956C");
-const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
 
 /// Tests that the driver can process two settlement requests concurrently,
 /// resulting in both settlement transactions being pending in the mempool
@@ -253,7 +251,7 @@ async fn assert_solver_delegates_to_expected_contract(
 }
 
 fn solver_delegate_address(callers: [Address; 2]) -> Address {
-    let mut approved_callers = [Address::ZERO; 5];
+    let mut approved_callers = [Address::ZERO; MAX_APPROVED_CALLERS];
     approved_callers[..callers.len()].copy_from_slice(&callers);
     let init_code = Solver7702Delegate::BYTECODE
         .iter()
@@ -265,7 +263,13 @@ fn solver_delegate_address(callers: [Address; 2]) -> Address {
         .copied()
         .collect::<Bytes>();
 
-    CREATE2_DEPLOYER.create2_from_code(B256::ZERO, &init_code)
+    let local = delegate_address(&callers).unwrap();
+    assert_eq!(
+        local,
+        driver::infra::solver::eip7702::CREATE2_DEPLOYER
+            .create2_from_code(driver::infra::solver::eip7702::CREATE2_SALT, &init_code)
+    );
+    local
 }
 
 /// Sends a /solve request to the driver for a single order and returns the

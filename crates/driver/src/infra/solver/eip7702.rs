@@ -12,32 +12,45 @@ use {
     anyhow::Context,
     contracts::Solver7702Delegate::Solver7702Delegate,
     hex_literal::hex,
-    std::time::Duration,
+    std::{collections::HashSet, time::Duration},
     tracing::instrument,
 };
 
 /// EIP-7702 delegation prefix stored as account code prefix. If you call
 /// eth_getCode on a delegated EOA, instead of getting empty bytes (normal EOA),
 /// you get 0xef0100<20-byte contract address>.
-const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
+pub const DELEGATION_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
+const DELEGATION_CODE_LEN: usize = DELEGATION_PREFIX.len() + Address::len_bytes();
 /// The maximum number of approved callers allowed by the Solver7702Delegate
 /// ABI.
-const MAX_APPROVED_CALLERS: usize = 5;
+pub const MAX_APPROVED_CALLERS: usize = 5;
 type ApprovedCallers = [Address; MAX_APPROVED_CALLERS];
 // Arachnid's deterministic-deployment-proxy. It is deployed at this same
 // address on many EVM chains. Sending 32-byte salt || init code to it deploys
 // that init code with CREATE2. We use it to derive and deploy the exact
 // Solver7702Delegate address from this proxy address, zero salt, and init code.
-const CREATE2_DEPLOYER: Address = address!("4e59b44847b379578588920cA78FbF26c0B4956C");
+pub const CREATE2_DEPLOYER: Address = address!("4e59b44847b379578588920cA78FbF26c0B4956C");
 const CREATE2_DEPLOYER_CODE: &[u8] = &hex!(
     "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3"
 );
 // The ordered caller slots and zero salt are part of the CREATE2 input, so the
 // same caller set keeps resolving to the same delegate target.
-const CREATE2_SALT: B256 = B256::ZERO;
+pub const CREATE2_SALT: B256 = B256::ZERO;
 
 /// Ensure EIP-7702 delegate deployment and solver delegation are set up for all
 /// solvers with parallel submission accounts. Called once at driver startup.
+///
+/// # Errors
+/// - A solver has `submission-accounts`, but its main account is read-only and
+///   cannot sign the EIP-7702 authorization.
+/// - The deterministic CREATE2 deployer is missing or has unexpected code.
+/// - The solver EOA already delegates to another target, or has non-delegation
+///   code.
+/// - The EIP-7702 authorization lands but the on-chain code does not reflect
+///   the expected delegate, for example because a concurrent tx shifted the
+///   nonce.
+/// - Any underlying RPC error while fetching code, chain id, nonces, sending a
+///   tx, or waiting for a receipt.
 #[instrument(name = "setup_eip7702", skip_all)]
 pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     for solver in solvers {
@@ -45,13 +58,6 @@ pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
         if config.submission_accounts.is_empty() {
             continue;
         }
-
-        anyhow::ensure!(
-            !matches!(config.account, super::Account::Address(_)),
-            "solver '{}': main account must be a signer to set up EIP-7702 delegation when \
-             submission accounts are configured",
-            config.name,
-        );
 
         // Register solver + submission accounts with the main wallet so we can
         // send transactions via the provider during setup.
@@ -73,10 +79,23 @@ pub async fn setup(solvers: &[Solver], eth: &Ethereum) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn delegate_address(callers: &[Address]) -> anyhow::Result<Address> {
+    Ok(delegate_deployment(callers)?.0)
+}
+
 fn delegate_deployment(callers: &[Address]) -> anyhow::Result<(Address, ApprovedCallers, Bytes)> {
     anyhow::ensure!(
         callers.len() <= MAX_APPROVED_CALLERS,
         "Solver7702Delegate supports at most {MAX_APPROVED_CALLERS} submission accounts"
+    );
+    anyhow::ensure!(
+        callers.iter().all(|caller| *caller != Address::ZERO),
+        "submission accounts cannot include the zero address"
+    );
+    let mut seen = HashSet::with_capacity(callers.len());
+    anyhow::ensure!(
+        callers.iter().all(|caller| seen.insert(*caller)),
+        "submission accounts must be unique"
     );
 
     let mut approved_callers = [Address::ZERO; MAX_APPROVED_CALLERS];
@@ -96,6 +115,8 @@ fn delegate_deployment(callers: &[Address]) -> anyhow::Result<(Address, Approved
         .copied()
         .collect::<Bytes>();
 
+    // The submission account order is part of the constructor args, so changing
+    // TOML order changes the CREATE2 delegate address.
     let target = CREATE2_DEPLOYER.create2_from_code(CREATE2_SALT, &init_code);
 
     Ok((target, approved_callers, init_code))
@@ -121,7 +142,7 @@ async fn setup_solver(
         .context("reading solver EOA code")?;
 
     let delegate_missing = delegate_code.is_empty();
-    match (delegation_status(&solver_code), delegate_missing) {
+    match (DelegationStatus::from_code(&solver_code), delegate_missing) {
         // The solver EOA already delegates somewhere else. Do not silently undo
         // a manual change or incident response action.
         (DelegationStatus::DelegatedTo(target), _) if target != delegate => anyhow::bail!(
@@ -224,7 +245,14 @@ async fn deploy_delegate(
         "CREATE2 deployer {CREATE2_DEPLOYER:?} has unexpected code",
     );
 
-    let tx_sender = config.account.address();
+    let tx_sender = match mode {
+        DeploymentMode::DeployOnly => config
+            .submission_accounts
+            .first()
+            .map(TxSigner::address)
+            .unwrap_or_else(|| config.account.address()),
+        DeploymentMode::DeployAndDelegate => config.account.address(),
+    };
     let tx_nonce = wait_for_pending_txs(provider, tx_sender).await?;
     let signed_auth = if mode.includes_delegation() {
         let chain_id = provider
@@ -310,25 +338,31 @@ async fn deploy_delegate(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DelegationStatus {
+    /// No code (`eth_getCode` returns empty); undelegated EOA.
     Empty,
+    /// EIP-7702 delegation: code is [`DELEGATION_PREFIX`] followed by this
+    /// implementation address.
     DelegatedTo(Address),
+    /// Non-empty code that is not an EIP-7702 delegation prefix.
     OtherCode,
 }
 
-fn delegation_status(code: &[u8]) -> DelegationStatus {
-    if code.is_empty() {
-        DelegationStatus::Empty
-    } else if code.len() == 23 && code.starts_with(&DELEGATION_PREFIX) {
-        DelegationStatus::DelegatedTo(Address::from_slice(&code[3..]))
-    } else {
-        DelegationStatus::OtherCode
+impl DelegationStatus {
+    fn from_code(code: &[u8]) -> Self {
+        if code.is_empty() {
+            Self::Empty
+        } else if code.len() == DELEGATION_CODE_LEN && code.starts_with(&DELEGATION_PREFIX) {
+            Self::DelegatedTo(Address::from_slice(&code[DELEGATION_PREFIX.len()..]))
+        } else {
+            Self::OtherCode
+        }
     }
 }
 
 /// Check whether the account's code is an EIP-7702 delegation to
 /// `expected_delegate`.
 fn is_delegated_to(code: &[u8], expected_delegate: Address) -> bool {
-    matches!(delegation_status(code), DelegationStatus::DelegatedTo(delegate) if delegate == expected_delegate)
+    matches!(DelegationStatus::from_code(code), DelegationStatus::DelegatedTo(delegate) if delegate == expected_delegate)
 }
 
 /// Set up EIP-7702 delegation with a zero-address authorization transaction.
@@ -518,15 +552,29 @@ mod tests {
     }
 
     #[test]
+    fn rejects_zero_submission_account() {
+        let err = delegate_deployment(&[CALLER_A, Address::ZERO]).unwrap_err();
+
+        assert!(err.to_string().contains("zero address"));
+    }
+
+    #[test]
+    fn rejects_duplicate_submission_accounts() {
+        let err = delegate_deployment(&[CALLER_A, CALLER_A]).unwrap_err();
+
+        assert!(err.to_string().contains("must be unique"));
+    }
+
+    #[test]
     fn detects_eip7702_delegation_target() {
         let delegate = address!("0000000000000000000000000000000000000007");
         let other = address!("0000000000000000000000000000000000000008");
         let mut code = Vec::from(DELEGATION_PREFIX);
         code.extend_from_slice(delegate.as_slice());
 
-        assert_eq!(delegation_status(&[]), DelegationStatus::Empty);
+        assert_eq!(DelegationStatus::from_code(&[]), DelegationStatus::Empty);
         assert_eq!(
-            delegation_status(&[0x60, 0x00]),
+            DelegationStatus::from_code(&[0x60, 0x00]),
             DelegationStatus::OtherCode
         );
         assert!(is_delegated_to(&code, delegate));

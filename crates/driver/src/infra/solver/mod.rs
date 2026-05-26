@@ -519,19 +519,26 @@ impl Config {
         if self.submission_accounts.is_empty() {
             anyhow::ensure!(
                 self.max_solutions_to_propose.get() == 1,
-                "solver '{}': max-solutions-to-propose > 1 requires at least one \
-                 submission-account (EIP-7702 parallel submission must be enabled)",
+                "solver '{}': max-solutions-to-propose > 1 requires non-empty submission-accounts \
+                 (EIP-7702 parallel submission must be enabled)",
                 self.name,
             );
             return Ok(());
         }
 
         anyhow::ensure!(
-            self.submission_accounts
+            !self
+                .submission_accounts
                 .iter()
-                .all(|account| !matches!(account, Account::Address(_))),
+                .any(|account| matches!(account, Account::Address(_))),
             "solver '{}': EIP-7702 submission accounts must be signers; address-only accounts \
              cannot sign delegated settlement transactions",
+            self.name,
+        );
+        anyhow::ensure!(
+            !matches!(self.account, Account::Address(_)),
+            "solver '{}': main account must be a signer to set up EIP-7702 delegation when \
+             submission accounts are configured",
             self.name,
         );
 
@@ -541,10 +548,23 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address, std::num::NonZeroUsize};
+    use {
+        super::*,
+        alloy::primitives::{address, b256},
+        std::num::NonZeroUsize,
+    };
 
     const SOLVER: Address = address!("0000000000000000000000000000000000000001");
     const SUBMITTER: Address = address!("0000000000000000000000000000000000000002");
+
+    fn signer() -> Account {
+        Account::PrivateKey(
+            PrivateKeySigner::from_bytes(&b256!(
+                "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+            ))
+            .unwrap(),
+        )
+    }
 
     fn config() -> Config {
         Config {
@@ -598,7 +618,7 @@ mod tests {
 
         let err = config.validate().unwrap_err();
 
-        assert!(err.to_string().contains("max-solutions-to-propose > 1"));
+        assert!(err.to_string().contains("requires non-empty"));
     }
 
     #[test]
@@ -609,6 +629,16 @@ mod tests {
         let err = config.validate().unwrap_err();
 
         assert!(err.to_string().contains("must be signers"));
+    }
+
+    #[test]
+    fn rejects_read_only_main_account_with_submission_accounts() {
+        let mut config = config();
+        config.submission_accounts = vec![signer()];
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("main account must be a signer"));
     }
 }
 

@@ -39,7 +39,7 @@ pub fn run(artifacts_dir: &Path) -> Result<()> {
         .github(
             "Solver7702Delegate",
             // TODO(post-audit): bump to the audited commit hash or release tag.
-            "cowprotocol/solver-7702-delegate/acde4b0cd452d208c2ea0f0fbbf83e3698decbf8/out/\
+            "cowprotocol/solver-7702-delegate/5b6bd5faf05bed6c08c827f9f8e33cd4e33b7533/out/\
              Solver7702Delegate.sol/Solver7702Delegate.json",
         )?
         .npm(

@@ -8,6 +8,7 @@ use {
 };
 
 fn submission_account() -> PrivateKeySigner {
+    // Well-known Anvil test key #1. Do not use as a production key.
     PrivateKeySigner::from_bytes(&b256!(
         "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
     ))
