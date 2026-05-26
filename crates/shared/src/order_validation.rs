@@ -830,6 +830,20 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, owner);
 
+        // Cheap in-memory rejection checks run before the eth_call-driven
+        // verification step below so banned users, forbidden tokens, and
+        // zero-amount orders fail fast without consuming a simulation-node
+        // round-trip.
+        if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
+            return Err(ValidationError::ZeroAmount);
+        }
+
+        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
+        let class = pre_order.class;
+        self.partial_validate(pre_order)
+            .await
+            .map_err(ValidationError::Partial)?;
+
         let verification_gas_limit = self
             .calculate_verification_gas_limit(
                 &order,
@@ -840,16 +854,6 @@ impl OrderValidating for OrderValidator {
                 uid,
             )
             .await?;
-
-        if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
-            return Err(ValidationError::ZeroAmount);
-        }
-
-        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
-        let class = pre_order.class;
-        self.partial_validate(pre_order)
-            .await
-            .map_err(ValidationError::Partial)?;
 
         let verification = Verification {
             from: owner,
