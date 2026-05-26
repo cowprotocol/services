@@ -153,12 +153,10 @@ impl Hermod {
     }
 
     /// HMAC-SHA256 of the address textual payload, encoded as lowercase hex.
-    /// The payload is the lowercase `0x`-prefixed 40-character form, matching
-    /// the EVM test address shown in the Hermod docs and what the agent is
-    /// configured against on our side. The exact textual form must agree with
-    /// the agent or every signature will be a miss.
     fn sign(&self, address: Address) -> String {
-        let payload = format!("{address:#x}");
+        // The payload is the lowercase `0x`-prefixed 40-character (42 characters
+        // total). As defined by Hermod's documentation.
+        let payload = const_hex::encode_prefixed(address);
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.hmac_key)
             .expect("HMAC accepts keys of any length");
         mac.update(payload.as_bytes());
