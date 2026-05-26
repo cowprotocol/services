@@ -148,11 +148,16 @@ impl UniswapV3Indexer {
     /// blocks remain (handles new blocks finalizing during a long catch-up).
     /// Intended to run exactly once, right after seeding completes.
     ///
-    /// The checkpoint stores the *last indexed* block, so to make the next
-    /// indexer pass start at `from_block` we initialize the checkpoint to
-    /// `from_block - 1`. Errors if a checkpoint already exists — overwriting
-    /// would silently regress progress and re-index history; callers should
-    /// guard with `if checkpoint.is_none()` before invoking.
+    /// `from_block` is the seed's snapshot block, and the subgraph's
+    /// `block: { number: X }` returns state *as of the end of* block `X` —
+    /// i.e. it includes events at block `X`. The checkpoint stores the *last
+    /// indexed* block, and `run_once` resumes at `checkpoint + 1`, so to
+    /// avoid re-processing (and double-applying Mint/Burn deltas at) the
+    /// seed block, we set the checkpoint to `from_block` itself.
+    ///
+    /// Errors if a checkpoint already exists — overwriting would silently
+    /// regress progress and re-index history; callers should guard with
+    /// `if checkpoint.is_none()` before invoking.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
         if db::get_checkpoint(&self.db, self.chain_id, &self.factory)
             .await?
@@ -164,13 +169,7 @@ impl UniswapV3Indexer {
                 self.factory,
             );
         }
-        db::set_checkpoint(
-            &self.db,
-            self.chain_id,
-            &self.factory,
-            from_block.saturating_sub(1),
-        )
-        .await?;
+        db::set_checkpoint(&self.db, self.chain_id, &self.factory, from_block).await?;
 
         loop {
             let finalized_block = self.finalized_block().await?;
