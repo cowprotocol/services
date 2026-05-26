@@ -5,21 +5,15 @@
 //! Chainalysis `Onchain` checker: same cache, same background refresh task.
 
 use {
-    super::{Backend, MAX_CONCURRENT_LOOKUPS, UserMetadata},
+    super::{Backend, UserMetadata},
     alloy_primitives::Address,
-    futures::{StreamExt, stream},
     hmac::{Hmac, Mac},
     moka::sync::Cache,
     sha2::Sha256,
-    std::{
-        sync::Arc,
-        time::{Duration, Instant},
-    },
+    std::{sync::Arc, time::Duration},
     url::Url,
 };
 
-const CACHE_EXPIRY: Duration = Duration::from_secs(60 * 60);
-const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Configuration for the Hermod (zeroShadow) sanctioned-address checker.
@@ -78,78 +72,6 @@ impl Hermod {
         hermod.clone().spawn_maintenance_task();
 
         hermod
-    }
-
-    fn expired_data(&self, start: Instant) -> Vec<(Arc<Address>, UserMetadata)> {
-        self.cache
-            .iter()
-            .filter_map(|(address, metadata)| {
-                let expired = start
-                    .checked_duration_since(metadata.last_updated)
-                    .unwrap_or_default()
-                    >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
-                expired.then_some((address, metadata))
-            })
-            .collect()
-    }
-
-    async fn determine_status(
-        &self,
-        address: Address,
-        metadata: UserMetadata,
-    ) -> Option<(Address, UserMetadata)> {
-        match self.fetch(address).await {
-            Ok(is_banned) => Some((
-                address,
-                UserMetadata {
-                    is_banned,
-                    ..metadata
-                },
-            )),
-            Err(err) => {
-                tracing::warn!(
-                    ?address,
-                    ?err,
-                    "unable to determine hermod banned status in the background task",
-                );
-                None
-            }
-        }
-    }
-
-    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (Address, UserMetadata)>) {
-        let now = Instant::now();
-        for (address, metadata) in addresses {
-            self.cache.insert(
-                address,
-                UserMetadata {
-                    last_updated: now,
-                    ..metadata
-                },
-            );
-        }
-    }
-
-    fn spawn_maintenance_task(self: Arc<Self>) {
-        tokio::task::spawn(async move {
-            let mut interval = tokio::time::interval(MAINTENANCE_TIMEOUT);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            loop {
-                interval.tick().await;
-                let start = Instant::now();
-                let expired_data = self.expired_data(start);
-
-                let results = stream::iter(expired_data)
-                    .map(|(address, metadata)| self.determine_status(*address, metadata))
-                    .buffer_unordered(MAX_CONCURRENT_LOOKUPS)
-                    .collect::<Vec<_>>()
-                    .await
-                    .into_iter()
-                    .flatten();
-
-                self.insert_many_into_cache(results);
-            }
-        });
     }
 
     /// HMAC-SHA256 of the address textual payload, encoded as lowercase hex.

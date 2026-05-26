@@ -6,9 +6,11 @@
 //! background refresh every 60 seconds.
 
 mod hermod;
+mod onchain;
 
 pub use hermod::HermodConfig;
 use {
+    self::onchain::Onchain,
     alloy_primitives::Address,
     contracts::ChainalysisOracle,
     futures::{
@@ -106,30 +108,11 @@ pub(crate) trait Backend: Send + Sync + 'static {
             }
         }
     }
-}
 
-/// Onchain banned user checker using Chainalysis Oracle with caching and
-/// background refresh. Maintains a size-bounded LRU cache with periodic
-/// maintenance to refresh expired entries.
-struct Onchain {
-    contract: ChainalysisOracle::Instance,
-    cache: Cache<Address, UserMetadata>,
-}
-
-impl Onchain {
-    pub fn new(contract: ChainalysisOracle::Instance, cache_max_size: u64) -> Arc<Self> {
-        let onchain = Arc::new(Self {
-            contract,
-            cache: Cache::builder().max_capacity(cache_max_size).build(),
-        });
-
-        onchain.clone().spawn_maintenance_task();
-
-        onchain
-    }
-
+    /// Collects cache entries that are close enough to expiry that the next
+    /// maintenance tick may miss the window.
     fn expired_data(&self, start: Instant) -> Vec<(Arc<Address>, UserMetadata)> {
-        self.cache
+        self.cache()
             .iter()
             .filter_map(|(address, metadata)| {
                 let expired = start
@@ -141,34 +124,44 @@ impl Onchain {
             .collect()
     }
 
-    async fn determine_status(
+    /// Refreshes the ban status for a single cached entry, preserving the
+    /// previous metadata if the lookup fails.
+    fn determine_status(
         &self,
         address: Address,
         metadata: UserMetadata,
-    ) -> Option<(Address, UserMetadata)> {
-        match self.fetch(address).await {
-            Ok(is_banned) => Some((
-                address,
-                UserMetadata {
-                    is_banned,
-                    ..metadata
-                },
-            )),
-            Err(err) => {
-                tracing::warn!(
-                    ?address,
-                    ?err,
-                    "unable to determine banned status in the background task",
-                );
-                None
+    ) -> impl Future<Output = Option<(Address, UserMetadata)>> + Send {
+        async move {
+            match self.fetch(address).await {
+                Ok(is_banned) => Some((
+                    address,
+                    UserMetadata {
+                        is_banned,
+                        ..metadata
+                    },
+                )),
+                Err(err) => {
+                    tracing::warn!(
+                        backend = self.name(),
+                        ?address,
+                        ?err,
+                        "unable to determine banned status in the background task",
+                    );
+                    None
+                }
             }
         }
     }
 
-    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (Address, UserMetadata)>) {
+    /// Writes the refreshed entries back into the cache, stamping each with
+    /// the current time.
+    fn insert_many_into_cache<I>(&self, addresses: I)
+    where
+        I: IntoIterator<Item = (Address, UserMetadata)>,
+    {
         let now = Instant::now();
         for (address, metadata) in addresses {
-            self.cache.insert(
+            self.cache().insert(
                 address,
                 UserMetadata {
                     last_updated: now,
@@ -178,7 +171,12 @@ impl Onchain {
         }
     }
 
-    fn spawn_maintenance_task(self: Arc<Self>) {
+    /// Spawns a background task that periodically refreshes near-expiry cache
+    /// entries so callers rarely observe a cold miss.
+    fn spawn_maintenance_task(self: Arc<Self>)
+    where
+        Self: Sized,
+    {
         tokio::task::spawn(async move {
             let mut interval = tokio::time::interval(MAINTENANCE_TIMEOUT);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -198,22 +196,6 @@ impl Onchain {
                 self.insert_many_into_cache(results);
             }
         });
-    }
-}
-
-impl Backend for Onchain {
-    type Error = alloy_contract::Error;
-
-    async fn fetch(&self, address: Address) -> Result<bool, Self::Error> {
-        self.contract.isSanctioned(address).call().await
-    }
-
-    fn cache(&self) -> &Cache<Address, UserMetadata> {
-        &self.cache
-    }
-
-    fn name(&self) -> &'static str {
-        "chainalysis"
     }
 }
 
