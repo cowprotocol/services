@@ -154,9 +154,7 @@ impl InjectIntoHttpRequest for Request {
 }
 
 impl Response {
-    pub fn into_domain(
-        self,
-    ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
+    pub fn into_domain(self) -> Vec<domain::competition::Solution> {
         for solution in &self.solutions {
             if !solution.clearing_prices.is_empty() {
                 tracing::debug!(
@@ -197,17 +195,15 @@ pub struct Token {
 }
 
 impl Solution {
-    pub fn into_domain(
-        self,
-    ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
-        Ok(domain::competition::Solution::new(
+    pub fn into_domain(self) -> domain::competition::Solution {
+        domain::competition::Solution::new(
             self.solution_id,
             self.submission_address,
             self.orders
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
                 .collect(),
-        ))
+        )
     }
 }
 
