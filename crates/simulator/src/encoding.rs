@@ -342,19 +342,22 @@ pub fn encode_wrapper_data(wrappers: &[WrapperCall]) -> Bytes {
     wrapper_data.into()
 }
 
-/// Ensures every wrapper address in the chain has code deployed on-chain.
-/// A `call` to a code-less address returns success with empty output, so the
-/// inner settlement (and the `storeBalance` interactions that record trader
-/// balances) would silently no-op. The trade verifier expects a fixed-shape
-/// response and reads garbage when the helper short-circuits this way.
+/// Ensures every wrapper address in the chain has code deployed at the
+/// simulation block. A `call` to a code-less address returns success with
+/// empty output, so the inner settlement (and the `storeBalance` interactions
+/// that record trader balances) would silently no-op. The trade verifier
+/// expects a fixed-shape response and reads garbage when the helper
+/// short-circuits this way.
 async fn ensure_wrappers_have_code(
     provider: &DynProvider,
     wrappers: &[WrapperCall],
+    block: u64,
 ) -> Result<(), BuildError> {
     let lookups = wrappers.iter().map(|w| async move {
         let address = w.address;
         let code = provider
             .get_code_at(address)
+            .block_id(block.into())
             .await
             .map_err(|source| BuildError::WrapperCodeFetch { address, source })?;
         if code.is_empty() {
@@ -480,7 +483,7 @@ pub(crate) async fn finish_simulation_builder(
     let wrapper = builder.wrapper;
     let (to, calldata) = match wrapper {
         WrapperConfig::Custom(wrappers) if !wrappers.is_empty() => {
-            ensure_wrappers_have_code(&builder.simulator.0.provider, &wrappers).await?;
+            ensure_wrappers_have_code(&builder.simulator.0.provider, &wrappers, block).await?;
             encode_wrapper_settlement(&wrappers, settle_calldata).expect("wrappers is non-empty")
         }
         WrapperConfig::Flashloan(loans) => {
@@ -787,7 +790,7 @@ mod tests {
         let provider =
             provider_returning_codes(&[Bytes::from_static(&[0x60]), Bytes::from_static(&[0x60])]);
 
-        ensure_wrappers_have_code(&provider, &wrappers)
+        ensure_wrappers_have_code(&provider, &wrappers, 0)
             .await
             .expect("all wrappers have code");
     }
@@ -798,7 +801,7 @@ mod tests {
         // First wrapper has code, second is an EOA (empty code).
         let provider = provider_returning_codes(&[Bytes::from_static(&[0x60]), Bytes::new()]);
 
-        let err = ensure_wrappers_have_code(&provider, &wrappers)
+        let err = ensure_wrappers_have_code(&provider, &wrappers, 0)
             .await
             .expect_err("inner EOA wrapper must be rejected");
 
@@ -815,7 +818,7 @@ mod tests {
         let wrappers = [wrapper(0xCC)];
         let provider = provider_returning_codes(&[Bytes::new()]);
 
-        let err = ensure_wrappers_have_code(&provider, &wrappers)
+        let err = ensure_wrappers_have_code(&provider, &wrappers, 0)
             .await
             .expect_err("outer EOA wrapper must be rejected");
 
