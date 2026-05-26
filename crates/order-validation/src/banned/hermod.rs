@@ -1,16 +1,16 @@
-//! Hermod (zeroShadow) sanctioned-address checker.
+//! Hermod (zeroShadow) sanctioned-address fetcher.
 //!
 //! Queries are HMAC-SHA256-signed using a per-customer key; a hit returns
-//! HTTP 200 and a miss returns HTTP 404. Mirrors the structure of the
-//! Chainalysis `Onchain` checker: same cache, same background refresh task.
+//! HTTP 200 and a miss returns HTTP 404. Pure fetcher — caching and
+//! background refresh are provided by the [`super::cached::Cached`] wrapper.
 
 use {
-    super::{Backend, UserMetadata},
+    super::cached::{Backend, BackendError},
     alloy_primitives::Address,
+    async_trait::async_trait,
     hmac::{Hmac, Mac},
-    moka::sync::Cache,
     sha2::Sha256,
-    std::{sync::Arc, time::Duration},
+    std::time::Duration,
     url::Url,
 };
 
@@ -27,30 +27,23 @@ pub struct HermodConfig {
     pub api_key: Option<String>,
 }
 
-#[expect(dead_code, reason = "fields are used in Debug for logs")]
-#[derive(Debug)]
-pub(super) enum FetchError {
-    Request(reqwest::Error),
+#[derive(Debug, thiserror::Error)]
+pub(super) enum HermodError {
+    #[error("request failed")]
+    Request(#[from] reqwest::Error),
+    #[error("unexpected status code: {0}")]
     UnexpectedStatus(reqwest::StatusCode),
 }
 
-impl From<reqwest::Error> for FetchError {
-    fn from(err: reqwest::Error) -> Self {
-        Self::Request(err)
-    }
-}
-
-/// Hermod banned user checker with caching and background refresh.
 pub(super) struct Hermod {
     client: reqwest::Client,
     url: Url,
     hmac_key: Vec<u8>,
     api_key: Option<String>,
-    cache: Cache<Address, UserMetadata>,
 }
 
 impl Hermod {
-    pub(super) fn new(config: HermodConfig, cache_max_size: u64) -> Arc<Self> {
+    pub(super) fn new(config: HermodConfig) -> Self {
         // Make sure the URL ends with a slash so joining `addresses/<sig>`
         // appends rather than replaces the last path segment.
         let mut url = config.url;
@@ -58,7 +51,7 @@ impl Hermod {
             let with_slash = format!("{}/", url.path());
             url.set_path(&with_slash);
         }
-        let hermod = Arc::new(Self {
+        Self {
             client: reqwest::Client::builder()
                 .timeout(REQUEST_TIMEOUT)
                 .build()
@@ -66,12 +59,7 @@ impl Hermod {
             url,
             hmac_key: config.hmac_key.into_bytes(),
             api_key: config.api_key,
-            cache: Cache::builder().max_capacity(cache_max_size).build(),
-        });
-
-        hermod.clone().spawn_maintenance_task();
-
-        hermod
+        }
     }
 
     /// HMAC-SHA256 of the address textual payload, encoded as lowercase hex.
@@ -84,12 +72,11 @@ impl Hermod {
         mac.update(payload.as_bytes());
         const_hex::encode(mac.finalize().into_bytes())
     }
-}
 
-impl Backend for Hermod {
-    type Error = FetchError;
-
-    async fn fetch(&self, address: Address) -> Result<bool, Self::Error> {
+    /// Inner fetch in `HermodError` so the body can `?`-propagate request
+    /// errors directly; the `Backend::fetch` impl wraps the result into the
+    /// trait-wide `BackendError`.
+    async fn fetch_status(&self, address: Address) -> Result<bool, HermodError> {
         let signature = self.sign(address);
         let endpoint = self
             .url
@@ -104,12 +91,15 @@ impl Backend for Hermod {
         match response.status() {
             reqwest::StatusCode::OK => Ok(true),
             reqwest::StatusCode::NOT_FOUND => Ok(false),
-            status => Err(FetchError::UnexpectedStatus(status)),
+            status => Err(HermodError::UnexpectedStatus(status)),
         }
     }
+}
 
-    fn cache(&self) -> &Cache<Address, UserMetadata> {
-        &self.cache
+#[async_trait]
+impl Backend for Hermod {
+    async fn fetch(&self, address: Address) -> Result<bool, BackendError> {
+        Ok(self.fetch_status(address).await?)
     }
 
     fn name(&self) -> &'static str {
@@ -121,15 +111,12 @@ impl Backend for Hermod {
 mod tests {
     use {super::*, alloy_primitives::address};
 
-    fn backend() -> Arc<Hermod> {
-        Hermod::new(
-            HermodConfig {
-                url: "http://hermod:3000".parse().unwrap(),
-                hmac_key: "key".to_string(),
-                api_key: None,
-            },
-            10,
-        )
+    fn backend() -> Hermod {
+        Hermod::new(HermodConfig {
+            url: "http://hermod:3000".parse().unwrap(),
+            hmac_key: "key".to_string(),
+            api_key: None,
+        })
     }
 
     #[tokio::test]
@@ -142,14 +129,11 @@ mod tests {
 
     #[tokio::test]
     async fn base_url_without_trailing_slash_is_normalised() {
-        let hermod = Hermod::new(
-            HermodConfig {
-                url: "http://hermod:3000/v1".parse().unwrap(),
-                hmac_key: "key".to_string(),
-                api_key: None,
-            },
-            10,
-        );
+        let hermod = Hermod::new(HermodConfig {
+            url: "http://hermod:3000/v1".parse().unwrap(),
+            hmac_key: "key".to_string(),
+            api_key: None,
+        });
         assert!(hermod.url.as_str().ends_with('/'));
         let joined = hermod.url.join("addresses/abc").unwrap();
         assert_eq!(joined.as_str(), "http://hermod:3000/v1/addresses/abc");
