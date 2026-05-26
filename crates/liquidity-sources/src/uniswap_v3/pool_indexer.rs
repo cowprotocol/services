@@ -185,16 +185,30 @@ impl PoolIndexerClient {
     /// target_block`. Polls every [`WAIT_UNTIL_POLL_INTERVAL`]; returns
     /// immediately if the indexer is already in range. The probe is a
     /// `?limit=1` listing so the round-trip stays cheap.
+    ///
+    /// `503 Service Unavailable` is treated as "indexer still bootstrapping"
+    /// (it returns 503 until the first checkpoint exists) and the loop
+    /// keeps polling. Every other non-2xx is propagated as an error — those
+    /// are genuine problems the caller should see.
     async fn wait_until(&self, target_block: u64) -> Result<()> {
         loop {
             let mut url = self.path("pools");
             url.query_pairs_mut().append_pair("limit", "1");
-            let probe: PoolsResponse = self
+            let resp = self
                 .http
                 .get(url)
                 .send()
                 .await
-                .context("GET /pools?limit=1 (wait_until probe)")?
+                .context("GET /pools?limit=1 (wait_until probe)")?;
+            if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                tracing::debug!(
+                    %target_block,
+                    "pool-indexer not ready yet (503); waiting",
+                );
+                tokio::time::sleep(WAIT_UNTIL_POLL_INTERVAL).await;
+                continue;
+            }
+            let probe: PoolsResponse = resp
                 .error_for_status()
                 .context("wait_until probe HTTP status")?
                 .json()
