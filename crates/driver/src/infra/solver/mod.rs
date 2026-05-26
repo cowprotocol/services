@@ -41,7 +41,17 @@ use {
 };
 
 pub mod dto;
-pub mod eip7702;
+// The old implementation still lives in eip7702.rs for the stacked delegate PR,
+// but it depends on the removed forwarder binding. This minimal stub allows the
+// CI to pass.
+pub mod eip7702 {
+    use {super::Solver, crate::infra::blockchain::Ethereum, tracing::instrument};
+
+    #[instrument(name = "setup_eip7702", skip_all)]
+    pub async fn setup(_solvers: &[Solver], _eth: &Ethereum) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
 
 // TODO At some point I should be checking that the names are unique, I don't
 // think I'm doing that.
@@ -216,9 +226,6 @@ pub struct Config {
     /// When non-empty, these accounts submit txs to the solver EOA (which
     /// delegates to a forwarder contract), enabling concurrent submissions.
     pub submission_accounts: Vec<Account>,
-    /// Address of the deployed CowSettlementForwarder contract for EIP-7702
-    /// delegation. Required when `submission_accounts` is non-empty.
-    pub forwarder_contract: Option<eth::Address>,
     /// Maximum number of solutions the driver proposes to the autopilot per
     /// auction. When 1 (the default), only the best-scoring solution is sent.
     pub max_solutions_to_propose: std::num::NonZeroUsize,
@@ -321,11 +328,6 @@ impl Solver {
     /// Additional submission accounts for EIP-7702 parallel settlement.
     pub fn submission_accounts(&self) -> &[Account] {
         &self.config.submission_accounts
-    }
-
-    /// Address of the CowSettlementForwarder contract for EIP-7702 delegation.
-    pub fn forwarder_contract(&self) -> Option<eth::Address> {
-        self.config.forwarder_contract
     }
 
     pub fn max_solutions_to_propose(&self) -> usize {

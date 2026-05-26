@@ -143,7 +143,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         .map(|acc| load_account(acc, config.chain_id)),
                 )
                 .await,
-                forwarder_contract: solver_config.forwarder_contract,
                 max_solutions_to_propose: solver_config.max_solutions_to_propose,
             }
         }))

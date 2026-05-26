@@ -84,17 +84,25 @@ fn log_simulation_outcome(
             Err(OrderSimulationError::Reverted {
                 reason,
                 tenderly_url,
+                tenderly_request,
             }),
-        ) => tracing::warn!(
-            ?order_uid,
-            ?owner,
-            ?order_data,
-            full_app_data,
-            ?order_signature,
-            ?reason,
-            ?tenderly_url,
-            "order simulation disagreement: signature passed, simulation reverted",
-        ),
+        ) => {
+            let tenderly_request_json = tenderly_request
+                .as_deref()
+                .and_then(|r| serde_json::to_string(r).ok())
+                .unwrap_or_default();
+            tracing::warn!(
+                ?order_uid,
+                ?owner,
+                ?order_data,
+                full_app_data,
+                ?order_signature,
+                ?reason,
+                ?tenderly_url,
+                tenderly_request = %tenderly_request_json,
+                "order simulation disagreement: signature passed, simulation reverted",
+            );
+        }
         (Err(SignatureValidationError::Invalid), Ok(())) => tracing::warn!(
             ?order_uid,
             ?owner,
@@ -706,6 +714,20 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, owner);
 
+        // Cheap in-memory rejection checks run before the eth_call-driven
+        // verification step below so banned users, forbidden tokens, and
+        // zero-amount orders fail fast without consuming a simulation-node
+        // round-trip.
+        if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
+            return Err(ValidationError::ZeroAmount);
+        }
+
+        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
+        let class = pre_order.class;
+        self.partial_validate(pre_order)
+            .await
+            .map_err(ValidationError::Partial)?;
+
         let preview_order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -775,16 +797,6 @@ impl OrderValidating for OrderValidator {
                 0
             }
         };
-
-        if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
-            return Err(ValidationError::ZeroAmount);
-        }
-
-        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
-        let class = pre_order.class;
-        self.partial_validate(pre_order)
-            .await
-            .map_err(ValidationError::Partial)?;
 
         let verification = Verification {
             from: owner,
@@ -2859,6 +2871,7 @@ mod tests {
                     Sim::Reverted => Err(OrderSimulationError::Reverted {
                         reason: "hook reverted".into(),
                         tenderly_url: None,
+                        tenderly_request: None,
                     }),
                 });
             let validator =
@@ -2916,6 +2929,7 @@ mod tests {
             Err(OrderSimulationError::Reverted {
                 reason: "x".into(),
                 tenderly_url: None,
+                tenderly_request: None,
             })
         });
         let validator = build_1271_validator(signature_validator, Some(order_simulator(sim)), true);
