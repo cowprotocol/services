@@ -49,7 +49,7 @@ pub const QUOTING_ENDPOINT: &str = "/api/v1/quote";
 pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
-pub const VERSION_ENDPOINT: &str = "/api/v1/version";
+pub const READY_ENDPOINT: &str = "/api/v1/ready";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
@@ -415,7 +415,7 @@ impl<'a> Services<'a> {
 
     async fn wait_for_api_to_come_up() {
         let is_up = || async {
-            reqwest::get(format!("{API_HOST}{VERSION_ENDPOINT}"))
+            reqwest::get(format!("{API_HOST}{READY_ENDPOINT}"))
                 .await
                 .is_ok()
         };
@@ -814,7 +814,7 @@ impl<'a> Services<'a> {
     pub async fn get_api_version(&self) -> Result<String, (StatusCode, String)> {
         let response = self
             .http
-            .get(format!("{API_HOST}{VERSION_ENDPOINT}"))
+            .get(format!("{API_HOST}{READY_ENDPOINT}"))
             .send()
             .await
             .unwrap();
