@@ -899,9 +899,18 @@ impl LogAccumulator {
     /// `full_states[pool]` (a prior `Swap`/`Initialize` in this chunk) →
     /// `liq_only[pool]` (a prior `Mint`/`Burn` in this chunk) →
     /// `base_states[pool]` (loaded from `uniswap_v3_pool_states`).
-    /// Pools missing from all three are skipped with a warn — Uniswap V3
-    /// invariants prevent `Mint`/`Burn` before `Initialize`, so this should
-    /// only fire if we somehow missed an `Initialize` event.
+    ///
+    /// When none of the three has the pool we silently return: this is the
+    /// steady-state case for events fired by *other* Uniswap V3 forks on the
+    /// same chain (we fetch `eth_getLogs` without an address filter — see
+    /// [`Self::fetch_logs_bisecting`] for why — so foreign-factory events do
+    /// reach this method). The SQL writers' factory-scoped `WHERE EXISTS`
+    /// guards drop those events at commit time; treating their absence here
+    /// as a warning would produce a per-event log line for every foreign
+    /// pool, which on a chain with active forks (Ink has at least two) means
+    /// constant log noise. Mint/Burn before `Initialize` for *our* pool is
+    /// impossible per Uniswap V3 contract semantics, so the "silent skip"
+    /// doesn't hide a real bug.
     fn apply_position_delta_to_pool_liq(
         &mut self,
         pool: Address,
@@ -918,11 +927,6 @@ impl LogAccumulator {
         } else if let Some(&(tick, liq)) = base_states.get(&pool) {
             (tick, liq)
         } else {
-            tracing::warn!(
-                %pool,
-                block,
-                "Mint/Burn for pool with no known state; skipping liquidity update",
-            );
             return;
         };
 
