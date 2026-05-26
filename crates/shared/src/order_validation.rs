@@ -741,25 +741,28 @@ impl OrderValidating for OrderValidator {
         let full_app_data = app_data.inner.document.clone();
         let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
 
-        let eip1271_check =
-            match &order.signature {
-                Signature::Eip1271(sig) if !self.eip1271_skip_creation_validation => {
-                    Some(SignatureCheck::new(
-                        owner,
-                        hash.0,
-                        sig.to_owned(),
-                        app_data.interactions.pre.clone(),
-                        app_data.inner.protocol.flashloan.as_ref().map(|loan| {
-                            BalanceOverrideRequest {
-                                token: loan.token,
-                                holder: loan.receiver,
-                                amount: loan.amount,
-                            }
-                        }),
-                    ))
-                }
-                _ => None,
-            };
+        let eip1271_check = if let Signature::Eip1271(sig) = &order.signature
+            && !self.eip1271_skip_creation_validation
+        {
+            Some(SignatureCheck::new(
+                owner,
+                hash.0,
+                sig.to_owned(),
+                app_data.interactions.pre.clone(),
+                app_data
+                    .inner
+                    .protocol
+                    .flashloan
+                    .as_ref()
+                    .map(|loan| BalanceOverrideRequest {
+                        token: loan.token,
+                        holder: loan.receiver,
+                        amount: loan.amount,
+                    }),
+            ))
+        } else {
+            None
+        };
 
         let simulation_fut = OptionFuture::from(
             self.order_simulator
