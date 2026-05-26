@@ -769,13 +769,15 @@ impl OrderValidating for OrderValidator {
                 .as_ref()
                 .map(|c| c.simulate_with_timeout(&preview_order, &full_app_data)),
         );
+        let transfer_fut = self.ensure_token_is_transferable(&order, owner, &app_data);
 
         let verification_gas_limit = match eip1271_check {
             Some(check) => {
                 let signature_fut = self
                     .signature_validator
                     .validate_signature_and_get_additional_gas(check);
-                let (signature_res, simulation_opt) = tokio::join!(signature_fut, simulation_fut);
+                let (signature_res, simulation_opt, transfer_res) =
+                    tokio::join!(signature_fut, simulation_fut, transfer_fut);
 
                 if let Some(simulation) = &simulation_opt {
                     log_simulation_outcome(
@@ -786,17 +788,21 @@ impl OrderValidating for OrderValidator {
                     );
                 }
 
-                signature_res.map_err(|err| match err {
+                let gas_limit = signature_res.map_err(|err| match err {
                     SignatureValidationError::Invalid => {
                         ValidationError::InvalidEip1271Signature(hash)
                     }
                     SignatureValidationError::Other(err) => ValidationError::Other(err),
-                })?
+                })?;
+                transfer_res?;
+                gas_limit
             }
             None => {
-                if let Some(simulation) = simulation_fut.await {
+                let (simulation_opt, transfer_res) = tokio::join!(simulation_fut, transfer_fut);
+                if let Some(simulation) = simulation_opt {
                     log_simulation_outcome(&Ok(0), &simulation, &preview_order, &full_app_data);
                 }
+                transfer_res?;
                 0
             }
         };
@@ -823,9 +829,6 @@ impl OrderValidating for OrderValidator {
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
-
-        self.ensure_token_is_transferable(&order, owner, &app_data)
-            .await?;
 
         // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
