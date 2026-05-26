@@ -33,9 +33,7 @@ pub struct HermodConfig {
     pub api_key: Option<String>,
 }
 
-// Fields are read only through the `Debug` derive used in error logs, which
-// rustc's dead-code analysis ignores — suppress the false-positive.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "fields are used in Debug for logs")]
 #[derive(Debug)]
 pub(super) enum FetchError {
     Request(reqwest::Error),
