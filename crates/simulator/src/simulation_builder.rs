@@ -692,6 +692,14 @@ pub enum BuildError {
     AppDataParse(#[from] serde_json::Error),
     #[error("both wrappers and flashloans cannot be encoded in the same settlement")]
     FlashloanWrappersIncompatible,
+    #[error("wrapper {address} has no code on-chain")]
+    WrapperHasNoCode { address: Address },
+    #[error("failed to fetch wrapper code for {address}: {source}")]
+    WrapperCodeFetch {
+        address: Address,
+        #[source]
+        source: alloy_transport::TransportError,
+    },
 }
 
 /// Error returned when two [`AccountOverride`]s set the same field for the same

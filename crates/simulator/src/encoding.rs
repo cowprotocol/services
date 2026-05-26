@@ -13,6 +13,7 @@ use {
         WrapperConfig,
     },
     alloy_primitives::{Address, B256, Bytes, U256, b256, keccak256},
+    alloy_provider::{DynProvider, Provider},
     alloy_rpc_types::state::{AccountOverride, StateOverride},
     alloy_sol_types::SolCall,
     app_data::AppDataHash,
@@ -341,6 +342,31 @@ pub fn encode_wrapper_data(wrappers: &[WrapperCall]) -> Bytes {
     wrapper_data.into()
 }
 
+/// Ensures every wrapper address in the chain has code deployed on-chain.
+/// A `call` to a code-less address returns success with empty output, so the
+/// inner settlement (and the `storeBalance` interactions that record trader
+/// balances) would silently no-op. The trade verifier expects a fixed-shape
+/// response and reads garbage when the helper short-circuits this way.
+async fn ensure_wrappers_have_code(
+    provider: &DynProvider,
+    wrappers: &[WrapperCall],
+) -> Result<(), BuildError> {
+    let lookups = wrappers.iter().map(|w| async move {
+        let address = w.address;
+        let code = provider
+            .get_code_at(address)
+            .await
+            .map_err(|source| BuildError::WrapperCodeFetch { address, source })?;
+        if code.is_empty() {
+            Err(BuildError::WrapperHasNoCode { address })
+        } else {
+            Ok(())
+        }
+    });
+    futures::future::try_join_all(lookups).await?;
+    Ok(())
+}
+
 pub(crate) async fn finish_simulation_builder(
     mut builder: SimulationBuilder,
 ) -> Result<EthCallInputs, BuildError> {
@@ -454,6 +480,7 @@ pub(crate) async fn finish_simulation_builder(
     let wrapper = builder.wrapper;
     let (to, calldata) = match wrapper {
         WrapperConfig::Custom(wrappers) if !wrappers.is_empty() => {
+            ensure_wrappers_have_code(&builder.simulator.0.provider, &wrappers).await?;
             encode_wrapper_settlement(&wrappers, settle_calldata).expect("wrappers is non-empty")
         }
         WrapperConfig::Flashloan(loans) => {
@@ -727,5 +754,74 @@ fn apply_account_override(
     } else {
         overrides.insert(address, new);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        alloy_provider::{ProviderBuilder, mock::Asserter},
+    };
+
+    fn wrapper(address: u8) -> WrapperCall {
+        WrapperCall {
+            address: Address::repeat_byte(address),
+            data: Bytes::new(),
+        }
+    }
+
+    fn provider_returning_codes(codes: &[Bytes]) -> DynProvider {
+        let asserter = Asserter::new();
+        for code in codes {
+            asserter.push_success(code);
+        }
+        ProviderBuilder::new()
+            .connect_mocked_client(asserter)
+            .erased()
+    }
+
+    #[tokio::test]
+    async fn accepts_wrappers_with_code() {
+        let wrappers = [wrapper(1), wrapper(2)];
+        let provider =
+            provider_returning_codes(&[Bytes::from_static(&[0x60]), Bytes::from_static(&[0x60])]);
+
+        ensure_wrappers_have_code(&provider, &wrappers)
+            .await
+            .expect("all wrappers have code");
+    }
+
+    #[tokio::test]
+    async fn rejects_inner_wrapper_without_code() {
+        let wrappers = [wrapper(0xAA), wrapper(0xBB)];
+        // First wrapper has code, second is an EOA (empty code).
+        let provider = provider_returning_codes(&[Bytes::from_static(&[0x60]), Bytes::new()]);
+
+        let err = ensure_wrappers_have_code(&provider, &wrappers)
+            .await
+            .expect_err("inner EOA wrapper must be rejected");
+
+        match err {
+            BuildError::WrapperHasNoCode { address } => {
+                assert_eq!(address, Address::repeat_byte(0xBB));
+            }
+            other => panic!("expected WrapperHasNoCode, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_outer_wrapper_without_code() {
+        let wrappers = [wrapper(0xCC)];
+        let provider = provider_returning_codes(&[Bytes::new()]);
+
+        let err = ensure_wrappers_have_code(&provider, &wrappers)
+            .await
+            .expect_err("outer EOA wrapper must be rejected");
+
+        assert!(matches!(
+            err,
+            BuildError::WrapperHasNoCode { address } if address == Address::repeat_byte(0xCC)
+        ));
     }
 }
