@@ -7,7 +7,6 @@ use {
             competition::{
                 self,
                 Solution,
-                SolutionError,
                 Unscored,
                 winner_selection::{self, Ranking},
             },
@@ -640,16 +639,9 @@ impl RunLoop {
 
         solutions
             .into_iter()
-            .filter_map(|solution| match solution {
-                Ok(solution) => {
-                    Metrics::solution_ok(&driver);
-                    Some(competition::Bid::new(solution, driver.clone()))
-                }
-                Err(err) => {
-                    Metrics::solution_err(&driver, &err);
-                    tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
-                    None
-                }
+            .map(|solution| {
+                Metrics::solution_ok(&driver);
+                competition::Bid::new(solution, driver.clone())
             })
             .collect()
     }
@@ -659,8 +651,7 @@ impl RunLoop {
         &self,
         driver: Arc<infra::Driver>,
         request: solve::Request,
-    ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
-    {
+    ) -> Result<Vec<competition::Solution>, SolveError> {
         let (can_participate, response) = {
             let driver = driver.clone();
             let eth = self.eth.clone();
@@ -1009,17 +1000,6 @@ impl Metrics {
         Self::get()
             .solutions
             .with_label_values(&[driver.name.as_str(), "success"])
-            .inc();
-    }
-
-    fn solution_err(driver: &infra::Driver, err: &SolutionError) {
-        let label = match err {
-            SolutionError::ZeroScore(_) => "zero_score",
-            SolutionError::SolverDenyListed => "solver_deny_listed",
-        };
-        Self::get()
-            .solutions
-            .with_label_values(&[driver.name.as_str(), label])
             .inc();
     }
 
