@@ -1,10 +1,5 @@
-//! Banned user detection for order validation.
-//!
-//! Checks if addresses are banned using a hardcoded list and optionally the
-//! Chainalysis Oracle on-chain registry and/or the Hermod (zeroShadow) agent.
-//! Remote sources sit behind a single shared cache layer ([`cached::Cached`])
-//! which provides LRU caching with 1-hour expiry and a background refresh
-//! task.
+//! Banned user detection: hardcoded list + optional Chainalysis Oracle
+//! and/or Hermod (zeroShadow). Remote sources share one cache layer.
 
 mod cached;
 mod hermod;
@@ -29,9 +24,7 @@ pub struct Users {
 }
 
 impl Users {
-    /// Creates a new `Users` instance that checks the hardcoded list and uses
-    /// the given `web3` instance to determine whether an onchain registry of
-    /// banned addresses is available.
+    /// Builds the validator from a hardcoded list and optional remote backends.
     pub fn new(
         contract: Option<ChainalysisOracle::Instance>,
         hermod: Option<HermodConfig>,
@@ -65,10 +58,8 @@ impl Users {
         Self { list, remote: None }
     }
 
-    /// Returns a subset of addresses from the input iterator which are banned.
-    ///
-    /// On cache-misses, it will use the Chainalysis oracle and/or the Hermod
-    /// agent to determine status.
+    /// Returns the subset of `addresses` that are banned. Cache misses hit
+    /// the configured remote sources.
     pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {
         let mut banned = HashSet::new();
 

@@ -1,8 +1,5 @@
-//! Hermod (zeroShadow) sanctioned-address fetcher.
-//!
-//! Queries are HMAC-SHA256-signed using a per-customer key; a hit returns
-//! HTTP 200 and a miss returns HTTP 404. Pure fetcher — caching and
-//! background refresh are provided by the [`super::cached::Cached`] wrapper.
+//! Hermod (zeroShadow) sanctioned-address fetcher. Queries are
+//! HMAC-SHA256-signed; hit = HTTP 200, miss = HTTP 404.
 
 use {
     super::cached::{Backend, BackendError},
@@ -64,8 +61,7 @@ impl Hermod {
 
     /// HMAC-SHA256 of the address textual payload, encoded as lowercase hex.
     fn sign(&self, address: Address) -> String {
-        // The payload is the lowercase `0x`-prefixed 40-character (42 characters
-        // total). As defined by Hermod's documentation.
+        // Hermod expects the lowercase `0x`-prefixed address (42 chars).
         let payload = const_hex::encode_prefixed(address);
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.hmac_key)
             .expect("HMAC accepts keys of any length");
@@ -73,9 +69,6 @@ impl Hermod {
         const_hex::encode(mac.finalize().into_bytes())
     }
 
-    /// Inner fetch in `HermodError` so the body can `?`-propagate request
-    /// errors directly; the `Backend::fetch` impl wraps the result into the
-    /// trait-wide `BackendError`.
     async fn fetch_status(&self, address: Address) -> Result<bool, HermodError> {
         let signature = self.sign(address);
         let endpoint = self

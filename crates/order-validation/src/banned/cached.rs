@@ -1,10 +1,6 @@
-//! Shared cache that sits in front of every configured remote banned-user
-//! backend.
-//!
-//! `Users::banned` answers a single question — "is this address banned by any
-//! of our sources?" — so the cache stores one entry per address rather than
-//! one per (address, backend). Backends remain pure fetchers; this module is
-//! the only layer that knows about caching, batching, or background refresh.
+//! Shared cache fronting every configured banned-user backend. Stores one
+//! entry per address (not per address × backend) since callers only ask
+//! "banned by anyone?"; backends stay as pure fetchers.
 
 use {
     alloy_primitives::Address,
@@ -18,8 +14,7 @@ use {
     },
 };
 
-/// Caps the number of in-flight per-address fetches so a large batch of cache
-/// misses (or a large maintenance refresh) does not burst the backends.
+/// Caps in-flight fetches so a large miss batch can't burst the backends.
 const MAX_CONCURRENT_LOOKUPS: usize = 10;
 const CACHE_EXPIRY: Duration = Duration::from_secs(60 * 60);
 const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -30,8 +25,6 @@ struct Entry {
     last_updated: Instant,
 }
 
-/// Union of every backend's native error type. `#[from]` lets each impl
-/// `?`-propagate its own error into this enum without manual conversion.
 #[derive(Debug, thiserror::Error)]
 pub(super) enum BackendError {
     #[error("chainalysis lookup failed")]
@@ -41,15 +34,11 @@ pub(super) enum BackendError {
     Hermod(#[from] super::hermod::HermodError),
 }
 
-/// Pure banned-address fetcher. Implementations only need to know how to ask
-/// their underlying source — caching, batching, and refresh are handled by
-/// the surrounding [`Cached`] layer.
+/// Pure banned-address fetcher; caching and refresh live in [`Cached`].
 #[async_trait]
 pub(super) trait Backend: Send + Sync + 'static {
     async fn fetch(&self, address: Address) -> Result<bool, BackendError>;
 
-    /// Short identifier used as a log tag to distinguish failures across
-    /// backends.
     fn name(&self) -> &'static str;
 }
 
@@ -61,8 +50,7 @@ pub(super) struct Cached {
 }
 
 impl Cached {
-    /// Returns `None` if no backends are configured — caching makes no sense
-    /// without something to cache.
+    /// Returns `None` when no backends are configured.
     pub(super) fn new(backends: Vec<Box<dyn Backend>>, max_capacity: u64) -> Option<Arc<Self>> {
         if backends.is_empty() {
             return None;
@@ -75,9 +63,8 @@ impl Cached {
         Some(cached)
     }
 
-    /// Returns the subset of `addresses` that any configured backend reports
-    /// as banned. Cache hits are served immediately; misses are fetched
-    /// concurrently and written back.
+    /// Returns the subset reported as banned by any backend. Misses fan out
+    /// to backends concurrently.
     pub(super) async fn check(&self, addresses: &HashSet<Address>) -> HashSet<Address> {
         let mut banned = HashSet::new();
         let mut need_lookup = Vec::new();
@@ -113,16 +100,18 @@ impl Cached {
         banned
     }
 
-    /// Queries every configured backend for this address in parallel. Returns
-    /// `Some(is_banned)` only if every backend reported successfully; if any
-    /// failed, returns `None` so a partial result doesn't get cached and
-    /// mask a hit from the failing source.
+    /// `Some(true)` as soon as any backend confirms a ban — a failure
+    /// elsewhere must not mask a positive hit. `None` means no confirmation
+    /// and at least one failure, so the caller skips caching.
     async fn fetch_all(&self, address: Address) -> Option<bool> {
-        join_all(self.backends.iter().map(|b| fetch_one(b.as_ref(), address)))
-            .await
-            .into_iter()
-            .collect::<Option<Vec<bool>>>()
-            .map(|results| results.into_iter().any(|banned| banned))
+        let results = join_all(self.backends.iter().map(|b| fetch_one(b.as_ref(), address))).await;
+        if results.iter().any(|r| matches!(r, Some(true))) {
+            Some(true)
+        } else if results.iter().any(Option::is_none) {
+            None
+        } else {
+            Some(false)
+        }
     }
 
     /// Collects cache entries close enough to expiry that the next maintenance
@@ -140,9 +129,8 @@ impl Cached {
             .collect()
     }
 
-    /// Re-queries every backend for an address. Returns `None` (and leaves
-    /// the existing entry alone) when any configured backend fails, so a
-    /// transient outage doesn't poison the cache.
+    /// `None` (existing entry preserved) when `fetch_all` is uncertain — no
+    /// positive confirmation and at least one backend failed.
     async fn refresh(&self, address: Address) -> Option<(Address, Entry)> {
         let is_banned = self.fetch_all(address).await?;
         Some((
@@ -179,8 +167,7 @@ impl Cached {
     }
 }
 
-/// Calls one backend and logs (but swallows) the error so the caller can OR
-/// successful results together without dealing with per-backend error types.
+/// Logs and swallows backend errors so callers can OR successful results.
 async fn fetch_one(backend: &dyn Backend, address: Address) -> Option<bool> {
     match backend.fetch(address).await {
         Ok(banned) => Some(banned),
