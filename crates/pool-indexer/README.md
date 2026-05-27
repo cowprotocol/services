@@ -12,28 +12,19 @@ liquidity config.
 
 ## Running locally
 
-`run-local.sh` is a one-shot script that resets the local stack and starts
-the indexer from scratch. In order, it:
+Create `crates/pool-indexer/config.local.toml` first. The schema is the
+`Configuration` struct in `src/config.rs`: a `[database]` section, one or
+more `[[network]]` blocks (each with a single factory), and optional `[api]`
+and `[metrics]` sections. String fields accept `%ENV_VAR`, so RPC URLs and
+other secrets can be sourced from the environment instead of being written
+into the file.
 
-1. Tears down the docker compose stack and deletes the postgres volume
-   (`docker compose down --volumes`), so any previous DB state is gone.
-2. Brings the `db` service back up and waits for postgres to accept
-   connections.
-3. Applies all Flyway migrations from `database/sql/`
-   (`docker compose run --rm migrations`).
-4. Runs `cargo run --release -p pool-indexer -- --config crates/pool-indexer/config.local.toml`.
-
-You do not need to start docker compose or run migrations beforehand — the
-script does both. It wipes the local database volume on every run, so use it
-on development machines only.
+Then, from the repository root, reset the local stack and start the indexer:
 
 ```bash
-./crates/pool-indexer/run-local.sh
+# wipes the local DB — dev machines only
+docker compose down --volumes
+docker compose up -d db
+docker compose run --rm migrations
+cargo run --release -p pool-indexer -- --config crates/pool-indexer/config.local.toml
 ```
-
-Before running it, create `crates/pool-indexer/config.local.toml`. The schema
-is the `Configuration` struct in `src/config.rs`: a `[database]` section, one
-or more `[[network]]` blocks (each with a single factory), and optional
-`[api]` and `[metrics]` sections. String fields accept `%ENV_VAR`, so RPC
-URLs and subgraph bearer tokens can be sourced from the environment instead
-of being written into the file.
