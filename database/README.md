@@ -534,16 +534,16 @@ Indexes:
 
 ### pool\_indexer\_checkpoints
 
-Highest finalized block processed per `(chain_id, contract)` by the `pool-indexer` service. `contract` is the factory address.
+Highest finalized block processed per `(chain_id, contract_address)` by the `pool-indexer` service. `contract_address` is the factory address.
 
- Column        | Type   | Nullable | Details
----------------|--------|----------|--------
- chain\_id     | bigint | not null |
- contract      | bytea  | not null | Factory or pool address (20 bytes)
- block\_number | bigint | not null |
+ Column             | Type   | Nullable | Details
+--------------------|--------|----------|--------
+ chain\_id          | bigint | not null |
+ contract\_address  | bytea  | not null | Factory or pool address (20 bytes)
+ block\_number      | bigint | not null |
 
 Indexes:
-- PRIMARY KEY: btree (`chain_id`, `contract`)
+- PRIMARY KEY: btree (`chain_id`, `contract_address`)
 
 ### uniswap\_v3\_pools
 
