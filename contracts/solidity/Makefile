@@ -10,7 +10,6 @@ ARTIFACTDIR := ../artifacts
 CONTRACTS := \
 	AnyoneAuthenticator.sol \
 	Balances.sol \
-	CowSettlementForwarder.sol \
 	Signatures.sol \
 	Solver.sol \
 	Spardose.sol \
