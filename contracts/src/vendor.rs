@@ -36,6 +36,12 @@ pub fn run(artifacts_dir: &Path) -> Result<()> {
             "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
              deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
         )?
+        .github(
+            "Solver7702Delegate",
+            // TODO(post-audit): bump to the audited commit hash or release tag.
+            "cowprotocol/solver-7702-delegate/5b6bd5faf05bed6c08c827f9f8e33cd4e33b7533/out/\
+             Solver7702Delegate.sol/Solver7702Delegate.json",
+        )?
         .npm(
             "CowProtocolToken",
             "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/\

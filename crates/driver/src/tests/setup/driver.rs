@@ -353,7 +353,7 @@ async fn create_config_file(
             let accounts = solver
                 .submission_accounts
                 .iter()
-                .map(|a| format!("\"{a}\""))
+                .map(|a| format!("\"{}\"", a.to_bytes()))
                 .collect::<Vec<_>>()
                 .join(", ");
             writeln!(file, "               submission-accounts = [{accounts}]").unwrap();

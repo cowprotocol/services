@@ -1,9 +1,12 @@
 use {
     ::alloy::{
         consensus::Transaction as _,
-        primitives::{Address, U256},
+        primitives::{Address, Bytes, U256},
         providers::{Provider, ext::TxPoolApi},
+        sol_types::SolConstructor,
     },
+    contracts::Solver7702Delegate::Solver7702Delegate,
+    driver::infra::solver::eip7702::{DELEGATION_PREFIX, MAX_APPROVED_CALLERS, delegate_address},
     e2e::setup::{colocation, *},
     ethrpc::{
         Web3,
@@ -24,10 +27,10 @@ use {
 /// Bypasses the autopilot (which settles one solution per auction) and sends
 /// two /solve + /settle requests directly to the driver.
 ///
-/// Uses EIP-7702 delegation: a forwarder contract is deployed and the
-/// solver EOA delegates its code to it. Two whitelisted submission accounts
-/// send settlement txs through the solver EOA in parallel, each using their own
-/// nonce.
+/// Uses EIP-7702 delegation: the driver deploys Solver7702Delegate for the
+/// submission accounts and delegates the solver EOA to it. Two submission
+/// accounts send settlement txs through the solver EOA in parallel, each using
+/// their own nonce.
 #[tokio::test]
 #[ignore]
 async fn local_node_parallel_settlement_submission() {
@@ -94,6 +97,12 @@ async fn test_parallel_settlement_submission(web3: Web3) {
     })
     .await
     .expect("driver did not start in time");
+    assert_solver_delegates_to_expected_contract(
+        &web3,
+        solver.address(),
+        [submitter_a.address(), submitter_b.address()],
+    )
+    .await;
 
     let valid_to = model::time::now_in_epoch_seconds() + 300;
     let make_buy_order = |buy_token: Address| {
@@ -159,7 +168,7 @@ async fn test_parallel_settlement_submission(web3: Web3) {
 
     // Assert that TWO settlement txs are pending simultaneously: one direct
     // (solver EOA → settlement contract) and one delegated (submission EOA →
-    // solver EOA via EIP-7702 forwarding). The driver uses the direct slot
+    // solver EOA via EIP-7702 delegation). The driver uses the direct slot
     // when no settlement is in flight (cheaper), and falls back to 7702 for
     // concurrent submissions.
     let solver_address = solver.address();
@@ -217,6 +226,50 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         .await
         .unwrap();
     }
+}
+
+async fn assert_solver_delegates_to_expected_contract(
+    web3: &Web3,
+    solver: Address,
+    callers: [Address; 2],
+) {
+    let delegate = solver_delegate_address(callers);
+    let delegate_code = web3.provider.get_code_at(delegate).await.unwrap();
+    assert!(
+        !delegate_code.is_empty(),
+        "delegate contract was not deployed"
+    );
+
+    let solver_code = web3.provider.get_code_at(solver).await.unwrap();
+    let mut expected_solver_code = Vec::from(DELEGATION_PREFIX);
+    expected_solver_code.extend_from_slice(delegate.as_slice());
+    assert_eq!(
+        solver_code.as_ref(),
+        expected_solver_code,
+        "solver EOA does not delegate to expected Solver7702Delegate"
+    );
+}
+
+fn solver_delegate_address(callers: [Address; 2]) -> Address {
+    let mut approved_callers = [Address::ZERO; MAX_APPROVED_CALLERS];
+    approved_callers[..callers.len()].copy_from_slice(&callers);
+    let init_code = Solver7702Delegate::BYTECODE
+        .iter()
+        .chain(&SolConstructor::abi_encode(
+            &Solver7702Delegate::constructorCall {
+                approvedCallers: approved_callers,
+            },
+        ))
+        .copied()
+        .collect::<Bytes>();
+
+    let local = delegate_address(&callers).unwrap();
+    assert_eq!(
+        local,
+        driver::infra::solver::eip7702::CREATE2_DEPLOYER
+            .create2_from_code(driver::infra::solver::eip7702::CREATE2_SALT, &init_code)
+    );
+    local
 }
 
 /// Sends a /solve request to the driver for a single order and returns the
