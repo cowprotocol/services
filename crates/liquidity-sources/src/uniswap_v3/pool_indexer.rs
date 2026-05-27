@@ -284,17 +284,14 @@ impl V3PoolDataSource for PoolIndexerClient {
         ids: &[Address],
         target_block: u64,
     ) -> Result<PoolsWithTicks> {
+        self.wait_until(target_block).await?;
+
         if ids.is_empty() {
-            // Still anchor at the indexer's head so the caller has a coherent
-            // event-replay block even when no pools are requested.
-            self.wait_until(target_block).await?;
             return Ok(PoolsWithTicks {
                 fetched_block_number: target_block,
                 pools: Vec::new(),
             });
         }
-
-        self.wait_until(target_block).await?;
 
         let mut out: Vec<PoolData> = Vec::with_capacity(ids.len());
         let mut fetched_block_number: Option<u64> = None;
