@@ -24,7 +24,6 @@ const DELEGATION_CODE_LEN: usize = DELEGATION_PREFIX.len() + Address::len_bytes(
 /// The maximum number of approved callers allowed by the Solver7702Delegate
 /// ABI.
 pub const MAX_APPROVED_CALLERS: usize = 5;
-type ApprovedCallers = [Address; MAX_APPROVED_CALLERS];
 // Arachnid's deterministic-deployment-proxy. It is deployed at this same
 // address on many EVM chains. Sending 32-byte salt || init code to it deploys
 // that init code with CREATE2. We use it to derive and deploy the exact
@@ -83,7 +82,9 @@ pub fn delegate_address(callers: &[Address]) -> anyhow::Result<Address> {
     Ok(delegate_deployment(callers)?.0)
 }
 
-fn delegate_deployment(callers: &[Address]) -> anyhow::Result<(Address, ApprovedCallers, Bytes)> {
+fn delegate_deployment(
+    callers: &[Address],
+) -> anyhow::Result<(Address, [Address; MAX_APPROVED_CALLERS], Bytes)> {
     anyhow::ensure!(
         callers.len() <= MAX_APPROVED_CALLERS,
         "Solver7702Delegate supports at most {MAX_APPROVED_CALLERS} submission accounts"
@@ -126,7 +127,7 @@ fn delegate_deployment(callers: &[Address]) -> anyhow::Result<(Address, Approved
 async fn setup_solver(
     config: &Config,
     delegate: Address,
-    approved_callers: &ApprovedCallers,
+    approved_callers: &[Address; MAX_APPROVED_CALLERS],
     init_code: &Bytes,
     eth: &Ethereum,
 ) -> anyhow::Result<()> {
@@ -230,7 +231,7 @@ impl DeploymentMode {
 async fn deploy_delegate(
     config: &Config,
     delegate: Address,
-    approved_callers: &ApprovedCallers,
+    approved_callers: &[Address; MAX_APPROVED_CALLERS],
     init_code: &Bytes,
     mode: DeploymentMode,
     eth: &Ethereum,
