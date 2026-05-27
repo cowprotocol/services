@@ -3,9 +3,17 @@ use {
         setup,
         setup::{ab_order, ab_pool, ab_solution, ad_order, ad_pool, ad_solution, test_solver},
     },
-    alloy::primitives::address,
+    alloy::{primitives::b256, signers::local::PrivateKeySigner},
     eth_domain_types as eth,
 };
+
+fn submission_account() -> PrivateKeySigner {
+    // Well-known Anvil test key #1. Do not use as a production key.
+    PrivateKeySigner::from_bytes(&b256!(
+        "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+    ))
+    .unwrap()
+}
 
 /// Test that the best-scoring solution is picked when the /solve endpoint
 /// returns multiple valid solutions.
@@ -36,7 +44,7 @@ async fn all_proposed() {
         .solvers(vec![
             test_solver()
                 .max_solutions_to_propose(5)
-                .submission_account(address!("0000000000000000000000000000000000000001")),
+                .submission_account(submission_account()),
         ])
         .pool(ab_pool())
         .pool(ad_pool())
@@ -74,7 +82,7 @@ async fn capped() {
         .solvers(vec![
             test_solver()
                 .max_solutions_to_propose(1)
-                .submission_account(address!("0000000000000000000000000000000000000001")),
+                .submission_account(submission_account()),
         ])
         .pool(ab_pool())
         .pool(ad_pool())
@@ -100,7 +108,7 @@ async fn only_proposes_valid_solutions() {
         .solvers(vec![
             test_solver()
                 .max_solutions_to_propose(5)
-                .submission_account(address!("0000000000000000000000000000000000000001")),
+                .submission_account(submission_account()),
         ])
         .pool(ab_pool())
         .order(order.clone())

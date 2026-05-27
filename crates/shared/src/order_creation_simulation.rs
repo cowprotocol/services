@@ -2,13 +2,16 @@ use {
     anyhow::anyhow,
     async_trait::async_trait,
     model::order::Order,
-    simulator::simulation_builder::{
-        self,
-        Block,
-        ExecutionAmount,
-        PriceEncoding,
-        SettlementSimulator,
-        Solver,
+    simulator::{
+        simulation_builder::{
+            self,
+            Block,
+            ExecutionAmount,
+            PriceEncoding,
+            SettlementSimulator,
+            Solver,
+        },
+        tenderly,
     },
 };
 
@@ -17,9 +20,15 @@ use {
 pub enum OrderSimulationError {
     /// The simulation ran and the transaction reverted. `reason` is the
     /// revert string returned by the EVM (or a Tenderly reason string).
+    /// `tenderly_request` carries the full payload (calldata, state
+    /// overrides, block) needed to replay the simulation manually or against
+    /// Tenderly's API, independent of whether `tenderly_url` was produced.
+    /// Boxed because the request DTO is large enough that an inline copy
+    /// would blow up `Result<(), OrderSimulationError>`'s stack footprint.
     Reverted {
         reason: String,
         tenderly_url: Option<String>,
+        tenderly_request: Option<Box<tenderly::dto::Request>>,
     },
     /// The simulation could not run (RPC failure, Tenderly error, malformed
     /// input, timeout). Treated as fail-open.
@@ -51,6 +60,7 @@ impl OrderCreationSimulator {
 
 #[async_trait]
 impl OrderSimulating for OrderCreationSimulator {
+    #[tracing::instrument(skip_all, fields(order_uid = %order.metadata.uid))]
     async fn simulate(
         &self,
         order: &Order,
@@ -84,13 +94,14 @@ impl OrderSimulating for OrderCreationSimulator {
         let Err(err) = inputs.simulate().await else {
             return Ok(());
         };
-        let tenderly_url = match (tenderly, tenderly_request) {
-            (Some(api), Some(req)) => api.simulate_and_share(req).await.ok(),
+        let tenderly_url = match (tenderly, tenderly_request.as_ref()) {
+            (Some(api), Some(req)) => api.simulate_and_share(req.clone()).await.ok(),
             _ => None,
         };
         Err(OrderSimulationError::Reverted {
             reason: err.to_string(),
             tenderly_url,
+            tenderly_request: tenderly_request.map(Box::new),
         })
     }
 }
