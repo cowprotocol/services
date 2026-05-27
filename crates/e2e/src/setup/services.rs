@@ -322,7 +322,6 @@ impl<'a> Services<'a> {
             merge_solutions: true,
             haircut_bps: 0,
             submission_keys: vec![],
-            forwarder_contract: None,
         }];
 
         let shared_native_price_config = configs::native_price::NativePriceConfig {
