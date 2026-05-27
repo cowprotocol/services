@@ -221,6 +221,37 @@ pub struct Config {
     pub max_solutions_to_propose: std::num::NonZeroUsize,
 }
 
+impl Config {
+    fn validate(&self) -> Result<()> {
+        if self.submission_accounts.is_empty() {
+            anyhow::ensure!(
+                self.max_solutions_to_propose.get() == 1,
+                "solver '{}': max-solutions-to-propose > 1 requires non-empty submission-accounts \
+                 (EIP-7702 parallel submission must be enabled)",
+                self.name,
+            );
+            return Ok(());
+        }
+
+        anyhow::ensure!(
+            self.submission_accounts
+                .iter()
+                .all(|account| !matches!(account, Account::Address(_))),
+            "solver '{}': EIP-7702 submission accounts must be signers; address-only accounts \
+             cannot sign delegated settlement transactions",
+            self.name,
+        );
+        anyhow::ensure!(
+            !matches!(self.account, Account::Address(_)),
+            "solver '{}': main account must be a signer to set up EIP-7702 delegation when \
+             submission accounts are configured",
+            self.name,
+        );
+
+        Ok(())
+    }
+}
+
 impl Solver {
     pub async fn try_new(config: Config, eth: Ethereum) -> Result<Self> {
         config.validate()?;
@@ -511,38 +542,6 @@ impl Solver {
 
     pub fn config(&self) -> &Config {
         &self.config
-    }
-}
-
-impl Config {
-    fn validate(&self) -> Result<()> {
-        if self.submission_accounts.is_empty() {
-            anyhow::ensure!(
-                self.max_solutions_to_propose.get() == 1,
-                "solver '{}': max-solutions-to-propose > 1 requires non-empty submission-accounts \
-                 (EIP-7702 parallel submission must be enabled)",
-                self.name,
-            );
-            return Ok(());
-        }
-
-        anyhow::ensure!(
-            !self
-                .submission_accounts
-                .iter()
-                .any(|account| matches!(account, Account::Address(_))),
-            "solver '{}': EIP-7702 submission accounts must be signers; address-only accounts \
-             cannot sign delegated settlement transactions",
-            self.name,
-        );
-        anyhow::ensure!(
-            !matches!(self.account, Account::Address(_)),
-            "solver '{}': main account must be a signer to set up EIP-7702 delegation when \
-             submission accounts are configured",
-            self.name,
-        );
-
-        Ok(())
     }
 }
 
