@@ -2570,7 +2570,6 @@ dependencies = [
  "cow-contract-cowammlegacyhelper",
  "cow-contract-cowammuniswapv2priceoracle",
  "cow-contract-cowprotocoltoken",
- "cow-contract-cowsettlementforwarder",
  "cow-contract-cowswapethflow",
  "cow-contract-cowswaponchainorders",
  "cow-contract-erc1271signaturevalidator",
@@ -2601,6 +2600,7 @@ dependencies = [
  "cow-contract-remoteerc20balances",
  "cow-contract-signatures",
  "cow-contract-solver",
+ "cow-contract-solver7702delegate",
  "cow-contract-spardose",
  "cow-contract-sushiswaprouter",
  "cow-contract-swapper",
@@ -3079,17 +3079,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cow-contract-cowsettlementforwarder"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
 name = "cow-contract-cowswapethflow"
 version = "0.1.0"
 dependencies = [
@@ -3410,6 +3399,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-solver"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-solver7702delegate"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
@@ -6157,11 +6157,16 @@ version = "0.1.0"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
+ "const-hex",
  "contracts",
  "futures",
+ "hmac",
  "moka",
+ "reqwest 0.13.2",
+ "sha2",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]

@@ -322,7 +322,6 @@ async fn quote_timeout(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
             SolverEngine {
                 name: "test_quoter".into(),
@@ -332,7 +331,6 @@ async fn quote_timeout(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -506,7 +504,6 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
             SolverEngine {
                 name: "test_quoter".into(),
@@ -516,7 +513,6 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -630,7 +626,6 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
             SolverEngine {
                 name: "test_quoter".into(),
@@ -640,7 +635,6 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -742,7 +736,6 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
             SolverEngine {
                 name: "no_liquidity_solver".into(),
@@ -752,7 +745,6 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 merge_solutions: true,
                 haircut_bps: 0,
                 submission_keys: vec![],
-                forwarder_contract: None,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

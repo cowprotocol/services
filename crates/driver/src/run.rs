@@ -85,8 +85,8 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     };
     let solvers = solvers(&config, &eth).await;
     let http_factory = HttpClientFactory::new(&config.http);
-    // Set up EIP-7702 delegation and caller approval for solvers with
-    // parallel submission accounts. Must happen before the HTTP server
+    // Set up EIP-7702 delegate deployment and solver delegation for solvers
+    // with parallel submission accounts. Must happen before the HTTP server
     // starts accepting /settle requests.
     infra::solver::eip7702::setup(&solvers, &eth)
         .await
