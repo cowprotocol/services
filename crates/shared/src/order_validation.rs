@@ -17,6 +17,7 @@ use {
     bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
     contracts::{HooksTrampoline, WETH9},
+    futures::future::OptionFuture,
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -32,7 +33,6 @@ use {
             OrderData,
             OrderKind,
             OrderMetadata,
-            OrderUid,
             SellTokenSource,
             VerificationError,
         },
@@ -419,122 +419,6 @@ impl OrderValidator {
         }
     }
 
-    /// Computes the `verification_gas_limit` for an order and runs the
-    /// simulation for observability. Returns `0` for orders without an
-    /// EIP-1271 signature check, but the simulation still runs.
-    async fn calculate_verification_gas_limit(
-        &self,
-        order: &OrderCreation,
-        data: &OrderData,
-        app_data: &OrderAppData,
-        domain_separator: &DomainSeparator,
-        owner: Address,
-        uid: OrderUid,
-    ) -> Result<u64, ValidationError> {
-        let preview_order = Order {
-            metadata: OrderMetadata {
-                owner,
-                uid,
-                ..Default::default()
-            },
-            data: *data,
-            signature: order.signature.clone(),
-            interactions: app_data.interactions.clone(),
-        };
-        let full_app_data = app_data.inner.document.clone();
-        let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
-
-        if let Signature::Eip1271(signature) = &order.signature {
-            let check = SignatureCheck::new(
-                owner,
-                hash.0,
-                signature.to_owned(),
-                app_data.interactions.pre.clone(),
-                app_data
-                    .inner
-                    .protocol
-                    .flashloan
-                    .as_ref()
-                    .map(|loan| BalanceOverrideRequest {
-                        token: loan.token,
-                        holder: loan.receiver,
-                        amount: loan.amount,
-                    }),
-            );
-            return self
-                .run_eip1271_checks(check, &preview_order, full_app_data, hash)
-                .await;
-        }
-
-        self.observe_simulation(&preview_order, &full_app_data)
-            .await;
-        Ok(0u64)
-    }
-
-    /// Runs the order simulation for observability and discards the result
-    /// beyond logging it. Used for order types that have no on-chain
-    /// signature check (EOA, PreSign) and for the
-    /// `eip1271_skip_creation_validation` path.
-    async fn observe_simulation(&self, preview_order: &Order, full_app_data: &str) {
-        let Some(config) = &self.order_simulator else {
-            return;
-        };
-        let simulation = config
-            .simulate_with_timeout(preview_order, full_app_data)
-            .await;
-        log_simulation_outcome(&Ok(0), &simulation, preview_order, full_app_data);
-    }
-
-    /// When `eip1271_skip_creation_validation` is set, the signature check is
-    /// skipped and the simulation runs for observability only. Otherwise the
-    /// signature check decides acceptance and the simulation runs alongside.
-    async fn run_eip1271_checks(
-        &self,
-        check: SignatureCheck,
-        preview_order: &Order,
-        full_app_data: String,
-        hash: B256,
-    ) -> Result<u64, ValidationError> {
-        if self.eip1271_skip_creation_validation {
-            self.observe_simulation(preview_order, &full_app_data).await;
-            return Ok(0u64);
-        }
-        self.run_eip1271_with_signature_check(check, preview_order, full_app_data, hash)
-            .await
-    }
-
-    /// Runs the `isValidSignature` check and, when a simulator is configured,
-    /// the order simulation concurrently. The signature result decides
-    /// acceptance. The simulation result is logged for observability only.
-    async fn run_eip1271_with_signature_check(
-        &self,
-        check: SignatureCheck,
-        preview_order: &Order,
-        full_app_data: String,
-        hash: B256,
-    ) -> Result<u64, ValidationError> {
-        let signature_fut = self
-            .signature_validator
-            .validate_signature_and_get_additional_gas(check);
-
-        let Some(config) = &self.order_simulator else {
-            return signature_fut.await.map_err(|err| match err {
-                SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
-                SignatureValidationError::Other(err) => ValidationError::Other(err),
-            });
-        };
-
-        let simulation_fut = config.simulate_with_timeout(preview_order, &full_app_data);
-        let (signature_res, simulation) = tokio::join!(signature_fut, simulation_fut);
-
-        log_simulation_outcome(&signature_res, &simulation, preview_order, &full_app_data);
-
-        signature_res.map_err(|err| match err {
-            SignatureValidationError::Invalid => ValidationError::InvalidEip1271Signature(hash),
-            SignatureValidationError::Other(err) => ValidationError::Other(err),
-        })
-    }
-
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
         let num_limit_orders = self
             .limit_order_counter
@@ -844,16 +728,84 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let verification_gas_limit = self
-            .calculate_verification_gas_limit(
-                &order,
-                &data,
-                &app_data,
-                domain_separator,
+        let preview_order = Order {
+            metadata: OrderMetadata {
                 owner,
                 uid,
-            )
-            .await?;
+                ..Default::default()
+            },
+            data,
+            signature: order.signature.clone(),
+            interactions: app_data.interactions.clone(),
+        };
+        let full_app_data = app_data.inner.document.clone();
+        let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
+
+        let eip1271_check = if let Signature::Eip1271(sig) = &order.signature
+            && !self.eip1271_skip_creation_validation
+        {
+            Some(SignatureCheck::new(
+                owner,
+                hash.0,
+                sig.to_owned(),
+                app_data.interactions.pre.clone(),
+                app_data
+                    .inner
+                    .protocol
+                    .flashloan
+                    .as_ref()
+                    .map(|loan| BalanceOverrideRequest {
+                        token: loan.token,
+                        holder: loan.receiver,
+                        amount: loan.amount,
+                    }),
+            ))
+        } else {
+            None
+        };
+
+        let simulation_fut = OptionFuture::from(
+            self.order_simulator
+                .as_ref()
+                .map(|c| c.simulate_with_timeout(&preview_order, &full_app_data)),
+        );
+        let transfer_fut = self.ensure_token_is_transferable(&order, owner, &app_data);
+
+        let verification_gas_limit = match eip1271_check {
+            Some(check) => {
+                let signature_fut = self
+                    .signature_validator
+                    .validate_signature_and_get_additional_gas(check);
+                let (signature_res, simulation_opt, transfer_res) =
+                    tokio::join!(signature_fut, simulation_fut, transfer_fut);
+
+                if let Some(simulation) = &simulation_opt {
+                    log_simulation_outcome(
+                        &signature_res,
+                        simulation,
+                        &preview_order,
+                        &full_app_data,
+                    );
+                }
+
+                let gas_limit = signature_res.map_err(|err| match err {
+                    SignatureValidationError::Invalid => {
+                        ValidationError::InvalidEip1271Signature(hash)
+                    }
+                    SignatureValidationError::Other(err) => ValidationError::Other(err),
+                })?;
+                transfer_res?;
+                gas_limit
+            }
+            None => {
+                let (simulation_opt, transfer_res) = tokio::join!(simulation_fut, transfer_fut);
+                if let Some(simulation) = simulation_opt {
+                    log_simulation_outcome(&Ok(0), &simulation, &preview_order, &full_app_data);
+                }
+                transfer_res?;
+                0
+            }
+        };
 
         let verification = Verification {
             from: owner,
@@ -877,9 +829,6 @@ impl OrderValidating for OrderValidator {
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
-
-        self.ensure_token_is_transferable(&order, owner, &app_data)
-            .await?;
 
         // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
