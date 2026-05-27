@@ -6157,11 +6157,16 @@ version = "0.1.0"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
+ "const-hex",
  "contracts",
  "futures",
+ "hmac",
  "moka",
+ "reqwest 0.13.2",
+ "sha2",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
