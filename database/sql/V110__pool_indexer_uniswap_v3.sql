@@ -1,9 +1,9 @@
 -- Tracks the highest finalized block fully processed per chain+contract
 CREATE TABLE pool_indexer_checkpoints (
-    chain_id       BIGINT NOT NULL,
-    contract       BYTEA  NOT NULL,      -- factory or pool address
-    block_number   BIGINT NOT NULL,
-    PRIMARY KEY (chain_id, contract)
+    chain_id          BIGINT NOT NULL,
+    contract_address  BYTEA  NOT NULL,   -- factory or pool address
+    block_number      BIGINT NOT NULL,
+    PRIMARY KEY (chain_id, contract_address)
 );
 
 -- One row per discovered pool (from PoolCreated events on the factory).

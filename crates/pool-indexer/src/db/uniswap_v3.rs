@@ -41,7 +41,8 @@ pub async fn get_checkpoint(
     contract: &Address,
 ) -> Result<Option<u64>> {
     let row = sqlx::query(
-        "SELECT block_number FROM pool_indexer_checkpoints WHERE chain_id = $1 AND contract = $2",
+        "SELECT block_number FROM pool_indexer_checkpoints WHERE chain_id = $1 AND \
+         contract_address = $2",
     )
     .bind(chain_id.cast_signed())
     .bind(contract.as_slice())
@@ -59,9 +60,10 @@ pub async fn set_checkpoint(
     block_number: u64,
 ) -> Result<()> {
     sqlx::query(
-        "INSERT INTO pool_indexer_checkpoints (chain_id, contract, block_number)
+        "INSERT INTO pool_indexer_checkpoints (chain_id, contract_address, block_number)
          VALUES ($1, $2, $3)
-         ON CONFLICT (chain_id, contract) DO UPDATE SET block_number = EXCLUDED.block_number",
+         ON CONFLICT (chain_id, contract_address) DO UPDATE SET block_number = \
+         EXCLUDED.block_number",
     )
     .bind(chain_id.cast_signed())
     .bind(contract.as_slice())

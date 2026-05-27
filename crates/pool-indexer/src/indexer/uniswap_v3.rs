@@ -321,7 +321,6 @@ impl UniswapV3Indexer {
 
         self.persist_chunk(chunk, changes).await?;
 
-        metrics.chunks_committed.with_label_values(&[network]).inc();
         metrics
             .indexed_block
             .with_label_values(&[network])
@@ -450,8 +449,8 @@ async fn run_symbol_backfill_pass(
         .context("get_tokens_missing_symbols")?;
     let network = network.as_str();
     crate::metrics::Metrics::get()
-        .symbols_pending
-        .with_label_values(&[network])
+        .backfill_pending
+        .with_label_values(&[network, "symbol"])
         // -1 surfaces the impossible-but-defensive `usize → i64` overflow as
         // a visible signal in metrics rather than masquerading as "no work
         // pending".
@@ -484,8 +483,8 @@ async fn run_symbol_backfill_pass(
                     updated += 1;
                     let result = if symbol.is_empty() { "empty" } else { "ok" };
                     metrics
-                        .symbols_backfilled
-                        .with_label_values(&[network, result])
+                        .backfilled
+                        .with_label_values(&[network, "symbol", result])
                         .inc();
                 }
             }
@@ -540,9 +539,9 @@ async fn run_decimals_backfill_pass(
         .context("get_tokens_missing_decimals")?;
     let network = network.as_str();
     crate::metrics::Metrics::get()
-        .decimals_pending
-        .with_label_values(&[network])
-        // -1: see `symbols_pending` above for the rationale.
+        .backfill_pending
+        .with_label_values(&[network, "decimals"])
+        // -1: see the `symbol` pass above for the rationale.
         .set(i64::try_from(tokens.len()).unwrap_or(-1));
     if tokens.is_empty() {
         return Ok(());
@@ -576,8 +575,8 @@ async fn run_decimals_backfill_pass(
                     updated += 1;
                     let result = if *dec < 0 { "empty" } else { "ok" };
                     metrics
-                        .decimals_backfilled
-                        .with_label_values(&[network, result])
+                        .backfilled
+                        .with_label_values(&[network, "decimals", result])
                         .inc();
                 }
             }

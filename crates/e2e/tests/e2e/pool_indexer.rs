@@ -150,9 +150,10 @@ async fn clear_pool_indexer_tables(db: &PgPool) {
 
 async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
     sqlx::query(
-        "INSERT INTO pool_indexer_checkpoints (chain_id, contract, block_number)
+        "INSERT INTO pool_indexer_checkpoints (chain_id, contract_address, block_number)
          VALUES (1, $1, $2)
-         ON CONFLICT (chain_id, contract) DO UPDATE SET block_number = EXCLUDED.block_number",
+         ON CONFLICT (chain_id, contract_address) DO UPDATE SET block_number = \
+         EXCLUDED.block_number",
     )
     .bind(factory.as_slice())
     .bind(block.cast_signed())
@@ -509,7 +510,7 @@ async fn checkpoint_resume(web3: Web3) {
 
     let checkpoint: i64 = sqlx::query_scalar(
         "SELECT block_number FROM pool_indexer_checkpoints
-         WHERE chain_id = 1 AND contract = $1",
+         WHERE chain_id = 1 AND contract_address = $1",
     )
     .bind(factory_addr.as_slice())
     .fetch_one(&db)

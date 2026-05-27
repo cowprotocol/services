@@ -488,11 +488,11 @@ pub async fn seed(
     subgraph_url: &Url,
     block: Option<u64>,
 ) -> Result<u64> {
-    let labels = [network];
-    let m = crate::metrics::Metrics::get();
-    let _timer = crate::metrics::Metrics::timer(&m.subgraph_seed_seconds, &labels);
-    SubgraphSeeder::new(db, chain_id, factory, subgraph_url, block)
+    let start = std::time::Instant::now();
+    let result = SubgraphSeeder::new(db, chain_id, factory, subgraph_url, block)
         .await?
         .seed()
-        .await
+        .await;
+    info!(network, %factory, elapsed = ?start.elapsed(), "subgraph seed complete");
+    result
 }

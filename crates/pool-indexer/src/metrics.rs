@@ -3,11 +3,8 @@ use {prometheus::HistogramVec, prometheus_metric_storage::MetricStorage};
 #[derive(MetricStorage)]
 #[metric(subsystem = "pool_indexer")]
 pub struct Metrics {
-    /// Chunks successfully committed to the DB.
-    #[metric(labels("network"))]
-    pub chunks_committed: prometheus::IntCounterVec,
-
-    /// Per-chunk commit duration in seconds.
+    /// Per-chunk commit duration in seconds. The histogram's `_count` series
+    /// doubles as the "chunks committed" rate.
     #[metric(
         labels("network"),
         buckets(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
@@ -31,30 +28,16 @@ pub struct Metrics {
     #[metric(labels("network"))]
     pub indexer_errors: prometheus::IntCounterVec,
 
-    /// Duration of the full subgraph seed (pool page fetch + tick fetch).
-    #[metric(
-        labels("network"),
-        buckets(1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0)
-    )]
-    pub subgraph_seed_seconds: HistogramVec,
+    /// Tokens still needing a value for the given `field` (`symbol` or
+    /// `decimals`), sampled each backfill pass.
+    #[metric(labels("network", "field"))]
+    pub backfill_pending: prometheus::IntGaugeVec,
 
-    /// Symbols written to the DB (label: `result` = `ok` for a real symbol,
-    /// `empty` for the "tried and failed" sentinel).
-    #[metric(labels("network", "result"))]
-    pub symbols_backfilled: prometheus::IntCounterVec,
-
-    /// Tokens still needing a symbol, sampled each backfill pass.
-    #[metric(labels("network"))]
-    pub symbols_pending: prometheus::IntGaugeVec,
-
-    /// Decimals written to the DB (label: `result` = `ok` for a real value,
-    /// `empty` for the "tried and failed" `-1` sentinel).
-    #[metric(labels("network", "result"))]
-    pub decimals_backfilled: prometheus::IntCounterVec,
-
-    /// Tokens still needing a decimals value, sampled each backfill pass.
-    #[metric(labels("network"))]
-    pub decimals_pending: prometheus::IntGaugeVec,
+    /// Rows written by the backfill, labelled by `field` (`symbol` or
+    /// `decimals`) and `result` (`ok` for a real value, `empty` for the
+    /// "tried and failed" sentinel).
+    #[metric(labels("network", "field", "result"))]
+    pub backfilled: prometheus::IntCounterVec,
 
     /// API request count by route + HTTP status.
     #[metric(labels("route", "status"))]

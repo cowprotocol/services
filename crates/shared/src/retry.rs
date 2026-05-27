@@ -25,13 +25,13 @@ where
     P: Fn(&E) -> bool,
 {
     let mut errors = Vec::new();
-    for attempt in 0..MAX_RETRIES {
+    for attempt in 1..=MAX_RETRIES {
         match future().await {
             Ok(value) => return Ok(value),
             Err(err) => {
                 let retryable = should_retry(&err);
                 errors.push(err);
-                if !retryable || attempt + 1 == MAX_RETRIES {
+                if !retryable || attempt == MAX_RETRIES {
                     return Err(errors);
                 }
                 let timeout_with_jitter = 50u64 + rand::rng().random_range(0..=50);
