@@ -158,8 +158,7 @@ impl Swapr {
     }
 }
 
-/// Subgraph-specific Uniswap V3 config. Only consulted when
-/// [`UniswapV3::pool_indexer_url`] is unset.
+/// Subgraph-specific Uniswap V3 config.
 #[derive(Clone, Debug)]
 pub struct UniswapV3Subgraph {
     pub url: Url,
@@ -168,6 +167,16 @@ pub struct UniswapV3Subgraph {
     /// once. Some subgraphs are overloaded and throw errors when there are
     /// too many.
     pub max_pools_per_tick_query: usize,
+}
+
+/// Where Uniswap V3 pool definitions and tick data are fetched from. Exactly
+/// one source is active per network.
+#[derive(Clone, Debug)]
+pub enum UniswapV3PoolSource {
+    /// A Uniswap V3 subgraph (typically Goldsky-hosted).
+    Subgraph(UniswapV3Subgraph),
+    /// A CoW pool-indexer service exposing `/api/v1/{network}/uniswap/v3/`.
+    PoolIndexer(Url),
 }
 
 /// Uniswap V3 liquidity fetching options.
@@ -179,13 +188,8 @@ pub struct UniswapV3 {
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
 
-    /// One of `subgraph` or `pool_indexer_url` must be set; pool-indexer wins
-    /// when both are. Enforced by the config loader.
-    pub subgraph: Option<UniswapV3Subgraph>,
-
-    /// CoW pool-indexer service exposing `/api/v1/{network}/uniswap/v3/`.
-    /// Takes precedence over `subgraph` when set.
-    pub pool_indexer_url: Option<Url>,
+    /// Where pool data is fetched from (subgraph or pool-indexer).
+    pub pool_source: UniswapV3PoolSource,
 
     /// How often the liquidity source should be reinitialized to
     /// become aware of new pools.
@@ -195,12 +199,11 @@ pub struct UniswapV3 {
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[expect(clippy::self_named_constructors)]
-    pub fn uniswap_v3(subgraph: Option<UniswapV3Subgraph>, chain: Chain) -> Option<Self> {
+    pub fn uniswap_v3(pool_source: UniswapV3PoolSource, chain: Chain) -> Option<Self> {
         Some(Self {
             router: contracts::UniswapV3SwapRouterV2::deployment_address(&chain.id())?.into(),
             max_pools_to_initialize: 100,
-            subgraph,
-            pool_indexer_url: None,
+            pool_source,
             reinit_interval: None,
         })
     }

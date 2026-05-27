@@ -536,20 +536,19 @@ enum UniswapV3Config {
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
         max_pools_to_initialize: usize,
 
-        /// The URL used to connect to uniswap v3 subgraph client. At least one
-        /// of `graph_url` or `pool_indexer_url` must be set; `pool_indexer_url`
-        /// takes precedence when both are provided.
+        /// The URL used to connect to uniswap v3 subgraph client. Exactly one
+        /// of `graph-url` or `pool-indexer-url` must be set.
         #[serde(default)]
         graph_url: Option<Url>,
 
-        /// Optional URL of a CoW pool-indexer service. When set, it replaces
-        /// the subgraph as the pool metadata source.
+        /// URL of a CoW pool-indexer service. Exactly one of `graph-url` or
+        /// `pool-indexer-url` must be set.
         #[serde(default)]
         pool_indexer_url: Option<Url>,
 
         /// How many pool IDs can be present in a where clause of a Tick query
         /// at once. Some subgraphs are overloaded and throw errors when
-        /// there are too many.
+        /// there are too many. Ignored when `pool-indexer-url` is set.
         #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
         max_pools_per_tick_query: usize,
 
@@ -570,18 +569,17 @@ enum UniswapV3Config {
 
         /// How many pool IDs can be present in a where clause of a Tick query
         /// at once. Some subgraphs are overloaded and throw errors when
-        /// there are too many.
+        /// there are too many. Ignored when `pool-indexer-url` is set.
         #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
         max_pools_per_tick_query: usize,
 
-        /// The URL used to connect to uniswap v3 subgraph client. At least one
-        /// of `graph_url` or `pool_indexer_url` must be set; `pool_indexer_url`
-        /// takes precedence when both are provided.
+        /// The URL used to connect to uniswap v3 subgraph client. Exactly one
+        /// of `graph-url` or `pool-indexer-url` must be set.
         #[serde(default)]
         graph_url: Option<Url>,
 
-        /// Optional URL of a CoW pool-indexer service. When set, it replaces
-        /// the subgraph as the pool metadata source.
+        /// URL of a CoW pool-indexer service. Exactly one of `graph-url` or
+        /// `pool-indexer-url` must be set.
         #[serde(default)]
         pool_indexer_url: Option<Url>,
 

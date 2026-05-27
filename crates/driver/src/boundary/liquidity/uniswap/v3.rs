@@ -143,34 +143,34 @@ async fn init_liquidity(
     ))
 }
 
-/// Picks the V3 pool data source based on config precedence.
+/// Picks the V3 pool data source based on the configured pool source variant.
 async fn build_pool_data_source(
     eth: &Ethereum,
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<Arc<dyn V3PoolDataSource>> {
+    use infra::liquidity::config::UniswapV3PoolSource;
     let http = boundary::liquidity::http_client();
 
-    if let Some(url) = &config.pool_indexer_url {
-        tracing::info!(%url, "uniswap v3: using pool-indexer as data source");
-        return Ok(Arc::new(PoolIndexerClient::new(
-            url.clone(),
-            eth.chain(),
-            http,
-        )));
+    match &config.pool_source {
+        UniswapV3PoolSource::PoolIndexer(url) => {
+            tracing::info!(%url, "uniswap v3: using pool-indexer as data source");
+            Ok(Arc::new(PoolIndexerClient::new(
+                url.clone(),
+                eth.chain(),
+                http,
+            )))
+        }
+        UniswapV3PoolSource::Subgraph(subgraph) => {
+            tracing::info!(url = %subgraph.url, "uniswap v3: using subgraph as data source");
+            Ok(Arc::new(
+                UniV3SubgraphClient::from_subgraph_url(
+                    &subgraph.url,
+                    http,
+                    subgraph.max_pools_per_tick_query,
+                )
+                .await
+                .context("failed to construct UniV3 subgraph client")?,
+            ))
+        }
     }
-
-    let subgraph = config
-        .subgraph
-        .as_ref()
-        .context("uniswap v3: subgraph required when pool_indexer_url is unset")?;
-    tracing::info!(url = %subgraph.url, "uniswap v3: using subgraph as data source");
-    Ok(Arc::new(
-        UniV3SubgraphClient::from_subgraph_url(
-            &subgraph.url,
-            http,
-            subgraph.max_pools_per_tick_query,
-        )
-        .await
-        .context("failed to construct UniV3 subgraph client")?,
-    ))
 }
