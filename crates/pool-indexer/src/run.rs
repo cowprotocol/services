@@ -190,7 +190,6 @@ async fn bootstrap_factory(
         network.chain_id,
         factory.address,
         &network.subgraph_url,
-        network.subgraph_bearer_token.clone(),
         network.seed_block,
     )
     .await

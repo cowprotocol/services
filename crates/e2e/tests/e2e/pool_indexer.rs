@@ -181,7 +181,6 @@ async fn start_pool_indexer_at(factory: Address, metrics_port: u16) {
             poll_interval_secs: 1,
             use_latest: true,
             subgraph_url: PLACEHOLDER_SUBGRAPH_URL.parse().unwrap(),
-            subgraph_bearer_token: None,
             seed_block: None,
             fetch_concurrency: 8,
             prefetch_concurrency: 50,

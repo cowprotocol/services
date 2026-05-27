@@ -103,13 +103,6 @@ pub struct NetworkConfig {
     /// Subgraph GraphQL endpoint for seeding initial state.
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub subgraph_url: Url,
-    /// Optional Bearer token for authenticated subgraph endpoints. Accepts
-    /// `%ENV_VAR` so the secret never lands in the TOML file.
-    #[serde(
-        default,
-        deserialize_with = "configs::deserialize_env::deserialize_optional_string_from_env"
-    )]
-    pub subgraph_bearer_token: Option<String>,
     /// Block number to seed at. Defaults to the subgraph's current block.
     pub seed_block: Option<u64>,
 }

@@ -108,13 +108,10 @@ struct MetaBlock {
 struct SubgraphClient {
     http: Client,
     url: Url,
-    /// Optional Bearer token for authenticated endpoints (Goldsky, paid Graph
-    /// gateway proxies). `None` for public subgraphs.
-    bearer_token: Option<String>,
 }
 
 impl SubgraphClient {
-    fn new(url: &Url, bearer_token: Option<String>) -> Result<Self> {
+    fn new(url: &Url) -> Result<Self> {
         let http = Client::builder()
             .timeout(SUBGRAPH_REQUEST_TIMEOUT)
             .build()
@@ -123,21 +120,19 @@ impl SubgraphClient {
         Ok(Self {
             http,
             url: url.clone(),
-            bearer_token,
         })
     }
 
     /// Executes a GraphQL query and deserialises the `data` field.
     /// Returns an error if the response contains a top-level `errors` array.
     async fn query<T: for<'de> Deserialize<'de>>(&self, query: &str, vars: Value) -> Result<T> {
-        let mut req = self
+        let response = self
             .http
             .post(self.url.as_str())
-            .json(&json!({ "query": query, "variables": vars }));
-        if let Some(token) = &self.bearer_token {
-            req = req.bearer_auth(token);
-        }
-        let response = req.send().await.context("subgraph HTTP request")?;
+            .json(&json!({ "query": query, "variables": vars }))
+            .send()
+            .await
+            .context("subgraph HTTP request")?;
 
         let gql_response: GqlResponse =
             response.json().await.context("decode subgraph response")?;
@@ -281,10 +276,9 @@ impl<'a> SubgraphSeeder<'a> {
         chain_id: u64,
         factory: Address,
         subgraph_url: &Url,
-        bearer_token: Option<String>,
         block: Option<u64>,
     ) -> Result<Self> {
-        let subgraph = SubgraphClient::new(subgraph_url, bearer_token)?;
+        let subgraph = SubgraphClient::new(subgraph_url)?;
         let snapshot_block = match block {
             Some(block) => block,
             None => subgraph
@@ -492,13 +486,12 @@ pub async fn seed(
     chain_id: u64,
     factory: Address,
     subgraph_url: &Url,
-    bearer_token: Option<String>,
     block: Option<u64>,
 ) -> Result<u64> {
     let labels = [network];
     let m = crate::metrics::Metrics::get();
     let _timer = crate::metrics::Metrics::timer(&m.subgraph_seed_seconds, &labels);
-    SubgraphSeeder::new(db, chain_id, factory, subgraph_url, bearer_token, block)
+    SubgraphSeeder::new(db, chain_id, factory, subgraph_url, block)
         .await?
         .seed()
         .await
