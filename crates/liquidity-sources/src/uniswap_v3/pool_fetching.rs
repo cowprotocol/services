@@ -136,21 +136,20 @@ impl PoolsCheckpointHandler {
     /// state/ticks). Then fetches state/ticks for the most deepest pools
     /// (subset of all existing pools).
     ///
-    /// `block_retriever` is used to pick the snapshot's `target_block` from
-    /// chain head — both `get_registered_pools` and
-    /// `get_pools_with_ticks_by_ids` then promise data at or after that
-    /// block. The event-replay anchor is taken from the *tick* call's
-    /// response (the later of the two), which is what closes the init-time
-    /// double-application race that the indexer otherwise has.
+    /// `target_block` is the chain's finalized block so it matches the
+    /// pool-indexer source's anchor; both calls then promise data at or
+    /// after that block. The event-replay anchor is taken from the *tick*
+    /// call's response (the later of the two), which is what closes the
+    /// init-time double-application race that the indexer otherwise has.
     pub async fn new(
         source: Arc<dyn V3PoolDataSource>,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
         let target_block = block_retriever
-            .current_block()
+            .finalized_block()
             .await
-            .context("read chain head for snapshot target_block")?
+            .context("read finalized block for snapshot target_block")?
             .number;
         let mut registered_pools = source.get_registered_pools(target_block).await?;
         tracing::debug!(
