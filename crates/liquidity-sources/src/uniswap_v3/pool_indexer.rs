@@ -26,10 +26,7 @@ use {
 };
 
 /// How often [`PoolIndexerClient::wait_until`] polls `/pools?limit=1` while
-/// waiting for the indexer's head to catch up. Kept short so the init path
-/// returns promptly once the indexer is in range; there is no upper bound on
-/// total wait time — the surrounding `BackgroundInitLiquiditySource` caps the
-/// init at 10 minutes.
+/// waiting for the indexer's head to catch up.
 const WAIT_UNTIL_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Pool-indexer's server-side cap on `pool_ids=` query param size; keep our
@@ -43,13 +40,20 @@ pub struct PoolIndexerClient {
     /// Service root (e.g. `http://pool-indexer/`).
     base_url: Url,
     http: Client,
+    /// Upper bound on a single [`Self::wait_until`] call. Sized per network
+    /// to comfortably exceed the worst-case first-deploy seed time.
+    wait_until_timeout: Duration,
 }
 
 impl PoolIndexerClient {
-    pub fn new(base_url: Url, chain: Chain, http: Client) -> Self {
+    pub fn new(base_url: Url, chain: Chain, http: Client, wait_until_timeout: Duration) -> Self {
         let prefix = format!("api/v1/{}/uniswap/v3/", chain.as_str());
         let base_url = url_join(&base_url, &prefix);
-        Self { base_url, http }
+        Self {
+            base_url,
+            http,
+            wait_until_timeout,
+        }
     }
 
     fn path(&self, suffix: &str) -> Url {
@@ -182,15 +186,18 @@ impl IndexerTick {
 
 impl PoolIndexerClient {
     /// Blocks until the indexer's `/pools` envelope reports `block_number >=
-    /// target_block`. Polls every [`WAIT_UNTIL_POLL_INTERVAL`]; returns
-    /// immediately if the indexer is already in range. The probe is a
-    /// `?limit=1` listing so the round-trip stays cheap.
+    /// target_block`, capped at [`Self::wait_until_timeout`]. Polls every
+    /// [`WAIT_UNTIL_POLL_INTERVAL`]; returns immediately if the indexer is
+    /// already in range. The probe is a `?limit=1` listing so the round-trip
+    /// stays cheap.
     ///
     /// `503 Service Unavailable` is treated as "indexer still bootstrapping"
     /// (it returns 503 until the first checkpoint exists) and the loop
     /// keeps polling. Every other non-2xx is propagated as an error — those
     /// are genuine problems the caller should see.
     async fn wait_until(&self, target_block: u64) -> Result<()> {
+        let deadline = std::time::Instant::now() + self.wait_until_timeout;
+        let mut last_observed: Option<u64> = None;
         loop {
             let mut url = self.path("pools");
             url.query_pairs_mut().append_pair("limit", "1");
@@ -205,23 +212,30 @@ impl PoolIndexerClient {
                     %target_block,
                     "pool-indexer not ready yet (503); waiting",
                 );
-                tokio::time::sleep(WAIT_UNTIL_POLL_INTERVAL).await;
-                continue;
+            } else {
+                let probe: PoolsResponse = resp
+                    .error_for_status()
+                    .context("wait_until probe HTTP status")?
+                    .json()
+                    .await
+                    .context("wait_until probe body")?;
+                if probe.block_number >= target_block {
+                    return Ok(());
+                }
+                last_observed = Some(probe.block_number);
+                tracing::debug!(
+                    indexer_block = probe.block_number,
+                    %target_block,
+                    "pool-indexer not yet at target block; waiting",
+                );
             }
-            let probe: PoolsResponse = resp
-                .error_for_status()
-                .context("wait_until probe HTTP status")?
-                .json()
-                .await
-                .context("wait_until probe body")?;
-            if probe.block_number >= target_block {
-                return Ok(());
+            if std::time::Instant::now() >= deadline {
+                anyhow::bail!(
+                    "pool-indexer wait_until exceeded {:?} waiting for block {target_block}; last \
+                     observed indexer block: {last_observed:?}",
+                    self.wait_until_timeout,
+                );
             }
-            tracing::debug!(
-                indexer_block = probe.block_number,
-                %target_block,
-                "pool-indexer not yet at target block; waiting",
-            );
             tokio::time::sleep(WAIT_UNTIL_POLL_INTERVAL).await;
         }
     }

@@ -169,6 +169,19 @@ pub struct UniswapV3Subgraph {
     pub max_pools_per_tick_query: usize,
 }
 
+/// Pool-indexer-specific Uniswap V3 config.
+#[derive(Clone, Debug)]
+pub struct UniswapV3PoolIndexer {
+    /// Service root, e.g. `http://pool-indexer/` exposing
+    /// `/api/v1/{network}/uniswap/v3/`.
+    pub url: Url,
+
+    /// Upper bound on a single `wait_until` call. Size per-network to
+    /// comfortably exceed the worst-case first-deploy seed time (~13 min
+    /// for mainnet's ~60k pools; tens of seconds for smaller chains).
+    pub wait_until_timeout: Duration,
+}
+
 /// Where Uniswap V3 pool definitions and tick data are fetched from. Exactly
 /// one source is active per network.
 #[derive(Clone, Debug)]
@@ -176,7 +189,7 @@ pub enum UniswapV3PoolSource {
     /// A Uniswap V3 subgraph (typically Goldsky-hosted).
     Subgraph(UniswapV3Subgraph),
     /// A CoW pool-indexer service exposing `/api/v1/{network}/uniswap/v3/`.
-    PoolIndexer(Url),
+    PoolIndexer(UniswapV3PoolIndexer),
 }
 
 /// Uniswap V3 liquidity fetching options.

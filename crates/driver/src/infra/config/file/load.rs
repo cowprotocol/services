@@ -225,12 +225,14 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         max_pools_to_initialize,
                         graph_url,
                         pool_indexer_url,
+                        pool_indexer_wait_until_timeout,
                         reinit_interval,
                         max_pools_per_tick_query,
                     } => {
                         let pool_source = uniswap_v3_pool_source(
                             graph_url,
                             pool_indexer_url,
+                            pool_indexer_wait_until_timeout,
                             max_pools_per_tick_query,
                         );
                         liquidity::config::UniswapV3 {
@@ -249,12 +251,14 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         max_pools_to_initialize,
                         graph_url,
                         pool_indexer_url,
+                        pool_indexer_wait_until_timeout,
                         reinit_interval,
                         max_pools_per_tick_query,
                     } => {
                         let pool_source = uniswap_v3_pool_source(
                             graph_url,
                             pool_indexer_url,
+                            pool_indexer_wait_until_timeout,
                             max_pools_per_tick_query,
                         );
                         liquidity::config::UniswapV3 {
@@ -384,6 +388,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
 fn uniswap_v3_pool_source(
     graph_url: Option<reqwest::Url>,
     pool_indexer_url: Option<reqwest::Url>,
+    pool_indexer_wait_until_timeout: std::time::Duration,
     max_pools_per_tick_query: usize,
 ) -> liquidity::config::UniswapV3PoolSource {
     match (graph_url, pool_indexer_url) {
@@ -393,7 +398,12 @@ fn uniswap_v3_pool_source(
                 max_pools_per_tick_query,
             })
         }
-        (None, Some(url)) => liquidity::config::UniswapV3PoolSource::PoolIndexer(url),
+        (None, Some(url)) => liquidity::config::UniswapV3PoolSource::PoolIndexer(
+            liquidity::config::UniswapV3PoolIndexer {
+                url,
+                wait_until_timeout: pool_indexer_wait_until_timeout,
+            },
+        ),
         (None, None) => panic!("uniswap-v3: set exactly one of graph-url or pool-indexer-url"),
         (Some(_), Some(_)) => {
             panic!("uniswap-v3: graph-url and pool-indexer-url are mutually exclusive")

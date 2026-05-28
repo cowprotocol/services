@@ -546,6 +546,15 @@ enum UniswapV3Config {
         #[serde(default)]
         pool_indexer_url: Option<Url>,
 
+        /// Pool-indexer `wait_until` timeout. Size per-network to comfortably
+        /// exceed the worst-case first-deploy seed time. Ignored when
+        /// `graph-url` is set.
+        #[serde(
+            with = "humantime_serde",
+            default = "uniswap_v3::default_pool_indexer_wait_until_timeout"
+        )]
+        pool_indexer_wait_until_timeout: Duration,
+
         /// How many pool IDs can be present in a where clause of a Tick query
         /// at once. Some subgraphs are overloaded and throw errors when
         /// there are too many. Ignored when `pool-indexer-url` is set.
@@ -583,6 +592,15 @@ enum UniswapV3Config {
         #[serde(default)]
         pool_indexer_url: Option<Url>,
 
+        /// Pool-indexer `wait_until` timeout. Size per-network to comfortably
+        /// exceed the worst-case first-deploy seed time. Ignored when
+        /// `graph-url` is set.
+        #[serde(
+            with = "humantime_serde",
+            default = "uniswap_v3::default_pool_indexer_wait_until_timeout"
+        )]
+        pool_indexer_wait_until_timeout: Duration,
+
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
         #[serde(with = "humantime_serde", default = "default_reinit_interval")]
@@ -597,12 +615,18 @@ enum UniswapV3Preset {
 }
 
 mod uniswap_v3 {
+    use std::time::Duration;
+
     pub fn default_max_pools_to_initialize() -> usize {
         100
     }
 
     pub fn default_max_pools_per_tick_query() -> usize {
         usize::MAX
+    }
+
+    pub fn default_pool_indexer_wait_until_timeout() -> Duration {
+        Duration::from_secs(300)
     }
 }
 
