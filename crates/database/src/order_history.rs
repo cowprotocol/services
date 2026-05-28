@@ -102,7 +102,7 @@ mod tests {
             events::EventIndex,
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
         },
-        chrono::{DateTime, Utc},
+        chrono::{DateTime, Duration, Utc},
         futures::StreamExt,
         sqlx::Connection,
     };
@@ -219,5 +219,145 @@ mod tests {
             elapsed / number_of_query_executions
         );
         assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_user_orders_correctness() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let owner = ByteArray([1u8; 20]);
+        let other_owner = ByteArray([2u8; 20]);
+        let now = Utc::now();
+        let t = |secs: i64| now - Duration::seconds(secs);
+
+        // Ordered newest→oldest: uid_a, uid_b, uid_c, uid_d, uid_e
+        let uid_a = ByteArray([0xaau8; 56]); // orders only
+        let uid_b = ByteArray([0xbbu8; 56]); // both orders AND jit_orders — must appear once
+        let uid_c = ByteArray([0xccu8; 56]); // jit_orders only
+        let uid_d = ByteArray([0xddu8; 56]); // orders only
+        let uid_e = ByteArray([0xeeu8; 56]); // orders, owned by other_owner, sender = owner
+        let uid_x = ByteArray([0xffu8; 56]); // other_owner — must never appear
+
+        orders::insert_order(
+            &mut db,
+            &orders::Order {
+                uid: uid_a,
+                owner,
+                creation_timestamp: t(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        orders::insert_order(
+            &mut db,
+            &orders::Order {
+                uid: uid_b,
+                owner,
+                creation_timestamp: t(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // jit_orders primary key is (block_number, log_index) — use distinct values.
+        jit_orders::insert(
+            &mut db,
+            &[
+                jit_orders::JitOrder {
+                    uid: uid_b,
+                    owner,
+                    creation_timestamp: t(2),
+                    block_number: 1,
+                    ..Default::default()
+                },
+                jit_orders::JitOrder {
+                    uid: uid_c,
+                    owner,
+                    creation_timestamp: t(3),
+                    block_number: 2,
+                    ..Default::default()
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        orders::insert_order(
+            &mut db,
+            &orders::Order {
+                uid: uid_d,
+                owner,
+                creation_timestamp: t(4),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        orders::insert_order(
+            &mut db,
+            &orders::Order {
+                uid: uid_e,
+                owner: other_owner,
+                creation_timestamp: t(5),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        insert_onchain_order(
+            &mut db,
+            &EventIndex::default(),
+            &OnchainOrderPlacement {
+                order_uid: uid_e,
+                sender: owner,
+                placement_error: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        orders::insert_order(
+            &mut db,
+            &orders::Order {
+                uid: uid_x,
+                owner: other_owner,
+                creation_timestamp: t(0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let uids_of = |v: Vec<Data>| v.into_iter().map(|(uid, _, _)| uid).collect::<Vec<_>>();
+
+        // All results in order.
+        let all = uids_of(user_orders(&mut db, &owner, 0, Some(100)).await);
+        assert_eq!(all, vec![uid_a.0, uid_b.0, uid_c.0, uid_d.0, uid_e.0]);
+
+        // uid_b is in both tables but must appear exactly once.
+        assert_eq!(all.iter().filter(|&&u| u == uid_b.0).count(), 1);
+
+        // First page: both rows come from orders.
+        let page1 = uids_of(user_orders(&mut db, &owner, 0, Some(2)).await);
+        assert_eq!(page1, vec![uid_a.0, uid_b.0]);
+
+        // Second page: crosses the table boundary — uid_c from jit_orders, uid_d from
+        // orders.
+        let page2 = uids_of(user_orders(&mut db, &owner, 2, Some(2)).await);
+        assert_eq!(page2, vec![uid_c.0, uid_d.0]);
+
+        // Last page: onchain-sender order.
+        let page3 = uids_of(user_orders(&mut db, &owner, 4, Some(10)).await);
+        assert_eq!(page3, vec![uid_e.0]);
+
+        // Unrelated address returns nothing.
+        let none = user_orders(&mut db, &ByteArray([0xabu8; 20]), 0, Some(100)).await;
+        assert!(none.is_empty());
     }
 }
