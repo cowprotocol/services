@@ -82,7 +82,7 @@ pub fn user_orders<'a>(
         // them here again. Because JIT orders are very rare we check that
         // the order does not exist in the regular orders table instead of the
         // other way around.
-        "    AND NOT EXISTS (SELECT 1 FROM orders o WHERE jit_o.uid = o.uid)",
+        "    AND NOT EXISTS (SELECT 1 FROM orders ord WHERE o.uid = ord.uid)",
         " )",
         " ORDER BY creation_timestamp DESC",
     );
