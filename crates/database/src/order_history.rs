@@ -27,7 +27,7 @@ pub fn user_orders<'a>(
         // window requested by the user we need to fetch LIMIT + OFFSET results
         // in each sub-query.
         "WITH page_uids AS (",
-            " SELECT uid, creation_timestamp FROM (",
+            " SELECT uid, min(creation_timestamp) as creation_timestamp FROM (",
                 // regular orders with that owner (relies on the
                 // `user_order_creation_timestamp` index)
                 " (",
@@ -37,7 +37,7 @@ pub fn user_orders<'a>(
                 "  ORDER BY creation_timestamp DESC",
                 "  LIMIT $2 + $3",
                 " )",
-                " UNION",
+                " UNION ALL",
                 // onchain placed orders from that sender - gets a dedicated
                 // subquery to avoid having to needlessly LEFT JOIN potentially
                 // thousands of onchain_placed_orders on orders because those
@@ -52,7 +52,7 @@ pub fn user_orders<'a>(
                 "  ORDER BY creation_timestamp DESC",
                 "  LIMIT $2 + $3",
                 " )",
-                " UNION",
+                " UNION ALL",
                 // JIT orders with that owner (relies on the
                 // `jit_order_creation_timestamp` index)
                 " (",
@@ -63,6 +63,7 @@ pub fn user_orders<'a>(
                 "  LIMIT $2 + $3",
                 " )",
             " ) combined",
+            " GROUP BY uid",
             " ORDER BY creation_timestamp DESC",
             " LIMIT $2 OFFSET $3",
         ") ",
