@@ -22,15 +22,14 @@ pub fn user_orders<'a>(
     // see that these queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-        // Phase 1: find the page of UIDs using cheap index scans. All subqueries
-        // are designed to NOT produce any duplicates so we can use the cheaper
-        // `UNION ALL` instead of `UNION` (which has to filter out duplicates).
-        // Because we `UNION ALL` the sub-query results before determining the
+        // Phase 1: find the page of UIDs using cheap index scans.
+        // Because we `UNION` the sub-query results before determining the
         // window requested by the user we need to fetch LIMIT + OFFSET results
         // in each sub-query.
         "WITH page_uids AS (",
             " SELECT uid, creation_timestamp FROM (",
-                // regular orders with that owner
+                // regular orders with that owner (relies on the
+                // `user_order_creation_timestamp` index)
                 " (",
                 "  SELECT o.uid, o.creation_timestamp",
                 "  FROM orders o",
@@ -38,11 +37,13 @@ pub fn user_orders<'a>(
                 "  ORDER BY creation_timestamp DESC",
                 "  LIMIT $2 + $3",
                 " )",
-                " UNION ALL",
+                " UNION",
                 // onchain placed orders from that sender - gets a dedicated
                 // subquery to avoid having to needlessly LEFT JOIN potentially
                 // thousands of onchain_placed_orders on orders because those
                 // are relatively rare
+                //
+                // relies on the `order_sender` index
                 " (",
                 "  SELECT o.uid, o.creation_timestamp",
                 "  FROM onchain_placed_orders opo",
@@ -51,15 +52,13 @@ pub fn user_orders<'a>(
                 "  ORDER BY creation_timestamp DESC",
                 "  LIMIT $2 + $3",
                 " )",
-                " UNION ALL",
-                // JIT orders with that owner
+                " UNION",
+                // JIT orders with that owner (relies on the
+                // `jit_order_creation_timestamp` index)
                 " (",
                 "  SELECT jit_o.uid, jit_o.creation_timestamp",
                 "  FROM jit_orders jit_o",
                 "  WHERE jit_o.owner = $1",
-                // explicitly avoid duplicates from the orders table to use
-                // the faster `UNION ALL` instead of `UNION`.
-                "    AND NOT EXISTS (SELECT 1 FROM orders o WHERE jit_o.uid = o.uid)",
                 "  ORDER BY creation_timestamp DESC",
                 "  LIMIT $2 + $3",
                 " )",
