@@ -31,34 +31,55 @@ pub fn user_orders<'a>(
         "WITH page_uids AS (",
             " SELECT uid, creation_timestamp FROM (",
                 // regular orders with that owner
-                " (SELECT o.uid, o.creation_timestamp FROM orders o",
+                " (",
+                "  SELECT o.uid, o.creation_timestamp",
+                "  FROM orders o",
                 "  WHERE o.owner = $1",
-                "  ORDER BY creation_timestamp DESC LIMIT $2 + $3)",
+                "  ORDER BY creation_timestamp DESC",
+                "  LIMIT $2 + $3",
+                " )",
                 " UNION ALL",
-                // onchain placed orders from that sender
-                " (SELECT o.uid, o.creation_timestamp",
+                // onchain placed orders from that sender - gets a dedicated
+                // subquery to avoid having to needlessly LEFT JOIN potentially
+                // thousands of onchain_placed_orders on orders because those
+                // are relatively rare
+                " (",
+                "  SELECT o.uid, o.creation_timestamp",
                 "  FROM onchain_placed_orders opo",
                 "  JOIN orders o ON opo.uid = o.uid",
                 "  WHERE opo.sender = $1 AND o.owner != $1",
-                "  ORDER BY creation_timestamp DESC LIMIT $2 + $3)",
+                "  ORDER BY creation_timestamp DESC",
+                "  LIMIT $2 + $3",
+                " )",
                 " UNION ALL",
                 // JIT orders with that owner
-                " (SELECT o.uid, o.creation_timestamp FROM jit_orders o",
-                "  WHERE o.owner = $1",
-                "    AND NOT EXISTS (SELECT 1 FROM orders ord WHERE o.uid = ord.uid)",
-                "  ORDER BY creation_timestamp DESC LIMIT $2 + $3)",
+                " (",
+                "  SELECT jit_o.uid, jit_o.creation_timestamp",
+                "  FROM jit_orders jit_o",
+                "  WHERE jit_o.owner = $1",
+                // explicitly avoid duplicates from the orders table to use
+                // the faster `UNION ALL` instead of `UNION`.
+                "    AND NOT EXISTS (SELECT 1 FROM orders o WHERE jit_o.uid = o.uid)",
+                "  ORDER BY creation_timestamp DESC",
+                "  LIMIT $2 + $3",
+                " )",
             " ) combined",
-            " ORDER BY creation_timestamp DESC LIMIT $2 OFFSET $3",
+            " ORDER BY creation_timestamp DESC",
+            " LIMIT $2 OFFSET $3",
         ") ",
-        // Phase 2: fetch full rows for the winning UIDs only.
-        "(SELECT ", orders::SELECT,
-        "   FROM ", orders::FROM,
-        "  WHERE o.uid IN (SELECT uid FROM page_uids)) ",
-        "UNION ALL ",
-        "(SELECT ", jit_orders::SELECT,
-        "   FROM ", jit_orders::FROM,
-        "  WHERE o.uid IN (SELECT uid FROM page_uids)) ",
-        "ORDER BY creation_timestamp DESC",
+        // Phase 2: fetch full rows for the relevant UIDs only
+        " (",
+        "  SELECT ", orders::SELECT,
+        "  FROM ", orders::FROM,
+        "  WHERE o.uid IN (SELECT uid FROM page_uids)",
+        " )",
+        " UNION ALL",
+        " (",
+        "  SELECT ", jit_orders::SELECT,
+        "  FROM ", jit_orders::FROM,
+        "  WHERE o.uid IN (SELECT uid FROM page_uids)",
+        " )",
+        " ORDER BY creation_timestamp DESC",
     );
     sqlx::query_as(QUERY)
         .bind(owner)
