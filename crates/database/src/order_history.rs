@@ -78,6 +78,11 @@ pub fn user_orders<'a>(
         "  SELECT ", jit_orders::SELECT,
         "  FROM ", jit_orders::FROM,
         "  WHERE o.uid IN (SELECT uid FROM page_uids)",
+        // despite already handling duplicates in phase 1 we need to handle
+        // them here again. Because JIT orders are very rare we check that
+        // the order does not exist in the regular orders table instead of the
+        // other way around.
+        "    AND NOT EXISTS (SELECT 1 FROM orders o WHERE jit_o.uid = o.uid)",
         " )",
         " ORDER BY creation_timestamp DESC",
     );
