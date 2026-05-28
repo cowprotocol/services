@@ -15,7 +15,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Configuration for the Hermod (zeroShadow) sanctioned-address checker.
 #[derive(Debug, Clone)]
-pub struct HermodConfig {
+pub struct Config {
     /// Base URL of the Hermod agent (e.g. `http://hermod:3000`).
     pub url: Url,
     /// Per-customer HMAC key used to obfuscate addresses before sending.
@@ -25,22 +25,22 @@ pub struct HermodConfig {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum HermodError {
+pub(super) enum Error {
     #[error("request failed")]
     Request(#[from] reqwest::Error),
     #[error("unexpected status code: {0}")]
     UnexpectedStatus(reqwest::StatusCode),
 }
 
-pub(super) struct Hermod {
+pub(super) struct Client {
     client: reqwest::Client,
     url: Url,
     hmac_key: Vec<u8>,
     api_key: Option<String>,
 }
 
-impl Hermod {
-    pub(super) fn new(config: HermodConfig) -> Self {
+impl Client {
+    pub(super) fn new(config: Config) -> Self {
         // Make sure the URL ends with a slash so joining `addresses/<sig>`
         // appends rather than replaces the last path segment.
         let mut url = config.url;
@@ -69,7 +69,7 @@ impl Hermod {
         const_hex::encode(mac.finalize().into_bytes())
     }
 
-    async fn fetch_status(&self, address: Address) -> Result<bool, HermodError> {
+    async fn fetch_status(&self, address: Address) -> Result<bool, Error> {
         let signature = self.sign(address);
         let endpoint = self
             .url
@@ -84,13 +84,13 @@ impl Hermod {
         match response.status() {
             reqwest::StatusCode::OK => Ok(true),
             reqwest::StatusCode::NOT_FOUND => Ok(false),
-            status => Err(HermodError::UnexpectedStatus(status)),
+            status => Err(Error::UnexpectedStatus(status)),
         }
     }
 }
 
 #[async_trait]
-impl Backend for Hermod {
+impl Backend for Client {
     async fn fetch(&self, address: Address) -> Result<bool, BackendError> {
         Ok(self.fetch_status(address).await?)
     }
@@ -104,8 +104,8 @@ impl Backend for Hermod {
 mod tests {
     use {super::*, alloy_primitives::address};
 
-    fn backend() -> Hermod {
-        Hermod::new(HermodConfig {
+    fn backend() -> Client {
+        Client::new(Config {
             url: "http://hermod:3000".parse().unwrap(),
             hmac_key: "key".to_string(),
             api_key: None,
@@ -122,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn base_url_without_trailing_slash_is_normalised() {
-        let hermod = Hermod::new(HermodConfig {
+        let hermod = Client::new(Config {
             url: "http://hermod:3000/v1".parse().unwrap(),
             hmac_key: "key".to_string(),
             api_key: None,

@@ -5,11 +5,11 @@ mod cached;
 mod hermod;
 mod onchain;
 
-pub use hermod::HermodConfig;
+pub use hermod::Config as HermodConfig;
 use {
     self::{
         cached::{Backend, Cached},
-        hermod::Hermod,
+        hermod::Client as Hermod,
         onchain::Onchain,
     },
     alloy_primitives::Address,

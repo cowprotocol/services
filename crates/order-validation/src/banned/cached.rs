@@ -9,7 +9,7 @@ use {
     moka::sync::Cache,
     std::{
         collections::HashSet,
-        sync::Arc,
+        sync::{Arc, Weak},
         time::{Duration, Instant},
     },
 };
@@ -31,7 +31,7 @@ pub(super) enum BackendError {
     Chainalysis(#[from] alloy_contract::Error),
 
     #[error("hermod lookup failed")]
-    Hermod(#[from] super::hermod::HermodError),
+    Hermod(#[from] super::hermod::Error),
 }
 
 /// Pure banned-address fetcher; caching and refresh live in [`Cached`].
@@ -59,7 +59,7 @@ impl Cached {
             backends,
             cache: Cache::builder().max_capacity(max_capacity).build(),
         });
-        cached.clone().spawn_maintenance_task();
+        cached.spawn_maintenance_task();
         Some(cached)
     }
 
@@ -84,7 +84,8 @@ impl Cached {
             .await;
 
         let now = Instant::now();
-        for (address, is_banned) in fetched.into_iter().flat_map(|(a, r)| r.map(|b| (a, b))) {
+        for (address, is_banned) in fetched {
+            let Some(is_banned) = is_banned else { continue };
             self.cache.insert(
                 address,
                 Entry {
@@ -143,24 +144,27 @@ impl Cached {
     }
 
     /// Spawns a background task that periodically refreshes near-expiry cache
-    /// entries so callers rarely observe a cold miss.
-    fn spawn_maintenance_task(self: Arc<Self>) {
+    /// entries so callers rarely observe a cold miss. Holds a [`Weak`] handle
+    /// so the task exits once the last external [`Arc`] is dropped.
+    fn spawn_maintenance_task(self: &Arc<Self>) {
+        let weak: Weak<Self> = Arc::downgrade(self);
         tokio::task::spawn(async move {
             let mut interval = tokio::time::interval(MAINTENANCE_TIMEOUT);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 interval.tick().await;
+                let Some(this) = weak.upgrade() else { return };
                 let now = Instant::now();
-                let expired = self.expired(now);
+                let expired = this.expired(now);
 
                 let refreshed: Vec<_> = stream::iter(expired)
-                    .map(|address| self.refresh(*address))
+                    .map(|address| this.refresh(*address))
                     .buffer_unordered(MAX_CONCURRENT_LOOKUPS)
                     .collect()
                     .await;
 
                 for (address, entry) in refreshed.into_iter().flatten() {
-                    self.cache.insert(address, entry);
+                    this.cache.insert(address, entry);
                 }
             }
         });
