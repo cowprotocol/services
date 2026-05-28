@@ -49,6 +49,7 @@ mod get_user_orders;
 mod post_order;
 mod post_quote;
 mod put_app_data;
+mod ready;
 mod version;
 
 const ALLOWED_METHODS: &[axum::http::Method] = &[
@@ -279,6 +280,7 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        ("GET", "/api/v1/ready", get(ready::get_ready_handler)),
         // Routes under `/restricted/api/` are not exposed publicly. WAF and
         // infra rules restrict access to authenticated partners.
         // New internal-only endpoints MUST use this prefix.
