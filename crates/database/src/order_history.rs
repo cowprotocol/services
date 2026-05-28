@@ -22,25 +22,43 @@ pub fn user_orders<'a>(
     // see that these queries are taking too long in practice.
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-"(SELECT ", orders::SELECT,
-" FROM ", orders::FROM,
-" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE o.owner = $1",
-" ORDER BY creation_timestamp DESC LIMIT $2 + $3 ) ",
-" UNION ",
-" (SELECT ", orders::SELECT,
-" FROM ", orders::FROM,
-" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE onchain_o.sender = $1 ",
-" ORDER BY creation_timestamp DESC LIMIT $2 + $3 ) ",
-" UNION ",
-" (SELECT ", jit_orders::SELECT,
-" FROM ", jit_orders::FROM,
-" WHERE o.owner = $1 AND NOT EXISTS (SELECT 1 FROM orders ord WHERE o.uid = ord.uid)",
-" ORDER BY creation_timestamp DESC LIMIT $2 + $3 ) ",
-" ORDER BY creation_timestamp DESC ",
-" LIMIT $2 ",
-" OFFSET $3 ",
+        // Phase 1: find the page of UIDs using cheap index scans. All subqueries
+        // are designed to NOT produce any duplicates so we can use the cheaper
+        // `UNION ALL` instead of `UNION` (which has to filter out duplicates).
+        // Because we `UNION ALL` the sub-query results before determining the
+        // window requested by the user we need to fetch LIMIT + OFFSET results
+        // in each sub-query.
+        "WITH page_uids AS (",
+            " SELECT uid, creation_timestamp FROM (",
+                // regular orders with that owner
+                " (SELECT o.uid, o.creation_timestamp FROM orders o",
+                "  WHERE o.owner = $1",
+                "  ORDER BY creation_timestamp DESC LIMIT $2 + $3)",
+                " UNION ALL",
+                // onchain placed orders from that sender
+                " (SELECT o.uid, o.creation_timestamp",
+                "  FROM onchain_placed_orders opo",
+                "  JOIN orders o ON opo.uid = o.uid",
+                "  WHERE opo.sender = $1 AND o.owner != $1",
+                "  ORDER BY creation_timestamp DESC LIMIT $2 + $3)",
+                " UNION ALL",
+                // JIT orders with that owner
+                " (SELECT o.uid, o.creation_timestamp FROM jit_orders o",
+                "  WHERE o.owner = $1",
+                "    AND NOT EXISTS (SELECT 1 FROM orders ord WHERE o.uid = ord.uid)",
+                "  ORDER BY creation_timestamp DESC LIMIT $2 + $3)",
+            " ) combined",
+            " ORDER BY creation_timestamp DESC LIMIT $2 OFFSET $3",
+        ") ",
+        // Phase 2: fetch full rows for the winning UIDs only.
+        "(SELECT ", orders::SELECT,
+        "   FROM ", orders::FROM,
+        "  WHERE o.uid IN (SELECT uid FROM page_uids)) ",
+        "UNION ALL ",
+        "(SELECT ", jit_orders::SELECT,
+        "   FROM ", jit_orders::FROM,
+        "  WHERE o.uid IN (SELECT uid FROM page_uids)) ",
+        "ORDER BY creation_timestamp DESC",
     );
     sqlx::query_as(QUERY)
         .bind(owner)
