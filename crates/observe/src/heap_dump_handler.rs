@@ -139,12 +139,12 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
 
     let pprof_data = {
         let mut lock = prof_ctl.lock().await;
-        let dump = lock.dump_pprof();
+        let pprof_data = lock.dump_pprof();
         // While assembling the heap dump a global symbol cache gets filled with
         // the resolved identifiers. As that is quite large and does not get freed
         // automatically we do it explicitly here.
         backtrace::clear_symbol_cache();
-        dump
+        pprof_data
     };
 
     match pprof_data {
