@@ -1,15 +1,17 @@
 //! Classification of order-simulation revert reasons.
 //!
-//! Used to decide whether to accept or reject an order whose simulation
-//! returned a revert. Funding-class reverts mean the order is not currently
-//! fillable due to allowance or balance state but may become fillable later,
-//! and are accepted because CoW intentionally allows fund-later orders.
-//! Everything else lands in Other, which is rejected and alerted on so the
-//! funding pattern set can grow.
+//! Funding-class reverts (allowance or balance shortfalls hit while simulating
+//! the full sell amount) are accepted. Funding is already gated upstream by
+//! the cheap allowance check in `ensure_token_is_transferable`, which
+//! intentionally permits partial-funding orders so users can submit before
+//! they are fully funded. A funding-class revert from the deeper simulation
+//! is therefore either a permitted partial-funding order (fillable once the
+//! user funds the rest), or an artifact of a state override the simulator
+//! could not compute (e.g. stETH as the buy token). The deeper simulation's
+//! job is structural validation, not re-litigating funding.
 //!
-//! We deliberately maintain only the funding allowlist. Enumerating structural
-//! reverts would be whack-a-mole because every new token and wrapper introduces
-//! its own variant. Defaulting to Other is honest about that.
+//! Everything else lands in Other, which is rejected and alerted on so new
+//! funding patterns can be added when discovered.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevertClass {
