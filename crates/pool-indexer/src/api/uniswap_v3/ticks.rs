@@ -62,6 +62,9 @@ pub struct BulkTicksResponse {
     pub pools: Vec<PoolTicks>,
 }
 
+/// `GET /api/v1/{network}/uniswap/v3/pools/{pool}/ticks`
+///
+/// Returns all non-zero ticks for one pool, ordered by `tick_idx`.
 pub async fn get_ticks(
     State(state): State<Arc<AppState>>,
     Path((network, pool)): Path<(String, Address)>,
@@ -106,6 +109,9 @@ pub async fn get_ticks_bulk(
     .into_response())
 }
 
+/// Bucket the flat row stream (one entry per `(pool, tick)`) into one
+/// [`PoolTicks`] per pool. The DB query orders rows by `(pool_address,
+/// tick_idx)`, so the resulting per-pool tick vectors come out sorted.
 fn group_ticks_by_pool(rows: Vec<db::PoolTickRow>) -> Vec<PoolTicks> {
     let mut groups: HashMap<Address, Vec<TickEntry>> = HashMap::with_capacity(rows.len());
     for row in rows {

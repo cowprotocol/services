@@ -87,12 +87,18 @@ pub struct NetworkConfig {
     /// seed + live-indexing loop; pools from all factories share the per-chain
     /// namespace in the DB and API.
     pub factories: Vec<FactoryConfig>,
+    /// The number of pools to index in a single batch.
     #[serde(default = "default_chunk_size")]
     pub chunk_size: u64,
+    /// The interval at which to poll for new blocks.
     #[serde(default = "default_poll_interval_secs")]
     pub poll_interval_secs: u64,
+    /// Number of `eth_getLogs` chunks fetched in parallel during the live
+    /// indexing loop.
     #[serde(default = "default_fetch_concurrency")]
     pub fetch_concurrency: usize,
+    /// Number of `symbol()` / `decimals()` token-metadata RPC calls run in
+    /// parallel during the backfill passes for newly discovered tokens.
     #[serde(default = "default_prefetch_concurrency")]
     pub prefetch_concurrency: usize,
     /// When `true`, use `latest` instead of `finalized` as the target block.
@@ -125,6 +131,8 @@ impl NetworkConfig {
     }
 }
 
+/// A single factory under [`NetworkConfig::factories`]. Each entry gets
+/// its own seed + live-indexing loop.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FactoryConfig {

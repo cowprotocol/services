@@ -180,7 +180,13 @@ async fn bootstrap_factory(
     let checkpoint = crate::db::uniswap_v3::get_checkpoint(db, network.chain_id, &factory.address)
         .await
         .expect("failed to read checkpoint");
-    if checkpoint.is_some() {
+    if let Some(block) = checkpoint {
+        tracing::info!(
+            chain_id = network.chain_id,
+            factory = %factory.address,
+            block,
+            "existing checkpoint found, skipping bootstrap",
+        );
         return;
     }
 

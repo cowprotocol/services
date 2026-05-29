@@ -901,7 +901,7 @@ impl LogAccumulator {
     /// steady-state case for events fired by *other* Uniswap V3 forks on the
     /// same chain (we fetch `eth_getLogs` without an address filter — see
     /// [`Self::fetch_logs_bisecting`] for why — so foreign-factory events do
-    /// reach this method). Mint/Burn before `Initialize` for *our* pool is 
+    /// reach this method). Mint/Burn before `Initialize` for *our* pool is
     /// impossible per Uniswap V3 contract semantics, so the "silent skip"
     /// doesn't hide a real bug.
     fn apply_position_delta_to_pool_liq(

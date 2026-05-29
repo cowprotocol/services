@@ -30,8 +30,9 @@ impl AppState {
 /// status + body via the `IntoResponse` impl so formatting lives in one place
 /// and helpers can `?`-propagate failures instead of handing around prebuilt
 /// `Response` values. Input-shape errors (bad addresses, bad cursors, too
-/// many ids) are handled earlier by the serde extractors and come back as
-/// axum's default 400s — see [`crate::api::uniswap_v3::PoolIds`].
+/// many ids) are rejected earlier by the serde extractors and come back as
+/// axum's default 400s — [`crate::api::uniswap_v3::PoolIds`] is one such
+/// extractor.
 #[derive(Debug)]
 pub enum ApiError {
     /// `{network}` path segment doesn't match any configured network.
@@ -54,7 +55,9 @@ impl IntoResponse for ApiError {
         match self {
             Self::NetworkNotFound => StatusCode::NOT_FOUND.into_response(),
             Self::NotReady => StatusCode::SERVICE_UNAVAILABLE.into_response(),
-            Self::InvalidCursor => bad_request("invalid cursor"),
+            Self::InvalidCursor => {
+                bad_request("invalid cursor, expected a 20-byte hex address with 0x prefix")
+            }
             Self::Internal(err) => {
                 tracing::error!(?err, "internal error");
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()

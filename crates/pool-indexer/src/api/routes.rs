@@ -18,10 +18,8 @@ use {
     tower_http::trace::TraceLayer,
 };
 
-/// Builds the full axum `Router` for the pool-indexer API. Mounts handlers,
-/// attaches the metrics middleware, and wires the distributed-tracing layer
-/// so `traceparent` / B3 headers on incoming requests seed the current
-/// span — letting logs correlate across services.
+/// Builds the axum `Router` for the pool-indexer API, and mounts
+/// the routes and the metrics middleware.
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(health))

@@ -139,8 +139,10 @@ impl PoolsCheckpointHandler {
     /// `target_block` is the chain's finalized block so it matches the
     /// pool-indexer source's anchor; both calls then return data at or
     /// after that block. The event-replay anchor is taken from the *tick*
-    /// call's response (the later of the two), which is what closes the
-    /// init-time double-application race that the indexer otherwise has.
+    /// call's response (the later of the two). Otherwise there's a race
+    /// between the pool-list fetch and the tick fetch: an event landing
+    /// between them would show up in `ticks` but not `pools`, and replaying
+    /// it would apply that event twice.
     pub async fn new(
         source: Arc<dyn V3PoolDataSource>,
         block_retriever: Arc<dyn BlockRetrieving>,

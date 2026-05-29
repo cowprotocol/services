@@ -354,7 +354,7 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .get(url)
         .send()
         .await
-        .context("GET /pools/by-ids?pool_ids=")?
+        .with_context(|| format!("GET /pools/by-ids?pool_ids <{} ids>", ids.len()))?
         .error_for_status()
         .context("pools-by-ids HTTP status")?
         .json()
