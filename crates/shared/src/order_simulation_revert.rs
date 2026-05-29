@@ -76,18 +76,30 @@ const FUNDING_SELECTORS: &[&str] = &[
     "0xe450d38c",
 ];
 
-/// Returns the first `0x` + 8 hex chars found in the reason, lowercased.
+/// Returns the first ABI-encoded 4-byte selector found in the reason,
+/// lowercased. A valid selector + args encoding has hex length `8 + 64*N`
+/// (selector plus N 32-byte words). This shape excludes 40-char addresses
+/// and 64-char hashes that may appear in the reason text alongside the
+/// actual error data, so we don't have to rely on a `data:` marker to find
+/// the selector.
 fn extract_selector(reason: &str) -> Option<String> {
     let bytes = reason.as_bytes();
     let mut i = 0;
-    while i + 10 <= bytes.len() {
-        if bytes[i] == b'0'
-            && (bytes[i + 1] == b'x' || bytes[i + 1] == b'X')
-            && bytes[i + 2..i + 10].iter().all(|b| b.is_ascii_hexdigit())
-        {
+    while i + 2 < bytes.len() {
+        if bytes[i] != b'0' || (bytes[i + 1] != b'x' && bytes[i + 1] != b'X') {
+            i += 1;
+            continue;
+        }
+        let hex_start = i + 2;
+        let mut hex_end = hex_start;
+        while hex_end < bytes.len() && bytes[hex_end].is_ascii_hexdigit() {
+            hex_end += 1;
+        }
+        let hex_len = hex_end - hex_start;
+        if hex_len >= 8 && hex_len % 64 == 8 {
             return Some(reason[i..i + 10].to_ascii_lowercase());
         }
-        i += 1;
+        i = hex_end.max(i + 1);
     }
     None
 }
@@ -133,8 +145,21 @@ mod tests {
 
     #[test]
     fn selector_extraction_handles_mixed_case() {
-        let reason = r#"data: "0xE450D38C0000...""#;
+        // 200 hex chars total = selector + 3 32-byte words = OZ v5
+        // ERC20InsufficientBalance(address,uint256,uint256), upper-case to
+        // confirm normalization.
+        let reason = "0xE450D38C000000000000000000000000AA4AE04691E78DBF8C2F6E6DB627D0D2AB0A2914000000000000000000000000000000000000000000000000000000275DEEB846000000000000000000000000000000000000000000000051771E4B0C7DAC282B";
         assert_eq!(extract_selector(reason).as_deref(), Some("0xe450d38c"));
+    }
+
+    #[test]
+    fn selector_extraction_ignores_addresses_and_hashes() {
+        // Reason embeds an address (40 hex) and a hash (64 hex) before the
+        // actual selector + args inside the data field. The length filter
+        // skips the first two and lands on the real selector.
+        let reason = r#"execution reverted: AccessControl: account 0x1234567890abcdef1234567890abcdef12345678 missing role 0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210, data: "0xe450d38c000000000000000000000000aa4ae04691e78dbf8c2f6e6db627d0d2ab0a2914000000000000000000000000000000000000000000000000000000275deeb846000000000000000000000000000000000000000000000051771e4b0c7dac282b""#;
+        assert_eq!(extract_selector(reason).as_deref(), Some("0xe450d38c"));
+        assert_eq!(classify(reason), RevertClass::Funding);
     }
 
     #[test]
