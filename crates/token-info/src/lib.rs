@@ -14,6 +14,7 @@ use {
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
     },
+    tracing::instrument,
 };
 const TOKEN_INFO_FETCH_CONCURRENCY: usize = 20;
 
@@ -85,6 +86,7 @@ impl TokenInfoFetching for TokenInfoFetcher {
         info
     }
 
+    #[instrument(skip_all)]
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
         futures::stream::iter(addresses.iter().copied().collect::<HashSet<_>>())
             .map(|address| async move {
@@ -149,6 +151,7 @@ impl TokenInfoFetching for CachedTokenInfoFetcher {
         self.fetch_token(address).await
     }
 
+    #[instrument(skip_all)]
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
         futures::stream::iter(addresses.iter().copied().collect::<HashSet<_>>())
             .map(|address| async move {
