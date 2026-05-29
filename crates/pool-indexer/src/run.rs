@@ -24,7 +24,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
 pub async fn run(config: Configuration) {
     let db = connect_db(&config).await;
-    let api_state = build_api_state(&db, &config.networks);
+    let api_state = build_api_state(&db, config.networks.as_slice());
 
     observe::metrics::serve_metrics(
         Arc::new(AlwaysAlive),

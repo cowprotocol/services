@@ -1,5 +1,8 @@
+//! `GET /api/v1/{network}/uniswap/v3/pools/ticks?pool_ids=…` — bulk tick
+//! fetch for many pools in one round trip.
+
 use {
-    super::{PoolIds, serialize_integer},
+    super::{PoolIds, TickEntry},
     crate::{
         api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
         db::uniswap_v3 as db,
@@ -9,39 +12,14 @@ use {
         extract::{Path, Query, State},
         response::{IntoResponse, Json, Response},
     },
-    bigdecimal::BigDecimal,
     serde::{Deserialize, Serialize},
     std::{collections::HashMap, sync::Arc},
 };
 
-/// A single tick entry with its net liquidity.
-#[derive(Serialize)]
-pub struct TickEntry {
-    pub tick_idx: i32,
-    #[serde(serialize_with = "serialize_integer")]
-    pub liquidity_net: BigDecimal,
-}
-
-impl From<db::TickRow> for TickEntry {
-    fn from(tick: db::TickRow) -> Self {
-        Self {
-            tick_idx: tick.tick_idx,
-            liquidity_net: tick.liquidity_net,
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct TicksResponse {
-    pub block_number: u64,
-    pub pool: Address,
-    pub ticks: Vec<TickEntry>,
-}
-
 /// Query parameters for the bulk ticks endpoint.
 #[derive(Deserialize)]
 pub struct BulkTicksQuery {
-    /// Comma-separated list of pool addresses (`0x…,0x…`) parsed eagerly.
+    /// Comma-separated list of pool addresses
     /// Capped at [`super::MAX_POOL_IDS_PER_REQUEST`] entries.
     pub pool_ids: PoolIds,
 }
@@ -62,34 +40,10 @@ pub struct BulkTicksResponse {
     pub pools: Vec<PoolTicks>,
 }
 
-/// `GET /api/v1/{network}/uniswap/v3/pools/{pool}/ticks`
-///
-/// Returns all non-zero ticks for one pool, ordered by `tick_idx`.
-pub async fn get_ticks(
-    State(state): State<Arc<AppState>>,
-    Path((network, pool)): Path<(String, Address)>,
-) -> Result<Response, ApiError> {
-    let chain_id = resolve_chain_id(&state, &network)?;
-
-    let (block, ticks) = tokio::join!(
-        latest_indexed_block(&state, chain_id),
-        db::get_ticks(&state.db, chain_id, &pool),
-    );
-
-    Ok(Json(TicksResponse {
-        block_number: block?,
-        pool,
-        ticks: ticks?.into_iter().map(TickEntry::from).collect(),
-    })
-    .into_response())
-}
-
-/// `GET /api/v1/{network}/uniswap/v3/pools/ticks?pool_ids=0x…,0x…`
-///
 /// Bulk tick fetch for many pools in one round trip. Replaces the subgraph's
 /// `TICKS_BY_POOL_IDS_QUERY`. Ticks are grouped by pool and sorted by
 /// `tick_idx` within each group. No per-pool cap is applied; callers limit
-/// fan-out via [`super::MAX_POOL_IDS_PER_REQUEST`].
+/// via [`super::MAX_POOL_IDS_PER_REQUEST`].
 pub async fn get_ticks_bulk(
     State(state): State<Arc<AppState>>,
     Path(network): Path<String>,

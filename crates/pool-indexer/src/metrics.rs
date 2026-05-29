@@ -56,16 +56,20 @@ impl Metrics {
         Self::instance(observe::metrics::get_storage_registry())
             .expect("unexpected pool_indexer metrics duplicate registration")
     }
+}
 
-    /// Returns a guard that records the elapsed time on a histogram when it's
-    /// dropped. Use with `let _timer = Metrics::timer(&hist, &[..]);` at the
-    /// top of a function / block. Cleaner than manual `Instant::now()` +
-    /// observe pairs, and records even on early return.
+/// Extension trait that adds a `timer(&[labels])` method to [`HistogramVec`].
+/// Returns a guard that records the elapsed time on drop.
+pub trait HistogramVecExt {
     #[must_use]
-    pub fn timer<'a>(hist: &'a HistogramVec, labels: &'a [&'a str]) -> impl Drop + use<'a> {
+    fn timer<'a>(&'a self, labels: &'a [&'a str]) -> impl Drop + use<'a, Self>;
+}
+
+impl HistogramVecExt for HistogramVec {
+    fn timer<'a>(&'a self, labels: &'a [&'a str]) -> impl Drop + use<'a> {
         let start = std::time::Instant::now();
         scopeguard::guard(start, move |start| {
-            hist.with_label_values(labels)
+            self.with_label_values(labels)
                 .observe(start.elapsed().as_secs_f64());
         })
     }

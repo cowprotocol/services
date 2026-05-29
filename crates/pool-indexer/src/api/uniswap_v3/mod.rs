@@ -1,14 +1,20 @@
-pub mod pools;
-pub mod ticks;
+pub mod bulk_ticks;
+pub mod pool_ticks;
+pub mod pools_by_ids;
+pub mod pools_list;
 
 use {
+    crate::db::uniswap_v3 as db,
     alloy_primitives::Address,
+    axum::{Json, response::Response},
     bigdecimal::{BigDecimal, num_bigint::ToBigInt},
-    serde::{Deserialize, Deserializer},
+    serde::{Deserialize, Deserializer, Serialize},
 };
 pub use {
-    pools::{get_pools, get_pools_by_ids},
-    ticks::{get_ticks, get_ticks_bulk},
+    bulk_ticks::get_ticks_bulk,
+    pool_ticks::get_ticks,
+    pools_by_ids::get_pools_by_ids,
+    pools_list::get_pools,
 };
 
 /// Upper bound on pool addresses accepted in a single bulk lookup. Keeps the
@@ -48,6 +54,112 @@ impl<'de> Deserialize<'de> for PoolIds {
         }
         Ok(PoolIds(out))
     }
+}
+
+/// A single tick entry with its net liquidity. Shared between the
+/// single-pool and bulk tick endpoints (and embedded in [`PoolResponse`]
+/// when ticks are requested inline).
+#[derive(Serialize)]
+pub struct TickEntry {
+    pub tick_idx: i32,
+    #[serde(serialize_with = "serialize_integer")]
+    pub liquidity_net: BigDecimal,
+}
+
+impl From<db::TickRow> for TickEntry {
+    fn from(tick: db::TickRow) -> Self {
+        Self {
+            tick_idx: tick.tick_idx,
+            liquidity_net: tick.liquidity_net,
+        }
+    }
+}
+
+/// ERC-20 token metadata embedded in pool responses.
+#[derive(Serialize)]
+pub struct TokenInfo {
+    /// Checksummed contract address.
+    pub id: Address,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+}
+
+/// A single Uniswap v3 pool. Used by both pool-listing endpoints.
+#[derive(Serialize)]
+pub struct PoolResponse {
+    /// Checksummed pool contract address.
+    pub id: Address,
+    pub token0: TokenInfo,
+    pub token1: TokenInfo,
+    /// Fee tier in hundredths of a basis point (e.g. 3000 = 0.3%).
+    #[serde(serialize_with = "serialize_display")]
+    pub fee_tier: u32,
+    #[serde(serialize_with = "serialize_integer")]
+    pub liquidity: BigDecimal,
+    #[serde(serialize_with = "serialize_integer")]
+    pub sqrt_price: BigDecimal,
+    pub tick: i32,
+    /// Populated only when tick data is explicitly requested.
+    pub ticks: Option<Vec<TickEntry>>,
+}
+
+/// Response envelope for pool listing and search endpoints.
+#[derive(Serialize)]
+pub struct PoolsResponse {
+    /// Latest block that has been fully indexed.
+    pub block_number: u64,
+    pub pools: Vec<PoolResponse>,
+    /// Cursor to pass as `after` to fetch the next page; `null` on the last
+    /// page.
+    pub next_cursor: Option<String>,
+}
+
+impl From<&db::PoolRow> for PoolResponse {
+    fn from(r: &db::PoolRow) -> Self {
+        Self {
+            id: r.address,
+            token0: TokenInfo {
+                id: r.token0,
+                decimals: r.token0_decimals,
+                symbol: non_empty(&r.token0_symbol),
+            },
+            token1: TokenInfo {
+                id: r.token1,
+                decimals: r.token1_decimals,
+                symbol: non_empty(&r.token1_symbol),
+            },
+            fee_tier: r.fee,
+            liquidity: r.liquidity.clone(),
+            sqrt_price: r.sqrt_price_x96.clone(),
+            tick: r.tick,
+            ticks: None,
+        }
+    }
+}
+
+/// Empty strings are a "tried-and-failed" sentinel written by the symbol
+/// backfill task; surface them as missing rather than as `""`.
+pub(super) fn non_empty(s: &Option<String>) -> Option<String> {
+    s.as_ref().filter(|s| !s.is_empty()).cloned()
+}
+
+/// Converts a slice of DB rows into the on-the-wire [`PoolsResponse`]
+/// envelope, attaching the indexed-block tag and optional pagination
+/// cursor. Centralised here so every route emits the same JSON shape.
+pub(super) fn pools_response(
+    block_number: u64,
+    rows: &[db::PoolRow],
+    next_cursor: Option<String>,
+) -> Response {
+    use axum::response::IntoResponse;
+    Json(PoolsResponse {
+        block_number,
+        pools: rows.iter().map(PoolResponse::from).collect(),
+        next_cursor,
+    })
+    .into_response()
 }
 
 /// Serializes any [`Display`](std::fmt::Display) value as a JSON string.

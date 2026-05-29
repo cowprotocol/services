@@ -284,10 +284,11 @@ impl UniswapV3Indexer {
         // DB in parallel before opening the chunk transaction. Symbols are
         // intentionally excluded — a hung `symbol()` call must never block
         // pool inserts; they're populated later by the async backfill task.
+        use crate::metrics::HistogramVecExt;
+
         let metrics = crate::metrics::Metrics::get();
         let chunk_timer_labels = [self.network.as_str()];
-        let _chunk_timer =
-            crate::metrics::Metrics::timer(&metrics.chunk_commit_seconds, &chunk_timer_labels);
+        let _chunk_timer = metrics.chunk_commit_seconds.timer(&chunk_timer_labels);
         let mint_burn_pools = mint_burn_pool_addresses(&logs);
         let (decimals, base_states) = tokio::join!(
             self.prefetch_decimals(&logs),

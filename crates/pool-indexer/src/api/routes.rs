@@ -58,6 +58,8 @@ async fn health() -> impl IntoResponse {
 /// the cardinality stays bounded no matter how many networks / addresses
 /// flow through.
 async fn record_request_metrics(req: Request, next: Next) -> Response {
+    use crate::metrics::HistogramVecExt;
+
     let route = req
         .extensions()
         .get::<MatchedPath>()
@@ -65,7 +67,7 @@ async fn record_request_metrics(req: Request, next: Next) -> Response {
         .unwrap_or_else(|| "unmatched".to_owned());
     let metrics = crate::metrics::Metrics::get();
     let labels = [route.as_str()];
-    let _timer = crate::metrics::Metrics::timer(&metrics.api_request_seconds, &labels);
+    let _timer = metrics.api_request_seconds.timer(&labels);
     let response = next.run(req).await;
     let status = response.status().as_u16().to_string();
     metrics
