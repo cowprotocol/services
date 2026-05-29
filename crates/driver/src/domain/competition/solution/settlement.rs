@@ -110,13 +110,18 @@ impl Settlement {
             return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
+        let (internalized, uninternalized) = futures::try_join!(
+            solution.approvals(eth, Internalization::Enable),
+            solution.approvals(eth, Internalization::Disable),
+        )?;
+
         // Encode the solution into a settlement.
         let tx = SettlementTx {
             internalized: encoding::tx(
                 auction,
                 &solution,
                 eth.contracts(),
-                solution.approvals(eth, Internalization::Enable).await?,
+                internalized,
                 Internalization::Enable,
                 solver_native_token,
             )?,
@@ -124,7 +129,7 @@ impl Settlement {
                 auction,
                 &solution,
                 eth.contracts(),
-                solution.approvals(eth, Internalization::Disable).await?,
+                uninternalized,
                 Internalization::Disable,
                 solver_native_token,
             )?,
