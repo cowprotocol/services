@@ -23,7 +23,7 @@ use {
     anyhow::Context as _,
     axum::{body::Body, http::Request},
     eth_domain_types as eth,
-    futures::{FutureExt, StreamExt, stream::FuturesUnordered},
+    futures::{FutureExt, StreamExt},
     itertools::Itertools,
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
@@ -421,9 +421,7 @@ impl Competition {
             SolutionMerging::Forbidden => solutions.collect(),
         };
 
-        // Encode solutions into settlements (streamed).
-        let encoded = all_solutions
-            .into_iter()
+        let encoded = futures::stream::iter(all_solutions)
             .map(|solution| async move {
                 observe::encoding(solution.id());
                 let settlement = solution
@@ -437,7 +435,7 @@ impl Competition {
                     .await;
                 (solution, settlement)
             })
-            .collect::<FuturesUnordered<_>>()
+            .buffer_unordered(1)
             .filter_map(|(solution, result)| async move {
                 let id = solution.id().clone();
                 let orders: Vec<_> = solution
