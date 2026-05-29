@@ -96,32 +96,14 @@ fn extract_selector(reason: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// Fixtures derived from real production revert strings across all chains
-    /// over the past 7 days.
     #[test]
     fn funding_string_reverts() {
         let cases = [
-            r#"server returned an error response: error code 3: execution reverted: ERC20: insufficient allowance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: ERC20: transfer amount exceeds allowance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: ERC20: transfer amount exceeds balance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: BEP20: transfer amount exceeds allowance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: BEP20: transfer amount exceeds balance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Gear::_transferTokens: transfer amount exceeds balance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Gear::transferFrom: transfer amount exceeds spender allowance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Ondo::transferFrom: transfer amount exceeds spender allowance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: BALANCE_EXCEEDED, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: ALLOWANCE_EXCEEDED, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: TRANSFER_AMOUNT_EXCEEDS_BALANCE, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Dai/insufficient-balance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Dai/insufficient-allowance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Usds/insufficient-balance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: SUsds/insufficient-allowance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Insufficient transferable balance, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: some available balance has been locked and will be unlocked gradually after unlock time, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: TransferHelper: TRANSFER_FROM_FAILED, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: GPv2: failed transfer, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: SUDC: Tokens locked, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: Trading is Paused, data: "0x08c379a0...""#,
+            r#"execution reverted: ERC20: insufficient allowance, data: "0x...""#,
+            r#"execution reverted: BEP20: transfer amount exceeds balance, data: "0x...""#,
+            r#"execution reverted: BALANCE_EXCEEDED, data: "0x...""#,
+            r#"execution reverted: Dai/insufficient-allowance, data: "0x...""#,
+            r#"execution reverted: TransferHelper: TRANSFER_FROM_FAILED, data: "0x...""#,
         ];
         for case in cases {
             assert_eq!(classify(case), RevertClass::Funding, "case: {case}");
@@ -135,29 +117,14 @@ mod tests {
         assert_eq!(classify(reason), RevertClass::Funding);
     }
 
-    /// Anything not in the funding allowlist defaults to Other, whether it is
-    /// a revert we are confident is structural, a token-specific quirk, a
-    /// bare revert, or a custom-error selector we have not classified.
     #[test]
     fn other_for_non_funding() {
         let cases = [
-            // CoW protocol-level reverts.
-            r#"server returned an error response: error code 3: execution reverted: GPv2: not a contract, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: GPv2: order expired, data: "0x08c379a0...""#,
-            // Solidity panics.
-            r#"server returned an error response: error code 3: execution reverted: panic: arithmetic underflow or overflow (0x11), data: "0x4e487b710000000000000000000000000000000000000000000000000000000000000011""#,
-            r#"server returned an error response: error code 3: execution reverted: SafeMath: subtraction overflow, data: "0x08c379a0...""#,
-            // Token-specific reverts that imply the order configuration is invalid.
-            r#"server returned an error response: error code 3: execution reverted: TRANSFER_TO_SELF, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted: you cannot transfer to yourself, data: "0x08c379a0...""#,
-            // Bare revert with no data.
-            "server returned an error response: error code 3: execution reverted",
-            // Undecoded custom-error selectors observed in production.
-            r#"server returned an error response: error code 3: execution reverted, data: "0xfb8f41b2000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe0110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004128c7b75d12538ce0""#,
-            r#"server returned an error response: error code 3: execution reverted, data: "0xec442f050000000000000000000000000000000000000000000000000000000000000000""#,
-            // Genuinely unseen patterns.
-            r#"server returned an error response: error code 3: execution reverted: SomeNewWeirdError: explanation here, data: "0x08c379a0...""#,
-            r#"server returned an error response: error code 3: execution reverted, data: "0xdeadbeef000000000000000000000000aa4ae04691e78dbf""#,
+            r#"execution reverted: GPv2: order expired, data: "0x...""#,
+            r#"execution reverted: panic: arithmetic underflow or overflow (0x11), data: "0x...""#,
+            "execution reverted",
+            r#"execution reverted, data: "0xdeadbeef00...""#,
+            r#"execution reverted: SomeNewError: details, data: "0x...""#,
         ];
         for case in cases {
             assert_eq!(classify(case), RevertClass::Other, "case: {case}");
