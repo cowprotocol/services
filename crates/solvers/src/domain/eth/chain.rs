@@ -4,7 +4,6 @@ use {serde::Deserialize, std::str::FromStr};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChainId {
     Mainnet = 1,
-    Goerli = 5,
     Gnosis = 100,
     Base = 8453,
     ArbitrumOne = 42161,
@@ -21,7 +20,6 @@ impl ChainId {
     pub fn new(value: u64) -> Result<Self, UnsupportedChain> {
         match value {
             1 => Ok(Self::Mainnet),
-            5 => Ok(Self::Goerli),
             100 => Ok(Self::Gnosis),
             8453 => Ok(Self::Base),
             42161 => Ok(Self::ArbitrumOne),
@@ -40,7 +38,6 @@ impl ChainId {
     pub fn network_id(self) -> &'static str {
         match self {
             ChainId::Mainnet => "1",
-            ChainId::Goerli => "5",
             ChainId::Gnosis => "100",
             ChainId::Base => "8453",
             ChainId::ArbitrumOne => "42161",
@@ -104,10 +101,6 @@ mod tests {
             ChainId::Mainnet
         );
         assert_eq!(
-            serde_json::from_value::<ChainId>(5.into()).unwrap(),
-            ChainId::Goerli
-        );
-        assert_eq!(
             serde_json::from_value::<ChainId>(100.into()).unwrap(),
             ChainId::Gnosis
         );
@@ -150,10 +143,6 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<ChainId>("1").unwrap(),
             ChainId::Mainnet
-        );
-        assert_eq!(
-            serde_json::from_str::<ChainId>("5").unwrap(),
-            ChainId::Goerli
         );
         assert_eq!(
             serde_json::from_str::<ChainId>("100").unwrap(),

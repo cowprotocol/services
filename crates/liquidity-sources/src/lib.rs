@@ -39,11 +39,6 @@ pub fn defaults_for_network(chain: &Chain) -> Vec<BaselineSource> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        Chain::Goerli => vec![
-            BaselineSource::UniswapV2,
-            BaselineSource::SushiSwap,
-            BaselineSource::BalancerV2,
-        ],
         Chain::Gnosis => vec![
             BaselineSource::Honeyswap,
             BaselineSource::SushiSwap,

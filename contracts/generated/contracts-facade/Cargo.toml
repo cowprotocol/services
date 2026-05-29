@@ -15,19 +15,37 @@ cow-contract-balancerv2authorizer = { path = "../contracts-generated/balancerv2a
 cow-contract-balancerv2basepool = { path = "../contracts-generated/balancerv2basepool" }
 cow-contract-balancerv2basepoolfactory = { path = "../contracts-generated/balancerv2basepoolfactory" }
 cow-contract-balancerv2composablestablepool = { path = "../contracts-generated/balancerv2composablestablepool" }
-cow-contract-balancerv2composablestablepoolfactory = { path = "../contracts-generated/balancerv2composablestablepoolfactory" }
-cow-contract-balancerv2composablestablepoolfactoryv3 = { path = "../contracts-generated/balancerv2composablestablepoolfactoryv3" }
-cow-contract-balancerv2composablestablepoolfactoryv4 = { path = "../contracts-generated/balancerv2composablestablepoolfactoryv4" }
-cow-contract-balancerv2composablestablepoolfactoryv5 = { path = "../contracts-generated/balancerv2composablestablepoolfactoryv5" }
-cow-contract-balancerv2composablestablepoolfactoryv6 = { path = "../contracts-generated/balancerv2composablestablepoolfactoryv6" }
-cow-contract-balancerv2liquiditybootstrappingpool = { path = "../contracts-generated/balancerv2liquiditybootstrappingpool" }
-cow-contract-balancerv2liquiditybootstrappingpoolfactory = { path = "../contracts-generated/balancerv2liquiditybootstrappingpoolfactory" }
-cow-contract-balancerv2noprotocolfeeliquiditybootstrappingpoolfactory = { path = "../contracts-generated/balancerv2noprotocolfeeliquiditybootstrappingpoolfactory" }
+cow-contract-balancerv2composablestablepoolfactory = {
+  path = "../contracts-generated/balancerv2composablestablepoolfactory"
+}
+cow-contract-balancerv2composablestablepoolfactoryv3 = {
+  path = "../contracts-generated/balancerv2composablestablepoolfactoryv3"
+}
+cow-contract-balancerv2composablestablepoolfactoryv4 = {
+  path = "../contracts-generated/balancerv2composablestablepoolfactoryv4"
+}
+cow-contract-balancerv2composablestablepoolfactoryv5 = {
+  path = "../contracts-generated/balancerv2composablestablepoolfactoryv5"
+}
+cow-contract-balancerv2composablestablepoolfactoryv6 = {
+  path = "../contracts-generated/balancerv2composablestablepoolfactoryv6"
+}
+cow-contract-balancerv2liquiditybootstrappingpool = {
+  path = "../contracts-generated/balancerv2liquiditybootstrappingpool"
+}
+cow-contract-balancerv2liquiditybootstrappingpoolfactory = {
+  path = "../contracts-generated/balancerv2liquiditybootstrappingpoolfactory"
+}
+cow-contract-balancerv2noprotocolfeeliquiditybootstrappingpoolfactory = {
+  path = "../contracts-generated/balancerv2noprotocolfeeliquiditybootstrappingpoolfactory"
+}
 cow-contract-balancerv2stablepool = { path = "../contracts-generated/balancerv2stablepool" }
 cow-contract-balancerv2stablepoolfactoryv2 = { path = "../contracts-generated/balancerv2stablepoolfactoryv2" }
 cow-contract-balancerv2vault = { path = "../contracts-generated/balancerv2vault" }
 cow-contract-balancerv2weightedpool = { path = "../contracts-generated/balancerv2weightedpool" }
-cow-contract-balancerv2weightedpool2tokensfactory = { path = "../contracts-generated/balancerv2weightedpool2tokensfactory" }
+cow-contract-balancerv2weightedpool2tokensfactory = {
+  path = "../contracts-generated/balancerv2weightedpool2tokensfactory"
+}
 cow-contract-balancerv2weightedpoolfactory = { path = "../contracts-generated/balancerv2weightedpoolfactory" }
 cow-contract-balancerv2weightedpoolfactoryv3 = { path = "../contracts-generated/balancerv2weightedpoolfactoryv3" }
 cow-contract-balancerv2weightedpoolfactoryv4 = { path = "../contracts-generated/balancerv2weightedpoolfactoryv4" }
@@ -42,7 +60,6 @@ cow-contract-cowammfactorygetter = { path = "../contracts-generated/cowammfactor
 cow-contract-cowammlegacyhelper = { path = "../contracts-generated/cowammlegacyhelper" }
 cow-contract-cowammuniswapv2priceoracle = { path = "../contracts-generated/cowammuniswapv2priceoracle" }
 cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoken" }
-cow-contract-cowsettlementforwarder = { path = "../contracts-generated/cowsettlementforwarder" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }
 cow-contract-cowswaponchainorders = { path = "../contracts-generated/cowswaponchainorders" }
 cow-contract-erc20 = { path = "../contracts-generated/erc20" }
@@ -51,7 +68,9 @@ cow-contract-erc1271signaturevalidator = { path = "../contracts-generated/erc127
 cow-contract-flashloanrouter = { path = "../contracts-generated/flashloanrouter" }
 cow-contract-gashog = { path = "../contracts-generated/gashog" }
 cow-contract-gnosissafe = { path = "../contracts-generated/gnosissafe" }
-cow-contract-gnosissafecompatibilityfallbackhandler = { path = "../contracts-generated/gnosissafecompatibilityfallbackhandler" }
+cow-contract-gnosissafecompatibilityfallbackhandler = {
+  path = "../contracts-generated/gnosissafecompatibilityfallbackhandler"
+}
 cow-contract-gnosissafeproxy = { path = "../contracts-generated/gnosissafeproxy" }
 cow-contract-gnosissafeproxyfactory = { path = "../contracts-generated/gnosissafeproxyfactory" }
 cow-contract-gpv2allowlistauthentication = { path = "../contracts-generated/gpv2allowlistauthentication" }
@@ -73,6 +92,7 @@ cow-contract-permit2 = { path = "../contracts-generated/permit2" }
 cow-contract-remoteerc20balances = { path = "../contracts-generated/remoteerc20balances" }
 cow-contract-signatures = { path = "../contracts-generated/signatures" }
 cow-contract-solver = { path = "../contracts-generated/solver" }
+cow-contract-solver7702delegate = { path = "../contracts-generated/solver7702delegate" }
 cow-contract-spardose = { path = "../contracts-generated/spardose" }
 cow-contract-sushiswaprouter = { path = "../contracts-generated/sushiswaprouter" }
 cow-contract-swapper = { path = "../contracts-generated/swapper" }
