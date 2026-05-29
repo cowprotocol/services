@@ -40,7 +40,8 @@ impl RevertClass {
 ///   data: "0x..."`
 /// - `server returned an error response: error code 3: execution reverted`
 pub fn classify(reason: &str) -> RevertClass {
-    if FUNDING_TEXT_PATTERNS.iter().any(|p| reason.contains(p)) {
+    let lower = reason.to_ascii_lowercase();
+    if FUNDING_TEXT_PATTERNS.iter().any(|p| lower.contains(p)) {
         return RevertClass::Funding;
     }
     if let Some(selector) = extract_selector(reason)
@@ -51,9 +52,9 @@ pub fn classify(reason: &str) -> RevertClass {
     RevertClass::Other
 }
 
-// Substring patterns matched against the raw RPC error string. Patterns are
-// intentionally written without ERC20:/BEP20:/Dai: prefixes so they catch
-// every token-specific variant we have observed in production.
+// All patterns are lowercase; `classify` lowercases its input before matching
+// so any case variant of the same revert string is caught. Patterns omit
+// ERC20:/BEP20:/Dai: prefixes so they catch every token-specific variant.
 const FUNDING_TEXT_PATTERNS: &[&str] = &[
     "transfer amount exceeds balance",
     "transfer amount exceeds allowance",
@@ -61,12 +62,9 @@ const FUNDING_TEXT_PATTERNS: &[&str] = &[
     "insufficient allowance",
     "insufficient-balance",
     "insufficient-allowance",
-    "BALANCE_EXCEEDED",
-    "ALLOWANCE_EXCEEDED",
-    "TRANSFER_AMOUNT_EXCEEDS_BALANCE",
-    "Insufficient transferable balance",
-    "available balance has been locked",
-    "SUDC: Tokens locked",
+    "balance_exceeded",
+    "allowance_exceeded",
+    "transfer_amount_exceeds_balance",
 ];
 
 // 4-byte custom-error selectors, lowercase.
@@ -98,8 +96,10 @@ mod tests {
             r#"execution reverted: ERC20: insufficient allowance, data: "0x...""#,
             r#"execution reverted: BEP20: transfer amount exceeds balance, data: "0x...""#,
             r#"execution reverted: BALANCE_EXCEEDED, data: "0x...""#,
+            r#"execution reverted: ALLOWANCE_EXCEEDED, data: "0x...""#,
             r#"execution reverted: Dai/insufficient-allowance, data: "0x...""#,
-            r#"execution reverted: Insufficient transferable balance, data: "0x...""#,
+            // Case-insensitive: mixed-case variant of a pattern we wrote lowercase.
+            r#"execution reverted: Insufficient Allowance for spender, data: "0x...""#,
         ];
         for case in cases {
             assert_eq!(classify(case), RevertClass::Funding, "case: {case}");
@@ -121,6 +121,9 @@ mod tests {
             r#"execution reverted: Trading is Paused, data: "0x...""#,
             r#"execution reverted: GPv2: failed transfer, data: "0x...""#,
             r#"execution reverted: TransferHelper: TRANSFER_FROM_FAILED, data: "0x...""#,
+            r#"execution reverted: Insufficient transferable balance, data: "0x...""#,
+            r#"execution reverted: some available balance has been locked and will be unlocked gradually, data: "0x...""#,
+            r#"execution reverted: SUDC: Tokens locked, data: "0x...""#,
             "execution reverted",
             r#"execution reverted, data: "0xdeadbeef00...""#,
             r#"execution reverted: SomeNewError: details, data: "0x...""#,
