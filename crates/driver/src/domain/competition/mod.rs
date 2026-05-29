@@ -939,7 +939,7 @@ impl Competition {
     /// Returns whether the settlement can be executed or would revert.
     async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
         let tx = settlement.transaction(settlement::Internalization::Enable);
-        let gas_needed_for_tx = self.simulator.gas(tx).await?;
+        let gas_needed_for_tx = self.simulator.gas(tx.clone()).await?;
         if gas_needed_for_tx > settlement.gas.limit {
             return Err(simulator::Error::Revert(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
