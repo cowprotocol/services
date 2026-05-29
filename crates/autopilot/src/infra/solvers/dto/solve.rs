@@ -123,10 +123,10 @@ impl Request {
     }
 
     pub fn time_until_deadline(&self) -> Duration {
-        Utc::now()
-            .signed_duration_since(self.deadline)
+        self.deadline
+            .signed_duration_since(Utc::now())
             .to_std()
-            .unwrap()
+            .unwrap_or(Duration::ZERO)
     }
 }
 
