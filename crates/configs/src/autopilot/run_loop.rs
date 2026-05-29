@@ -86,7 +86,7 @@ pub struct RunLoopConfig {
     /// with the chain's block production.
     /// This does not work for chains with variable block production rates
     /// (including test chains).
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "humantime_serde", default)]
     pub slot_length: Option<Duration>,
 
     /// Minimum amount of time one has to submit a tx BEFORE the slot's end
@@ -137,8 +137,12 @@ mod tests {
     fn deserialize_full() {
         let toml = r#"
         max-delay = "5s"
+        slot-length = "12s"
+        submit-before-slot-end = "2s"
         "#;
         let config: RunLoopConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.max_delay, Duration::from_secs(5));
+        assert_eq!(config.slot_length, Some(Duration::from_secs(12)));
+        assert_eq!(config.submit_before_slot_end, Duration::from_secs(2));
     }
 }
