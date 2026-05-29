@@ -27,6 +27,7 @@ use {
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
+    tracing::instrument,
 };
 
 pub type EncodedTrade = (
@@ -547,6 +548,7 @@ async fn executed_amount(
 /// Resolves all [`AccountOverrideRequest`]s concurrently on a best-effort
 /// basis. Failures are logged and the corresponding override is skipped rather
 /// than aborting the whole build.
+#[instrument(skip_all)]
 async fn build_final_state_overrides(
     requests: Vec<AccountOverrideRequest>,
     state_overrides: &dyn StateOverriding,

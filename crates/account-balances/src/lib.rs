@@ -10,6 +10,7 @@ use {
         order::{Order, SellTokenSource},
     },
     std::sync::{Arc, LazyLock},
+    tracing::instrument,
 };
 
 mod cached;
@@ -122,6 +123,7 @@ impl BalanceSimulator {
         self.vault
     }
 
+    #[instrument(skip_all)]
     pub async fn simulate(
         &self,
         owner: Address,
