@@ -468,18 +468,21 @@ async fn run_symbol_backfill_pass(
     let mut updated = 0usize;
     let mut processed = 0usize;
 
-    for token_batch in tokens.chunks(SYMBOL_BACKFILL_BATCH_SIZE) {
-        let symbols: Vec<(Address, String)> = futures::stream::iter(token_batch.iter().copied())
-            .map(|token| async move {
-                // `None` → "" sentinel: marks the token as "tried and failed" so
-                // the next backfill pass's `IS NULL` filter skips it.
-                let sym = fetch_symbol(provider, token).await.unwrap_or_default();
-                (token, sym)
-            })
-            .buffer_unordered(prefetch_concurrency)
-            .collect()
-            .await;
+    // Pipeline tokens through `symbol()` RPC concurrently and batch what's
+    // ready into DB writes. Faster tokens don't wait for slower ones in the
+    // same batch, only for the next ready_chunks slot.
+    let mut stream = futures::stream::iter(tokens)
+        .map(|token| async move {
+            // `None` → "" sentinel: marks the token as "tried and failed" so
+            // the next backfill pass's `IS NULL` filter skips it.
+            let sym = fetch_symbol(provider, token).await.unwrap_or_default();
+            (token, sym)
+        })
+        .buffer_unordered(prefetch_concurrency)
+        .ready_chunks(SYMBOL_BACKFILL_BATCH_SIZE);
 
+    while let Some(symbols) = stream.next().await {
+        let batch_len = symbols.len();
         let metrics = crate::metrics::Metrics::get();
         match db::batch_set_token_symbols(db, chain_id, &symbols).await {
             Ok(()) => {
@@ -494,12 +497,12 @@ async fn run_symbol_backfill_pass(
             }
             Err(err) => tracing::warn!(
                 ?err,
-                batch_size = symbols.len(),
+                batch_size = batch_len,
                 "failed to backfill symbols batch"
             ),
         }
 
-        processed += token_batch.len();
+        processed += batch_len;
         tracing::info!(processed, total, updated, "token symbol backfill progress");
     }
 
@@ -558,22 +561,22 @@ async fn run_decimals_backfill_pass(
     let mut updated = 0usize;
     let mut processed = 0usize;
 
-    for token_batch in tokens.chunks(SYMBOL_BACKFILL_BATCH_SIZE) {
-        let decimals: Vec<(Address, i16)> = futures::stream::iter(token_batch.iter().copied())
-            .map(|token| async move {
-                // `None` → `-1` sentinel: marks the token as "tried and
-                // failed" so the next backfill pass's `IS NULL` filter skips
-                // it.
-                let dec = fetch_decimals(provider, token)
-                    .await
-                    .map(i16::from)
-                    .unwrap_or(-1);
-                (token, dec)
-            })
-            .buffer_unordered(prefetch_concurrency)
-            .collect()
-            .await;
+    let mut stream = futures::stream::iter(tokens)
+        .map(|token| async move {
+            // `None` → `-1` sentinel: marks the token as "tried and
+            // failed" so the next backfill pass's `IS NULL` filter skips
+            // it.
+            let dec = fetch_decimals(provider, token)
+                .await
+                .map(i16::from)
+                .unwrap_or(-1);
+            (token, dec)
+        })
+        .buffer_unordered(prefetch_concurrency)
+        .ready_chunks(SYMBOL_BACKFILL_BATCH_SIZE);
 
+    while let Some(decimals) = stream.next().await {
+        let batch_len = decimals.len();
         let metrics = crate::metrics::Metrics::get();
         match db::batch_set_token_decimals(db, chain_id, &decimals).await {
             Ok(()) => {
@@ -588,12 +591,12 @@ async fn run_decimals_backfill_pass(
             }
             Err(err) => tracing::warn!(
                 ?err,
-                batch_size = decimals.len(),
+                batch_size = batch_len,
                 "failed to backfill decimals batch"
             ),
         }
 
-        processed += token_batch.len();
+        processed += batch_len;
         tracing::info!(
             processed,
             total,
@@ -1022,7 +1025,7 @@ mod tests {
     const TOKEN1: Address = Address::repeat_byte(0x03);
     // `sqrtPriceX96 = sqrt(price) * 2^96` is Uniswap V3's Q64.96 fixed-point
     // price representation; for `price = 1` this is exactly `2^96`.
-    const SQRT_PRICE_1: u128 = 79_228_162_514_264_337_593_543_950_336;
+    const SQRT_PRICE_1: u128 = 1u128 << 96;
 
     fn t(n: i32) -> I24 {
         I24::try_from(n).unwrap()

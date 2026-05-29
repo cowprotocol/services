@@ -135,7 +135,7 @@ const POOL_INDEXER_METRICS_PORT: u16 = 7779;
 const LOCAL_DB_URL: &str = "postgresql://";
 
 // sqrt(1) * 2^96 — valid starting price
-const INITIAL_SQRT_PRICE: u128 = 79_228_162_514_264_337_593_543_950_336;
+const INITIAL_SQRT_PRICE: u128 = 1u128 << 96;
 
 // Never queried — the pre-seeded checkpoint short-circuits the seeder.
 const PLACEHOLDER_SUBGRAPH_URL: &str = "http://127.0.0.1:1/never-queried";
