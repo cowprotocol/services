@@ -5992,6 +5992,7 @@ dependencies = [
  "async-nats",
  "async-trait",
  "axum 0.8.8",
+ "backtrace",
  "bytes",
  "chrono",
  "console-subscriber",
@@ -6158,6 +6159,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
+ "async-trait",
  "const-hex",
  "contracts",
  "futures",
@@ -6165,6 +6167,7 @@ dependencies = [
  "moka",
  "reqwest 0.13.2",
  "sha2",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
  "url",
