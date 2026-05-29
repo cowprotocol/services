@@ -15,7 +15,7 @@ use {
                 solution::{self, Interaction, Trade, error},
             },
         },
-        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken},
+        infra::{blockchain::Ethereum, solver::ManageNativeToken},
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
@@ -68,12 +68,9 @@ struct SettlementTx {
 }
 
 impl SettlementTx {
-    fn with_access_list(self, access_list: eth::AccessList) -> Self {
-        Self {
-            internalized: self.internalized.set_access_list(access_list.clone()),
-            uninternalized: self.uninternalized.set_access_list(access_list),
-            ..self
-        }
+    fn set_access_list(&mut self, access_list: eth::AccessList) {
+        self.internalized.set_access_list(access_list.clone());
+        self.uninternalized.set_access_list(access_list);
     }
 }
 
@@ -143,7 +140,7 @@ impl Settlement {
     async fn new(
         auction_id: auction::Id,
         solution: Solution,
-        transaction: SettlementTx,
+        mut transaction: SettlementTx,
         eth: &Ethereum,
         simulator: &Simulator,
     ) -> Result<Self, Error> {
@@ -162,7 +159,7 @@ impl Settlement {
         // `Some(..)` means at least one trade strictly requires an access list;
         // `None` means it is purely a gas optimization for this settlement, so a
         // non-revert fetch failure below can be tolerated.
-        let partial_access_list: Option<RequiredAccessList> = try_join_all(
+        let partial_access_list: Option<eth::AccessList> = try_join_all(
             solution
                 .user_trades()
                 .map(|trade| partial_access_list_for(trade, &solution, eth, simulator)),
@@ -171,102 +168,62 @@ impl Settlement {
         .into_iter()
         .flatten()
         .map(|required| required.0)
-        .reduce(|acc, list| acc.merge(list))
-        .map(RequiredAccessList);
+        .reduce(|acc, list| acc.merge(list));
 
-        // Simulate the settlement and get the access list and gas.
-        let (access_list, gas) = Self::simulate(
-            transaction.internalized.clone(),
-            partial_access_list.as_ref(),
-            eth,
-            simulator,
-        )
-        .await?;
-        let price = eth.gas_price().await?;
-        let gas = Gas::new(gas, eth.block_gas_limit(), eth.tx_gas_limit())?;
+        if let Some(access_list) = partial_access_list {
+            transaction.set_access_list(access_list.clone());
+        }
+
+        let internalized_tx_check = async {
+            if solution
+                .interactions()
+                .iter()
+                .any(|interaction| interaction.internalize())
+            {
+                // Some rules which are enforced by the settlement contract for non-internalized
+                // interactions are not enforced for internalized interactions (in order to save
+                // gas). However, publishing a settlement with interactions that violate
+                // these rules constitutes a punishable offense for the solver, even if
+                // the interactions are internalized. To ensure that this doesn't happen, check
+                // that the settlement simulates even when internalizations are disabled.
+                simulator
+                    .gas(transaction.uninternalized.clone())
+                    .await
+                    .map(|_| ())
+            } else {
+                Ok(())
+            }
+        };
+        let gas_used_fut = simulator.gas(transaction.internalized.clone());
+
+        // run everything concurrently to minimize latency added through RPC roundtrips
+        let (internalized_tx_check, gas_used, gas_price, solver_eth) = tokio::join!(
+            internalized_tx_check,
+            gas_used_fut,
+            eth.gas_price(),
+            eth.balance(solution.solver().address())
+        );
+
+        internalized_tx_check?; // just ensure the check passed
 
         // Ensure that the solver has sufficient balance for the settlement to be mined
         // even if the gas price keeps climbing during the tx submission.
+        let gas = Gas::new(gas_used?, eth.block_gas_limit(), eth.tx_gas_limit())?;
         let required_eth_balance =
             // Converting to U256 first avoids possible overflow
-            gas.required_balance(U256::from(price.max_fee_per_gas).saturating_mul(U256::from(2)));
-        if eth.balance(solution.solver().address()).await? < required_eth_balance {
+            gas.required_balance(U256::from(gas_price?.max_fee_per_gas).saturating_mul(U256::from(2)));
+        if solver_eth? < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
                 required_eth_balance,
             ));
         }
 
-        // Is at least one interaction internalized?
-        if solution
-            .interactions()
-            .iter()
-            .any(|interaction| interaction.internalize())
-        {
-            // Some rules which are enforced by the settlement contract for non-internalized
-            // interactions are not enforced for internalized interactions (in order to save
-            // gas). However, publishing a settlement with interactions that violate
-            // these rules constitutes a punishable offense for the solver, even if
-            // the interactions are internalized. To ensure that this doesn't happen, check
-            // that the settlement simulates even when internalizations are disabled.
-            Self::simulate(
-                transaction.uninternalized.clone(),
-                partial_access_list.as_ref(),
-                eth,
-                simulator,
-            )
-            .await?;
-        }
-
         Ok(Self {
             auction_id,
             solution,
-            transaction: transaction.with_access_list(access_list),
+            transaction,
             gas,
         })
-    }
-
-    /// Simulate executing this settlement on the blockchain. This process
-    /// ensures that the settlement does not revert, and calculates the
-    /// access list and gas needed to settle the solution.
-    #[instrument(name = "simulate_settlement", skip_all)]
-    async fn simulate(
-        tx: eth::Tx,
-        partial_access_list: Option<&RequiredAccessList>,
-        eth: &Ethereum,
-        simulator: &Simulator,
-    ) -> Result<(eth::AccessList, eth::Gas), Error> {
-        // Add the partial access list to the settlement tx.
-        let tx = tx.set_access_list(
-            partial_access_list
-                .map(|required| required.0.clone())
-                .unwrap_or_default(),
-        );
-
-        // Simulate the full access list, passing the partial access
-        // list into the simulation. When no trade strictly requires the
-        // access-list workaround, a non-revert failure (transport,
-        // deserialization, ...) shouldn't abort the settlement: we can't
-        // reason about the outcome, but the on-chain tx would still succeed
-        // without the access list. Revert errors are propagated either way
-        // since they signal a real problem with the settlement.
-        let access_list = match simulator.access_list(&tx).await {
-            Ok(list) => list,
-            Err(simulator::Error::Other(err)) if partial_access_list.is_none() => {
-                tracing::warn!(
-                    ?err,
-                    "access list estimation failed, falling back to empty list"
-                );
-                eth::AccessList::default()
-            }
-            Err(err) => return Err(err.into()),
-        };
-        let tx = tx.set_access_list(access_list.clone());
-
-        // Simulate the settlement using the full access list and get the gas used.
-        let gas = simulator.gas(&tx).await;
-
-        observe::simulated(eth, &tx, &gas);
-        Ok((access_list, gas?))
     }
 
     /// The calldata for this settlement.
