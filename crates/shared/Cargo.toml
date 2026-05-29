@@ -49,6 +49,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 rate-limit = { workspace = true }
+regex = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json", "query"] }
 rust_decimal = { workspace = true, features = ["maths"] }
@@ -74,7 +75,6 @@ ethrpc = { workspace = true, features = ["test-util"] }
 maplit = { workspace = true }
 mockall = { workspace = true }
 price-estimation = { workspace = true, features = ["test-util"] }
-regex = { workspace = true }
 signature-validator = { workspace = true, features = ["test-util"] }
 simulator = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }

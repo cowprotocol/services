@@ -13,6 +13,8 @@
 //! Everything else lands in Other, which is rejected and alerted on so new
 //! funding patterns can be added when discovered.
 
+use {regex::Regex, std::sync::OnceLock};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevertClass {
     Funding,
@@ -78,30 +80,15 @@ const FUNDING_SELECTORS: &[&str] = &[
 
 /// Returns the first ABI-encoded 4-byte selector found in the reason,
 /// lowercased. A valid selector + args encoding has hex length `8 + 64*N`
-/// (selector plus N 32-byte words). This shape excludes 40-char addresses
-/// and 64-char hashes that may appear in the reason text alongside the
-/// actual error data, so we don't have to rely on a `data:` marker to find
-/// the selector.
+/// (selector plus N 32-byte words). The length filter excludes 40-char
+/// addresses and 64-char hashes that may appear in the reason text alongside
+/// the actual error data, so we don't have to rely on a `data:` marker.
 fn extract_selector(reason: &str) -> Option<String> {
-    let bytes = reason.as_bytes();
-    let mut i = 0;
-    while i + 2 < bytes.len() {
-        if bytes[i] != b'0' || (bytes[i + 1] != b'x' && bytes[i + 1] != b'X') {
-            i += 1;
-            continue;
-        }
-        let hex_start = i + 2;
-        let mut hex_end = hex_start;
-        while hex_end < bytes.len() && bytes[hex_end].is_ascii_hexdigit() {
-            hex_end += 1;
-        }
-        let hex_len = hex_end - hex_start;
-        if hex_len >= 8 && hex_len % 64 == 8 {
-            return Some(reason[i..i + 10].to_ascii_lowercase());
-        }
-        i = hex_end.max(i + 1);
-    }
-    None
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"0x[0-9a-fA-F]+").unwrap());
+    re.find_iter(reason)
+        .find(|m| (m.len() - 2) % 64 == 8)
+        .map(|m| m.as_str()[..10].to_ascii_lowercase())
 }
 
 #[cfg(test)]
