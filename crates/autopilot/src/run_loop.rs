@@ -235,7 +235,7 @@ impl RunLoop {
         let last_block =
             DateTime::from_timestamp_secs(last_block_time.try_into().unwrap()).unwrap();
 
-        for i in 0..10 {
+        for i in 1..10 {
             let target = last_block + slot_length.saturating_mul(i) - submit_before_slot_end;
             if target > minimum_deadline {
                 // first timestamp that gives at least the required amount of time
