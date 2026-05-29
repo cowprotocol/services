@@ -13,31 +13,31 @@ use {
     url::Url,
 };
 
-fn default_max_connections() -> NonZeroU32 {
-    NonZeroU32::new(10).unwrap()
+const fn default_max_connections() -> NonZeroU32 {
+    NonZeroU32::new(10).expect("non-zero literal")
 }
 
-fn default_chunk_size() -> u64 {
+const fn default_chunk_size() -> u64 {
     500
 }
 
-fn default_poll_interval_secs() -> u64 {
+const fn default_poll_interval_secs() -> u64 {
     3
 }
 
-fn default_fetch_concurrency() -> usize {
+const fn default_fetch_concurrency() -> usize {
     8
 }
 
-fn default_prefetch_concurrency() -> usize {
+const fn default_prefetch_concurrency() -> usize {
     50
 }
 
-fn default_bind_address() -> SocketAddr {
+const fn default_bind_address() -> SocketAddr {
     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 7777))
 }
 
-fn default_metrics_address() -> SocketAddr {
+const fn default_metrics_address() -> SocketAddr {
     SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::UNSPECIFIED,
         observe::metrics::DEFAULT_METRICS_PORT,

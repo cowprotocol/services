@@ -3,28 +3,13 @@ use {
     alloy_primitives::Address,
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
-    num::BigInt,
+    num::ToPrimitive,
     number::conversions::u160_to_big_decimal,
     sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow},
 };
 
 fn bytes_to_addr(b: Vec<u8>) -> Result<Address> {
     Address::try_from(b.as_slice()).context("invalid address bytes")
-}
-
-fn sql_u128(value: u128) -> BigDecimal {
-    BigDecimal::from(BigInt::from(value))
-}
-
-fn sql_i128(value: i128) -> BigDecimal {
-    BigDecimal::from(BigInt::from(value))
-}
-
-fn bigdecimal_to_u128(value: BigDecimal) -> Result<u128> {
-    use num::ToPrimitive;
-    value
-        .to_u128()
-        .context("pool_states.liquidity value overflows u128")
 }
 
 fn address_bytes_list(addresses: &[Address]) -> Vec<&[u8]> {
@@ -151,7 +136,7 @@ pub async fn upsert_pool_states(
         addresses.push(state.pool_address.as_slice());
         block_numbers.push(state.block_number.cast_signed());
         sqrt_prices.push(u160_to_big_decimal(&state.sqrt_price_x96));
-        liquidities.push(sql_u128(state.liquidity));
+        liquidities.push(BigDecimal::from(state.liquidity));
         ticks.push(state.tick);
     }
 
@@ -204,7 +189,7 @@ pub async fn batch_update_pool_liquidity(
         .collect();
     let liquidities: Vec<BigDecimal> = updates
         .iter()
-        .map(|update| sql_u128(update.liquidity))
+        .map(|update| BigDecimal::from(update.liquidity))
         .collect();
     let block_numbers: Vec<i64> = updates
         .iter()
@@ -270,7 +255,10 @@ pub async fn get_base_pool_states(
         .map(|r| {
             let addr = bytes_to_addr(r.get("pool_address"))?;
             let tick: i32 = r.get("tick");
-            let liquidity = bigdecimal_to_u128(r.get::<BigDecimal, _>("liquidity"))?;
+            let liquidity = r
+                .get::<BigDecimal, _>("liquidity")
+                .to_u128()
+                .context("pool_states.liquidity value overflows u128")?;
             Ok((addr, (tick, liquidity)))
         })
         .collect()
@@ -290,7 +278,10 @@ pub async fn batch_update_ticks(
         .map(|delta| delta.pool_address.as_slice())
         .collect();
     let tick_idxs: Vec<i32> = deltas.iter().map(|delta| delta.tick_idx).collect();
-    let delta_values: Vec<BigDecimal> = deltas.iter().map(|delta| sql_i128(delta.delta)).collect();
+    let delta_values: Vec<BigDecimal> = deltas
+        .iter()
+        .map(|delta| BigDecimal::from(delta.delta))
+        .collect();
 
     // Two-pronged invariant for zero-net ticks (we never keep a row with
     // `liquidity_net = 0`):
@@ -363,7 +354,10 @@ pub async fn batch_seed_ticks(
         .map(|tick| tick.pool_address.as_slice())
         .collect();
     let tick_idxs: Vec<i32> = ticks.iter().map(|tick| tick.tick_idx).collect();
-    let values: Vec<BigDecimal> = ticks.iter().map(|tick| sql_i128(tick.delta)).collect();
+    let values: Vec<BigDecimal> = ticks
+        .iter()
+        .map(|tick| BigDecimal::from(tick.delta))
+        .collect();
 
     sqlx::query(
         "WITH input AS (

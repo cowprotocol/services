@@ -199,7 +199,10 @@ impl PoolIndexerClient {
     async fn wait_until(&self, target_block: u64) -> Result<()> {
         let deadline = std::time::Instant::now() + self.wait_until_timeout;
         let mut last_observed: Option<u64> = None;
+        let mut interval = tokio::time::interval(WAIT_UNTIL_POLL_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
+            interval.tick().await;
             let mut url = self.path("pools");
             url.query_pairs_mut().append_pair("limit", "1");
             let resp = self
@@ -237,7 +240,6 @@ impl PoolIndexerClient {
                     self.wait_until_timeout,
                 );
             }
-            tokio::time::sleep(WAIT_UNTIL_POLL_INTERVAL).await;
         }
     }
 }

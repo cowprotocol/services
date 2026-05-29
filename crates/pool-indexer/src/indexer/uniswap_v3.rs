@@ -131,7 +131,10 @@ impl UniswapV3Indexer {
     /// caller's `JoinSet` so a panic in either propagates as a process exit
     /// rather than being silently dropped.
     pub async fn run(self, poll_interval: std::time::Duration) -> ! {
+        let mut interval = tokio::time::interval(poll_interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
+            interval.tick().await;
             if let Err(err) = self.run_once().await {
                 crate::metrics::Metrics::get()
                     .indexer_errors
@@ -139,7 +142,6 @@ impl UniswapV3Indexer {
                     .inc();
                 tracing::error!(?err, "indexer error, retrying after poll interval");
             }
-            tokio::time::sleep(poll_interval).await;
         }
     }
 
@@ -426,13 +428,15 @@ pub(crate) async fn backfill_symbols(
     prefetch_concurrency: usize,
     poll_interval: std::time::Duration,
 ) {
+    let mut interval = tokio::time::interval(poll_interval);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
+        interval.tick().await;
         if let Err(err) =
             run_symbol_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency).await
         {
             tracing::error!(?err, "token symbol backfill pass failed");
         }
-        tokio::time::sleep(poll_interval).await;
     }
 }
 
@@ -515,14 +519,16 @@ pub(crate) async fn backfill_decimals(
     prefetch_concurrency: usize,
     poll_interval: std::time::Duration,
 ) {
+    let mut interval = tokio::time::interval(poll_interval);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
+        interval.tick().await;
         if let Err(err) =
             run_decimals_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency)
                 .await
         {
             tracing::error!(?err, "token decimals backfill pass failed");
         }
-        tokio::time::sleep(poll_interval).await;
     }
 }
 
@@ -672,26 +678,26 @@ fn bisecting_get_logs_with_depth(
             Ok(logs) => return Ok(logs),
             Err(err) => err,
         };
-        if is_range_too_large(&err) && to > from && depth < MAX_BISECTION_DEPTH {
-            let mid = (from + to) / 2;
-            tracing::debug!(from, to, mid, depth, "range too large, bisecting");
-            let mut left = bisecting_get_logs_with_depth(
-                provider,
-                from,
-                mid,
-                addresses.clone(),
-                topics.clone(),
-                depth + 1,
-            )
-            .await?;
-            let right =
-                bisecting_get_logs_with_depth(provider, mid + 1, to, addresses, topics, depth + 1)
-                    .await?;
-            left.extend(right);
-            Ok(left)
-        } else {
-            Err(anyhow::Error::new(err).context(format!("get_logs({from}..={to})")))
+        if !is_range_too_large(&err) || to <= from || depth >= MAX_BISECTION_DEPTH {
+            return Err(anyhow::Error::new(err).context(format!("get_logs({from}..={to})")));
         }
+
+        let mid = (from + to) / 2;
+        tracing::debug!(from, to, mid, depth, "range too large, bisecting");
+        let mut left = bisecting_get_logs_with_depth(
+            provider,
+            from,
+            mid,
+            addresses.clone(),
+            topics.clone(),
+            depth + 1,
+        )
+        .await?;
+        let right =
+            bisecting_get_logs_with_depth(provider, mid + 1, to, addresses, topics, depth + 1)
+                .await?;
+        left.extend(right);
+        Ok(left)
     })
 }
 

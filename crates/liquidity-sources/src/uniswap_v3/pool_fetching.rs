@@ -271,9 +271,10 @@ impl PoolsCheckpointHandler {
             request_successful = pools_with_ticks.is_ok(),
             "fetched pool ticks"
         );
+        let pools_with_ticks = pools_with_ticks?;
 
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
-        for pool in pools_with_ticks?.pools {
+        for pool in pools_with_ticks.pools {
             checkpoint.missing_pools.remove(&pool.id);
             checkpoint.pools.insert(pool.id, Arc::new(pool.try_into()?));
         }

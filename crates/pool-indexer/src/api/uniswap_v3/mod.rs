@@ -24,21 +24,23 @@ pub(crate) struct PoolIds(pub Vec<Address>);
 impl<'de> Deserialize<'de> for PoolIds {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(de)?;
-        let mut out = Vec::new();
-        for entry in raw.split(',').map(str::trim).filter(|s| {
-            if s.is_empty() {
-                tracing::warn!("pool_ids query contained an empty entry");
-                false
-            } else {
-                true
-            }
-        }) {
-            out.push(
+        let out: Vec<Address> = raw
+            .split(',')
+            .map(str::trim)
+            .filter(|s| {
+                if s.is_empty() {
+                    tracing::warn!("pool_ids query contained an empty entry");
+                    false
+                } else {
+                    true
+                }
+            })
+            .map(|entry| {
                 entry
                     .parse::<Address>()
-                    .map_err(|_| serde::de::Error::custom("invalid pool id"))?,
-            );
-        }
+                    .map_err(|_| serde::de::Error::custom("invalid pool id"))
+            })
+            .collect::<Result<_, D::Error>>()?;
         if out.len() > MAX_POOL_IDS_PER_REQUEST {
             return Err(serde::de::Error::custom(format!(
                 "too many pool ids; max {MAX_POOL_IDS_PER_REQUEST}"
