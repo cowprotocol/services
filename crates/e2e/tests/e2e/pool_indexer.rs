@@ -393,7 +393,7 @@ async fn driver_integration(web3: Web3) {
         r#"
 [[liquidity.uniswap-v3]]
 router = "0x000000000000000000000000000000000000dEaD"
-pool-indexer-url = "{POOL_INDEXER_HOST}"
+indexer-config = {{ pool-indexer = {{ url = "{POOL_INDEXER_HOST}" }} }}
 max-pools-to-initialize = 10
 "#
     );

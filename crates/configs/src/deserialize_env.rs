@@ -71,14 +71,6 @@ where
 /// Deserializes an optional String from *either* an environment variable —
 /// with the format `%<ENV_VAR_NAME>` — or directly from the field value.
 /// Missing field or missing env var (when referenced) → `None`.
-///
-/// When the field text references an env var (starts with `%`) but the env
-/// var is unset, we log a `warn!` and return `None`. The deserializer can't
-/// fail here because some callers legitimately want the optional-with-fallback
-/// semantics (e.g. an unauthenticated subgraph endpoint is fine), but the
-/// warning surfaces the misconfiguration — without it, a typo in the env var
-/// name would silently disable a feature that the operator thought was on,
-/// and the symptom (e.g. 401s on a subgraph) would appear far from its cause.
 pub fn deserialize_optional_string_from_env<'de, D>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error>
@@ -89,13 +81,7 @@ where
         return Ok(None);
     };
     match value.strip_prefix(ENV_VAR_PREFIX) {
-        Some(env_var_name) => Ok(std::env::var(env_var_name).ok().or_else(|| {
-            tracing::warn!(
-                %env_var_name,
-                "optional env var referenced in config but not set; field is None",
-            );
-            None
-        })),
+        Some(env_var_name) => Ok(std::env::var(env_var_name).ok()),
         None => Ok(Some(value)),
     }
 }

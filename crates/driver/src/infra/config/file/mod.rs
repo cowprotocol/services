@@ -536,30 +536,8 @@ enum UniswapV3Config {
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
         max_pools_to_initialize: usize,
 
-        /// The URL used to connect to uniswap v3 subgraph client. Exactly one
-        /// of `graph-url` or `pool-indexer-url` must be set.
-        #[serde(default)]
-        graph_url: Option<Url>,
-
-        /// URL of a CoW pool-indexer service. Exactly one of `graph-url` or
-        /// `pool-indexer-url` must be set.
-        #[serde(default)]
-        pool_indexer_url: Option<Url>,
-
-        /// Pool-indexer `wait_until` timeout. Size per-network to comfortably
-        /// exceed the worst-case first-deploy seed time. Ignored when
-        /// `graph-url` is set.
-        #[serde(
-            with = "humantime_serde",
-            default = "uniswap_v3::default_pool_indexer_wait_until_timeout"
-        )]
-        pool_indexer_wait_until_timeout: Duration,
-
-        /// How many pool IDs can be present in a where clause of a Tick query
-        /// at once. Some subgraphs are overloaded and throw errors when
-        /// there are too many. Ignored when `pool-indexer-url` is set.
-        #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
-        max_pools_per_tick_query: usize,
+        /// Source of pool definitions and tick data.
+        indexer_config: IndexerConfig,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
@@ -576,35 +554,40 @@ enum UniswapV3Config {
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
         max_pools_to_initialize: usize,
 
-        /// How many pool IDs can be present in a where clause of a Tick query
-        /// at once. Some subgraphs are overloaded and throw errors when
-        /// there are too many. Ignored when `pool-indexer-url` is set.
-        #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
-        max_pools_per_tick_query: usize,
-
-        /// The URL used to connect to uniswap v3 subgraph client. Exactly one
-        /// of `graph-url` or `pool-indexer-url` must be set.
-        #[serde(default)]
-        graph_url: Option<Url>,
-
-        /// URL of a CoW pool-indexer service. Exactly one of `graph-url` or
-        /// `pool-indexer-url` must be set.
-        #[serde(default)]
-        pool_indexer_url: Option<Url>,
-
-        /// Pool-indexer `wait_until` timeout. Size per-network to comfortably
-        /// exceed the worst-case first-deploy seed time. Ignored when
-        /// `graph-url` is set.
-        #[serde(
-            with = "humantime_serde",
-            default = "uniswap_v3::default_pool_indexer_wait_until_timeout"
-        )]
-        pool_indexer_wait_until_timeout: Duration,
+        /// Source of pool definitions and tick data.
+        indexer_config: IndexerConfig,
 
         /// How often the liquidity source should be reinitialized to get
         /// access to new pools.
         #[serde(with = "humantime_serde", default = "default_reinit_interval")]
         reinit_interval: Option<Duration>,
+    },
+}
+
+/// Where Uniswap V3 pool definitions and tick data are fetched from. Exactly
+/// one variant is active per `[[liquidity.uniswap-v3]]` entry.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+enum IndexerConfig {
+    #[serde(rename_all = "kebab-case")]
+    Subgraph {
+        url: Url,
+        /// How many pool IDs can be present in a where clause of a Tick query
+        /// at once. Some subgraphs are overloaded and throw errors when
+        /// there are too many.
+        #[serde(default = "uniswap_v3::default_max_pools_per_tick_query")]
+        max_pools_per_tick_query: usize,
+    },
+    #[serde(rename_all = "kebab-case")]
+    PoolIndexer {
+        url: Url,
+        /// Upper bound on a single `wait_until` call. Size per-network to
+        /// comfortably exceed the worst-case first-deploy seed time.
+        #[serde(
+            with = "humantime_serde",
+            default = "uniswap_v3::default_pool_indexer_wait_until_timeout"
+        )]
+        wait_until_timeout: Duration,
     },
 }
 

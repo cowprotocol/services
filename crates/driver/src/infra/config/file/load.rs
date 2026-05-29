@@ -223,51 +223,33 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Preset {
                         preset,
                         max_pools_to_initialize,
-                        graph_url,
-                        pool_indexer_url,
-                        pool_indexer_wait_until_timeout,
+                        indexer_config,
                         reinit_interval,
-                        max_pools_per_tick_query,
                     } => {
-                        let pool_source = uniswap_v3_pool_source(
-                            graph_url,
-                            pool_indexer_url,
-                            pool_indexer_wait_until_timeout,
-                            max_pools_per_tick_query,
-                        );
+                        let pool_source = uniswap_v3_pool_source(indexer_config);
+                        let preset_defaults = match preset {
+                            file::UniswapV3Preset::UniswapV3 => {
+                                liquidity::config::UniswapV3::uniswap_v3(pool_source, chain)
+                            }
+                        }
+                        .expect("no Uniswap V3 preset for current network");
                         liquidity::config::UniswapV3 {
                             max_pools_to_initialize,
                             reinit_interval,
-                            ..match preset {
-                                file::UniswapV3Preset::UniswapV3 => {
-                                    liquidity::config::UniswapV3::uniswap_v3(pool_source, chain)
-                                }
-                            }
-                            .expect("no Uniswap V3 preset for current network")
+                            ..preset_defaults
                         }
                     }
                     file::UniswapV3Config::Manual {
                         router,
                         max_pools_to_initialize,
-                        graph_url,
-                        pool_indexer_url,
-                        pool_indexer_wait_until_timeout,
+                        indexer_config,
                         reinit_interval,
-                        max_pools_per_tick_query,
-                    } => {
-                        let pool_source = uniswap_v3_pool_source(
-                            graph_url,
-                            pool_indexer_url,
-                            pool_indexer_wait_until_timeout,
-                            max_pools_per_tick_query,
-                        );
-                        liquidity::config::UniswapV3 {
-                            router: router.into(),
-                            max_pools_to_initialize,
-                            pool_source,
-                            reinit_interval,
-                        }
-                    }
+                    } => liquidity::config::UniswapV3 {
+                        router: router.into(),
+                        max_pools_to_initialize,
+                        pool_source: uniswap_v3_pool_source(indexer_config),
+                        reinit_interval,
+                    },
                 })
                 .collect(),
             balancer_v2: config
@@ -383,31 +365,28 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
     }
 }
 
-/// Resolves the two TOML fields (`graph-url`, `pool-indexer-url`) into the
-/// single domain enum. Exactly one must be set.
 fn uniswap_v3_pool_source(
-    graph_url: Option<reqwest::Url>,
-    pool_indexer_url: Option<reqwest::Url>,
-    pool_indexer_wait_until_timeout: std::time::Duration,
-    max_pools_per_tick_query: usize,
+    indexer_config: file::IndexerConfig,
 ) -> liquidity::config::UniswapV3PoolSource {
-    match (graph_url, pool_indexer_url) {
-        (Some(url), None) => {
+    match indexer_config {
+        file::IndexerConfig::Subgraph {
+            url,
+            max_pools_per_tick_query,
+        } => {
             liquidity::config::UniswapV3PoolSource::Subgraph(liquidity::config::UniswapV3Subgraph {
                 url,
                 max_pools_per_tick_query,
             })
         }
-        (None, Some(url)) => liquidity::config::UniswapV3PoolSource::PoolIndexer(
+        file::IndexerConfig::PoolIndexer {
+            url,
+            wait_until_timeout,
+        } => liquidity::config::UniswapV3PoolSource::PoolIndexer(
             liquidity::config::UniswapV3PoolIndexer {
                 url,
-                wait_until_timeout: pool_indexer_wait_until_timeout,
+                wait_until_timeout,
             },
         ),
-        (None, None) => panic!("uniswap-v3: set exactly one of graph-url or pool-indexer-url"),
-        (Some(_), Some(_)) => {
-            panic!("uniswap-v3: graph-url and pool-indexer-url are mutually exclusive")
-        }
     }
 }
 
