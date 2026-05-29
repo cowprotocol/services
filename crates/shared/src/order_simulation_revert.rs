@@ -85,7 +85,7 @@ const FUNDING_SELECTORS: &[&str] = &[
 /// the actual error data, so we don't have to rely on a `data:` marker.
 fn extract_selector(reason: &str) -> Option<String> {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"0x[0-9a-fA-F]+").unwrap());
+    let re = RE.get_or_init(|| Regex::new(r"0[xX][0-9a-fA-F]+").unwrap());
     re.find_iter(reason)
         .find(|m| (m.len() - 2) % 64 == 8)
         .map(|m| m.as_str()[..10].to_ascii_lowercase())
@@ -128,6 +128,21 @@ mod tests {
         for case in cases {
             assert_eq!(classify(case), RevertClass::Other, "case: {case}");
         }
+    }
+
+    #[test]
+    fn selector_extraction_handles_bare_selector_reason() {
+        // Reason can be any length, including just the selector with nothing
+        // around it (no args, no prefix text, no data field).
+        assert_eq!(
+            extract_selector("0x4e487b71").as_deref(),
+            Some("0x4e487b71")
+        );
+        // Bare selector wrapped in classifier returns the right class.
+        assert_eq!(classify("0x4e487b71"), RevertClass::Other);
+        // Too-short hex (not a valid selector) returns None.
+        assert_eq!(extract_selector("0x123").as_deref(), None);
+        assert_eq!(extract_selector("0x").as_deref(), None);
     }
 
     #[test]
