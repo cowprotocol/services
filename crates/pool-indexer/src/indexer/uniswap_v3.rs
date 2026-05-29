@@ -156,8 +156,7 @@ impl UniswapV3Indexer {
     /// seed block, we set the checkpoint to `from_block` itself.
     ///
     /// Errors if a checkpoint already exists — overwriting would silently
-    /// regress progress and re-index history; callers should guard with
-    /// `if checkpoint.is_none()` before invoking.
+    /// regress progress and re-index history.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
         if db::get_checkpoint(&self.db, self.chain_id, &self.factory)
             .await?
@@ -673,8 +672,7 @@ fn bisecting_get_logs_with_depth(
             Ok(logs) => return Ok(logs),
             Err(err) => err,
         };
-        let too_large = is_range_too_large(&err);
-        if too_large && to > from && depth < MAX_BISECTION_DEPTH {
+        if is_range_too_large(&err) && to > from && depth < MAX_BISECTION_DEPTH {
             let mid = (from + to) / 2;
             tracing::debug!(from, to, mid, depth, "range too large, bisecting");
             let mut left = bisecting_get_logs_with_depth(
@@ -903,11 +901,7 @@ impl LogAccumulator {
     /// steady-state case for events fired by *other* Uniswap V3 forks on the
     /// same chain (we fetch `eth_getLogs` without an address filter — see
     /// [`Self::fetch_logs_bisecting`] for why — so foreign-factory events do
-    /// reach this method). The SQL writers' factory-scoped `WHERE EXISTS`
-    /// guards drop those events at commit time; treating their absence here
-    /// as a warning would produce a per-event log line for every foreign
-    /// pool, which on a chain with active forks (Ink has at least two) means
-    /// constant log noise. Mint/Burn before `Initialize` for *our* pool is
+    /// reach this method). Mint/Burn before `Initialize` for *our* pool is 
     /// impossible per Uniswap V3 contract semantics, so the "silent skip"
     /// doesn't hide a real bug.
     fn apply_position_delta_to_pool_liq(

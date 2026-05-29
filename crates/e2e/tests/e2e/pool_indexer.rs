@@ -5,7 +5,10 @@
 
 use {
     alloy::{
-        primitives::{Address, aliases::U160},
+        primitives::{
+            Address,
+            aliases::{I24, U24, U160},
+        },
         providers::Provider,
         sol,
         sol_types::SolEvent,
@@ -163,9 +166,7 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
 }
 
 async fn start_pool_indexer_at(factory: Address, metrics_port: u16) {
-    if let Some(old) = CURRENT_HANDLE.lock().unwrap().take() {
-        old.abort();
-    }
+    stop_pool_indexer();
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     let config = Configuration {
@@ -221,11 +222,11 @@ async fn create_pool(
     fee: u32,
 ) -> Address {
     let provider = factory.provider();
-    let token0 = Address::from([1u8; 20]);
-    let token1 = Address::from([2u8; 20]);
+    let token0 = Address::repeat_byte(1);
+    let token1 = Address::repeat_byte(2);
 
     factory
-        .createPool(token0, token1, alloy::primitives::aliases::U24::from(fee))
+        .createPool(token0, token1, U24::from(fee))
         .send()
         .await
         .unwrap()
@@ -260,8 +261,8 @@ async fn create_pool(
 
     pool.mockMint(
         token0,
-        alloy::primitives::aliases::I24::try_from(-100i32).unwrap(),
-        alloy::primitives::aliases::I24::try_from(100i32).unwrap(),
+        I24::try_from(-100i32).unwrap(),
+        I24::try_from(100i32).unwrap(),
         1_000_000u128,
     )
     .send()
@@ -563,7 +564,7 @@ async fn api_errors(web3: Web3) {
     .status();
     assert_eq!(u16::from(status), 400, "expected 400 for invalid address");
 
-    let unknown = Address::from([0xABu8; 20]);
+    let unknown = Address::repeat_byte(0xAB);
     let resp: serde_json::Value = reqwest::get(format!(
         "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/{unknown:?}/ticks"
     ))

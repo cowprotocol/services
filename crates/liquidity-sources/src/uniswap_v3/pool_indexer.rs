@@ -19,6 +19,7 @@ use {
     anyhow::{Context, Result},
     async_trait::async_trait,
     chain::Chain,
+    itertools::Itertools,
     num::BigInt,
     reqwest::{Client, Url},
     serde::Deserialize,
@@ -341,10 +342,7 @@ struct PoolsByIdsPage {
 }
 
 fn ids_param(ids: &[Address]) -> String {
-    ids.iter()
-        .map(|a| format!("{a:#x}"))
-        .collect::<Vec<_>>()
-        .join(",")
+    ids.iter().map(const_hex::encode_prefixed).join(",")
 }
 
 async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Result<PoolsByIdsPage> {

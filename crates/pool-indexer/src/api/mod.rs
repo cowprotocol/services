@@ -34,9 +34,7 @@ impl AppState {
 /// axum's default 400s — see [`crate::api::uniswap_v3::PoolIds`].
 #[derive(Debug)]
 pub enum ApiError {
-    /// `{network}` path segment doesn't match any configured network. Says
-    /// nothing about whether the network exists in the world, only that
-    /// this indexer wasn't told about it.
+    /// `{network}` path segment doesn't match any configured network.
     NetworkNotFound,
     /// The indexer has no checkpoint yet for this chain — it's still in
     /// bootstrap. Returned as 503 so clients retry rather than treat it
@@ -46,8 +44,8 @@ pub enum ApiError {
     /// are opaque but not arbitrary — clients must pass back exactly what
     /// the previous response returned.
     InvalidCursor,
-    /// Unexpected failure inside the handler (usually DB). Body is generic
-    /// 500; the underlying error is logged server-side.
+    /// Unexpected failure inside the handler. Returns a generic error with a
+    /// 500 status code; the underlying error is logged server-side.
     Internal(anyhow::Error),
 }
 

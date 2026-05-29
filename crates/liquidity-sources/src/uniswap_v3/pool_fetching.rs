@@ -133,11 +133,11 @@ struct PoolsCheckpointHandler {
 
 impl PoolsCheckpointHandler {
     /// Fetches the list of existing UniswapV3 pools and their metadata (without
-    /// state/ticks). Then fetches state/ticks for the most deepest pools
+    /// state/ticks). Then fetches state/ticks for the deepest pools
     /// (subset of all existing pools).
     ///
     /// `target_block` is the chain's finalized block so it matches the
-    /// pool-indexer source's anchor; both calls then promise data at or
+    /// pool-indexer source's anchor; both calls then return data at or
     /// after that block. The event-replay anchor is taken from the *tick*
     /// call's response (the later of the two), which is what closes the
     /// init-time double-application race that the indexer otherwise has.
