@@ -13,6 +13,7 @@ use {
         collections::HashMap,
         sync::{Arc, Mutex},
     },
+    tracing::instrument,
 };
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
@@ -83,6 +84,7 @@ impl TokenInfoFetching for TokenInfoFetcher {
         info
     }
 
+    #[instrument(skip_all)]
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
         futures::future::join_all(addresses.iter().copied().map(|address| async move {
             let info = self.fetch_token(address).await;
@@ -147,6 +149,7 @@ impl TokenInfoFetching for CachedTokenInfoFetcher {
         self.fetch_token(address).await
     }
 
+    #[instrument(skip_all)]
     async fn get_token_infos(&self, addresses: &[Address]) -> HashMap<Address, TokenInfo> {
         futures::future::join_all(addresses.iter().copied().map(|address| async move {
             (
