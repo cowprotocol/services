@@ -58,11 +58,11 @@ pub struct OrderSimulator {
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "onchain_orders")]
 struct Metrics {
     /// Wall-clock time of a single shadow order simulation, labelled by
     /// outcome.
     #[metric(
-        name = "order_simulation_duration_seconds",
         labels("outcome"),
         buckets(0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0)
     )]
