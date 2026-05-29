@@ -19,6 +19,7 @@ use {
     contracts::ERC20,
     ethrpc::Web3,
     std::{collections::HashMap, iter, time::Duration},
+    tracing::instrument,
 };
 
 /// These are the solady magic bytes for user balances
@@ -259,6 +260,7 @@ impl Detector {
 
     /// Returns the cached detection result for `(token, holder)`, running
     /// detection if not yet cached.
+    #[instrument]
     pub async fn detect(&self, token: Address, holder: Address) -> Option<Strategy> {
         tracing::trace!(?token, "attempting to auto-detect balance slot");
 

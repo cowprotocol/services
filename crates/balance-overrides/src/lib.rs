@@ -3,7 +3,7 @@ pub mod balance;
 mod cache;
 pub mod detector;
 
-use {alloy_primitives::Address, alloy_rpc_types::state::AccountOverride};
+use {alloy_primitives::Address, alloy_rpc_types::state::AccountOverride, tracing::instrument};
 pub use {
     approval::{ApprovalOverrideRequest, ApprovalStrategy},
     balance::BalanceOverrideRequest,
@@ -66,6 +66,7 @@ impl StateOverrides {
 
 #[async_trait::async_trait]
 impl StateOverriding for StateOverrides {
+    #[instrument]
     async fn balance_override(
         &self,
         request: BalanceOverrideRequest,
@@ -82,6 +83,7 @@ impl StateOverriding for StateOverrides {
             .last()
     }
 
+    #[instrument]
     async fn approval_override(
         &self,
         request: ApprovalOverrideRequest,
