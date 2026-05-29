@@ -82,7 +82,7 @@ const FUNDING_SELECTORS: &[&str] = &[
 /// lowercased. A valid selector + args encoding has hex length `8 + 64*N`
 /// (selector plus N 32-byte words). The length filter excludes 40-char
 /// addresses and 64-char hashes that may appear in the reason text alongside
-/// the actual error data, so we don't have to rely on a `data:` marker.
+/// the actual error data.
 fn extract_selector(reason: &str) -> Option<String> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"0[xX][0-9a-fA-F]+").unwrap());
