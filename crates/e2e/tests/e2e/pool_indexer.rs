@@ -25,12 +25,12 @@ use {
         NetworkConfig,
         NetworkName,
     },
+    serde::Deserialize,
     sqlx::PgPool,
     std::{
+        future::Future,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         num::NonZeroU32,
-        sync::Mutex,
-        time::Duration,
     },
 };
 
@@ -128,8 +128,6 @@ sol! {
     }
 }
 
-static CURRENT_HANDLE: Mutex<Option<tokio::task::JoinHandle<()>>> = Mutex::new(None);
-
 const POOL_INDEXER_PORT: u16 = 7778;
 const POOL_INDEXER_HOST: &str = "http://127.0.0.1:7778";
 const POOL_INDEXER_METRICS_PORT: u16 = 7779;
@@ -140,6 +138,29 @@ const INITIAL_SQRT_PRICE: u128 = 79_228_162_514_264_337_593_543_950_336;
 
 // Never queried — the pre-seeded checkpoint short-circuits the seeder.
 const PLACEHOLDER_SUBGRAPH_URL: &str = "http://127.0.0.1:1/never-queried";
+
+/// Typed shape of `GET /api/v1/{network}/uniswap/v3/pools`.
+#[derive(Deserialize)]
+struct PoolsListResponse {
+    block_number: u64,
+    pools: Vec<PoolEntry>,
+    #[serde(default)]
+    next_cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PoolEntry {
+    id: String,
+}
+
+/// Typed shape of `GET /api/v1/{network}/uniswap/v3/pools/{pool}/ticks`.
+#[derive(Deserialize)]
+struct TicksResponse {
+    ticks: Vec<TickEntry>,
+}
+
+#[derive(Deserialize)]
+struct TickEntry {}
 
 async fn clear_pool_indexer_tables(db: &PgPool) {
     sqlx::query(
@@ -165,10 +186,9 @@ async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
     .unwrap();
 }
 
-async fn start_pool_indexer_at(factory: Address, metrics_port: u16) {
-    stop_pool_indexer();
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
+/// Spawns the pool-indexer task and waits for its `/health` endpoint to come
+/// up. Used by `with_pool_indexer` and `with_pool_indexer_at`.
+async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task::JoinHandle<()> {
     let config = Configuration {
         database: DatabaseConfig {
             url: LOCAL_DB_URL.parse().unwrap(),
@@ -202,17 +222,68 @@ async fn start_pool_indexer_at(factory: Address, metrics_port: u16) {
     })
     .await
     .expect("pool-indexer API did not come up");
-    *CURRENT_HANDLE.lock().unwrap() = Some(handle);
+    handle
 }
 
-async fn start_pool_indexer(factory: Address) {
-    start_pool_indexer_at(factory, 0).await;
+/// Runs `body` with a freshly-started pool-indexer. The indexer is spawned
+/// before the closure runs, then `abort`ed and `await`ed after — so the port
+/// is fully released before this returns, and a follow-up call can re-bind it.
+async fn with_pool_indexer<F, Fut, T>(factory: Address, body: F) -> T
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = T>,
+{
+    with_pool_indexer_at(factory, 0, body).await
 }
 
-fn stop_pool_indexer() {
-    if let Some(h) = CURRENT_HANDLE.lock().unwrap().take() {
-        h.abort();
-    }
+/// `with_pool_indexer` variant that lets the caller pick the metrics port —
+/// only `driver_integration` needs this (it asserts on the metrics output).
+async fn with_pool_indexer_at<F, Fut, T>(factory: Address, metrics_port: u16, body: F) -> T
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = T>,
+{
+    let handle = spawn_pool_indexer(factory, metrics_port).await;
+    let result = body().await;
+    handle.abort();
+    let _ = handle.await;
+    result
+}
+
+/// Polls `/pools` until the indexer has reached `head` and surfaced at least
+/// `min_pools` pools. `min_pools = 0` means "any state is fine, just check
+/// block_number".
+async fn wait_for_indexer(head: u64, min_pools: usize) {
+    wait_for_condition(TIMEOUT, || async {
+        let resp = reqwest::get(format!(
+            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
+        ))
+        .await
+        .ok()?;
+        let body: PoolsListResponse = resp.json().await.ok()?;
+        Some(body.block_number >= head && body.pools.len() >= min_pools)
+    })
+    .await
+    .expect("indexer did not reach target state");
+}
+
+/// Samples `(pool_count, sqrt_price_x96, tick, liquidity)` for a single pool.
+async fn snapshot_pool_state(db: &PgPool, pool_addr: Address) -> (i64, String, i32, String) {
+    let pool_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
+            .fetch_one(db)
+            .await
+            .unwrap();
+    let (sqrt_price, tick, liquidity): (String, i32, String) = sqlx::query_as(
+        "SELECT sqrt_price_x96::TEXT, tick, liquidity::TEXT
+         FROM uniswap_v3_pool_states
+         WHERE chain_id = 1 AND pool_address = $1",
+    )
+    .bind(pool_addr.as_slice())
+    .fetch_one(db)
+    .await
+    .unwrap();
+    (pool_count, sqrt_price, tick, liquidity)
 }
 
 /// Create + initialise a single pool inside an already-deployed factory.
@@ -230,7 +301,7 @@ async fn create_pool(
         .send()
         .await
         .unwrap()
-        .get_receipt()
+        .watch()
         .await
         .unwrap();
 
@@ -255,7 +326,7 @@ async fn create_pool(
         .send()
         .await
         .unwrap()
-        .get_receipt()
+        .watch()
         .await
         .unwrap();
 
@@ -268,7 +339,7 @@ async fn create_pool(
     .send()
     .await
     .unwrap()
-    .get_receipt()
+    .watch()
     .await
     .unwrap();
 
@@ -342,87 +413,75 @@ async fn driver_integration(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    start_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT).await;
+    with_pool_indexer_at(factory_addr, POOL_INDEXER_METRICS_PORT, || async {
+        // Without the min_pools=1 gate the driver could race against an empty
+        // set and skip the ticks fetch this test asserts on.
+        wait_for_indexer(head, 1).await;
 
-    // Wait for the indexer to reach head AND surface the seeded pool —
-    // without the has_pool gate the driver could race against an empty set
-    // and skip the ticks fetch this test asserts on.
-    wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!(
-            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
-        ))
+        // Mock tokens have no real `decimals()`; backfill plausible values so
+        // the driver's `pools_tokens_have_decimals` filter doesn't drop them.
+        sqlx::query(
+            "UPDATE uniswap_v3_pools SET token0_decimals = 18, token1_decimals = 6 WHERE chain_id \
+             = 1 AND address = $1",
+        )
+        .bind(pool_addr.as_slice())
+        .execute(&db)
         .await
-        .ok()?;
-        let body: serde_json::Value = resp.json().await.ok()?;
-        let at_head = body["block_number"].as_u64()? >= head;
-        let has_pool = !body["pools"].as_array()?.is_empty();
-        Some(at_head && has_pool)
-    })
-    .await
-    .expect("indexer did not reach head with pool visible");
+        .unwrap();
 
-    // Mock tokens have no real `decimals()`; backfill plausible values so
-    // the driver's `pools_tokens_have_decimals` filter doesn't drop them.
-    sqlx::query(
-        "UPDATE uniswap_v3_pools SET token0_decimals = 18, token1_decimals = 6 WHERE chain_id = 1 \
-         AND address = $1",
-    )
-    .bind(pool_addr.as_slice())
-    .execute(&db)
-    .await
-    .unwrap();
+        // Baseline AFTER warm-up polling so bumps below are driver-attributable.
+        let baseline_pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
+        let baseline_pools_by_ids =
+            api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
+        let baseline_ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
 
-    // Baseline AFTER warm-up polling so bumps below are driver-attributable.
-    let baseline_pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
-    let baseline_pools_by_ids =
-        api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
-    let baseline_ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
+        let baseline_solver = colocation::start_baseline_solver(
+            "test_solver".into(),
+            solver.clone(),
+            *onchain.contracts().weth.address(),
+            vec![],
+            1,
+            true,
+        )
+        .await;
 
-    let baseline_solver = colocation::start_baseline_solver(
-        "test_solver".into(),
-        solver.clone(),
-        *onchain.contracts().weth.address(),
-        vec![],
-        1,
-        true,
-    )
-    .await;
-
-    // Router address only used at settlement time; any 20-byte value works.
-    let config_override = format!(
-        r#"
+        // Router address only used at settlement time; any 20-byte value works.
+        let config_override = format!(
+            r#"
 [[liquidity.uniswap-v3]]
 router = "0x000000000000000000000000000000000000dEaD"
 indexer-config = {{ pool-indexer = {{ url = "{POOL_INDEXER_HOST}" }} }}
 max-pools-to-initialize = 10
 "#
-    );
-    let driver_handle = colocation::start_driver_with_config_override(
-        onchain.contracts(),
-        vec![baseline_solver],
-        colocation::LiquidityProvider::UniswapV2,
-        false,
-        Some(&config_override),
-    );
+        );
+        let driver_handle = colocation::start_driver_with_config_override(
+            onchain.contracts(),
+            vec![baseline_solver],
+            colocation::LiquidityProvider::UniswapV2,
+            false,
+            Some(&config_override),
+        );
 
-    wait_for_condition(TIMEOUT, || async {
-        let pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
-        let pools_by_ids =
-            api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
-        let ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
-        pools > baseline_pools && pools_by_ids > baseline_pools_by_ids && ticks > baseline_ticks
-    })
-    .await
-    .expect("driver did not complete pool + tick fetch from pool-indexer within timeout");
-
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
-        .fetch_one(&db)
+        wait_for_condition(TIMEOUT, || async {
+            let pools = api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_ROUTE).await;
+            let pools_by_ids =
+                api_requests_counter(POOL_INDEXER_METRICS_PORT, POOLS_BY_IDS_ROUTE).await;
+            let ticks = api_requests_counter(POOL_INDEXER_METRICS_PORT, TICKS_ROUTE).await;
+            pools > baseline_pools && pools_by_ids > baseline_pools_by_ids && ticks > baseline_ticks
+        })
         .await
-        .unwrap();
-    assert!(count > 0, "expected pools persisted to DB");
+        .expect("driver did not complete pool + tick fetch from pool-indexer within timeout");
 
-    driver_handle.abort();
-    stop_pool_indexer();
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert!(count > 0, "expected pools persisted to DB");
+
+        driver_handle.abort();
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -444,70 +503,9 @@ async fn checkpoint_resume(web3: Web3) {
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
 
-    start_pool_indexer(factory_addr).await;
-    wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!(
-            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
-        ))
-        .await
-        .ok()?;
-        let body: serde_json::Value = resp.json().await.ok()?;
-        Some(body["block_number"].as_u64()? >= head)
-    })
-    .await
-    .expect("first run did not reach head");
-
-    let pool_count_before: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
-            .fetch_one(&db)
-            .await
-            .unwrap();
-    let (sqrt_before, tick_before, liq_before): (String, i32, String) = sqlx::query_as(
-        "SELECT sqrt_price_x96::TEXT, tick, liquidity::TEXT
-         FROM uniswap_v3_pool_states
-         WHERE chain_id = 1 AND pool_address = $1",
-    )
-    .bind(pool_addr.as_slice())
-    .fetch_one(&db)
-    .await
-    .unwrap();
-
-    stop_pool_indexer();
-    start_pool_indexer(factory_addr).await;
-    wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!(
-            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
-        ))
-        .await
-        .ok()?;
-        let body: serde_json::Value = resp.json().await.ok()?;
-        Some(body["block_number"].as_u64()? >= head)
-    })
-    .await
-    .expect("second run did not reach head");
-
-    let pool_count_after: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
-            .fetch_one(&db)
-            .await
-            .unwrap();
-    assert_eq!(
-        pool_count_before, pool_count_after,
-        "pool count changed across restart — idempotency violation"
-    );
-
-    let (sqrt_after, tick_after, liq_after): (String, i32, String) = sqlx::query_as(
-        "SELECT sqrt_price_x96::TEXT, tick, liquidity::TEXT
-         FROM uniswap_v3_pool_states
-         WHERE chain_id = 1 AND pool_address = $1",
-    )
-    .bind(pool_addr.as_slice())
-    .fetch_one(&db)
-    .await
-    .unwrap();
-    assert_eq!(sqrt_before, sqrt_after, "sqrt_price changed across restart");
-    assert_eq!(tick_before, tick_after, "tick changed across restart");
-    assert_eq!(liq_before, liq_after, "liquidity changed across restart");
+    let before = indexer_pass_snapshot(factory_addr, head, &db, pool_addr).await;
+    let after = indexer_pass_snapshot(factory_addr, head, &db, pool_addr).await;
+    assert_eq!(before, after, "indexer state changed across restart");
 
     let checkpoint: i64 = sqlx::query_scalar(
         "SELECT block_number FROM pool_indexer_checkpoints
@@ -521,8 +519,22 @@ async fn checkpoint_resume(web3: Web3) {
         checkpoint as u64 >= head,
         "checkpoint did not advance to head"
     );
+}
 
-    stop_pool_indexer();
+/// One full indexer lifecycle (start → wait for head → snapshot → stop).
+/// Two calls in sequence over the same DB are how `checkpoint_resume`
+/// proves the restart preserves state.
+async fn indexer_pass_snapshot(
+    factory_addr: Address,
+    head: u64,
+    db: &PgPool,
+    pool_addr: Address,
+) -> (i64, String, i32, String) {
+    with_pool_indexer(factory_addr, || async {
+        wait_for_indexer(head, 0).await;
+        snapshot_pool_state(db, pool_addr).await
+    })
+    .await
 }
 
 #[tokio::test]
@@ -542,20 +554,16 @@ async fn api_errors(web3: Web3) {
     let factory_addr = *factory.address();
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
-    start_pool_indexer(factory_addr).await;
 
-    wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!(
-            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
-        ))
-        .await
-        .ok()?;
-        let body: serde_json::Value = resp.json().await.ok()?;
-        Some(body["block_number"].as_u64()? >= head)
+    with_pool_indexer(factory_addr, || async {
+        wait_for_indexer(head, 0).await;
+        invalid_address_returns_400().await;
+        unknown_address_returns_empty_ticks().await;
     })
-    .await
-    .expect("indexer did not reach head");
+    .await;
+}
 
+async fn invalid_address_returns_400() {
     let status = reqwest::get(format!(
         "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/not-an-address/ticks"
     ))
@@ -563,9 +571,11 @@ async fn api_errors(web3: Web3) {
     .unwrap()
     .status();
     assert_eq!(u16::from(status), 400, "expected 400 for invalid address");
+}
 
+async fn unknown_address_returns_empty_ticks() {
     let unknown = Address::repeat_byte(0xAB);
-    let resp: serde_json::Value = reqwest::get(format!(
+    let resp: TicksResponse = reqwest::get(format!(
         "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools/{unknown:?}/ticks"
     ))
     .await
@@ -573,13 +583,10 @@ async fn api_errors(web3: Web3) {
     .json()
     .await
     .unwrap();
-    assert_eq!(
-        resp["ticks"].as_array().unwrap().len(),
-        0,
+    assert!(
+        resp.ticks.is_empty(),
         "expected empty ticks for unknown pool"
     );
-
-    stop_pool_indexer();
 }
 
 #[tokio::test]
@@ -601,65 +608,52 @@ async fn pagination(web3: Web3) {
     let factory_addr = *factory.address();
     let head = web3.provider.get_block_number().await.unwrap();
     seed_checkpoint(&db, factory_addr, 0).await;
-    start_pool_indexer(factory_addr).await;
 
-    wait_for_condition(TIMEOUT, || async {
-        let resp = reqwest::get(format!(
-            "{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools"
-        ))
-        .await
-        .ok()?;
-        let body: serde_json::Value = resp.json().await.ok()?;
-        let at_head = body["block_number"].as_u64()? >= head;
-        let count = body["pools"].as_array()?.len();
-        Some(at_head && count >= 3)
-    })
-    .await
-    .expect("indexer did not surface all 3 pools at head");
+    with_pool_indexer(factory_addr, || async {
+        wait_for_indexer(head, 3).await;
 
-    let mut all_ids: Vec<String> = Vec::new();
-    let mut cursor: Option<String> = None;
-    loop {
-        let url = match &cursor {
-            None => format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1"),
-            Some(c) => {
-                format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1&after={c}")
+        let mut all_ids: Vec<String> = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let url = match &cursor {
+                None => format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1"),
+                Some(c) => {
+                    format!("{POOL_INDEXER_HOST}/api/v1/mainnet/uniswap/v3/pools?limit=1&after={c}")
+                }
+            };
+            let resp: PoolsListResponse = reqwest::get(&url).await.unwrap().json().await.unwrap();
+            if resp.pools.is_empty() {
+                break;
             }
-        };
-        let resp: serde_json::Value = reqwest::get(&url).await.unwrap().json().await.unwrap();
-        let pools = resp["pools"].as_array().unwrap();
-        if pools.is_empty() {
-            break;
+            for p in resp.pools {
+                all_ids.push(p.id);
+            }
+            cursor = resp.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
         }
-        for p in pools {
-            all_ids.push(p["id"].as_str().unwrap().to_owned());
-        }
-        cursor = resp["next_cursor"].as_str().map(|s| s.to_owned());
-        if cursor.is_none() {
-            break;
-        }
-    }
 
-    let db_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
-            .fetch_one(&db)
-            .await
-            .unwrap();
-    assert_eq!(
-        i64::try_from(all_ids.len()).unwrap(),
-        db_count,
-        "paginated count doesn't match DB"
-    );
-    assert!(
-        db_count >= 3,
-        "expected at least 3 pools to exercise pagination"
-    );
-    let unique: std::collections::HashSet<_> = all_ids.iter().collect();
-    assert_eq!(
-        unique.len(),
-        all_ids.len(),
-        "pagination returned duplicates"
-    );
-
-    stop_pool_indexer();
+        let db_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert_eq!(
+            i64::try_from(all_ids.len()).unwrap(),
+            db_count,
+            "paginated count doesn't match DB"
+        );
+        assert!(
+            db_count >= 3,
+            "expected at least 3 pools to exercise pagination"
+        );
+        let unique: std::collections::HashSet<_> = all_ids.iter().collect();
+        assert_eq!(
+            unique.len(),
+            all_ids.len(),
+            "pagination returned duplicates"
+        );
+    })
+    .await;
 }
