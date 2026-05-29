@@ -74,7 +74,11 @@ pub struct RunLoopConfig {
     pub max_settlement_transaction_wait: Duration,
 
     /// Lower bound of time solvers have to compute solutions per auction.
-    #[serde(with = "humantime_serde", rename = "solve-deadline", default = "default_min_solve_time")]
+    #[serde(
+        with = "humantime_serde",
+        rename = "solve-deadline",
+        default = "default_min_solve_time"
+    )]
     pub min_solve_time: Duration,
 
     /// How long each slot on a PoS chain is. If this is set the autopilot

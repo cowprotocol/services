@@ -235,9 +235,22 @@ impl RunLoop {
         let last_block =
             DateTime::from_timestamp_secs(last_block_time.try_into().unwrap()).unwrap();
 
-        for i in 1..10 {
-            let target = last_block + slot_length.saturating_mul(i) - submit_before_slot_end;
+        for delay_in_blocks in 1..10 {
+            let target =
+                last_block + slot_length.saturating_mul(delay_in_blocks) - submit_before_slot_end;
             if target > minimum_deadline {
+                if delay_in_blocks == 1 {
+                    tracing::debug!(
+                        deadline = target.to_string(),
+                        "optimal solve deadline is before next block"
+                    );
+                } else {
+                    tracing::debug!(
+                        delay_in_blocks,
+                        deadline = target.to_string(),
+                        "delay auction for optimal deadline"
+                    );
+                }
                 // first timestamp that gives at least the required amount of time
                 // and is aligned with the chain's block production
                 return target;
