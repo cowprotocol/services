@@ -857,7 +857,7 @@ mod tests {
 
         let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
 
-        // surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
+        // NOTE(historical): surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(52937525819789126u128)
