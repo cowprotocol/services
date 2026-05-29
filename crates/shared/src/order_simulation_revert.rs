@@ -66,10 +66,7 @@ const FUNDING_TEXT_PATTERNS: &[&str] = &[
     "TRANSFER_AMOUNT_EXCEEDS_BALANCE",
     "Insufficient transferable balance",
     "available balance has been locked",
-    "TRANSFER_FROM_FAILED",
-    "GPv2: failed transfer",
     "SUDC: Tokens locked",
-    "Trading is Paused",
 ];
 
 // 4-byte custom-error selectors, lowercase.
@@ -102,7 +99,7 @@ mod tests {
             r#"execution reverted: BEP20: transfer amount exceeds balance, data: "0x...""#,
             r#"execution reverted: BALANCE_EXCEEDED, data: "0x...""#,
             r#"execution reverted: Dai/insufficient-allowance, data: "0x...""#,
-            r#"execution reverted: TransferHelper: TRANSFER_FROM_FAILED, data: "0x...""#,
+            r#"execution reverted: Insufficient transferable balance, data: "0x...""#,
         ];
         for case in cases {
             assert_eq!(classify(case), RevertClass::Funding, "case: {case}");
@@ -121,6 +118,9 @@ mod tests {
         let cases = [
             r#"execution reverted: GPv2: order expired, data: "0x...""#,
             r#"execution reverted: panic: arithmetic underflow or overflow (0x11), data: "0x...""#,
+            r#"execution reverted: Trading is Paused, data: "0x...""#,
+            r#"execution reverted: GPv2: failed transfer, data: "0x...""#,
+            r#"execution reverted: TransferHelper: TRANSFER_FROM_FAILED, data: "0x...""#,
             "execution reverted",
             r#"execution reverted, data: "0xdeadbeef00...""#,
             r#"execution reverted: SomeNewError: details, data: "0x...""#,
