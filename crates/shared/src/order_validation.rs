@@ -60,9 +60,10 @@ pub struct OrderSimulator {
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "onchain_orders")]
 struct Metrics {
-    /// Wall-clock time of a single order simulation, labelled by outcome.
+    /// Wall-clock time of a single order simulation, labelled by outcome and
+    /// (for reverted outcomes) the classified revert reason.
     #[metric(
-        labels("outcome"),
+        labels("outcome", "class"),
         buckets(0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0)
     )]
     duration_seconds: prometheus::HistogramVec,
@@ -96,9 +97,15 @@ impl OrderSimulator {
                 ),
             };
 
+        let class = match &result {
+            Err(OrderSimulationError::Reverted { reason, .. }) => {
+                crate::order_simulation_revert::classify(reason).as_str()
+            }
+            _ => "n/a",
+        };
         Metrics::get()
             .duration_seconds
-            .with_label_values(&[outcome])
+            .with_label_values(&[outcome, class])
             .observe(start.elapsed().as_secs_f64());
 
         result
@@ -130,6 +137,7 @@ fn log_simulation_outcome(
                 .as_deref()
                 .and_then(|r| serde_json::to_string(r).ok())
                 .unwrap_or_default();
+            let class = crate::order_simulation_revert::classify(reason).as_str();
             tracing::warn!(
                 ?order_uid,
                 ?owner,
@@ -139,6 +147,7 @@ fn log_simulation_outcome(
                 ?reason,
                 ?tenderly_url,
                 tenderly_request = %tenderly_request_json,
+                class,
                 "order simulation disagreement: signature passed, simulation reverted",
             );
         }
