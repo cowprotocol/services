@@ -21,9 +21,11 @@ use {
     chain::Chain,
     itertools::Itertools,
     num::BigInt,
+    number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::Deserialize,
-    std::{collections::HashMap, str::FromStr, time::Duration},
+    serde_with::{DisplayFromStr, serde_as},
+    std::{collections::HashMap, time::Duration},
 };
 
 /// How often [`PoolIndexerClient::wait_until`] polls `/pools?limit=1` while
@@ -83,14 +85,18 @@ struct PoolsResponse {
     next_cursor: Option<String>,
 }
 
+#[serde_as]
 #[derive(Deserialize)]
 struct IndexerPool {
     id: Address,
     token0: IndexerToken,
     token1: IndexerToken,
-    fee_tier: String,
-    liquidity: String,
-    sqrt_price: String,
+    #[serde_as(as = "HexOrDecimalU256")]
+    fee_tier: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    liquidity: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    sqrt_price: U256,
     tick: i32,
 }
 
@@ -112,10 +118,12 @@ struct IndexerPoolTicks {
     ticks: Vec<IndexerTick>,
 }
 
+#[serde_as]
 #[derive(Deserialize)]
 struct IndexerTick {
     tick_idx: i32,
-    liquidity_net: String,
+    #[serde_as(as = "DisplayFromStr")]
+    liquidity_net: BigInt,
 }
 
 /// Drops pools where either token's `decimals` is missing. Treating missing
@@ -165,9 +173,9 @@ impl TryFrom<IndexerPool> for PoolData {
                 id: pool.token1.id,
                 decimals: token1_decimals,
             },
-            fee_tier: U256::from_str(&pool.fee_tier).context("parse fee_tier")?,
-            liquidity: U256::from_str(&pool.liquidity).context("parse liquidity")?,
-            sqrt_price: U256::from_str(&pool.sqrt_price).context("parse sqrt_price")?,
+            fee_tier: pool.fee_tier,
+            liquidity: pool.liquidity,
+            sqrt_price: pool.sqrt_price,
             tick: BigInt::from(pool.tick),
             ticks: None,
         })
@@ -175,13 +183,13 @@ impl TryFrom<IndexerPool> for PoolData {
 }
 
 impl IndexerTick {
-    fn into_tick_data(self, pool_address: Address) -> Result<TickData> {
-        Ok(TickData {
+    fn into_tick_data(self, pool_address: Address) -> TickData {
+        TickData {
             id: format!("{pool_address:#x}#{}", self.tick_idx),
             tick_idx: BigInt::from(self.tick_idx),
-            liquidity_net: BigInt::from_str(&self.liquidity_net).context("parse liquidity_net")?,
+            liquidity_net: self.liquidity_net,
             pool_address,
-        })
+        }
     }
 }
 
@@ -203,35 +211,22 @@ impl PoolIndexerClient {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            let mut url = self.path("pools");
-            url.query_pairs_mut().append_pair("limit", "1");
-            let resp = self
-                .http
-                .get(url)
-                .send()
-                .await
-                .context("GET /pools?limit=1 (wait_until probe)")?;
-            if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
-                tracing::debug!(
+            match self.fetch_pools_page(1, None).await? {
+                None => tracing::debug!(
                     %target_block,
                     "pool-indexer not ready yet (503); waiting",
-                );
-            } else {
-                let probe: PoolsResponse = resp
-                    .error_for_status()
-                    .context("wait_until probe HTTP status")?
-                    .json()
-                    .await
-                    .context("wait_until probe body")?;
-                if probe.block_number >= target_block {
-                    return Ok(());
+                ),
+                Some(probe) => {
+                    if probe.block_number >= target_block {
+                        return Ok(());
+                    }
+                    last_observed = Some(probe.block_number);
+                    tracing::debug!(
+                        indexer_block = probe.block_number,
+                        %target_block,
+                        "pool-indexer not yet at target block; waiting",
+                    );
                 }
-                last_observed = Some(probe.block_number);
-                tracing::debug!(
-                    indexer_block = probe.block_number,
-                    %target_block,
-                    "pool-indexer not yet at target block; waiting",
-                );
             }
             if std::time::Instant::now() >= deadline {
                 anyhow::bail!(
@@ -241,6 +236,33 @@ impl PoolIndexerClient {
                 );
             }
         }
+    }
+
+    /// Issues `GET /pools?limit=N[&after=cursor]` and parses the envelope.
+    /// `None` means the indexer responded 503 (still bootstrapping); the
+    /// caller decides whether to retry or fail.
+    async fn fetch_pools_page(
+        &self,
+        limit: u64,
+        cursor: Option<&str>,
+    ) -> Result<Option<PoolsResponse>> {
+        let mut url = self.path("pools");
+        url.query_pairs_mut()
+            .append_pair("limit", &limit.to_string());
+        if let Some(c) = cursor {
+            url.query_pairs_mut().append_pair("after", c);
+        }
+        let resp = self.http.get(url).send().await.context("GET /pools")?;
+        if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Ok(None);
+        }
+        let page: PoolsResponse = resp
+            .error_for_status()
+            .context("/pools HTTP status")?
+            .json()
+            .await
+            .context("/pools body")?;
+        Ok(Some(page))
     }
 }
 
@@ -255,30 +277,17 @@ impl V3PoolDataSource for PoolIndexerClient {
         let mut pools: Vec<PoolData> = Vec::new();
         let mut fetched_block_number: Option<u64> = None;
         loop {
-            let mut url = self.path("pools");
-            url.query_pairs_mut()
-                .append_pair("limit", &LIST_PAGE_SIZE.to_string());
-            if let Some(c) = &cursor {
-                url.query_pairs_mut().append_pair("after", c);
-            }
-            let page: PoolsResponse = self
-                .http
-                .get(url)
-                .send()
-                .await
-                .context("GET /pools")?
-                .error_for_status()
-                .context("pools HTTP status")?
-                .json()
-                .await
-                .context("pools body")?;
+            let page = self
+                .fetch_pools_page(LIST_PAGE_SIZE, cursor.as_deref())
+                .await?
+                .context("pool-indexer returned 503 after wait_until")?;
 
             fetched_block_number.get_or_insert(page.block_number);
             // Skip zero-liquidity pools (fully-burned LP, never-minted, etc.)
             let liq_filtered: Vec<_> = page
                 .pools
                 .into_iter()
-                .filter(|p| p.liquidity != "0")
+                .filter(|p| !p.liquidity.is_zero())
                 .collect();
             let filtered = drop_pools_missing_decimals(liq_filtered)
                 .into_iter()
@@ -392,8 +401,8 @@ async fn fetch_ticks_by_pool_ids(
         .context("bulk-ticks body")?;
     let mut out: HashMap<Address, Vec<TickData>> = HashMap::new();
     for IndexerPoolTicks { pool, ticks } in resp.pools {
-        let mapped: Result<Vec<_>> = ticks.into_iter().map(|t| t.into_tick_data(pool)).collect();
-        out.insert(pool, mapped?);
+        let mapped: Vec<_> = ticks.into_iter().map(|t| t.into_tick_data(pool)).collect();
+        out.insert(pool, mapped);
     }
     Ok(out)
 }
