@@ -494,7 +494,7 @@ impl RunLoop {
                     .collect(),
                 // Always empty — kept to avoid breaking the solver competition
                 // API (`/api/v1/solver_competition`).
-                // NOTE: since the v1 is being removed,
+                // NOTE: since the v1 has been removed,
                 // we'll probably be able to remove this soon too
                 clearing_prices: Default::default(),
                 is_winner: bid.is_winner(),
