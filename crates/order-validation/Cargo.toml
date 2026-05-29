@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 alloy-contract = { workspace = true }
 alloy-primitives = { workspace = true }
+async-trait = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 futures = { workspace = true }
@@ -15,6 +16,7 @@ hmac = { workspace = true }
 moka = { workspace = true, features = ["sync"] }
 reqwest = { workspace = true, features = ["json"] }
 sha2 = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }

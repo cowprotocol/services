@@ -18,6 +18,16 @@ LIMIT 1
     sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
+pub async fn last_used_auction_id(ex: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT id
+FROM auctions
+ORDER BY id DESC
+LIMIT 1
+    ;"#;
+    sqlx::query_scalar(QUERY).fetch_optional(ex).await
+}
+
 pub async fn get_next_auction_id(ex: &mut PgConnection) -> Result<AuctionId, sqlx::Error> {
     const QUERY: &str =
         r#"SELECT nextval(pg_get_serial_sequence('auctions', 'id'))::bigint as next_id;"#;
