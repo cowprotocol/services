@@ -15,7 +15,7 @@ use {
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    initialize_observability();
+    initialize_observability(&args);
     observe::metrics::setup_registry(None, None);
     let config = Configuration::from_path(&args.config).expect("failed to load configuration");
     tracing::info!("pool-indexer starting");
@@ -43,8 +43,11 @@ pub async fn run(config: Configuration) {
         set.spawn(async move { run_network_indexer(db, network).await });
     }
 
+    // All spawned tasks (API server + per-network indexers) are infinite
+    // loops; any completion is a bug, so we crash the process and let the
+    // orchestrator restart the pod.
     if let Some(result) = set.join_next().await {
-        panic!("pool-indexer task exited: {result:?}");
+        panic!("pool-indexer task exited (expected infinite loop): {result:?}");
     }
 }
 
@@ -59,9 +62,10 @@ impl observe::metrics::LivenessChecking for AlwaysAlive {
     }
 }
 
-fn initialize_observability() {
-    let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into());
-    observe::tracing::init::initialize(&observe::Config::new(&log_filter, None, false, None));
+fn initialize_observability(args: &Arguments) {
+    let obs_config =
+        observe::Config::new(&args.log, args.stderr_threshold, args.use_json_logs, None);
+    observe::tracing::init::initialize(&obs_config);
     observe::panic_hook::install();
 }
 
@@ -146,8 +150,14 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
         backfill_interval,
     ));
 
+    // All spawned tasks (factory indexers + symbol/decimals backfill) are
+    // infinite loops; any completion is a bug, so we crash the process and
+    // let the orchestrator restart the pod.
     if let Some(result) = factory_set.join_next().await {
-        panic!("pool-indexer factory task exited: {result:?}");
+        panic!(
+            "pool-indexer {}: task exited (expected infinite loop): {result:?}",
+            network.name,
+        );
     }
 }
 
