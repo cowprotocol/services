@@ -23,8 +23,12 @@ const fn default_max_settlement_transaction_wait() -> Duration {
     Duration::from_mins(1)
 }
 
-const fn default_solve_deadline() -> Duration {
-    Duration::from_secs(15)
+const fn default_min_solve_time() -> Duration {
+    Duration::from_secs(10)
+}
+
+const fn default_submit_before_slot_end() -> Duration {
+    Duration::from_secs(2)
 }
 
 /// Configuration for the autopilot run loop timing.
@@ -69,9 +73,23 @@ pub struct RunLoopConfig {
     )]
     pub max_settlement_transaction_wait: Duration,
 
-    /// Time solvers have to compute a score per auction.
-    #[serde(with = "humantime_serde", default = "default_solve_deadline")]
-    pub solve_deadline: Duration,
+    /// Lower bound of time solvers have to compute solutions per auction.
+    #[serde(with = "humantime_serde", rename = "solve-deadline", default = "default_min_solve_time")]
+    pub min_solve_time: Duration,
+
+    /// How long each slot on a PoS chain is. If this is set the autopilot
+    /// will pick deadlines for the `/solve` requests that align optimally
+    /// with the chain's block production.
+    /// This does not work for chains with variable block production rates
+    /// (including test chains).
+    #[serde(with = "humantime_serde")]
+    pub slot_length: Option<Duration>,
+
+    /// Minimum amount of time one has to submit a tx BEFORE the slot's end
+    /// to still have it included in the next block. This only matters if
+    /// `slot_length` is also configured.
+    #[serde(with = "humantime_serde", default = "default_submit_before_slot_end")]
+    pub submit_before_slot_end: Duration,
 }
 
 impl Default for RunLoopConfig {
@@ -84,7 +102,9 @@ impl Default for RunLoopConfig {
             compress_solve_request: false,
             submission_deadline: default_submission_deadline(),
             max_settlement_transaction_wait: default_max_settlement_transaction_wait(),
-            solve_deadline: default_solve_deadline(),
+            min_solve_time: default_min_solve_time(),
+            slot_length: None,
+            submit_before_slot_end: default_submit_before_slot_end(),
         }
     }
 }

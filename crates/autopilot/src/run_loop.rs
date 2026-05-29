@@ -27,6 +27,7 @@ use {
     ::winner_selection::state::RankedItem,
     alloy::primitives::B256,
     anyhow::{Context, Result},
+    chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
     eth_domain_types::{self as eth, Address, TxId},
     ethrpc::block_stream::BlockInfo,
@@ -57,7 +58,9 @@ use {
 pub struct Config {
     pub submission_deadline: u64,
     pub max_settlement_transaction_wait: Duration,
-    pub solve_deadline: Duration,
+    pub min_solve_time: Duration,
+    pub slot_length: Option<Duration>,
+    pub submit_before_slot_end: Option<Duration>,
     /// How much time past observing the current block the runloop is
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
@@ -73,12 +76,14 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
         Self {
             submission_deadline: value.submission_deadline,
             max_settlement_transaction_wait: value.max_settlement_transaction_wait,
-            solve_deadline: value.solve_deadline,
+            min_solve_time: value.min_solve_time,
             max_run_loop_delay: value.max_delay,
             max_winners_per_auction: value.max_winners_per_auction,
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             compress_solve_request: value.compress_solve_request,
+            slot_length: value.slot_length,
+            submit_before_slot_end: Some(value.submit_before_slot_end),
         }
     }
 }
@@ -206,6 +211,40 @@ impl RunLoop {
                 notify.notify_one();
             }
         });
+    }
+
+    /// Picks a `/solve` deadline that ends shortly before a block gets
+    /// mined to maximize the chance that solutions get mined instantly.
+    /// If the auction needs to cross block boundaries solvers just get
+    /// a lot more time for proposing a solution.
+    ///
+    /// This function panics if any of the time computations over- or
+    /// underflow. This should not happen as we deal with times within
+    /// seconds of the current time.
+    fn pick_solve_deadline(&self) -> DateTime<Utc> {
+        let now = chrono::Utc::now();
+        let minimum_deadline = now + self.config.min_solve_time;
+
+        let (Some(slot_length), Some(submit_before_slot_end)) =
+            (self.config.slot_length, self.config.submit_before_slot_end)
+        else {
+            return minimum_deadline;
+        };
+
+        let last_block_time = self.eth.current_block().borrow().timestamp;
+        let last_block =
+            DateTime::from_timestamp_secs(last_block_time.try_into().unwrap()).unwrap();
+
+        for i in 0..10 {
+            let target = last_block + slot_length.saturating_mul(i) - submit_before_slot_end;
+            if target > minimum_deadline {
+                // first timestamp that gives at least the required amount of time
+                // and is aligned with the chain's block production
+                return target;
+            }
+        }
+
+        minimum_deadline
     }
 
     #[instrument(skip_all)]
@@ -569,10 +608,12 @@ impl RunLoop {
     /// Returns all fair solutions sorted by their score (best to worst).
     #[instrument(skip_all)]
     async fn fetch_solutions(&self, auction: &domain::Auction) -> Vec<competition::Bid<Unscored>> {
+        let deadline = self.pick_solve_deadline();
+
         let request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
-            self.config.solve_deadline,
+            deadline,
             self.config.compress_solve_request,
         )
         .await;
@@ -664,6 +705,7 @@ impl RunLoop {
         let (can_participate, response) = {
             let driver = driver.clone();
             let eth = self.eth.clone();
+            let timeout = request.time_until_deadline();
             let mut handle = tokio::task::spawn(
                 async move {
                     let fetch_response = driver.solve(request);
@@ -675,7 +717,7 @@ impl RunLoop {
                 }
                 .in_current_span(),
             );
-            tokio::time::timeout(self.config.solve_deadline, &mut handle)
+            tokio::time::timeout(timeout, &mut handle)
                 .await
                 .map_err(|_| {
                     // Abort the background task to prevent memory leaks
