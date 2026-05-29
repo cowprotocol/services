@@ -435,7 +435,7 @@ impl Competition {
                     .await;
                 (solution, settlement)
             })
-            .buffer_unordered(1)
+            .buffer_unordered(5)
             .filter_map(|(solution, result)| async move {
                 let id = solution.id().clone();
                 let orders: Vec<_> = solution
