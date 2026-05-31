@@ -33,7 +33,6 @@ use {
         AuctionId,
         order::{CancellationPayload, Order, OrderCreation, OrderUid},
         quote::{NativeTokenPrice, OrderQuoteRequest, OrderQuoteResponse},
-        solver_competition,
         solver_competition_v2,
         trade::Trade,
     },
@@ -839,70 +838,6 @@ impl<'a> Services<'a> {
             .http
             .delete(format!("{API_HOST}{ORDERS_ENDPOINT}/{uid}"))
             .json(payload)
-            .send()
-            .await
-            .unwrap();
-
-        let status = response.status();
-        let body = response.text().await.unwrap();
-
-        match status {
-            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
-            code => Err((code, body)),
-        }
-    }
-
-    /// Get solver competition by auction ID (v1 - deprecated)
-    pub async fn get_solver_competition_v1(
-        &self,
-        auction_id: AuctionId,
-    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
-        let response = self
-            .http
-            .get(format!("{API_HOST}/api/v1/solver_competition/{auction_id}"))
-            .send()
-            .await
-            .unwrap();
-
-        let status = response.status();
-        let body = response.text().await.unwrap();
-
-        match status {
-            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
-            code => Err((code, body)),
-        }
-    }
-
-    /// Get solver competition by transaction hash (v1 - deprecated)
-    pub async fn get_solver_competition_by_tx_v1(
-        &self,
-        hash: B256,
-    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
-        let response = self
-            .http
-            .get(format!(
-                "{API_HOST}/api/v1/solver_competition/by_tx_hash/{hash:?}"
-            ))
-            .send()
-            .await
-            .unwrap();
-
-        let status = response.status();
-        let body = response.text().await.unwrap();
-
-        match status {
-            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
-            code => Err((code, body)),
-        }
-    }
-
-    /// Get latest solver competition (v1 - deprecated)
-    pub async fn get_latest_solver_competition_v1(
-        &self,
-    ) -> Result<solver_competition::SolverCompetitionAPI, (StatusCode, String)> {
-        let response = self
-            .http
-            .get(format!("{API_HOST}/api/v1/solver_competition/latest"))
             .send()
             .await
             .unwrap();

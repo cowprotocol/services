@@ -39,7 +39,6 @@ mod get_order_by_uid;
 mod get_order_status;
 mod get_orders_by_tx;
 mod get_orders_by_uid;
-mod get_solver_competition;
 mod get_solver_competition_v2;
 mod get_token_metadata;
 mod get_total_surplus;
@@ -241,22 +240,6 @@ pub fn handle_all_routes(
             "POST",
             "/api/v1/quote",
             post(post_quote::post_quote_handler),
-        ),
-        // /solver_competition routes (specific before parameterized)
-        (
-            "GET",
-            "/api/v1/solver_competition/latest",
-            get(get_solver_competition::get_solver_competition_latest_handler),
-        ),
-        (
-            "GET",
-            "/api/v1/solver_competition/by_tx_hash/{tx_hash}",
-            get(get_solver_competition::get_solver_competition_by_hash_handler),
-        ),
-        (
-            "GET",
-            "/api/v1/solver_competition/{auction_id}",
-            get(get_solver_competition::get_solver_competition_by_id_handler),
         ),
         (
             "GET",
