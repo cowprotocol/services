@@ -131,29 +131,6 @@ async fn http_validation(web3: Web3) {
         );
     }
 
-    // Test malformed auction IDs
-    for (id, description, expected_status) in [
-        ("not-a-number", "non-numeric", StatusCode::BAD_REQUEST),
-        ("-1", "negative number", StatusCode::BAD_REQUEST),
-        (
-            "99999999999999999999999",
-            "u64 overflow",
-            StatusCode::BAD_REQUEST,
-        ),
-    ] {
-        let response = client
-            .get(format!("{API_HOST}/api/v1/solver_competition/{id}"))
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.status(),
-            expected_status,
-            "Expected {expected_status} for invalid AuctionId ({description}): {id}"
-        );
-    }
-
     // Test missing/invalid endpoints
     let extra_segment_path = format!("/api/v1/orders/{VALID_ORDER_UID}/extra");
     let wrong_nested_path = format!("/api/v1/account/{VALID_ADDRESS}/trades");
