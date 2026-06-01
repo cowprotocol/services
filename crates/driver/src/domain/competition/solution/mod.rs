@@ -316,28 +316,25 @@ impl Solution {
             try_join_all(self.allowances(internalization).map(|required| async move {
                 let erc20_token = ERC20::new(required.0.token.into(), &eth.web3().provider);
 
-                let current_allowance =
-                    erc20_token.allowance(settlement_contract, required.0.spender);
-
-                let approval = erc20_token
-                    .approve(required.0.spender, required.0.amount)
-                    .from(settlement_contract);
-
-                // since this code is on the hotpath we run both futures
-                // concurrently to reduce latency even if the second future
-                // might not be needed often
-                let (current_allowance, regular_approval) = tokio::join!(
-                    current_allowance.call().into_future(),
-                    approval.call().into_future(),
-                );
+                let current_allowance = erc20_token
+                    .allowance(settlement_contract, required.0.spender)
+                    .call()
+                    .await?;
 
                 // if the current allowance is sufficient we can skip that interaction
-                if current_allowance? >= required.0.amount {
+                if current_allowance >= required.0.amount {
                     return Ok::<_, blockchain::Error>(vec![]);
                 }
 
+                let regular_approval_succeeds = erc20_token
+                    .approve(required.0.spender, required.0.amount)
+                    .from(settlement_contract)
+                    .call()
+                    .await
+                    .is_ok();
+
                 let approval = eth::allowance::Approval(required.0);
-                if regular_approval.is_ok() {
+                if regular_approval_succeeds {
                     Ok(vec![approval])
                 } else {
                     // setting the desired approval reverts so we assume we are
