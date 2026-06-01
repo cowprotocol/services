@@ -144,17 +144,21 @@ impl Settlement {
         eth: &Ethereum,
         simulator: &Simulator,
     ) -> Result<Self, Error> {
-        // The settlement contract will fail if the receiver is a smart contract.
-        // Because of this, if the receiver is a smart contract and we try to
-        // estimate the access list, the access list estimation will also fail.
+        // <address payable>.transfer(ETH) is allowed to use at most 2300 gas units (
+        // see <https://fravoll.github.io/solidity-patterns/secure_ether_transfer.html>).
+        // This is not enough when the receiver is a smart contract wallet which does
+        // non-trivial work in the `fallback` handler.
+        // To support sending native ETH to SC wallets we use access lists which
+        // effectively move the cost of accessing storage out of the critical section
+        // and into the tx's initial gas cost.
+        // While correctly built access lists provide a very minor net cost
+        // reduction an access list with unused storage slots increases the cost
+        // significantly. Since the risk is high and the reward is very low we only
+        // compute access list items which are absolutely necessary for the tx to work.
         //
-        // This failure happens because the Ethereum protocol sets a hard gas limit
-        // on transferring ETH into a smart contract, which some contracts exceed unless
-        // the access list is already specified.
-
-        // The solution is to do access list estimation in two steps: first, simulate
-        // moving 1 wei into every smart contract to get a partial access list, and then
-        // use that partial access list to calculate the final access list.
+        // We compute those access lists by using `eth_createAccessList` for a call
+        // sending 1 wei to each SC wallet that is supposed to get ETH during the
+        // settlement. Those lists get merged and added to the settlement transaction.
         //
         // `Some(..)` means at least one trade strictly requires an access list;
         // `None` means it is purely a gas optimization for this settlement, so a
