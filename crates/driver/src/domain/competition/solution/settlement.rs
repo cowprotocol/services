@@ -68,9 +68,9 @@ struct SettlementTx {
 }
 
 impl SettlementTx {
-    fn set_access_list(&mut self, access_list: eth::AccessList) {
-        self.internalized.set_access_list(access_list.clone());
-        self.uninternalized.set_access_list(access_list);
+    fn set_access_list(&mut self, access_list: RequiredAccessList) {
+        self.internalized.set_access_list(access_list.0.clone());
+        self.uninternalized.set_access_list(access_list.0);
     }
 }
 
@@ -159,7 +159,7 @@ impl Settlement {
         // `Some(..)` means at least one trade strictly requires an access list;
         // `None` means it is purely a gas optimization for this settlement, so a
         // non-revert fetch failure below can be tolerated.
-        let partial_access_list: Option<eth::AccessList> = try_join_all(
+        let partial_access_list: Option<RequiredAccessList> = try_join_all(
             solution
                 .user_trades()
                 .map(|trade| partial_access_list_for(trade, &solution, eth, simulator)),
@@ -168,7 +168,8 @@ impl Settlement {
         .into_iter()
         .flatten()
         .map(|required| required.0)
-        .reduce(|acc, list| acc.merge(list));
+        .reduce(|acc, list| acc.merge(list))
+        .map(RequiredAccessList);
 
         if let Some(access_list) = partial_access_list {
             transaction.set_access_list(access_list.clone());
