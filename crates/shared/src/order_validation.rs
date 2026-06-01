@@ -42,7 +42,10 @@ use {
     },
     price_estimation::{PriceEstimationError, Verification},
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    std::{sync::Arc, time::Duration},
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tracing::instrument,
 };
 
@@ -54,15 +57,51 @@ pub struct OrderSimulator {
     pub timeout: Duration,
 }
 
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "onchain_orders")]
+struct Metrics {
+    /// Wall-clock time of a single order simulation, labelled by outcome.
+    #[metric(
+        labels("outcome"),
+        buckets(0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0)
+    )]
+    duration_seconds: prometheus::HistogramVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Self::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+}
+
 impl OrderSimulator {
     pub async fn simulate_with_timeout(
         &self,
         order: &Order,
         full_app_data: &str,
     ) -> Result<(), OrderSimulationError> {
-        tokio::time::timeout(self.timeout, self.simulator.simulate(order, full_app_data))
-            .await
-            .map_err(|_| OrderSimulationError::Infra(anyhow!("order simulation timeout")))?
+        let start = Instant::now();
+        let (outcome, result) =
+            match tokio::time::timeout(self.timeout, self.simulator.simulate(order, full_app_data))
+                .await
+            {
+                Ok(r @ Ok(())) => ("ok", r),
+                Ok(r @ Err(OrderSimulationError::Reverted { .. })) => ("reverted", r),
+                Ok(r @ Err(OrderSimulationError::Infra(_))) => ("infra", r),
+                Err(_) => (
+                    "timeout",
+                    Err(OrderSimulationError::Infra(anyhow!(
+                        "order simulation timeout"
+                    ))),
+                ),
+            };
+
+        Metrics::get()
+            .duration_seconds
+            .with_label_values(&[outcome])
+            .observe(start.elapsed().as_secs_f64());
+
+        result
     }
 }
 

@@ -139,6 +139,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 submission_accounts: join_all(
                     solver_config
                         .submission_accounts
+                        .into_inner()
                         .into_iter()
                         .map(|acc| load_account(acc, config.chain_id)),
                 )
