@@ -19,7 +19,7 @@ use {
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
-    futures::future::try_join_all,
+    futures::{TryFutureExt, future::try_join_all},
     simulator::{self, Simulator},
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
@@ -198,22 +198,23 @@ impl Settlement {
         let gas_used_fut = simulator.gas(transaction.internalized.clone());
 
         // run everything concurrently to minimize latency added through RPC roundtrips
-        let (internalized_tx_check, gas_used, gas_price, solver_eth) = tokio::join!(
-            internalized_tx_check,
-            gas_used_fut,
-            eth.gas_price(),
+        // for the internalization check we don't need the Ok result - we only need to
+        // know it doesn't return an error
+        let (_internalized_tx_check, gas_used, gas_price, solver_eth) = tokio::try_join!(
+            internalized_tx_check.map_err(Error::from),
+            gas_used_fut.map_err(Error::from),
+            eth.gas_price().map_err(Error::from),
             eth.balance(solution.solver().address())
-        );
-
-        internalized_tx_check?; // just ensure the check passed
+                .map_err(Error::from)
+        )?;
 
         // Ensure that the solver has sufficient balance for the settlement to be mined
         // even if the gas price keeps climbing during the tx submission.
-        let gas = Gas::new(gas_used?, eth.block_gas_limit(), eth.tx_gas_limit())?;
+        let gas = Gas::new(gas_used, eth.block_gas_limit(), eth.tx_gas_limit())?;
         let required_eth_balance =
             // Converting to U256 first avoids possible overflow
-            gas.required_balance(U256::from(gas_price?.max_fee_per_gas).saturating_mul(U256::from(2)));
-        if solver_eth? < required_eth_balance {
+            gas.required_balance(U256::from(gas_price.max_fee_per_gas).saturating_mul(U256::from(2)));
+        if solver_eth < required_eth_balance {
             return Err(Error::SolverAccountInsufficientBalance(
                 required_eth_balance,
             ));
