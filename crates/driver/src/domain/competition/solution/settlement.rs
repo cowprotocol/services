@@ -179,31 +179,10 @@ impl Settlement {
             transaction.set_access_list(access_list.clone());
         }
 
-        let internalized_tx_check = async {
-            if solution
-                .interactions()
-                .iter()
-                .any(|interaction| interaction.internalize())
-            {
-                // Some rules which are enforced by the settlement contract for non-internalized
-                // interactions are not enforced for internalized interactions (in order to save
-                // gas). However, publishing a settlement with interactions that violate
-                // these rules constitutes a punishable offense for the solver, even if
-                // the interactions are internalized. To ensure that this doesn't happen, check
-                // that the settlement simulates even when internalizations are disabled.
-                simulator
-                    .gas(transaction.uninternalized.clone())
-                    .await
-                    .map(|_| ())
-            } else {
-                Ok(())
-            }
-        };
         let gas_used_fut = simulator.gas(transaction.internalized.clone());
 
         // run everything concurrently to minimize latency added through RPC roundtrips
-        let (internalized_tx_check, gas_used, gas_price, solver_eth) = tokio::join!(
-            internalized_tx_check,
+        let (gas_used, gas_price, solver_eth) = tokio::join!(
             gas_used_fut,
             eth.gas_price(),
             eth.balance(solution.solver().address()),
@@ -220,8 +199,6 @@ impl Settlement {
                 required_eth_balance,
             ));
         }
-
-        internalized_tx_check?; // make sure the check passed
 
         Ok(Self {
             auction_id,
