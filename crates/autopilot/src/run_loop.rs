@@ -213,51 +213,10 @@ impl RunLoop {
         });
     }
 
-    /// Picks a `/solve` deadline that ends shortly before a block gets
-    /// mined to maximize the chance that solutions get mined instantly.
-    /// If the auction needs to cross block boundaries solvers just get
-    /// a lot more time for proposing a solution.
-    ///
-    /// This function panics if any of the time computations over- or
-    /// underflow. This should not happen as we deal with times within
-    /// seconds of the current time.
     fn pick_solve_deadline(&self) -> DateTime<Utc> {
         let now = chrono::Utc::now();
-        let minimum_deadline = now + self.config.min_solve_time;
-
-        let (Some(slot_length), Some(submit_before_slot_end)) =
-            (self.config.slot_length, self.config.submit_before_slot_end)
-        else {
-            return minimum_deadline;
-        };
-
         let last_block_time = self.eth.current_block().borrow().timestamp;
-        let last_block =
-            DateTime::from_timestamp_secs(last_block_time.try_into().unwrap()).unwrap();
-
-        for delay_in_blocks in 1..10 {
-            let target =
-                last_block + slot_length.saturating_mul(delay_in_blocks) - submit_before_slot_end;
-            if target > minimum_deadline {
-                if delay_in_blocks == 1 {
-                    tracing::debug!(
-                        deadline = target.to_string(),
-                        "optimal solve deadline is before next block"
-                    );
-                } else {
-                    tracing::debug!(
-                        delay_in_blocks,
-                        deadline = target.to_string(),
-                        "delay auction for optimal deadline"
-                    );
-                }
-                // first timestamp that gives at least the required amount of time
-                // and is aligned with the chain's block production
-                return target;
-            }
-        }
-
-        minimum_deadline
+        pick_solve_deadline_impl(now, &self.config, last_block_time)
     }
 
     #[instrument(skip_all)]
@@ -941,6 +900,55 @@ impl RunLoop {
     }
 }
 
+/// Picks a `/solve` deadline that ends shortly before a block gets
+/// mined to maximize the chance that solutions get mined instantly.
+/// If the auction needs to cross block boundaries solvers just get
+/// a lot more time for proposing a solution.
+///
+/// This function panics if any of the time computations over- or
+/// underflow. This should not happen as we deal with times within
+/// seconds of the current time.
+fn pick_solve_deadline_impl(
+    now: chrono::DateTime<chrono::Utc>,
+    config: &Config,
+    last_block_timestamp: u64,
+) -> chrono::DateTime<chrono::Utc> {
+    let minimum_deadline = now + config.min_solve_time;
+
+    let (Some(slot_length), Some(submit_before_slot_end)) =
+        (config.slot_length, config.submit_before_slot_end)
+    else {
+        return minimum_deadline;
+    };
+
+    let last_block_time = last_block_timestamp;
+    let last_block = DateTime::from_timestamp_secs(last_block_time.try_into().unwrap()).unwrap();
+
+    for delay_in_blocks in 1..10 {
+        let target =
+            last_block + slot_length.saturating_mul(delay_in_blocks) - submit_before_slot_end;
+        if target >= minimum_deadline {
+            if delay_in_blocks == 1 {
+                tracing::debug!(
+                    deadline = target.to_string(),
+                    "optimal solve deadline is before next block"
+                );
+            } else {
+                tracing::debug!(
+                    delay_in_blocks,
+                    deadline = target.to_string(),
+                    "delay auction for optimal deadline"
+                );
+            }
+            // first timestamp that gives at least the required amount of time
+            // and is aligned with the chain's block production
+            return target;
+        }
+    }
+
+    minimum_deadline
+}
+
 #[derive(Debug, thiserror::Error)]
 enum SolveError {
     #[error("the solver timed out")]
@@ -1206,5 +1214,68 @@ pub mod observe {
         let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
         non_winning_orders.retain(|uid| auction_uids.contains(uid));
         super::Metrics::matched_unsettled(non_winning_orders);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn solve_deadline_aligned_with_blockchain() {
+        let mut config = Config {
+            submission_deadline: Default::default(),
+            max_settlement_transaction_wait: Default::default(),
+            max_run_loop_delay: Default::default(),
+            max_winners_per_auction: NonZeroUsize::MAX,
+            max_solutions_per_solver: NonZeroUsize::MAX,
+            enable_leader_lock: Default::default(),
+            compress_solve_request: Default::default(),
+            min_solve_time: Duration::from_secs(9),
+            slot_length: None,
+            submit_before_slot_end: None,
+        };
+
+        type Ts = chrono::DateTime<chrono::Utc>;
+        let last_block = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
+        let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
+
+        // default deadline is `now + min_solve_time` (now + 9s)
+        let standard_deadline = "2026-06-01T12:00:10Z".parse::<Ts>().unwrap();
+
+        // syncing to blockchain is not configured -> deadline = now + min_solve_time
+        let deadline = pick_solve_deadline_impl(now, &config, last_block);
+        assert_eq!(deadline, standard_deadline);
+
+        // only 1 of the sync parameters provided -> standard deadline
+        config.slot_length = Some(Duration::from_secs(12));
+        let deadline = pick_solve_deadline_impl(now, &config, last_block);
+        assert_eq!(deadline, standard_deadline);
+
+        // both sync parameters provided -> deadline gets synced to expected block
+        // production
+        config.submit_before_slot_end = Some(Duration::from_secs(2));
+        let deadline = pick_solve_deadline_impl(now, &config, last_block);
+        // now is 1s after the last block (n), 11s left before the slot ends, 9s before
+        // we are supposed to submit a solution, 9s minimum solve time => synced
+        // deadline is equal to standard deadline (2s before block n+1)
+        assert_eq!(deadline, standard_deadline);
+
+        // now is 2s after the last block (n), 10s left before the slot ends, 8s before
+        // we are supposed to submit a solution for this slot, 9s minimum solve
+        // time => we barely missed the deadline of the current slot so now
+        // solvers get until 2s before the block n+2
+        let deadline = pick_solve_deadline_impl(now + Duration::from_secs(1), &config, last_block);
+        assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
+
+        // let's move to gnosis chain where 1 block is 5s (1 block is not enough for
+        // the solve deadline)
+        config.slot_length = Some(Duration::from_secs(5));
+        let last_block = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
+        let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
+        // now is 1s after the last block n, 4s left in the block, we need to submit 2s
+        // before a block, min_solve_time 9s => deadline is 2s before block n+3
+        let deadline = pick_solve_deadline_impl(now, &config, last_block);
+        assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
     }
 }
