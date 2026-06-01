@@ -1,6 +1,5 @@
 pub mod approval;
 pub mod balance;
-mod cache;
 pub mod detector;
 
 use {alloy_primitives::Address, alloy_rpc_types::state::AccountOverride};

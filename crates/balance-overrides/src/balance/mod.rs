@@ -1,10 +1,7 @@
 pub(crate) mod aave;
 
 use {
-    crate::{
-        cache::Cache,
-        detector::{DetectionError, SimulationError, extract_sload_slots, mapping_slot_hash},
-    },
+    crate::detector::{DetectionError, SimulationError, extract_sload_slots, mapping_slot_hash},
     alloy_eips::BlockId,
     alloy_primitives::{Address, B256, TxKind, U256, keccak256, map::AddressMap},
     alloy_provider::ext::DebugApi,
@@ -18,6 +15,7 @@ use {
     alloy_transport::TransportErrorKind,
     contracts::ERC20,
     ethrpc::Web3,
+    moka::sync::Cache,
     std::{collections::HashMap, iter, time::Duration},
 };
 
@@ -249,11 +247,12 @@ impl Detector {
         verification_timeout: Duration,
         cache_size: usize,
     ) -> Self {
+        let max_capacity = u64::try_from(cache_size).expect("cache_size is not a valid u64");
         Self {
             web3,
             probing_depth,
             verification_timeout,
-            cache: Cache::new(u64::try_from(cache_size).expect("cache_size must be non-negative")),
+            cache: Cache::builder().max_capacity(max_capacity).build(),
         }
     }
 
