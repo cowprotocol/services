@@ -19,7 +19,7 @@ use {
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
-    futures::future::try_join_all,
+    futures::{FutureExt, future::try_join_all},
     simulator::{self, Simulator},
     std::collections::{BTreeSet, HashMap, HashSet},
     tracing::instrument,
@@ -179,7 +179,15 @@ impl Settlement {
             transaction.set_access_list(access_list.clone());
         }
 
-        let gas_used_fut = simulator.gas(transaction.internalized.clone());
+        let gas_used_fut = simulator
+            .gas(transaction.internalized.clone())
+            .inspect(|res| {
+                tracing::debug!(
+                    block = eth.current_block().borrow().number,
+                    ?res,
+                    "simulated settlement"
+                )
+            });
 
         // run everything concurrently to minimize latency added through RPC roundtrips
         let (gas_used, gas_price, solver_eth) = tokio::join!(
