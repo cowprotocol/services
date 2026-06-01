@@ -186,9 +186,7 @@ impl RunLoop {
         let request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
-            Utc::now()
-                .checked_add_signed(chrono::TimeDelta::from_std(self.solve_deadline).unwrap())
-                .unwrap(),
+            Utc::now() + self.solve_deadline,
             self.compress_solve_request,
         )
         .await;
