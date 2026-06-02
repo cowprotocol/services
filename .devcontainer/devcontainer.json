@@ -58,7 +58,7 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "rustup toolchain install nightly && cargo install flamegraph && cargo install cargo-nextest --locked && bash .devcontainer/setup-e2e.sh",
+	"postCreateCommand": "rustup toolchain install nightly --component rustfmt && cargo install flamegraph && cargo install cargo-nextest --locked && bash .devcontainer/setup-e2e.sh",
 
 	// (Re)start the local Postgres cluster on every container start.
 	"postStartCommand": "bash .devcontainer/start-postgres.sh",
