@@ -341,7 +341,7 @@ fn validate_same_sell_and_buy_token(
     }
 
     match (policy, order.kind) {
-        // (SameTokensPolicy::Allow, _) | To be implemented in https://github.com/cowprotocol/services/issues/3963
+        (SameTokensPolicy::Allow, _) => Ok(()),
         (SameTokensPolicy::AllowSell, OrderKind::Sell) => Ok(()),
         _ => Err(PartialValidationError::SameBuyAndSellToken),
     }
@@ -1572,6 +1572,67 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn pre_validate_same_tokens_allow() {
+        let native_token =
+            WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
+        let validity_configuration = OrderValidPeriodConfiguration {
+            min: Duration::from_secs(1),
+            max_market: Duration::from_secs(100),
+            max_limit: Duration::from_secs(200),
+        };
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let validator = OrderValidator::new(
+            native_token.clone(),
+            Arc::new(order_validation::banned::Users::none()),
+            validity_configuration,
+            false,
+            Default::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(limit_order_counter),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Allow,
+        );
+
+        let valid_to =
+            || time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
+
+        // `Allow` permits same-token orders of either side, including the
+        // native-equivalent (sell WETH, buy native ETH) case.
+        for (sell_token, buy_token) in [
+            (Address::with_last_byte(2), Address::with_last_byte(2)),
+            (*native_token.address(), BUY_ETH_ADDRESS),
+        ] {
+            for kind in [OrderKind::Buy, OrderKind::Sell] {
+                assert!(
+                    validator
+                        .partial_validate(PreOrderData {
+                            kind,
+                            sell_token,
+                            buy_token,
+                            valid_to: valid_to(),
+                            ..Default::default()
+                        })
+                        .await
+                        .is_ok()
+                );
+            }
+        }
     }
 
     #[tokio::test]
