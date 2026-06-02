@@ -2290,11 +2290,27 @@ components:
         - maxVolumeFactor
         - quote
     FeePolicy:
-      description: Defines the ways to calculate the protocol fee.
+      description: >
+        Defines the ways to calculate the protocol fee.
       oneOf:
-        - $ref: "#/components/schemas/Surplus"
-        - $ref: "#/components/schemas/Volume"
-        - $ref: "#/components/schemas/PriceImprovement"
+        - type: object
+          properties:
+            surplus:
+              $ref: "#/components/schemas/Surplus"
+          required:
+            - surplus
+        - type: object
+          properties:
+            volume:
+              $ref: "#/components/schemas/Volume"
+          required:
+            - volume
+        - type: object
+          properties:
+            priceImprovement:
+              $ref: "#/components/schemas/PriceImprovement"
+          required:
+            - priceImprovement
     ExecutedProtocolFee:
       type: object
       properties:
