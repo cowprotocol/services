@@ -23,6 +23,16 @@ use {
 /// https://github.com/Vectorized/solady/blob/main/src/tokens/ERC20.sol#L81
 const BALANCE_SLOT_SEED: &[u8] = &[0x87, 0xa2, 0x11, 0xa2];
 
+/// Distinct-byte value used both to verify a balance override (write it, expect
+/// `balanceOf` to return it) and to recover a packed balance's bit offset from
+/// how far `balanceOf` shifts it down (see `detect_byte_shift`). The bytes are
+/// distinct so the detected shift is unambiguous, and it is kept to 64 bits so
+/// it fits narrow balance types (e.g. `uint64`) without being masked during
+/// verification. The 64-bit width caps detectable shifts at 56 bits, which
+/// covers "small flag below the balance" packings like AUSD (`shift_bits ==
+/// 8`).
+const SENTINEL: u64 = 0x0102_0304_0506_0708;
+
 /// Used by Detector when there are multiple slots to increase the chances we
 /// find the correct storage slot quickly.
 ///
@@ -470,12 +480,9 @@ impl Detector {
 
         // Fallback for packed-balance tokens (see `Strategy::PackedSlot`): the
         // whole-slot overrides above read the balance back shifted and never
-        // verify, so recover the shift from how far `balanceOf` moves a probe.
-        //
-        // Probe bytes are all distinct (0x01..=0x10) so the shift is
-        // unambiguous; a repeating value (e.g. 0x1337...) aliases across shifts
-        // (`x >> 32 == x & 0xffff_ffff`) and would be mis-detected.
-        let probe = U256::from(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128);
+        // verify, so recover the shift from how far `balanceOf` moves the
+        // sentinel.
+        let probe = U256::from(SENTINEL);
         for (contract, slot) in &storage_slots {
             let probe_override = Strategy::DirectSlot {
                 target_contract: *contract,
@@ -540,7 +547,7 @@ impl Detector {
         holder: Address,
         strategy: &Strategy,
     ) -> Result<(), DetectionError<TransportErrorKind>> {
-        let test_balance = U256::from(0x1337_1337_1337_1337_u64);
+        let test_balance = U256::from(SENTINEL);
 
         let overrides = strategy.state_override(&holder, &test_balance).await;
         if overrides.is_empty() {
@@ -602,6 +609,11 @@ fn packed_value(amount: U256, shift_bits: usize) -> Option<U256> {
 /// (see `Strategy::PackedSlot`). `probe` must have distinct bytes for the match
 /// to be unique.
 fn detect_byte_shift(probe: U256, observed: U256) -> Option<usize> {
+    // A zero readback is never a balance shifted into place, and would
+    // otherwise match a shift that pushes the whole probe out of the slot.
+    if observed == U256::ZERO {
+        return None;
+    }
     (1..32usize)
         .map(|bytes| bytes * 8)
         .find(|&shift| probe >> shift == observed)
@@ -627,12 +639,14 @@ mod tests {
 
     #[test]
     fn detect_byte_shift_recognizes_packed_balance() {
-        let probe = U256::from(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128);
+        let probe = U256::from(SENTINEL);
         // AUSD-style: isFrozen in the low byte, balance in the high bits.
         assert_eq!(detect_byte_shift(probe, probe >> 8usize), Some(8));
         assert_eq!(detect_byte_shift(probe, probe >> 24usize), Some(24));
         // Shift 0 is the plain DirectSlot case, not a packed one.
         assert_eq!(detect_byte_shift(probe, probe), None);
+        // A zero readback is never a valid packed balance.
+        assert_eq!(detect_byte_shift(probe, U256::ZERO), None);
         // Unrelated value is not a byte-shifted view of the probe.
         assert_eq!(detect_byte_shift(probe, U256::from(0xdeadu64)), None);
     }
