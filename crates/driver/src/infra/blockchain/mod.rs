@@ -4,6 +4,7 @@ use {
     alloy::{
         eips::eip1559::Eip1559Estimation,
         network::TransactionBuilder,
+        primitives::Bytes,
         providers::Provider,
         rpc::types::{TransactionReceipt, TransactionRequest},
         transports::TransportErrorKind,
@@ -326,6 +327,14 @@ impl Error {
                 is_revert
             }
         }
+    }
+
+    pub fn revert_bytes(&self) -> Option<Bytes> {
+        let Error::Rpc(err) = self else {
+            return None;
+        };
+
+        err.as_error_resp().and_then(|err| err.as_revert_data())
     }
 }
 
