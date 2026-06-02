@@ -1038,7 +1038,8 @@ mod tests {
     /// order kinds.
     #[test]
     fn post_process_same_token_recovers_gross_amount() {
-        let token = Address::repeat_byte(1);
+        let token_a = Address::repeat_byte(1);
+        let token_b = Address::repeat_byte(3);
         let trader = Address::repeat_byte(2);
         // A settlement address that is neither trader nor receiver, so the
         // buffer adjustments stay untouched and we isolate the same-token fix.
@@ -1052,7 +1053,7 @@ mod tests {
         let summary = |out_amount: I512| SettleOutput {
             gas_used: U256::ZERO,
             out_amount,
-            tokens_lost: hashmap! { token => BigRational::from_integer(0.into()) },
+            tokens_lost: hashmap! { token_a => BigRational::from_integer(0.into()) },
         };
 
         // Buy 100 of `token` back into the same account: the trader pays 103
@@ -1061,8 +1062,8 @@ mod tests {
         let buy_query = PriceQuery {
             in_amount: 100.try_into().unwrap(),
             kind: OrderKind::Buy,
-            sell_token: token,
-            buy_token: token,
+            sell_token: token_a,
+            buy_token: token_a,
         };
         let out = TradeVerifier::post_process_summary(
             settlement,
@@ -1079,8 +1080,8 @@ mod tests {
         let sell_query = PriceQuery {
             in_amount: 100.try_into().unwrap(),
             kind: OrderKind::Sell,
-            sell_token: token,
-            buy_token: token,
+            sell_token: token_a,
+            buy_token: token_a,
         };
         let out = TradeVerifier::post_process_summary(
             settlement,
@@ -1096,8 +1097,8 @@ mod tests {
         let distinct_query = PriceQuery {
             in_amount: 100.try_into().unwrap(),
             kind: OrderKind::Buy,
-            sell_token: token,
-            buy_token: Address::repeat_byte(3),
+            sell_token: token_a,
+            buy_token: token_b,
         };
         let err = TradeVerifier::post_process_summary(
             settlement,

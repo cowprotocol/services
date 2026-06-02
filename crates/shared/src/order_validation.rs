@@ -1610,7 +1610,7 @@ mod tests {
         );
 
         let valid_to =
-            || time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
+            time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
 
         // `Allow` permits same-token orders of either side, including the
         // native-equivalent (sell WETH, buy native ETH) case.
@@ -1619,7 +1619,6 @@ mod tests {
             (*native_token.address(), BUY_ETH_ADDRESS),
         ] {
             for kind in [OrderKind::Buy, OrderKind::Sell] {
-				let valid_to = time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
                 assert!(
                     validator
                         .partial_validate(PreOrderData {

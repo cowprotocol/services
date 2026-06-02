@@ -742,10 +742,11 @@ async fn test_execute_same_sell_and_buy_native_token_buy_order(web3: Web3) {
         sell_token: weth_address,
         buy_token: BUY_ETH_ADDRESS,
         quote_id: quote_response.id,
-        // A buy order must commit enough sell tokens to cover the quoted amount
-        // *plus* the fee, otherwise the solver has no headroom to take its fee
-        // and produces no solution (the bare quoted `sell_amount` equals
-        // `buy_amount` at the 1:1 WETH<->ETH price).
+        // Sell and buy are the same asset priced 1:1, so the quoted `sell_amount`
+        // equals `buy_amount`; the fee is the only extra the trader pays. We sign
+        // `sell_amount + fee` (a (1 + fee):1 limit) so the solver has headroom to
+        // take its fee — without it the limit would be exactly 1:1 and no solution
+        // could cover the fee.
         sell_amount: quote_response.quote.sell_amount + quote_response.quote.fee_amount,
         buy_amount: quote_buy_amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
