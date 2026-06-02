@@ -103,6 +103,15 @@ pub(crate) enum Strategy {
         target_contract: Address,
         slot: B256,
     },
+    /// Like `DirectSlot`, but the balance is packed above lower-order fields in
+    /// the slot, so it must be written left-shifted by `shift_bits`. E.g. AUSD
+    /// stores `{ bool isFrozen; uint248 balance }` in one slot, putting the
+    /// balance in the high 248 bits, so `shift_bits == 8`.
+    PackedSlot {
+        target_contract: Address,
+        slot: B256,
+        shift_bits: u32,
+    },
     AaveV3AToken {
         target_contract: Address,
         pool: Address,
@@ -117,24 +126,34 @@ impl Strategy {
         holder: &Address,
         amount: &U256,
     ) -> AddressMap<AccountOverride> {
-        let (target_contract, key) = match self {
+        let (target_contract, key, value) = match self {
             Self::SolidityMapping {
                 target_contract,
                 map_slot,
             } => (
                 *target_contract,
                 mapping_slot_hash(holder, &map_slot.to_be_bytes()),
+                *amount,
             ),
             Self::SoladyMapping { target_contract } => {
                 let mut buf = [0; 32];
                 buf[0..20].copy_from_slice(holder.as_slice());
                 buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
-                (*target_contract, keccak256(buf))
+                (*target_contract, keccak256(buf), *amount)
             }
             Self::DirectSlot {
                 target_contract,
                 slot,
-            } => (*target_contract, *slot),
+            } => (*target_contract, *slot, *amount),
+            Self::PackedSlot {
+                target_contract,
+                slot,
+                shift_bits,
+            } => match packed_value(*amount, *shift_bits) {
+                Some(value) => (*target_contract, *slot, value),
+                // Balance doesn't fit at this bit offset, nothing to override.
+                None => return AddressMap::default(),
+            },
             Self::AaveV3AToken {
                 target_contract,
                 pool,
@@ -158,7 +177,7 @@ impl Strategy {
         };
 
         let state_override = AccountOverride {
-            state_diff: Some(iter::once((key, B256::new(amount.to_be_bytes::<32>()))).collect()),
+            state_diff: Some(iter::once((key, B256::new(value.to_be_bytes::<32>()))).collect()),
             ..Default::default()
         };
 
@@ -169,7 +188,7 @@ impl Strategy {
     /// override for any given holder or if it only works for the original
     /// holder it was generated for.
     pub(crate) fn can_be_applied_to_any_holder(&self) -> bool {
-        !matches!(self, Self::DirectSlot { .. })
+        !matches!(self, Self::DirectSlot { .. } | Self::PackedSlot { .. })
     }
 }
 
@@ -207,6 +226,18 @@ impl PartialEq for Strategy {
                     slot: s2,
                 },
             ) => tc1 == tc2 && s1 == s2,
+            (
+                Self::PackedSlot {
+                    target_contract: tc1,
+                    slot: s1,
+                    shift_bits: sb1,
+                },
+                Self::PackedSlot {
+                    target_contract: tc2,
+                    slot: s2,
+                    shift_bits: sb2,
+                },
+            ) => tc1 == tc2 && s1 == s2 && sb1 == sb2,
             (
                 Self::AaveV3AToken {
                     target_contract: tc1,
@@ -437,6 +468,57 @@ impl Detector {
             }
         }
 
+        // Fallback for packed balances. The whole-slot overrides above read
+        // back shifted (so they never verify) when the balance is stored above
+        // lower-order fields in the same slot, e.g. AUSD packs
+        // `{ bool isFrozen; uint248 balance }`, so `balanceOf == slot >> 8`.
+        // Probe each candidate slot with a positional sentinel: if `balanceOf`
+        // returns a byte-shifted view of it, the slot holds the balance and we
+        // can write it pre-shifted.
+        let probe = U256::from(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128);
+        for (contract, slot) in &storage_slots {
+            let probe_override = Strategy::DirectSlot {
+                target_contract: *contract,
+                slot: *slot,
+            }
+            .state_override(&holder, &probe)
+            .await;
+            if probe_override.is_empty() {
+                continue;
+            }
+            let observed = match ERC20::Instance::new(token, self.web3.provider.clone())
+                .balanceOf(holder)
+                .state(probe_override)
+                .call()
+                .await
+            {
+                Ok(balance) => balance,
+                Err(_) => continue,
+            };
+            let Some(shift_bits) = detect_byte_shift(probe, observed) else {
+                continue;
+            };
+            let candidate = Strategy::PackedSlot {
+                target_contract: *contract,
+                slot: *slot,
+                shift_bits,
+            };
+            if self
+                .verify_strategy(token, holder, &candidate)
+                .await
+                .is_ok()
+            {
+                tracing::debug!(
+                    ?token,
+                    ?holder,
+                    ?slot,
+                    shift_bits,
+                    "detected packed balance slot"
+                );
+                return Ok(candidate);
+            }
+        }
+
         tracing::debug!(
             "none of the SLOAD slots appear to be the balance slot for token {:?}",
             token
@@ -503,9 +585,58 @@ fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U2
     }
 }
 
+/// Left-shifts `amount` into a packed balance's bit position. Returns `None`
+/// if the shift would drop high bits (the balance doesn't fit at this offset).
+fn packed_value(amount: U256, shift_bits: u32) -> Option<U256> {
+    if shift_bits == 0 {
+        return Some(amount);
+    }
+    if shift_bits >= 256 || amount > (U256::MAX >> shift_bits as usize) {
+        return None;
+    }
+    Some(amount << shift_bits as usize)
+}
+
+/// If `observed` equals `probe` right-shifted by a whole number of bytes,
+/// returns that shift in bits (always `> 0`). Detects a balance packed above
+/// lower-order fields in the same slot, where `balanceOf` reads back
+/// `slot >> shift` (e.g. AUSD packs `isFrozen` in the low byte and keeps the
+/// balance in the high 248 bits, so `balanceOf == slot >> 8`).
+fn detect_byte_shift(probe: U256, observed: U256) -> Option<u32> {
+    (1..32u32)
+        .map(|bytes| bytes * 8)
+        .find(|&shift| probe >> shift as usize == observed)
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, alloy_primitives::address};
+
+    #[test]
+    fn packed_value_shifts_and_guards_overflow() {
+        assert_eq!(
+            packed_value(U256::from(1000u64), 0),
+            Some(U256::from(1000u64))
+        );
+        assert_eq!(
+            packed_value(U256::from(1000u64), 8),
+            Some(U256::from(1000u64) << 8usize),
+        );
+        // A balance that no longer fits once shifted is rejected.
+        assert_eq!(packed_value(U256::MAX, 8), None);
+    }
+
+    #[test]
+    fn detect_byte_shift_recognizes_packed_balance() {
+        let probe = U256::from(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128);
+        // AUSD-style: isFrozen in the low byte, balance in the high bits.
+        assert_eq!(detect_byte_shift(probe, probe >> 8usize), Some(8));
+        assert_eq!(detect_byte_shift(probe, probe >> 24usize), Some(24));
+        // Shift 0 is the plain DirectSlot case, not a packed one.
+        assert_eq!(detect_byte_shift(probe, probe), None);
+        // Unrelated value is not a byte-shifted view of the probe.
+        assert_eq!(detect_byte_shift(probe, U256::from(0xdeadu64)), None);
+    }
 
     #[test]
     fn test_create_strategies_reverses_order() {
