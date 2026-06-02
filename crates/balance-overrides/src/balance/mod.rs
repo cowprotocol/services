@@ -468,13 +468,13 @@ impl Detector {
             }
         }
 
-        // Fallback for packed balances. The whole-slot overrides above read
-        // back shifted (so they never verify) when the balance is stored above
-        // lower-order fields in the same slot, e.g. AUSD packs
-        // `{ bool isFrozen; uint248 balance }`, so `balanceOf == slot >> 8`.
-        // Probe each candidate slot with a positional sentinel: if `balanceOf`
-        // returns a byte-shifted view of it, the slot holds the balance and we
-        // can write it pre-shifted.
+        // Fallback for packed-balance tokens (see `Strategy::PackedSlot`): the
+        // whole-slot overrides above read the balance back shifted and never
+        // verify, so recover the shift from how far `balanceOf` moves a probe.
+        //
+        // Probe bytes are all distinct (0x01..=0x10) so the shift is
+        // unambiguous; a repeating value (e.g. 0x1337...) aliases across shifts
+        // (`x >> 32 == x & 0xffff_ffff`) and would be mis-detected.
         let probe = U256::from(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128);
         for (contract, slot) in &storage_slots {
             let probe_override = Strategy::DirectSlot {
@@ -597,11 +597,10 @@ fn packed_value(amount: U256, shift_bits: usize) -> Option<U256> {
     Some(amount << shift_bits)
 }
 
-/// If `observed` equals `probe` right-shifted by a whole number of bytes,
-/// returns that shift in bits (always `> 0`). Detects a balance packed above
-/// lower-order fields in the same slot, where `balanceOf` reads back
-/// `slot >> shift` (e.g. AUSD packs `isFrozen` in the low byte and keeps the
-/// balance in the high 248 bits, so `balanceOf == slot >> 8`).
+/// Returns the byte-aligned shift for which `probe >> shift == observed`, i.e.
+/// the bit offset of a balance packed above lower-order fields in its slot
+/// (see `Strategy::PackedSlot`). `probe` must have distinct bytes for the match
+/// to be unique.
 fn detect_byte_shift(probe: U256, observed: U256) -> Option<usize> {
     (1..32usize)
         .map(|bytes| bytes * 8)
