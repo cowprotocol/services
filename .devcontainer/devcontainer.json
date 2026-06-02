@@ -33,6 +33,13 @@
         "seccomp=unconfined"
     ],
 
+    "containerEnv": {
+        "PGHOST": "localhost",
+        "PGPORT": "5432",
+        "PGUSER": "vscode",
+        "PGDATABASE": "vscode"
+    },
+
     "customizations": {
         "vscode": {
             "settings": {
@@ -51,7 +58,10 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "rustup toolchain install nightly && cargo install flamegraph",
+	"postCreateCommand": "rustup toolchain install nightly && cargo install flamegraph && cargo install cargo-nextest --locked && bash .devcontainer/setup-e2e.sh",
+
+	// (Re)start the local Postgres cluster on every container start.
+	"postStartCommand": "bash .devcontainer/start-postgres.sh",
 
 	// Set `remoteUser` to `root` to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
 	"remoteUser": "vscode"
