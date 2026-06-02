@@ -26,11 +26,11 @@ const BALANCE_SLOT_SEED: &[u8] = &[0x87, 0xa2, 0x11, 0xa2];
 /// Distinct-byte value used both to verify a balance override (write it, expect
 /// `balanceOf` to return it) and to recover a packed balance's bit offset from
 /// how far `balanceOf` shifts it down (see `detect_byte_shift`). The bytes are
-/// distinct so the detected shift is unambiguous, and it is kept to 64 bits so
-/// it fits narrow balance types (e.g. `uint64`) without being masked during
-/// verification. The 64-bit width caps detectable shifts at 56 bits, which
-/// covers "small flag below the balance" packings like AUSD (`shift_bits ==
-/// 8`).
+/// distinct so the detected shift is unambiguous. It is kept to 64 bits so it
+/// fits narrow balance fields (e.g. UNI and COMP store balances as `uint96`)
+/// without being masked during verification, which would otherwise reject those
+/// tokens. The 64-bit width caps detectable shifts at 56 bits, which covers
+/// "small flag below the balance" packings like AUSD (`shift_bits == 8`).
 const SENTINEL: u64 = 0x0102_0304_0506_0708;
 
 /// Used by Detector when there are multiple slots to increase the chances we
@@ -67,15 +67,18 @@ pub(crate) fn find_plausible_strategies_for_slots(
             heuristic_strategies.push(Strategy::SolidityMapping {
                 target_contract: *contract,
                 map_slot: U256::from(map_slot_index),
+                shift_bits: 0,
             });
         } else if *slot == solady_slot {
             heuristic_strategies.push(Strategy::SoladyMapping {
                 target_contract: *contract,
+                shift_bits: 0,
             });
         } else {
             fallback_strategies.push(Strategy::DirectSlot {
                 target_contract: *contract,
                 slot: *slot,
+                shift_bits: 0,
             });
         };
     }
@@ -97,6 +100,11 @@ pub struct BalanceOverrideRequest {
 
 /// Resolved balance override strategy.
 ///
+/// `shift_bits` is how far the balance is left-shifted within its slot, for
+/// tokens that pack the balance above lower-order fields. E.g. AUSD stores
+/// `{ bool isFrozen; uint248 balance }` in one slot, so the balance is the high
+/// 248 bits and `shift_bits == 8`. It is `0` for the common unpacked case.
+///
 /// The `AaveV3AToken` variant owns a cloned `Web3` handle so it can compute
 /// the override fully autonomously — no external web3 reference needs to be
 /// threaded through.
@@ -105,19 +113,13 @@ pub(crate) enum Strategy {
     SolidityMapping {
         target_contract: Address,
         map_slot: U256,
+        shift_bits: usize,
     },
     SoladyMapping {
         target_contract: Address,
+        shift_bits: usize,
     },
     DirectSlot {
-        target_contract: Address,
-        slot: B256,
-    },
-    /// Like `DirectSlot`, but the balance is packed above lower-order fields in
-    /// the slot, so it must be written left-shifted by `shift_bits`. E.g. AUSD
-    /// stores `{ bool isFrozen; uint248 balance }` in one slot, putting the
-    /// balance in the high 248 bits, so `shift_bits == 8`.
-    PackedSlot {
         target_contract: Address,
         slot: B256,
         shift_bits: usize,
@@ -136,34 +138,30 @@ impl Strategy {
         holder: &Address,
         amount: &U256,
     ) -> AddressMap<AccountOverride> {
-        let (target_contract, key, value) = match self {
+        let (target_contract, key, shift_bits) = match self {
             Self::SolidityMapping {
                 target_contract,
                 map_slot,
+                shift_bits,
             } => (
                 *target_contract,
                 mapping_slot_hash(holder, &map_slot.to_be_bytes()),
-                *amount,
+                *shift_bits,
             ),
-            Self::SoladyMapping { target_contract } => {
+            Self::SoladyMapping {
+                target_contract,
+                shift_bits,
+            } => {
                 let mut buf = [0; 32];
                 buf[0..20].copy_from_slice(holder.as_slice());
                 buf[28..32].copy_from_slice(&[0x87, 0xa2, 0x11, 0xa2]);
-                (*target_contract, keccak256(buf), *amount)
+                (*target_contract, keccak256(buf), *shift_bits)
             }
             Self::DirectSlot {
                 target_contract,
                 slot,
-            } => (*target_contract, *slot, *amount),
-            Self::PackedSlot {
-                target_contract,
-                slot,
                 shift_bits,
-            } => match packed_value(*amount, *shift_bits) {
-                Some(value) => (*target_contract, *slot, value),
-                // Balance doesn't fit at this bit offset, nothing to override.
-                None => return AddressMap::default(),
-            },
+            } => (*target_contract, *slot, *shift_bits),
             Self::AaveV3AToken {
                 target_contract,
                 pool,
@@ -186,6 +184,12 @@ impl Strategy {
             }
         };
 
+        // Pack the balance into its slot position. `None` means it doesn't fit
+        // at this bit offset, so there's nothing to override.
+        let Some(value) = packed_value(*amount, shift_bits) else {
+            return AddressMap::default();
+        };
+
         let state_override = AccountOverride {
             state_diff: Some(iter::once((key, B256::new(value.to_be_bytes::<32>()))).collect()),
             ..Default::default()
@@ -198,7 +202,19 @@ impl Strategy {
     /// override for any given holder or if it only works for the original
     /// holder it was generated for.
     pub(crate) fn can_be_applied_to_any_holder(&self) -> bool {
-        !matches!(self, Self::DirectSlot { .. } | Self::PackedSlot { .. })
+        !matches!(self, Self::DirectSlot { .. })
+    }
+
+    /// Sets the packing shift on a balance strategy. No-op for `AaveV3AToken`,
+    /// which is never packed.
+    fn with_shift(mut self, shift_bits: usize) -> Self {
+        match &mut self {
+            Self::SolidityMapping { shift_bits: s, .. }
+            | Self::SoladyMapping { shift_bits: s, .. }
+            | Self::DirectSlot { shift_bits: s, .. } => *s = shift_bits,
+            Self::AaveV3AToken { .. } => {}
+        }
+        self
     }
 }
 
@@ -212,37 +228,31 @@ impl PartialEq for Strategy {
                 Self::SolidityMapping {
                     target_contract: tc1,
                     map_slot: ms1,
+                    shift_bits: sb1,
                 },
                 Self::SolidityMapping {
                     target_contract: tc2,
                     map_slot: ms2,
+                    shift_bits: sb2,
                 },
-            ) => tc1 == tc2 && ms1 == ms2,
+            ) => tc1 == tc2 && ms1 == ms2 && sb1 == sb2,
             (
                 Self::SoladyMapping {
                     target_contract: tc1,
+                    shift_bits: sb1,
                 },
                 Self::SoladyMapping {
                     target_contract: tc2,
+                    shift_bits: sb2,
                 },
-            ) => tc1 == tc2,
+            ) => tc1 == tc2 && sb1 == sb2,
             (
                 Self::DirectSlot {
-                    target_contract: tc1,
-                    slot: s1,
-                },
-                Self::DirectSlot {
-                    target_contract: tc2,
-                    slot: s2,
-                },
-            ) => tc1 == tc2 && s1 == s2,
-            (
-                Self::PackedSlot {
                     target_contract: tc1,
                     slot: s1,
                     shift_bits: sb1,
                 },
-                Self::PackedSlot {
+                Self::DirectSlot {
                     target_contract: tc2,
                     slot: s2,
                     shift_bits: sb2,
@@ -368,13 +378,9 @@ impl Detector {
                 underlying,
                 web3: self.web3.clone(),
             };
-            if self
-                .verify_strategy(token, holder, &candidate)
-                .await
-                .is_ok()
-            {
+            if let Ok(resolved) = self.verify_strategy(token, holder, candidate).await {
                 tracing::debug!(?token, "detected Aave v3 aToken");
-                return Ok(candidate);
+                return Ok(resolved);
             }
             tracing::debug!(
                 ?token,
@@ -415,22 +421,10 @@ impl Detector {
         let strategies =
             find_plausible_strategies_for_slots(&storage_slots, &holder, self.probing_depth.into());
 
-        if strategies.len() == 1 {
-            let slot = storage_slots[0];
-            tracing::debug!(
-                storage_context = ?slot.0,
-                slot = ?slot.1,
-                ?slot,
-                iterations = 0,
-                "detected balance slot via trace (single SLOAD) for token",
-            );
-            return Ok(strategies.into_iter().next().unwrap());
-        }
-
         tracing::debug!(
             ?token,
             total = storage_slots.len(),
-            "multiple SLOAD operations, testing each one",
+            "testing candidate balance slots",
         );
 
         for (i, strategy) in strategies.into_iter().enumerate() {
@@ -442,21 +436,21 @@ impl Detector {
             // slow slot from blocking the entire detection.
             let result = tokio::time::timeout(
                 self.verification_timeout,
-                self.verify_strategy(token, holder, &strategy),
+                self.verify_strategy(token, holder, strategy.clone()),
             )
             .await;
 
             match result {
-                Ok(Ok(())) => {
+                Ok(Ok(verified)) => {
                     tracing::debug!(
                         ?token,
                         ?holder,
-                        ?strategy,
+                        strategy = ?verified,
                         iterations = i + 1,
                         total = storage_slots.len(),
                         "verified balance strategy via testing",
                     );
-                    return Ok(strategy.clone());
+                    return Ok(verified);
                 }
                 Err(_) => {
                     tracing::warn!(
@@ -478,54 +472,6 @@ impl Detector {
             }
         }
 
-        // Fallback for packed-balance tokens (see `Strategy::PackedSlot`): the
-        // whole-slot overrides above read the balance back shifted and never
-        // verify, so recover the shift from how far `balanceOf` moves the
-        // sentinel.
-        let probe = U256::from(SENTINEL);
-        for (contract, slot) in &storage_slots {
-            let probe_override = Strategy::DirectSlot {
-                target_contract: *contract,
-                slot: *slot,
-            }
-            .state_override(&holder, &probe)
-            .await;
-            if probe_override.is_empty() {
-                continue;
-            }
-            let observed = match ERC20::Instance::new(token, self.web3.provider.clone())
-                .balanceOf(holder)
-                .state(probe_override)
-                .call()
-                .await
-            {
-                Ok(balance) => balance,
-                Err(_) => continue,
-            };
-            let Some(shift_bits) = detect_byte_shift(probe, observed) else {
-                continue;
-            };
-            let candidate = Strategy::PackedSlot {
-                target_contract: *contract,
-                slot: *slot,
-                shift_bits,
-            };
-            if self
-                .verify_strategy(token, holder, &candidate)
-                .await
-                .is_ok()
-            {
-                tracing::debug!(
-                    ?token,
-                    ?holder,
-                    ?slot,
-                    shift_bits,
-                    "detected packed balance slot"
-                );
-                return Ok(candidate);
-            }
-        }
-
         tracing::debug!(
             "none of the SLOAD slots appear to be the balance slot for token {:?}",
             token
@@ -534,19 +480,22 @@ impl Detector {
         Err(DetectionError::NotFound)
     }
 
-    /// Verifies that a strategy correctly controls the balance by applying it
-    /// and checking balanceOf.
+    /// Verifies that a strategy controls the balance by writing the sentinel to
+    /// its slot and reading `balanceOf` back, returning the confirmed strategy.
     ///
-    /// For the `AaveV3AToken` variant we allow `balanceOf` to be off by one
-    /// wei, since Aave's ray rounding can slightly differ from our locally
-    /// computed scaled value; for every other variant the check is still an
-    /// exact equality.
+    /// If the sentinel reads back unshifted the strategy is correct as-is. If
+    /// it reads back byte-shifted, the balance is packed above lower-order
+    /// fields in the slot (e.g. AUSD packs `isFrozen` in the low byte, so
+    /// the balance is the high 248 bits), and the detected shift is applied
+    /// to the returned strategy from the same readback — no extra RPC. The
+    /// `AaveV3AToken` variant is never packed and tolerates 1 wei of Aave
+    /// ray-rounding difference.
     async fn verify_strategy(
         &self,
         token: Address,
         holder: Address,
-        strategy: &Strategy,
-    ) -> Result<(), DetectionError<TransportErrorKind>> {
+        strategy: Strategy,
+    ) -> Result<Strategy, DetectionError<TransportErrorKind>> {
         let test_balance = U256::from(SENTINEL);
 
         let overrides = strategy.state_override(&holder, &test_balance).await;
@@ -554,8 +503,7 @@ impl Detector {
             return Err(DetectionError::NotFound);
         }
 
-        let token_contract = ERC20::Instance::new(token, self.web3.provider.clone());
-        let balance = token_contract
+        let balance = ERC20::Instance::new(token, self.web3.provider.clone())
             .balanceOf(holder)
             .state(overrides)
             .call()
@@ -566,9 +514,21 @@ impl Detector {
                 )))
             })?;
 
-        verified_balance_matches(strategy, balance, test_balance)
-            .then_some(())
-            .ok_or(DetectionError::NotFound)
+        // The slot holds the balance unshifted.
+        if verified_balance_matches(&strategy, balance, test_balance) {
+            return Ok(strategy);
+        }
+        // Aave is never packed, so a mismatch there is a genuine miss.
+        if matches!(strategy, Strategy::AaveV3AToken { .. }) {
+            return Err(DetectionError::NotFound);
+        }
+        // Otherwise the balance may be packed above lower-order fields, so
+        // `balanceOf` reads the sentinel back byte-shifted. Recover the shift
+        // from the same readback and apply it.
+        match detect_byte_shift(test_balance, balance) {
+            Some(shift_bits) => Ok(strategy.with_shift(shift_bits)),
+            None => Err(DetectionError::NotFound),
+        }
     }
 }
 
@@ -592,25 +552,22 @@ fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U2
     }
 }
 
-/// Left-shifts `amount` into a packed balance's bit position. Returns `None`
-/// if the shift would drop high bits (the balance doesn't fit at this offset).
+/// Left-shifts `amount` into a packed balance's bit position. Returns `None` if
+/// the balance doesn't fit at this offset. Unlike `u64::checked_shl`, alloy's
+/// `checked_shl` returns `None` exactly when the shifted-out bits are non-zero,
+/// which is precisely the "doesn't fit above the lower-order fields" check.
 fn packed_value(amount: U256, shift_bits: usize) -> Option<U256> {
-    if shift_bits == 0 {
-        return Some(amount);
-    }
-    if amount > (U256::MAX >> shift_bits) {
-        return None;
-    }
-    Some(amount << shift_bits)
+    amount.checked_shl(shift_bits)
 }
 
-/// Returns the byte-aligned shift for which `probe >> shift == observed`, i.e.
-/// the bit offset of a balance packed above lower-order fields in its slot
-/// (see `Strategy::PackedSlot`). `probe` must have distinct bytes for the match
-/// to be unique.
+/// Returns the byte-aligned left-shift for which `probe >> shift == observed`,
+/// i.e. the bit offset of a balance packed above lower-order fields in its slot
+/// (e.g. AUSD's high-248-bit balance gives a shift of 8). `probe` must have
+/// distinct bytes for the match to be unique.
 fn detect_byte_shift(probe: U256, observed: U256) -> Option<usize> {
-    // A zero readback is never a balance shifted into place, and would
-    // otherwise match a shift that pushes the whole probe out of the slot.
+    // A zero readback means our write never reached `balanceOf` (wrong slot),
+    // which is not a shift — and would otherwise match a shift that pushes the
+    // whole probe out of the slot.
     if observed == U256::ZERO {
         return None;
     }
@@ -675,22 +632,27 @@ mod tests {
                 Strategy::DirectSlot {
                     target_contract: contract2,
                     slot: slot1,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot3,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot2,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract2,
                     slot: slot3,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot1,
+                    shift_bits: 0,
                 },
             ]
         );
@@ -733,25 +695,31 @@ mod tests {
                 Strategy::SolidityMapping {
                     target_contract: contract,
                     map_slot: U256::ZERO,
+                    shift_bits: 0,
                 },
                 Strategy::SoladyMapping {
                     target_contract: contract,
+                    shift_bits: 0,
                 },
                 Strategy::SolidityMapping {
                     target_contract: contract,
                     map_slot: U256::from(5),
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot2,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot3,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot1,
+                    shift_bits: 0,
                 },
             ]
         );
@@ -786,18 +754,22 @@ mod tests {
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot3,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: heuristic_slot,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot2,
+                    shift_bits: 0,
                 },
                 Strategy::DirectSlot {
                     target_contract: contract,
                     slot: slot1,
+                    shift_bits: 0,
                 },
             ]
         );
@@ -824,7 +796,8 @@ mod tests {
             storage,
             Strategy::SolidityMapping {
                 target_contract: address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                map_slot: U256::from(3)
+                map_slot: U256::from(3),
+                shift_bits: 0,
             }
         );
 
@@ -840,6 +813,7 @@ mod tests {
             Strategy::SolidityMapping {
                 target_contract: address!("4956b52ae2ff65d74ca2d61207523288e4528f96"),
                 map_slot: <U256 as From<_>>::from(OPEN_ZEPPELIN_ERC20_UPGRADEABLE),
+                shift_bits: 0,
             }
         );
 
@@ -853,7 +827,8 @@ mod tests {
         assert_eq!(
             storage,
             Strategy::SoladyMapping {
-                target_contract: address!("0000000000c5dc95539589fbd24be07c6c14eca4")
+                target_contract: address!("0000000000c5dc95539589fbd24be07c6c14eca4"),
+                shift_bits: 0,
             }
         );
     }
@@ -876,15 +851,17 @@ mod tests {
             storage,
             Strategy::SolidityMapping {
                 target_contract: address!("ff970a61a04b1ca14834a43f5de4533ebddb5cc8"),
-                map_slot: U256::from(51)
+                map_slot: U256::from(51),
+                shift_bits: 0,
             }
         );
     }
 
     // AUSD packs `{ bool isFrozen; uint248 balance }` into one slot, so the
-    // balance is the high 248 bits and `balanceOf == slot >> 8`. The detector
-    // must fall back to a `PackedSlot` with an 8-bit shift. Requires an
-    // avalanche node (set the node URL `Web3::new_from_env` reads).
+    // balance is the high 248 bits and `balanceOf == slot >> 8`. Its balance
+    // lives at an ERC-7201-namespaced base slot, so the detector resolves it to
+    // a `DirectSlot` and verification recovers the 8-bit packing shift. Requires
+    // an avalanche node (set the node URL `Web3::new_from_env` reads).
     #[ignore]
     #[tokio::test]
     async fn detects_packed_balance_slot_avalanche() {
@@ -899,7 +876,7 @@ mod tests {
             .unwrap();
 
         match strategy {
-            Strategy::PackedSlot {
+            Strategy::DirectSlot {
                 target_contract,
                 shift_bits,
                 ..
@@ -907,7 +884,7 @@ mod tests {
                 assert_eq!(target_contract, ausd);
                 assert_eq!(shift_bits, 8);
             }
-            other => panic!("expected PackedSlot, got {other:?}"),
+            other => panic!("expected DirectSlot with shift, got {other:?}"),
         }
     }
 }
