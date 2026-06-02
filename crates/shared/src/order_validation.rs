@@ -1619,13 +1619,14 @@ mod tests {
             (*native_token.address(), BUY_ETH_ADDRESS),
         ] {
             for kind in [OrderKind::Buy, OrderKind::Sell] {
+				let valid_to = time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
                 assert!(
                     validator
                         .partial_validate(PreOrderData {
                             kind,
                             sell_token,
                             buy_token,
-                            valid_to: valid_to(),
+                            valid_to,
                             ..Default::default()
                         })
                         .await
