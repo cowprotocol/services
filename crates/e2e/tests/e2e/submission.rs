@@ -687,9 +687,6 @@ async fn test_execute_same_sell_and_buy_native_token_buy_order(web3: Web3) {
         },
         ..Default::default()
     };
-    // EXPECTED FAILURE POINT (today): Buy same-token orders are rejected during
-    // quote-time validation, so this `unwrap()` panics with a BAD_REQUEST /
-    // "SameBuyAndSellToken" error.
     let quote_response = services.submit_quote(&quote_request).await.unwrap();
     tracing::info!(?quote_response);
     assert!(quote_response.id.is_some());
