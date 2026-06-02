@@ -1,42 +1,19 @@
 #!/usr/bin/env bash
 #
-# Provisions the tools the e2e test suite needs but that the base image can't
+# Provisions the one thing the e2e test suite needs but the base image can't
 # provide out of the box:
-#
-#   * anvil  – the prebuilt binary from the foundry devcontainer feature requires
-#              glibc >= 2.32, but the bullseye base image ships glibc 2.31, so the
-#              prebuilt aborts at startup. We build anvil from source against the
-#              local glibc instead (pinned to the same commit the feature uses).
 #
 #   * Postgres server – the Docker daemon can't start in this container, so the
 #              docker-compose Postgres isn't available. We run a native server and
 #              apply the flyway migrations the harness expects to already exist.
 #
+# anvil/forge come from the foundry devcontainer feature; their prebuilt binaries
+# run directly on the bookworm base image (glibc >= 2.32), so nothing to do here.
+#
 # Runs as `postCreateCommand` (once, when the container is created).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# Commit the foundry feature pins; building it from source keeps anvil's version
-# identical to what the rest of the toolchain expects.
-ANVIL_COMMIT="1fd6466f96e4f52cea01093ae0f5772ddf3a6795"
-
-# -----------------------------------------------------------------------------
-echo "==> anvil"
-if anvil --version >/dev/null 2>&1; then
-    echo "    anvil already works: $(anvil --version | head -1)"
-else
-    echo "    prebuilt anvil is unusable (glibc mismatch); building from source..."
-    build_dir="$(mktemp -d)"
-    git -C "$build_dir" init -q
-    git -C "$build_dir" remote add origin https://github.com/foundry-rs/foundry
-    git -C "$build_dir" fetch -q --depth 1 origin "$ANVIL_COMMIT"
-    git -C "$build_dir" checkout -q FETCH_HEAD
-    ( cd "$build_dir" && cargo build --release --bin anvil )
-    sudo cp "$build_dir/target/release/anvil" /usr/local/bin/anvil
-    rm -rf "$build_dir"
-    echo "    installed $(anvil --version | head -1)"
-fi
 
 # -----------------------------------------------------------------------------
 echo "==> postgres"
@@ -50,8 +27,12 @@ fi
 PG_VERSION="$(ls /etc/postgresql | sort -n | tail -1)"
 echo "    using cluster ${PG_VERSION}/main"
 
-# Start the cluster (there is no init system to do it for us).
-sudo pg_ctlcluster "$PG_VERSION" main start 2>/dev/null || true
+# Start the cluster (there is no init system to do it for us). `start` errors if
+# the cluster is already running, so only start it when it isn't online; a
+# genuine start failure then surfaces instead of being swallowed.
+if ! pg_lsclusters -h "$PG_VERSION" main | grep -q online; then
+    sudo pg_ctlcluster "$PG_VERSION" main start
+fi
 
 # Trust auth for local connections (development container only).
 HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
@@ -86,4 +67,4 @@ else
     done
 fi
 
-echo "==> e2e environment ready (anvil + postgres)"
+echo "==> e2e environment ready (postgres)"

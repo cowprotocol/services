@@ -8,7 +8,10 @@
 # Runs as `postStartCommand`.
 set -euo pipefail
 
-PG_VERSION="$(ls /etc/postgresql 2>/dev/null | sort -n | tail -1 || true)"
-if [ -n "$PG_VERSION" ]; then
-    sudo pg_ctlcluster "$PG_VERSION" main start 2>/dev/null || true
+PG_VERSION="$(ls /etc/postgresql | sort -n | tail -1)"
+
+# `start` errors if the cluster is already running, so only start it when it
+# isn't online; a genuine start failure then surfaces instead of being swallowed.
+if ! pg_lsclusters -h "$PG_VERSION" main | grep -q online; then
+    sudo pg_ctlcluster "$PG_VERSION" main start
 fi
