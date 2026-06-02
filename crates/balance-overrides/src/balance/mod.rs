@@ -110,7 +110,7 @@ pub(crate) enum Strategy {
     PackedSlot {
         target_contract: Address,
         slot: B256,
-        shift_bits: u8,
+        shift_bits: usize,
     },
     AaveV3AToken {
         target_contract: Address,
@@ -587,15 +587,14 @@ fn verified_balance_matches(strategy: &Strategy, balance: U256, test_balance: U2
 
 /// Left-shifts `amount` into a packed balance's bit position. Returns `None`
 /// if the shift would drop high bits (the balance doesn't fit at this offset).
-fn packed_value(amount: U256, shift_bits: u8) -> Option<U256> {
+fn packed_value(amount: U256, shift_bits: usize) -> Option<U256> {
     if shift_bits == 0 {
         return Some(amount);
     }
-    let shift = usize::from(shift_bits);
-    if amount > (U256::MAX >> shift) {
+    if amount > (U256::MAX >> shift_bits) {
         return None;
     }
-    Some(amount << shift)
+    Some(amount << shift_bits)
 }
 
 /// If `observed` equals `probe` right-shifted by a whole number of bytes,
@@ -603,10 +602,10 @@ fn packed_value(amount: U256, shift_bits: u8) -> Option<U256> {
 /// lower-order fields in the same slot, where `balanceOf` reads back
 /// `slot >> shift` (e.g. AUSD packs `isFrozen` in the low byte and keeps the
 /// balance in the high 248 bits, so `balanceOf == slot >> 8`).
-fn detect_byte_shift(probe: U256, observed: U256) -> Option<u8> {
-    (1..32u8)
+fn detect_byte_shift(probe: U256, observed: U256) -> Option<usize> {
+    (1..32usize)
         .map(|bytes| bytes * 8)
-        .find(|&shift| probe >> usize::from(shift) == observed)
+        .find(|&shift| probe >> shift == observed)
 }
 
 #[cfg(test)]
