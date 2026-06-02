@@ -225,7 +225,12 @@ impl TradeVerifier {
             .sum::<u64>();
         summary.gas_used += U256::from(21_000) + U256::from(call_data_cost);
 
-        self.post_process_summary(summary, query, verification)
+        Self::post_process_summary(
+            self.simulator.settlement_address(),
+            summary,
+            query,
+            verification,
+        )
     }
 
     /// Generates the calldata for the underlying `settle()` call as well as all
@@ -314,7 +319,7 @@ impl TradeVerifier {
     /// * trader or receiver is the settlement contrat itself
     /// * sell_token == buy_token
     fn post_process_summary(
-        &self,
+        settlement_address: Address,
         mut summary: SettleOutput,
         query: &PriceQuery,
         verification: &Verification,
@@ -329,7 +334,7 @@ impl TradeVerifier {
 
         // It looks like the contract lost a lot of sell tokens but only because it was
         // the trader and had to pay for the trade. Adjust tokens lost downward.
-        if verification.from == self.simulator.settlement_address() {
+        if verification.from == settlement_address {
             summary
                 .tokens_lost
                 .entry(query.sell_token)
@@ -338,7 +343,7 @@ impl TradeVerifier {
         // It looks like the contract gained a lot of buy tokens (negative loss) but
         // only because it was the receiver and got the payout. Adjust the tokens lost
         // upward.
-        if verification.receiver == self.simulator.settlement_address() {
+        if verification.receiver == settlement_address {
             summary
                 .tokens_lost
                 .entry(query.buy_token)
@@ -1023,5 +1028,83 @@ mod tests {
         };
         SettleOutput::from_swap(swap_return, OrderKind::Sell, &tokens_vec)
             .expect("well-formed response must parse");
+    }
+
+    /// Regression test for same sell==buy token verification, which buy orders
+    /// can now reach via `SameTokensPolicy::Allow` (issue #3963). When the
+    /// trader is also the receiver the simulated balance only ever shrinks, so
+    /// `from_swap` reports the *net* change. The `query.in_amount + out_amount`
+    /// correction must recover the gross amount the trader perceives, for both
+    /// order kinds.
+    #[test]
+    fn post_process_same_token_recovers_gross_amount() {
+        let token = Address::repeat_byte(1);
+        let trader = Address::repeat_byte(2);
+        // A settlement address that is neither trader nor receiver, so the
+        // buffer adjustments stay untouched and we isolate the same-token fix.
+        let settlement = Address::repeat_byte(0xff);
+        // Zero receiver means the trader is also the receiver.
+        let verification = Verification {
+            from: trader,
+            receiver: Address::ZERO,
+            app_data: Default::default(),
+        };
+        let summary = |out_amount: I512| SettleOutput {
+            gas_used: U256::ZERO,
+            out_amount,
+            tokens_lost: hashmap! { token => BigRational::from_integer(0.into()) },
+        };
+
+        // Buy 100 of `token` back into the same account: the trader pays 103
+        // gross, so the simulation measures a net change of 103 - 100 = 3. The
+        // correction must report the 103 actually sold.
+        let buy_query = PriceQuery {
+            in_amount: 100.try_into().unwrap(),
+            kind: OrderKind::Buy,
+            sell_token: token,
+            buy_token: token,
+        };
+        let out = TradeVerifier::post_process_summary(
+            settlement,
+            summary(I512::try_from(3).unwrap()),
+            &buy_query,
+            &verification,
+        )
+        .unwrap();
+        assert_eq!(out.out_amount, I512::try_from(103).unwrap());
+
+        // Sell 100 of `token` back into the same account: the trader nets 98,
+        // so the simulation measures 98 - 100 = -2. The correction must report
+        // the 98 actually received.
+        let sell_query = PriceQuery {
+            in_amount: 100.try_into().unwrap(),
+            kind: OrderKind::Sell,
+            sell_token: token,
+            buy_token: token,
+        };
+        let out = TradeVerifier::post_process_summary(
+            settlement,
+            summary(I512::ZERO - I512::try_from(2).unwrap()),
+            &sell_query,
+            &verification,
+        )
+        .unwrap();
+        assert_eq!(out.out_amount, I512::try_from(98).unwrap());
+
+        // Sanity: with distinct tokens the correction must NOT fire, so a
+        // negative out amount is still rejected as the buffers paying the order.
+        let distinct_query = PriceQuery {
+            in_amount: 100.try_into().unwrap(),
+            kind: OrderKind::Buy,
+            sell_token: token,
+            buy_token: Address::repeat_byte(3),
+        };
+        let err = TradeVerifier::post_process_summary(
+            settlement,
+            summary(I512::ZERO - I512::try_from(2).unwrap()),
+            &distinct_query,
+            &verification,
+        );
+        assert!(matches!(err, Err(Error::BuffersPayForOrder)));
     }
 }
