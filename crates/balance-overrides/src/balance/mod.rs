@@ -880,4 +880,34 @@ mod tests {
             }
         );
     }
+
+    // AUSD packs `{ bool isFrozen; uint248 balance }` into one slot, so the
+    // balance is the high 248 bits and `balanceOf == slot >> 8`. The detector
+    // must fall back to a `PackedSlot` with an 8-bit shift. Requires an
+    // avalanche node (set the node URL `Web3::new_from_env` reads).
+    #[ignore]
+    #[tokio::test]
+    async fn detects_packed_balance_slot_avalanche() {
+        use crate::detector::DEFAULT_VERIFICATION_TIMEOUT;
+
+        let ausd = address!("00000000efe302beaa2b3e6e1b18d08d69a9012a");
+        let detector = Detector::new(Web3::new_from_env(), 60, DEFAULT_VERIFICATION_TIMEOUT, 100);
+
+        let strategy = detector
+            .detect(ausd, Address::with_last_byte(1))
+            .await
+            .unwrap();
+
+        match strategy {
+            Strategy::PackedSlot {
+                target_contract,
+                shift_bits,
+                ..
+            } => {
+                assert_eq!(target_contract, ausd);
+                assert_eq!(shift_bits, 8);
+            }
+            other => panic!("expected PackedSlot, got {other:?}"),
+        }
+    }
 }
