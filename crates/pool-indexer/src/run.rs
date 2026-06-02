@@ -9,7 +9,10 @@ use {
     clap::Parser,
     ethrpc::{AlloyProvider, Config as EthRpcConfig, web3},
     sqlx::{PgPool, postgres::PgPoolOptions},
-    std::sync::Arc,
+    std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
     tokio::task::JoinSet,
 };
 
@@ -26,11 +29,21 @@ pub async fn run(config: Configuration) {
     let db = connect_db(&config).await;
     let api_state = build_api_state(&db, config.networks.as_slice());
 
+    // Startup probe: 200 once every configured factory has completed its
+    // initial seed + catch-up. Until then, `/pools` returns 503 anyway
+    // (no checkpoint yet)
+    let startup = Arc::new(Some(AtomicBool::new(false)));
+    let total_factories: usize = (&config.networks)
+        .into_iter()
+        .map(|n| n.factories.len())
+        .sum();
+    let barrier = Arc::new(StartupBarrier::new(startup.clone(), total_factories));
+
     observe::metrics::serve_metrics(
         Arc::new(AlwaysAlive),
         config.metrics.bind_address,
         Default::default(),
-        Default::default(),
+        startup,
     );
 
     let mut set = JoinSet::new();
@@ -40,7 +53,8 @@ pub async fn run(config: Configuration) {
 
     for network in config.networks {
         let db = db.clone();
-        set.spawn(async move { run_network_indexer(db, network).await });
+        let barrier = barrier.clone();
+        set.spawn(async move { run_network_indexer(db, network, barrier).await });
     }
 
     // All spawned tasks (API server + per-network indexers) are infinite
@@ -48,6 +62,32 @@ pub async fn run(config: Configuration) {
     // orchestrator restart the pod.
     if let Some(result) = set.join_next().await {
         panic!("pool-indexer task exited (expected infinite loop): {result:?}");
+    }
+}
+
+/// Tracks pending factory bootstraps so the `/startup` probe flips to 200
+/// only once every configured factory has finished seeding + catching up.
+/// Latched once — bootstraps don't repeat over the process lifetime.
+struct StartupBarrier {
+    remaining: AtomicUsize,
+    flag: Arc<Option<AtomicBool>>,
+}
+
+impl StartupBarrier {
+    fn new(flag: Arc<Option<AtomicBool>>, total: usize) -> Self {
+        Self {
+            remaining: AtomicUsize::new(total),
+            flag,
+        }
+    }
+
+    fn factory_bootstrapped(&self) {
+        if self.remaining.fetch_sub(1, Ordering::AcqRel) == 1
+            && let Some(flag) = self.flag.as_ref()
+        {
+            flag.store(true, Ordering::Release);
+            tracing::info!("all factories bootstrapped, marking startup ready");
+        }
     }
 }
 
@@ -81,7 +121,7 @@ fn build_api_state(db: &PgPool, networks: &[NetworkConfig]) -> Arc<AppState> {
     })
 }
 
-async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
+async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<StartupBarrier>) {
     tracing::info!(
         network = %network.name,
         chain_id = network.chain_id,
@@ -122,6 +162,7 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig) {
             indexer,
             network.clone(),
             factory,
+            barrier.clone(),
         ));
     }
 
@@ -166,6 +207,7 @@ async fn run_factory_indexer(
     indexer: UniswapV3Indexer,
     network: Arc<NetworkConfig>,
     factory: crate::config::FactoryConfig,
+    barrier: Arc<StartupBarrier>,
 ) {
     tracing::info!(
         network = %network.name,
@@ -175,6 +217,7 @@ async fn run_factory_indexer(
     );
 
     bootstrap_factory(&db, &indexer, &network, &factory).await;
+    barrier.factory_bootstrapped();
     indexer.run(network.poll_interval()).await;
 }
 
