@@ -278,7 +278,7 @@ impl Mempools {
                             // Since the autopilot only distributes orders while no one else is
                             // trying to submit txs for it this error is extremely likely a false
                             // positive so we ignore it.
-                            if err.revert_bytes().is_none_or(|bytes| &bytes != ORDER_FILLED) {
+                            if err.revert_bytes().is_some_and(|bytes| &bytes == ORDER_FILLED) {
                                 tracing::debug!(?err, "ignoring revert as it's likely a false positive");
                             } else if err.is_revert() {
                                 tracing::info!(
