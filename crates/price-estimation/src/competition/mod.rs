@@ -1,6 +1,12 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::{PriceEstimateResult, PriceEstimating, PriceEstimationError, Query, StreamingPriceEstimating},
+    crate::{
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
+        StreamingPriceEstimating,
+    },
     futures::{
         future::{BoxFuture, FutureExt},
         stream::{BoxStream, FuturesUnordered, StreamExt},
@@ -168,25 +174,18 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     }
 }
 
-impl CompetitionEstimator<Arc<dyn PriceEstimating>> {
+impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     /// Runs every estimator concurrently across all stages and yields each
-    /// result as it arrives. No ranking, no early return — the caller stops
+    /// result as it arrives. No ranking, no early return. The caller stops
     /// by dropping the stream.
-    fn estimate_all<'a>(&'a self, query: Arc<Query>) -> BoxStream<'a, PriceEstimateResult> {
-        let futures: FuturesUnordered<BoxFuture<'a, PriceEstimateResult>> =
-            FuturesUnordered::new();
+    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
+        let futures: FuturesUnordered<BoxFuture<'_, PriceEstimateResult>> = FuturesUnordered::new();
         for stage in &self.stages {
             for (_name, estimator) in stage {
                 futures.push(estimator.estimate(query.clone()));
             }
         }
         futures.boxed()
-    }
-}
-
-impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
-    fn estimate_stream<'a>(&'a self, query: Arc<Query>) -> BoxStream<'a, PriceEstimateResult> {
-        self.estimate_all(query)
     }
 }
 
@@ -666,22 +665,26 @@ mod tests {
             m
         };
 
-        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-            CompetitionEstimator::new(
-                vec![vec![
-                    ("fast".to_owned(), Arc::new(fast)),
-                    ("slow".to_owned(), Arc::new(slow)),
-                ]],
-                PriceRanking::MaxOutAmount,
-            );
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                ("fast".to_owned(), Arc::new(fast)),
+                ("slow".to_owned(), Arc::new(slow)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
 
-        let results: Vec<_> = estimator
-            .estimate_stream(make_query())
-            .collect()
-            .await;
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
 
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r.is_ok()));
+        // `fast` (out_amount 1) resolves immediately while `slow` sleeps, so a
+        // stream that yields as results arrive must emit `fast` first. A serial
+        // collect-then-yield implementation would fail this.
+        let amounts: Vec<_> = results
+            .iter()
+            .map(|r| r.as_ref().unwrap().out_amount)
+            .collect();
+        assert_eq!(amounts, vec![U256::from(1u64), U256::from(2u64)]);
     }
 
     #[tokio::test]
@@ -702,25 +705,21 @@ mod tests {
         };
         let err = {
             let mut m = MockPriceEstimating::new();
-            m.expect_estimate().times(1).returning(|_| {
-                async { Err(PriceEstimationError::NoLiquidity) }.boxed()
-            });
+            m.expect_estimate()
+                .times(1)
+                .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
             m
         };
 
-        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-            CompetitionEstimator::new(
-                vec![vec![
-                    ("ok".to_owned(), Arc::new(ok)),
-                    ("err".to_owned(), Arc::new(err)),
-                ]],
-                PriceRanking::MaxOutAmount,
-            );
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                ("ok".to_owned(), Arc::new(ok)),
+                ("err".to_owned(), Arc::new(err)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
 
-        let results: Vec<_> = estimator
-            .estimate_stream(make_query())
-            .collect()
-            .await;
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
 
         assert_eq!(results.len(), 2);
         assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);

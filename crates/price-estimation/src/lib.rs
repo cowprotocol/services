@@ -227,10 +227,7 @@ pub trait PriceEstimating: Send + Sync + 'static {
 /// completes instead of collapsing to the single best one.
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 pub trait StreamingPriceEstimating: Send + Sync + 'static {
-    fn estimate_stream<'a>(
-        &'a self,
-        query: Arc<Query>,
-    ) -> BoxStream<'a, PriceEstimateResult>;
+    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult>;
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
