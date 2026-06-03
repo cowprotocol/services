@@ -1,23 +1,26 @@
 //! Classification of order-simulation revert reasons.
 //!
-//! Funding-class reverts (allowance or balance shortfalls hit while simulating
-//! the full sell amount) are accepted. Funding is already gated upstream by
-//! the cheap allowance check in `ensure_token_is_transferable`, which
-//! intentionally permits partial-funding orders so users can submit before
-//! they are fully funded. A funding-class revert from the deeper simulation
-//! is therefore either a permitted partial-funding order (fillable once the
-//! user funds the rest), or an artifact of a state override the simulator
-//! could not compute (e.g. stETH as the buy token). The deeper simulation's
-//! job is structural validation, not re-litigating funding.
+//! The simulator runs the full sell amount, so it reverts on funding shortfalls
+//! the protocol tolerates: CoW lets users place orders before they fund them.
+//! We bucket each revert into `Funding` or `Other` to measure that split. The
+//! classification labels logs and metrics. It does not gate orders.
 //!
-//! Everything else lands in Other, which is rejected and alerted on so new
-//! funding patterns can be added when discovered.
+//! `Other` is the catch-all we alert on, so an unrecognized funding pattern
+//! surfaces as `Other` and we add it to the funding set.
 
 use {regex::Regex, std::sync::OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevertClass {
+    /// An allowance or balance shortfall hit while simulating the full sell
+    /// amount. This is a coarse signal. It does not prove the order will fill:
+    /// the same error can come from a permitted fund-later order, a state
+    /// override the simulator could not compute (e.g. stETH as the buy token),
+    /// or a broken order such as a flashloan whose repay post-hook reverts. To
+    /// tell those apart you need the revert's position in the call tree, which
+    /// the reason string does not carry.
     Funding,
+    /// A revert we do not recognize as funding. We alert on these.
     Other,
 }
 
