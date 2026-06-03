@@ -330,11 +330,11 @@ impl Error {
     }
 
     pub fn revert_bytes(&self) -> Option<Bytes> {
-        let Error::Rpc(err) = self else {
-            return None;
-        };
-
-        err.as_error_resp().and_then(|err| err.as_revert_data())
+        match self {
+            Error::ContractRpc(err) => err.as_revert_data(),
+            Error::Rpc(err) => err.as_error_resp().and_then(|err| err.as_revert_data()),
+            _ => None,
+        }
     }
 }
 
