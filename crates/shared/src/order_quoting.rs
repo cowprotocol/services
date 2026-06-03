@@ -633,7 +633,7 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
 ///
 /// `expiration` must be computed by the caller (it depends on `&self` state in
 /// `OrderQuoter`).
-pub fn assemble_quote_data(
+fn assemble_quote_data(
     parameters: &QuoteParameters,
     estimate: &price_estimation::Estimate,
     effective_gas_price: u128,
@@ -1831,5 +1831,37 @@ mod tests {
             }
         );
         assert_eq!(data.metadata, QuoteMetadata::default());
+    }
+
+    #[test]
+    fn assemble_quote_data_buy_order() {
+        // Buy orders flip the assignment: the estimate's out_amount is the
+        // quoted sell amount, and the requested buy amount is fixed.
+        let expiration = Utc::now() + chrono::Duration::seconds(60);
+        let parameters = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Buy {
+                buy_amount_after_fee: NonZeroU256::try_from(100).unwrap(),
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            timeout: None,
+        };
+        let estimate = price_estimation::Estimate {
+            out_amount: AlloyU256::from(42),
+            gas: 3,
+            solver: Address::repeat_byte(7),
+            verified: false,
+            execution: Default::default(),
+        };
+
+        let data = assemble_quote_data(&parameters, &estimate, 2, 0.5, expiration);
+
+        assert_eq!(data.quoted_sell_amount, AlloyU256::from(42));
+        assert_eq!(data.quoted_buy_amount, AlloyU256::from(100));
+        assert_eq!(data.kind, OrderKind::Buy);
+        assert!(!data.verified);
     }
 }
