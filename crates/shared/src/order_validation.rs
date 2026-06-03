@@ -1612,8 +1612,11 @@ mod tests {
         let valid_to =
             time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
 
-        // `Allow` permits same-token orders of either side, including the
-        // native-equivalent (sell WETH, buy native ETH) case.
+        // `Allow` permits same-token orders of either side. The second pair is the
+        // native-equivalent case: `validate_same_sell_and_buy_token` treats selling
+        // WETH for `BUY_ETH_ADDRESS` (native ETH) as a sell==buy order. The rejection
+        // side is covered by `pre_validate_err` (Disallow) and
+        // `pre_validate_same_tokens_allow_sell` (AllowSell).
         for (sell_token, buy_token) in [
             (Address::with_last_byte(2), Address::with_last_byte(2)),
             (*native_token.address(), BUY_ETH_ADDRESS),
