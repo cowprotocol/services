@@ -225,12 +225,12 @@ impl RunLoop {
 
     fn pick_solve_deadline(&self) -> DateTime<Utc> {
         let now = chrono::Utc::now();
-        let last_block_time = self.eth.current_block().borrow().timestamp;
+        let last_block = *self.eth.current_block().borrow();
         pick_solve_deadline_impl(
             now,
             self.config.min_solve_time,
             self.config.sync_solve_deadline_to_blockchain.as_ref(),
-            last_block_time,
+            last_block,
         )
     }
 
@@ -927,7 +927,7 @@ fn pick_solve_deadline_impl(
     now: chrono::DateTime<chrono::Utc>,
     min_solve_time: Duration,
     slot_config: Option<&SlotConfig>,
-    last_block_timestamp: u64,
+    current_block: BlockInfo,
 ) -> chrono::DateTime<chrono::Utc> {
     let minimum_deadline = now + min_solve_time;
 
@@ -939,22 +939,24 @@ fn pick_solve_deadline_impl(
         return minimum_deadline;
     };
 
-    let last_block_time = last_block_timestamp;
-    let last_block = DateTime::from_timestamp_secs(last_block_time.try_into().unwrap()).unwrap();
+    let current_block_time =
+        DateTime::from_timestamp_secs(current_block.timestamp.try_into().unwrap()).unwrap();
 
     for delay_in_blocks in 1..10 {
-        let target =
-            last_block + slot_length.saturating_mul(delay_in_blocks) - *tx_propagation_latency;
+        let target = current_block_time + slot_length.saturating_mul(delay_in_blocks)
+            - *tx_propagation_latency;
         if target >= minimum_deadline {
             if delay_in_blocks == 1 {
                 tracing::debug!(
                     deadline = target.to_string(),
+                    current_block = current_block.number,
                     "optimal solve deadline is before next block"
                 );
             } else {
                 tracing::debug!(
                     delay_in_blocks,
                     deadline = target.to_string(),
+                    current_block = current_block.number,
                     "delay auction for optimal deadline"
                 );
             }
@@ -1239,12 +1241,26 @@ pub mod observe {
 mod tests {
     use super::*;
 
+    fn block_with_timestamp(unix_timestamp: u64) -> BlockInfo {
+        BlockInfo {
+            timestamp: unix_timestamp,
+            number: Default::default(),
+            hash: Default::default(),
+            parent_hash: Default::default(),
+            gas_limit: Default::default(),
+            gas_price: Default::default(),
+            base_fee: Default::default(),
+            observed_at: Instant::now(),
+        }
+    }
+
     #[test]
     fn solve_deadline_aligned_with_blockchain() {
         let min_solve_time = Duration::from_secs(9);
 
         type Ts = chrono::DateTime<chrono::Utc>;
-        let last_block = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
+        let last_block_timestamp = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
+        let last_block = block_with_timestamp(last_block_timestamp);
         let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
 
         // default deadline is `now + min_solve_time` (now + 9s)
@@ -1285,7 +1301,8 @@ mod tests {
             slot_length: Duration::from_secs(5),
             tx_propagation_latency: Duration::from_secs(2),
         });
-        let last_block = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
+        let last_block_time = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
+        let last_block = block_with_timestamp(last_block_time);
         let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
         // now is 1s after the last block n, 4s left in the block, we need to submit 2s
         // before a block, min_solve_time 9s => deadline is 2s before block n+3
