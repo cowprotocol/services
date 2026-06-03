@@ -143,6 +143,11 @@ impl Configuration {
             )),
         }
     }
+
+    pub fn validate(self) -> anyhow::Result<Self> {
+        self.shared.validate()?;
+        Ok(self)
+    }
 }
 
 #[cfg(any(test, feature = "test-util"))]

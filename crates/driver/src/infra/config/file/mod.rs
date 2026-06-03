@@ -321,11 +321,7 @@ struct SolverConfig {
     /// via EIP-7702 delegation. When non-empty, enables parallel submission
     /// with one lane per account.
     #[serde(default)]
-    submission_accounts: Vec<Account>,
-
-    /// Address of the deployed CowSettlementForwarder contract for EIP-7702
-    /// delegation. Required when `submission_accounts` is non-empty.
-    forwarder_contract: Option<eth::Address>,
+    submission_accounts: SubmissionAccounts,
 
     /// Maximum number of solutions the driver proposes to the autopilot per
     /// auction. Defaults to 1 (only the best-scoring solution). Values > 1
@@ -367,6 +363,53 @@ enum Account {
     /// *unable* to sign transactions as alloy does not support *implicit*
     /// node-side signing.
     Address(eth::Address),
+}
+
+/// Accounts used for parallel EIP-7702 settlement submission. Every account is
+/// guaranteed to be a signer (never [`Account::Address`]), because address-only
+/// accounts cannot sign the delegated settlement transactions.
+#[derive(Debug, Default)]
+struct SubmissionAccounts(Vec<Account>);
+
+impl SubmissionAccounts {
+    /// Constructs a new [`SubmissionAccounts`], rejecting any address-only
+    /// account ([`Account::Address`]) since such accounts cannot sign EIP-7702
+    /// delegated settlement transactions.
+    fn new(accounts: Vec<Account>) -> Result<Self, InvalidSubmissionAccounts> {
+        if accounts
+            .iter()
+            .any(|account| matches!(account, Account::Address(_)))
+        {
+            return Err(InvalidSubmissionAccounts);
+        }
+        Ok(Self(accounts))
+    }
+
+    fn into_inner(self) -> Vec<Account> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+struct InvalidSubmissionAccounts;
+
+impl std::fmt::Display for InvalidSubmissionAccounts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "EIP-7702 submission accounts must be signers; address-only accounts cannot sign \
+             delegated settlement transactions",
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for SubmissionAccounts {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let accounts = Vec::<Account>::deserialize(deserializer)?;
+        Self::new(accounts).map_err(serde::de::Error::custom)
+    }
 }
 
 #[serde_as]
@@ -1085,5 +1128,71 @@ mod tests {
             }
             _ => panic!("expected Alloy variant as default"),
         }
+    }
+
+    /// Mirrors how `submission-accounts` is declared on `SolverConfig` so the
+    /// tests exercise the real TOML deserialization path.
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct SubmissionAccountsConfig {
+        #[serde(default)]
+        submission_accounts: SubmissionAccounts,
+    }
+
+    #[test]
+    fn submission_accounts_default_when_omitted() {
+        let config: SubmissionAccountsConfig = toml::from_str("").unwrap();
+
+        assert!(config.submission_accounts.into_inner().is_empty());
+    }
+
+    #[test]
+    fn submission_accounts_accepts_signers() {
+        let config: SubmissionAccountsConfig = toml::from_str(
+            r#"
+            submission-accounts = [
+                "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+            ]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.submission_accounts.into_inner().len(), 1);
+    }
+
+    #[test]
+    fn submission_accounts_rejects_address_only_on_deserialization() {
+        let err = toml::from_str::<SubmissionAccountsConfig>(
+            r#"
+            submission-accounts = ["0x0000000000000000000000000000000000000002"]
+            "#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("must be signers"));
+    }
+
+    #[test]
+    fn submission_accounts_new_accepts_signers() {
+        let signer = Account::PrivateKey(
+            "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+                .parse()
+                .unwrap(),
+        );
+
+        let accounts = SubmissionAccounts::new(vec![signer]).unwrap();
+
+        assert_eq!(accounts.into_inner().len(), 1);
+    }
+
+    #[test]
+    fn submission_accounts_new_rejects_address_only() {
+        let address = "0x0000000000000000000000000000000000000002"
+            .parse()
+            .unwrap();
+
+        let err = SubmissionAccounts::new(vec![Account::Address(address)]).unwrap_err();
+
+        assert!(err.to_string().contains("must be signers"));
     }
 }
