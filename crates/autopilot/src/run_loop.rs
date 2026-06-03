@@ -59,8 +59,7 @@ pub struct Config {
     pub submission_deadline: u64,
     pub max_settlement_transaction_wait: Duration,
     pub min_solve_time: Duration,
-    pub slot_length: Option<Duration>,
-    pub submit_before_slot_end: Option<Duration>,
+    pub sync_solve_deadline_to_blockchain: Option<SlotConfig>,
     /// How much time past observing the current block the runloop is
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
@@ -82,10 +81,21 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             compress_solve_request: value.compress_solve_request,
-            slot_length: value.slot_length,
-            submit_before_slot_end: Some(value.submit_before_slot_end),
+            sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
+                SlotConfig {
+                    slot_length: cfg.slot_length,
+                    tx_propagation_latency: cfg.tx_propagation_latency,
+                }
+            }),
         }
     }
+}
+
+/// Specifies the timing of the block timings of PoS chains
+/// and how to synchronize tx submission to it.
+pub struct SlotConfig {
+    pub slot_length: Duration,
+    pub tx_propagation_latency: Duration,
 }
 
 pub struct Probes {
@@ -216,7 +226,12 @@ impl RunLoop {
     fn pick_solve_deadline(&self) -> DateTime<Utc> {
         let now = chrono::Utc::now();
         let last_block_time = self.eth.current_block().borrow().timestamp;
-        pick_solve_deadline_impl(now, &self.config, last_block_time)
+        pick_solve_deadline_impl(
+            now,
+            self.config.min_solve_time,
+            self.config.sync_solve_deadline_to_blockchain.as_ref(),
+            last_block_time,
+        )
     }
 
     #[instrument(skip_all)]
@@ -910,13 +925,16 @@ impl RunLoop {
 /// seconds of the current time.
 fn pick_solve_deadline_impl(
     now: chrono::DateTime<chrono::Utc>,
-    config: &Config,
+    min_solve_time: Duration,
+    slot_config: Option<&SlotConfig>,
     last_block_timestamp: u64,
 ) -> chrono::DateTime<chrono::Utc> {
-    let minimum_deadline = now + config.min_solve_time;
+    let minimum_deadline = now + min_solve_time;
 
-    let (Some(slot_length), Some(submit_before_slot_end)) =
-        (config.slot_length, config.submit_before_slot_end)
+    let Some(SlotConfig {
+        slot_length,
+        tx_propagation_latency,
+    }) = slot_config
     else {
         return minimum_deadline;
     };
@@ -926,7 +944,7 @@ fn pick_solve_deadline_impl(
 
     for delay_in_blocks in 1..10 {
         let target =
-            last_block + slot_length.saturating_mul(delay_in_blocks) - submit_before_slot_end;
+            last_block + slot_length.saturating_mul(delay_in_blocks) - *tx_propagation_latency;
         if target >= minimum_deadline {
             if delay_in_blocks == 1 {
                 tracing::debug!(
@@ -1223,18 +1241,7 @@ mod tests {
 
     #[test]
     fn solve_deadline_aligned_with_blockchain() {
-        let mut config = Config {
-            submission_deadline: Default::default(),
-            max_settlement_transaction_wait: Default::default(),
-            max_run_loop_delay: Default::default(),
-            max_winners_per_auction: NonZeroUsize::MAX,
-            max_solutions_per_solver: NonZeroUsize::MAX,
-            enable_leader_lock: Default::default(),
-            compress_solve_request: Default::default(),
-            min_solve_time: Duration::from_secs(9),
-            slot_length: None,
-            submit_before_slot_end: None,
-        };
+        let min_solve_time = Duration::from_secs(9);
 
         type Ts = chrono::DateTime<chrono::Utc>;
         let last_block = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
@@ -1244,18 +1251,17 @@ mod tests {
         let standard_deadline = "2026-06-01T12:00:10Z".parse::<Ts>().unwrap();
 
         // syncing to blockchain is not configured -> deadline = now + min_solve_time
-        let deadline = pick_solve_deadline_impl(now, &config, last_block);
-        assert_eq!(deadline, standard_deadline);
-
-        // only 1 of the sync parameters provided -> standard deadline
-        config.slot_length = Some(Duration::from_secs(12));
-        let deadline = pick_solve_deadline_impl(now, &config, last_block);
+        let deadline = pick_solve_deadline_impl(now, min_solve_time, None, last_block);
         assert_eq!(deadline, standard_deadline);
 
         // both sync parameters provided -> deadline gets synced to expected block
         // production
-        config.submit_before_slot_end = Some(Duration::from_secs(2));
-        let deadline = pick_solve_deadline_impl(now, &config, last_block);
+        let slot_config = Some(SlotConfig {
+            slot_length: Duration::from_secs(12),
+            tx_propagation_latency: Duration::from_secs(2),
+        });
+        let deadline =
+            pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         // now is 1s after the last block (n), 11s left before the slot ends, 9s before
         // we are supposed to submit a solution, 9s minimum solve time => synced
         // deadline is equal to standard deadline (2s before block n+1)
@@ -1265,17 +1271,26 @@ mod tests {
         // we are supposed to submit a solution for this slot, 9s minimum solve
         // time => we barely missed the deadline of the current slot so now
         // solvers get until 2s before the block n+2
-        let deadline = pick_solve_deadline_impl(now + Duration::from_secs(1), &config, last_block);
+        let deadline = pick_solve_deadline_impl(
+            now + Duration::from_secs(1),
+            min_solve_time,
+            slot_config.as_ref(),
+            last_block,
+        );
         assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
 
         // let's move to gnosis chain where 1 block is 5s (1 block is not enough for
         // the solve deadline)
-        config.slot_length = Some(Duration::from_secs(5));
+        let slot_config = Some(SlotConfig {
+            slot_length: Duration::from_secs(5),
+            tx_propagation_latency: Duration::from_secs(2),
+        });
         let last_block = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
         let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
         // now is 1s after the last block n, 4s left in the block, we need to submit 2s
         // before a block, min_solve_time 9s => deadline is 2s before block n+3
-        let deadline = pick_solve_deadline_impl(now, &config, last_block);
+        let deadline =
+            pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
     }
 }

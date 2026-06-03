@@ -27,10 +27,6 @@ const fn default_min_solve_time() -> Duration {
     Duration::from_secs(10)
 }
 
-const fn default_submit_before_slot_end() -> Duration {
-    Duration::from_secs(2)
-}
-
 /// Configuration for the autopilot run loop timing.
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
@@ -81,19 +77,26 @@ pub struct RunLoopConfig {
     )]
     pub min_solve_time: Duration,
 
-    /// How long each slot on a PoS chain is. If this is set the autopilot
-    /// will pick deadlines for the `/solve` requests that align optimally
-    /// with the chain's block production.
-    /// This does not work for chains with variable block production rates
-    /// (including test chains).
-    #[serde(with = "humantime_serde", default)]
-    pub slot_length: Option<Duration>,
+    /// If this is configured the `/solve` deadline will be picked
+    /// to end shortly before a new block gets mined.
+    /// This should not be configured on chains with variable block
+    /// production rates (including test chains).
+    #[serde(default)]
+    pub sync_solve_deadline_to_blockchain: Option<SlotConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SlotConfig {
+    /// How long each slot on a PoS chain is.
+    #[serde(with = "humantime_serde")]
+    pub slot_length: Duration,
 
     /// Minimum amount of time one has to submit a tx BEFORE the slot's end
-    /// to still have it included in the next block. This only matters if
-    /// `slot_length` is also configured.
-    #[serde(with = "humantime_serde", default = "default_submit_before_slot_end")]
-    pub submit_before_slot_end: Duration,
+    /// to still have it included in the next block.
+    #[serde(with = "humantime_serde")]
+    pub tx_propagation_latency: Duration,
 }
 
 impl Default for RunLoopConfig {
@@ -107,8 +110,7 @@ impl Default for RunLoopConfig {
             submission_deadline: default_submission_deadline(),
             max_settlement_transaction_wait: default_max_settlement_transaction_wait(),
             min_solve_time: default_min_solve_time(),
-            slot_length: None,
-            submit_before_slot_end: default_submit_before_slot_end(),
+            sync_solve_deadline_to_blockchain: None,
         }
     }
 }
@@ -137,12 +139,27 @@ mod tests {
     fn deserialize_full() {
         let toml = r#"
         max-delay = "5s"
-        slot-length = "12s"
-        submit-before-slot-end = "2s"
+        [sync-solve-deadline-to-blockchain]
+            slot-length = "12s"
+            tx-propagation-latency = "2s"
         "#;
         let config: RunLoopConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.max_delay, Duration::from_secs(5));
-        assert_eq!(config.slot_length, Some(Duration::from_secs(12)));
-        assert_eq!(config.submit_before_slot_end, Duration::from_secs(2));
+        assert_eq!(
+            config
+                .sync_solve_deadline_to_blockchain
+                .as_ref()
+                .unwrap()
+                .slot_length,
+            Duration::from_secs(12)
+        );
+        assert_eq!(
+            config
+                .sync_solve_deadline_to_blockchain
+                .as_ref()
+                .unwrap()
+                .tx_propagation_latency,
+            Duration::from_secs(2)
+        );
     }
 }
