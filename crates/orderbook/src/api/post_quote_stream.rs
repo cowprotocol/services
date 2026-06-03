@@ -29,13 +29,13 @@ pub async fn post_quote_stream_handler(
         futures::pin_mut!(stream);
         while let Some(item) = stream.next().await {
             match item {
-                Ok(response) => {
-                    any_ok = true;
-                    match Event::default().json_data(&response) {
-                        Ok(event) => yield Ok::<_, Infallible>(event),
-                        Err(err) => tracing::error!(?err, "failed to serialize streamed quote"),
+                Ok(response) => match Event::default().json_data(&response) {
+                    Ok(event) => {
+                        any_ok = true;
+                        yield Ok::<_, Infallible>(event);
                     }
-                }
+                    Err(err) => tracing::error!(?err, "failed to serialize streamed quote"),
+                },
                 Err(err) => tracing::debug!(%err, "dropping failed streamed quote"),
             }
         }
@@ -47,5 +47,7 @@ pub async fn post_quote_stream_handler(
         }
     };
 
-    Sse::new(events).keep_alive(KeepAlive::default()).into_response()
+    Sse::new(events)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
