@@ -714,10 +714,10 @@ impl OrderValidating for OrderValidator {
                     )));
                 };
 
-                // Keep the validated document rather than `"{}"`. The order
-                // creation simulator re-parses this document to rebuild the
-                // pre/post hooks, so dropping it makes the simulation skip the
-                // hooks (e.g. a permit approval) and revert spuriously.
+                // Keep the validated document, since the order creation simulator re-parses
+                // this document to rebuild the pre/post hooks, so dropping it
+                // makes the simulation skip the hooks (e.g. a permit approval)
+                // and revert spuriously.
                 ValidatedAppData {
                     hash: *hash,
                     document: validated.document,
