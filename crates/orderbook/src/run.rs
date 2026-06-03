@@ -41,7 +41,7 @@ use {
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
     },
     shared::{
-        order_quoting::{self, OrderQuoter},
+        order_quoting::{self, OrderQuoter, StreamingQuoting},
         order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
@@ -381,7 +381,51 @@ pub async fn run(config: Configuration) {
             config.price_estimation.max_quote_timeout,
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator);
+
+    let streaming_price_estimator = price_estimator_factory
+        .streaming_price_estimator(
+            &config
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(
+                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
+                        name: price_estimator_driver.name.clone(),
+                        url: price_estimator_driver.url.clone(),
+                    },
+                )
+                .collect::<Vec<_>>(),
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
+        )
+        .unwrap();
+
+    let optimal_quoter = Arc::new(
+        OrderQuoter::new(
+            price_estimator,
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
+            Arc::new(postgres_write.clone()),
+            order_quoting::Validity {
+                eip1271_onchain_quote: chrono::Duration::from_std(
+                    config.order_quoting.eip1271_onchain_quote_validity,
+                )
+                .unwrap(),
+                presign_onchain_quote: chrono::Duration::from_std(
+                    config.order_quoting.presign_onchain_quote_validity,
+                )
+                .unwrap(),
+                standard_quote: chrono::Duration::from_std(
+                    config.order_quoting.standard_offchain_quote_validity,
+                )
+                .unwrap(),
+            },
+            config.price_estimation.quote_timeout,
+            config.price_estimation.max_quote_timeout,
+        )
+        .with_streaming_estimator(streaming_price_estimator),
+    );
+
     // Fast quoting is able to return early and if none of the produced quotes are
     // verifiable we are left with no quote at all. Since fast estimates don't
     // make any promises on correctness we can just skip quote verification for
@@ -468,14 +512,15 @@ pub async fn run(config: Configuration) {
         .collect();
     let quotes = QuoteHandler::new(
         order_validator,
-        optimal_quoter,
+        optimal_quoter.clone(),
         app_data.clone(),
         config.volume_fee,
         volume_fee_bucket_overrides,
         config.shared.enable_sell_equals_buy_volume_fee,
         token_info_fetcher.clone(),
     )
-    .with_fast_quoter(fast_quoter);
+    .with_fast_quoter(fast_quoter)
+    .with_streaming_quoter(optimal_quoter.clone() as Arc<dyn StreamingQuoting>);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
