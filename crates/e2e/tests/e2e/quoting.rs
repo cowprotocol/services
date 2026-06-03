@@ -11,7 +11,7 @@ use {
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
-        quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},
@@ -65,6 +65,12 @@ async fn local_node_native_price_custom_solver_errors() {
 #[ignore]
 async fn local_node_quote_custom_solver_errors_prioritized() {
     run_test(quote_custom_solver_errors_prioritized).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_quote_stream_smoke() {
+    run_test(quote_stream_smoke).await;
 }
 
 // Test that quoting works as expected, specifically, that we can quote for a
@@ -935,4 +941,75 @@ async fn volume_fee(web3: Web3) {
         "5",
         "Bucket override should apply 5 bps, not default 2 bps"
     );
+}
+
+// Smoke test for the SSE streaming quote endpoint. Posts a quote request to
+// /api/v1/quote/stream and asserts that at least one SSE data line parses as
+// a valid OrderQuoteResponse with id == None.
+async fn quote_stream_smoke(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(2u64.eth()).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(1_000u64.eth(), 1_000u64.eth())
+        .await;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: *onchain.contracts().weth.address(),
+        buy_token: *token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(1u64.eth()).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    tracing::info!("Sending streaming quote request.");
+    let stream_url = format!("{API_HOST}{QUOTING_ENDPOINT}/stream");
+    let response = reqwest::Client::new()
+        .post(&stream_url)
+        .json(&request)
+        .send()
+        .await
+        .expect("streaming quote request failed");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::OK,
+        "expected 200 from /api/v1/quote/stream"
+    );
+
+    let body = response.text().await.expect("failed to read SSE body");
+    tracing::info!(%body, "SSE response body");
+
+    // SSE lines look like: "data: <json>\n"
+    let parsed: Vec<OrderQuoteResponse> = body
+        .lines()
+        .filter(|line| line.starts_with("data:"))
+        .filter_map(|line| {
+            let json = line.trim_start_matches("data:").trim();
+            serde_json::from_str(json).ok()
+        })
+        .collect();
+
+    assert!(
+        !parsed.is_empty(),
+        "expected at least one valid OrderQuoteResponse in SSE stream, body was: {body}"
+    );
+
+    for quote in &parsed {
+        assert!(
+            quote.id.is_none(),
+            "streaming quotes should have id == null, got {:?}",
+            quote.id
+        );
+    }
 }
