@@ -568,13 +568,10 @@ fn packed_value(amount: U256, shift_bits: usize) -> Option<U256> {
 /// the shift, and a readback that is not a slice means the slot is not the
 /// balance. Returns the left-shift in bits (0 for an unpacked balance).
 fn detect_shift(observed: U256) -> Option<usize> {
-    // A zero readback means our write never reached `balanceOf` (wrong slot).
-    if observed == U256::ZERO {
-        return None;
-    }
     // Strip leading zero bytes to get the field's bytes. The field is a slice of
     // the all-non-zero sentinel, so its top byte is non-zero and trimming never
-    // eats into it.
+    // eats into it. An all-zero readback has no non-zero byte (the write never
+    // reached `balanceOf`), so `position` returns None and we bail.
     let bytes = observed.to_be_bytes::<32>();
     let needle = &bytes[bytes.iter().position(|&b| b != 0)?..];
     let start = SENTINEL.windows(needle.len()).position(|w| w == needle)?;
