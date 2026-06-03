@@ -32,16 +32,8 @@ const BALANCE_SLOT_SEED: &[u8] = &[0x87, 0xa2, 0x11, 0xa2];
 /// the slot is not the balance. The full 32 bytes cover any byte-aligned shift,
 /// including narrow fields: a `uint96` balance (UNI, COMP) reads back as the
 /// low-byte suffix and resolves to `shift_bits == 0`.
-const SENTINEL: [u8; 32] = [
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
-];
-
-/// Small probe for the `AaveV3AToken` path. aTokens are never packed and store
-/// their scaled balance in a `uint128` after ray-scaling, so the full
-/// [`SENTINEL`] would overflow the ray multiply and not fit the slot. We probe
-/// with this small value and check the round-trip instead.
-const AAVE_PROBE: U256 = U256::from_limbs([0x0102_0304_0506_0708, 0, 0, 0]);
+const SENTINEL: [u8; 32] =
+    alloy_primitives::hex!("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
 
 /// Used by Detector when there are multiple slots to increase the chances we
 /// find the correct storage slot quickly.
@@ -193,9 +185,17 @@ impl Strategy {
             }
         };
 
-        // Pack the balance into its slot position. `None` means it doesn't fit
-        // at this bit offset, so there's nothing to override.
-        let Some(value) = packed_value(*amount, shift_bits) else {
+        // Pack the balance into its slot position. `checked_shl` returns `None`
+        // only when the balance is too large to fit above the lower-order
+        // fields, which a real balance never is, so log it if it ever happens.
+        let Some(value) = amount.checked_shl(shift_bits) else {
+            tracing::warn!(
+                ?target_contract,
+                ?holder,
+                %amount,
+                shift_bits,
+                "balance does not fit packed slot, skipping override",
+            );
             return AddressMap::default();
         };
 
@@ -489,14 +489,14 @@ impl Detector {
         Err(DetectionError::NotFound)
     }
 
-    /// Verifies that a strategy controls the balance by writing a probe to its
-    /// slot and reading `balanceOf` back, returning the confirmed strategy.
+    /// Verifies that a strategy controls the balance by writing a sentinel to
+    /// its slot and reading `balanceOf` back, returning the confirmed strategy.
     ///
     /// Generic strategies use the full [`SENTINEL`]: `detect_shift` finds the
     /// readback as a byte-slice of it, which verifies the slot and recovers the
     /// packing shift (0 when unpacked) from the same readback, no extra RPC.
     /// The `AaveV3AToken` variant never packs and stores its scaled balance
-    /// in a `uint128`, so it uses the small [`AAVE_PROBE`] and accepts a
+    /// in a `uint128`, so it uses the small [`aave::SENTINEL`] and accepts a
     /// round-trip within 1 wei of Aave's ray rounding.
     async fn verify_strategy(
         &self,
@@ -505,13 +505,13 @@ impl Detector {
         strategy: Strategy,
     ) -> Result<Strategy, DetectionError<TransportErrorKind>> {
         let is_aave = matches!(strategy, Strategy::AaveV3AToken { .. });
-        let probe = if is_aave {
-            AAVE_PROBE
+        let sentinel = if is_aave {
+            U256::from_be_bytes(aave::SENTINEL)
         } else {
             U256::from_be_bytes(SENTINEL)
         };
 
-        let overrides = strategy.state_override(&holder, &probe).await;
+        let overrides = strategy.state_override(&holder, &sentinel).await;
         if overrides.is_empty() {
             return Err(DetectionError::NotFound);
         }
@@ -530,7 +530,7 @@ impl Detector {
         if is_aave {
             // Aave's ray-div / ray-mul round-trip is not identity, so allow 1
             // wei of difference.
-            return (balance.abs_diff(probe) <= U256::ONE)
+            return (balance.abs_diff(sentinel) <= U256::ONE)
                 .then_some(strategy)
                 .ok_or(DetectionError::NotFound);
         }
@@ -554,14 +554,6 @@ impl std::fmt::Debug for Detector {
     }
 }
 
-/// Left-shifts `amount` into a packed balance's bit position. Returns `None` if
-/// the balance doesn't fit at this offset. Unlike `u64::checked_shl`, alloy's
-/// `checked_shl` returns `None` exactly when the shifted-out bits are non-zero,
-/// which is precisely the "doesn't fit above the lower-order fields" check.
-fn packed_value(amount: U256, shift_bits: usize) -> Option<U256> {
-    amount.checked_shl(shift_bits)
-}
-
 /// Recovers the packing shift by locating the `balanceOf` readback as a
 /// contiguous byte-slice of [`SENTINEL`]. The sentinel's bytes are distinct and
 /// non-zero, so the slice is unique: the number of bytes sitting below it is
@@ -575,26 +567,12 @@ fn detect_shift(observed: U256) -> Option<usize> {
     let bytes = observed.to_be_bytes::<32>();
     let needle = &bytes[bytes.iter().position(|&b| b != 0)?..];
     let start = SENTINEL.windows(needle.len()).position(|w| w == needle)?;
-    Some((SENTINEL.len() - start - needle.len()) * 8)
+    Some(SENTINEL.len().checked_sub(start + needle.len())? * 8)
 }
 
 #[cfg(test)]
 mod tests {
     use {super::*, alloy_primitives::address};
-
-    #[test]
-    fn packed_value_shifts_and_guards_overflow() {
-        assert_eq!(
-            packed_value(U256::from(1000u64), 0),
-            Some(U256::from(1000u64))
-        );
-        assert_eq!(
-            packed_value(U256::from(1000u64), 8),
-            Some(U256::from(1000u64) << 8usize),
-        );
-        // A balance that no longer fits once shifted is rejected.
-        assert_eq!(packed_value(U256::MAX, 8), None);
-    }
 
     #[test]
     fn detect_shift_locates_packed_balance() {
@@ -609,6 +587,10 @@ mod tests {
         // suffix, still resolve to shift 0.
         let mask96 = (U256::from(1u64) << 96) - U256::from(1u64);
         assert_eq!(detect_shift(sentinel & mask96), Some(0));
+        // Middle field: a 96-bit balance at bit offset 8 (lower-order fields
+        // below, more above). balanceOf reads it shifted down to the low bits,
+        // so the readback is `(slot >> 8) & mask`, recovered as shift 8.
+        assert_eq!(detect_shift((sentinel >> 8usize) & mask96), Some(8));
         // A zero readback means the write never reached `balanceOf`.
         assert_eq!(detect_shift(U256::ZERO), None);
         // Unrelated value is not a byte-slice of the sentinel.
