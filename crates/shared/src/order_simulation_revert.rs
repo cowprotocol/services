@@ -1,12 +1,7 @@
 //! Classification of order-simulation revert reasons.
 //!
-//! The simulator runs the full sell amount, so it reverts on funding shortfalls
-//! the protocol tolerates: CoW lets users place orders before they fund them.
-//! We bucket each revert into `Funding` or `Other` to measure that split. The
-//! classification labels logs and metrics. It does not gate orders.
-//!
-//! `Other` is the catch-all we alert on, so an unrecognized funding pattern
-//! surfaces as `Other` and we add it to the funding set.
+//! The result labels logs and metrics so we can measure why simulations revert.
+//! It does not gate orders.
 
 use {regex::Regex, std::sync::OnceLock};
 
@@ -20,7 +15,8 @@ pub enum RevertClass {
     /// tell those apart you need the revert's position in the call tree, which
     /// the reason string does not carry.
     Funding,
-    /// A revert we do not recognize as funding. We alert on these.
+    /// A revert we do not recognize as funding. We alert on these to catch
+    /// funding patterns we are missing and add them to the funding set.
     Other,
 }
 
