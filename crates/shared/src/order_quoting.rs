@@ -484,43 +484,13 @@ impl OrderQuoter {
                 .map_err(|err| (EstimatorKind::NativeBuy, err).into()),
         )?;
 
-        let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
-            OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee { value: sell_amount },
-            }
-            | OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: sell_amount },
-            } => (sell_amount.get(), trade_estimate.out_amount),
-            OrderQuoteSide::Buy {
-                buy_amount_after_fee: buy_amount,
-            } => (trade_estimate.out_amount, buy_amount.get()),
-        };
-
-        let fee_parameters = FeeParameters {
-            gas_amount: trade_estimate.gas as f64,
-            gas_price: effective_gas_price as f64,
+        let quote = assemble_quote_data(
+            parameters,
+            &trade_estimate,
+            effective_gas_price,
             sell_token_price,
-        };
-
-        let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
-        let quote = QuoteData {
-            sell_token: parameters.sell_token,
-            buy_token: parameters.buy_token,
-            quoted_sell_amount,
-            quoted_buy_amount,
-            fee_parameters,
-            kind: trade_query.kind,
             expiration,
-            quote_kind,
-            solver: trade_estimate.solver,
-            verified: trade_estimate.verified,
-            metadata: QuoteMetadataV1 {
-                interactions: trade_estimate.execution.interactions,
-                pre_interactions: trade_estimate.execution.pre_interactions,
-                jit_orders: trade_estimate.execution.jit_orders,
-            }
-            .into(),
-        };
+        );
 
         Ok(quote)
     }
@@ -656,6 +626,55 @@ pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind 
             onchain_order: true,
         } => QuoteKind::PreSignOnchainOrder,
         _ => QuoteKind::Standard,
+    }
+}
+
+/// Assembles a `QuoteData` from a completed price estimate and its inputs.
+///
+/// `expiration` must be computed by the caller (it depends on `&self` state in
+/// `OrderQuoter`).
+fn assemble_quote_data(
+    parameters: &QuoteParameters,
+    estimate: &price_estimation::Estimate,
+    effective_gas_price: u128,
+    sell_token_price: f64,
+    expiration: DateTime<Utc>,
+) -> QuoteData {
+    let (quoted_sell_amount, quoted_buy_amount, kind) = match &parameters.side {
+        OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee { value: sell_amount },
+        }
+        | OrderQuoteSide::Sell {
+            sell_amount: SellAmount::AfterFee { value: sell_amount },
+        } => (sell_amount.get(), estimate.out_amount, OrderKind::Sell),
+        OrderQuoteSide::Buy {
+            buy_amount_after_fee: buy_amount,
+        } => (estimate.out_amount, buy_amount.get(), OrderKind::Buy),
+    };
+
+    let fee_parameters = FeeParameters {
+        gas_amount: estimate.gas as f64,
+        gas_price: effective_gas_price as f64,
+        sell_token_price,
+    };
+
+    QuoteData {
+        sell_token: parameters.sell_token,
+        buy_token: parameters.buy_token,
+        quoted_sell_amount,
+        quoted_buy_amount,
+        fee_parameters,
+        kind,
+        expiration,
+        quote_kind: quote_kind_from_signing_scheme(&parameters.signing_scheme),
+        solver: estimate.solver,
+        verified: estimate.verified,
+        metadata: QuoteMetadataV1 {
+            interactions: estimate.execution.interactions.clone(),
+            pre_interactions: estimate.execution.pre_interactions.clone(),
+            jit_orders: estimate.execution.jit_orders.clone(),
+        }
+        .into(),
     }
 }
 
@@ -1766,5 +1785,83 @@ mod tests {
                 assert_eq!(v1.jit_orders.len(), 2);
             }
         }
+    }
+
+    #[test]
+    fn assemble_quote_data_sell_order() {
+        let expiration = Utc::now() + chrono::Duration::seconds(60);
+        let parameters = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: NonZeroU256::try_from(100).unwrap(),
+                },
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            timeout: None,
+        };
+        let estimate = price_estimation::Estimate {
+            out_amount: AlloyU256::from(42),
+            gas: 3,
+            solver: Address::repeat_byte(7),
+            verified: true,
+            execution: Default::default(),
+        };
+
+        let data = assemble_quote_data(&parameters, &estimate, 2, 0.5, expiration);
+
+        assert_eq!(data.sell_token, Address::repeat_byte(1));
+        assert_eq!(data.buy_token, Address::repeat_byte(2));
+        assert_eq!(data.quoted_sell_amount, AlloyU256::from(100));
+        assert_eq!(data.quoted_buy_amount, AlloyU256::from(42));
+        assert_eq!(data.kind, OrderKind::Sell);
+        assert_eq!(data.expiration, expiration);
+        assert_eq!(data.quote_kind, QuoteKind::Standard);
+        assert_eq!(data.solver, Address::repeat_byte(7));
+        assert!(data.verified);
+        assert_eq!(
+            data.fee_parameters,
+            FeeParameters {
+                gas_amount: 3.,
+                gas_price: 2.,
+                sell_token_price: 0.5,
+            }
+        );
+        assert_eq!(data.metadata, QuoteMetadata::default());
+    }
+
+    #[test]
+    fn assemble_quote_data_buy_order() {
+        // Buy orders flip the assignment: the estimate's out_amount is the
+        // quoted sell amount, and the requested buy amount is fixed.
+        let expiration = Utc::now() + chrono::Duration::seconds(60);
+        let parameters = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Buy {
+                buy_amount_after_fee: NonZeroU256::try_from(100).unwrap(),
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            timeout: None,
+        };
+        let estimate = price_estimation::Estimate {
+            out_amount: AlloyU256::from(42),
+            gas: 3,
+            solver: Address::repeat_byte(7),
+            verified: false,
+            execution: Default::default(),
+        };
+
+        let data = assemble_quote_data(&parameters, &estimate, 2, 0.5, expiration);
+
+        assert_eq!(data.quoted_sell_amount, AlloyU256::from(42));
+        assert_eq!(data.quoted_buy_amount, AlloyU256::from(100));
+        assert_eq!(data.kind, OrderKind::Buy);
+        assert!(!data.verified);
     }
 }
