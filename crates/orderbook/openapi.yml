@@ -509,6 +509,45 @@ paths:
           description: Too many order quotes.
         "500":
           description: Unexpected error quoting an order.
+  /api/v1/quote/stream:
+    post:
+      operationId: quoteStream
+      summary: Stream quotes from individual solvers as they arrive.
+      description: >
+        Accepts the same request body as `POST /api/v1/quote`. Instead of
+        waiting for all solvers and returning the single best quote, this
+        endpoint opens a Server-Sent Events stream and emits one event per
+        solver as each result arrives. The stream closes when the quote timeout
+        elapses or all solvers have responded. Each event's `id` is always
+        `null`. Clients can use this to show progressive quote updates in real
+        time.
+      requestBody:
+        description: The order parameters to compute quotes for.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderQuoteRequest"
+      responses:
+        "200":
+          description: >
+            A Server-Sent Events stream. Each event's `data` field is a JSON
+            object matching `OrderQuoteResponse`. Events arrive one per solver
+            as results become available.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/OrderQuoteResponse"
+        "400":
+          description: Error quoting order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
+        "429":
+          description: Too many order quotes.
+        "500":
+          description: Unexpected error quoting an order.
   "/api/v2/solver_competition/{auction_id}":
     get:
       operationId: getSolverCompetitionByAuctionIdV2
