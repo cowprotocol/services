@@ -854,8 +854,9 @@ mod tests {
         Address,
         U256 as AlloyU256,
         alloy::eips::eip1559::Eip1559Estimation,
+        async_stream::stream,
         chrono::Utc,
-        futures::FutureExt,
+        futures::{FutureExt, StreamExt},
         gas_price_estimation::FakeGasPriceEstimator,
         mockall::{Sequence, predicate::eq},
         model::time,
@@ -2035,8 +2036,6 @@ mod tests {
 
     #[tokio::test]
     async fn streaming_two_good_estimates_yields_two_quotes() {
-        use {async_stream::stream, futures::StreamExt};
-
         let params = default_streaming_params();
         let gas_price = alloy::eips::eip1559::Eip1559Estimation {
             max_fee_per_gas: 1,
@@ -2092,8 +2091,6 @@ mod tests {
 
     #[tokio::test]
     async fn streaming_drops_zero_out_amount_estimate() {
-        use {async_stream::stream, futures::StreamExt};
-
         let params = default_streaming_params();
         let gas_price = alloy::eips::eip1559::Eip1559Estimation {
             max_fee_per_gas: 1,
@@ -2167,5 +2164,184 @@ mod tests {
             matches!(result, Err(CalculateQuoteError::Other(_))),
             "expected Other error when streaming estimator not configured",
         );
+    }
+
+    #[tokio::test]
+    async fn streaming_drops_zero_gas_estimate() {
+        let params = default_streaming_params();
+        let gas_price = alloy::eips::eip1559::Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
+        };
+        let now = Utc::now();
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        setup_native_price_mock(
+            &mut native_price_estimator,
+            params.sell_token,
+            params.buy_token,
+        );
+
+        let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+        streaming_estimator
+            .expect_estimate_stream()
+            .returning(|_| {
+                stream! {
+                    yield Ok(price_estimation::Estimate {
+                        out_amount: AlloyU256::from(400),
+                        gas: 10,
+                        solver: Address::repeat_byte(1),
+                        verified: false,
+                        execution: Default::default(),
+                    });
+                    // gas == 0 with nonzero out_amount - must be dropped silently
+                    yield Ok(price_estimation::Estimate {
+                        out_amount: AlloyU256::from(400),
+                        gas: 0,
+                        solver: Address::repeat_byte(2),
+                        verified: false,
+                        execution: Default::default(),
+                    });
+                }
+                .boxed()
+            });
+
+        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let mut stream = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+
+        let q1 = stream.next().await.expect("first quote").expect("ok");
+        assert!(stream.next().await.is_none(), "gas==0 estimate must be dropped");
+
+        assert_eq!(q1.data.quoted_buy_amount, AlloyU256::from(400));
+    }
+
+    #[tokio::test]
+    async fn streaming_before_fee_scales_sell_and_buy_amounts() {
+        // sell_before_fee = 1000, gas = 10, gas_price = 1, sell_token_price = 1.0
+        // fee = ceil((10 * 1) / 1.0) = 10
+        // sell_amount = 1000 - 10 = 990
+        // buy_amount = 500 * 990 / 1000 = 495
+        let params = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: number::nonzero::NonZeroU256::try_from(1000).unwrap(),
+                },
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            timeout: None,
+        };
+        let gas_price = alloy::eips::eip1559::Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
+        };
+        let now = Utc::now();
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        setup_native_price_mock(
+            &mut native_price_estimator,
+            params.sell_token,
+            params.buy_token,
+        );
+
+        let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+        streaming_estimator
+            .expect_estimate_stream()
+            .returning(|_| {
+                stream! {
+                    yield Ok(price_estimation::Estimate {
+                        out_amount: AlloyU256::from(500),
+                        gas: 10,
+                        solver: Address::repeat_byte(1),
+                        verified: false,
+                        execution: Default::default(),
+                    });
+                }
+                .boxed()
+            });
+
+        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+
+        let q = s.next().await.expect("quote").expect("ok");
+        assert!(s.next().await.is_none());
+
+        assert_eq!(q.sell_amount, AlloyU256::from(990));
+        assert_eq!(q.buy_amount, AlloyU256::from(495));
+        assert_eq!(q.fee_amount, AlloyU256::from(10));
+    }
+
+    #[tokio::test]
+    async fn streaming_before_fee_fee_exceeds_sell_amount_yields_error() {
+        // sell_before_fee = 100, gas = 2000, gas_price = 1, sell_token_price = 1.0
+        // fee = ceil((2000 * 1) / 1.0) = 2000
+        // 100 - 2000 saturates to 0 -> SellAmountDoesNotCoverFee
+        let params = QuoteParameters {
+            sell_token: Address::repeat_byte(1),
+            buy_token: Address::repeat_byte(2),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: number::nonzero::NonZeroU256::try_from(100).unwrap(),
+                },
+            },
+            signing_scheme: QuoteSigningScheme::Eip712,
+            verification: Default::default(),
+            additional_gas: 0,
+            timeout: None,
+        };
+        let gas_price = alloy::eips::eip1559::Eip1559Estimation {
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 0,
+        };
+        let now = Utc::now();
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        setup_native_price_mock(
+            &mut native_price_estimator,
+            params.sell_token,
+            params.buy_token,
+        );
+
+        let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
+        streaming_estimator
+            .expect_estimate_stream()
+            .returning(|_| {
+                stream! {
+                    yield Ok(price_estimation::Estimate {
+                        out_amount: AlloyU256::from(500),
+                        gas: 2000,
+                        solver: Address::repeat_byte(1),
+                        verified: false,
+                        execution: Default::default(),
+                    });
+                }
+                .boxed()
+            });
+
+        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let mut s = quoter
+            .calculate_quote_stream(params)
+            .await
+            .expect("stream setup must succeed");
+
+        let err = s.next().await.expect("error item").unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount }
+                    if fee_amount == U256::from(2000)
+            ),
+            "expected SellAmountDoesNotCoverFee, got {err:?}",
+        );
+        assert!(s.next().await.is_none());
     }
 }
