@@ -1,9 +1,9 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::PriceEstimationError,
+    crate::{PriceEstimateResult, PriceEstimating, PriceEstimationError, Query, StreamingPriceEstimating},
     futures::{
         future::{BoxFuture, FutureExt},
-        stream::{FuturesUnordered, StreamExt},
+        stream::{BoxStream, FuturesUnordered, StreamExt},
     },
     gas_price_estimation::GasPriceEstimating,
     model::order::OrderKind,
@@ -168,6 +168,28 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     }
 }
 
+impl CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    /// Runs every estimator concurrently across all stages and yields each
+    /// result as it arrives. No ranking, no early return — the caller stops
+    /// by dropping the stream.
+    fn estimate_all<'a>(&'a self, query: Arc<Query>) -> BoxStream<'a, PriceEstimateResult> {
+        let futures: FuturesUnordered<BoxFuture<'a, PriceEstimateResult>> =
+            FuturesUnordered::new();
+        for stage in &self.stages {
+            for (_name, estimator) in stage {
+                futures.push(estimator.estimate(query.clone()));
+            }
+        }
+        futures.boxed()
+    }
+}
+
+impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    fn estimate_stream<'a>(&'a self, query: Arc<Query>) -> BoxStream<'a, PriceEstimateResult> {
+        self.estimate_all(query)
+    }
+}
+
 struct Context<'a, ESTIMATOR, QUERY> {
     /// the estimator that is supposed to compute a price
     estimator: &'a ESTIMATOR,
@@ -253,11 +275,13 @@ mod tests {
             HEALTHY_PRICE_ESTIMATION_TIME,
             MockPriceEstimating,
             PriceEstimating,
+            PriceEstimationError,
             Query,
+            StreamingPriceEstimating,
         },
         alloy::primitives::{Address, U256},
         anyhow::anyhow,
-        futures::channel::oneshot::channel,
+        futures::{StreamExt, channel::oneshot::channel},
         model::order::OrderKind,
         number::nonzero::NonZeroU256,
         std::time::Duration,
@@ -596,6 +620,111 @@ mod tests {
         };
 
         racing.estimate(query).await.unwrap();
+    }
+
+    fn make_query() -> Arc<Query> {
+        Arc::new(Query {
+            verification: Default::default(),
+            sell_token: Address::with_last_byte(0),
+            buy_token: Address::with_last_byte(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Sell,
+            block_dependent: false,
+            timeout: HEALTHY_PRICE_ESTIMATION_TIME,
+        })
+    }
+
+    #[tokio::test]
+    async fn estimate_stream_yields_all_results() {
+        let fast = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    Ok(Estimate {
+                        out_amount: U256::from(1u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let slow = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    sleep(Duration::from_millis(10)).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(2u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> =
+            CompetitionEstimator::new(
+                vec![vec![
+                    ("fast".to_owned(), Arc::new(fast)),
+                    ("slow".to_owned(), Arc::new(slow)),
+                ]],
+                PriceRanking::MaxOutAmount,
+            );
+
+        let results: Vec<_> = estimator
+            .estimate_stream(make_query())
+            .collect()
+            .await;
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.is_ok()));
+    }
+
+    #[tokio::test]
+    async fn estimate_stream_passes_through_errors() {
+        let ok = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    Ok(Estimate {
+                        out_amount: U256::from(1u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let err = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async { Err(PriceEstimationError::NoLiquidity) }.boxed()
+            });
+            m
+        };
+
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> =
+            CompetitionEstimator::new(
+                vec![vec![
+                    ("ok".to_owned(), Arc::new(ok)),
+                    ("err".to_owned(), Arc::new(err)),
+                ]],
+                PriceRanking::MaxOutAmount,
+            );
+
+        let results: Vec<_> = estimator
+            .estimate_stream(make_query())
+            .collect()
+            .await;
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+        assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1);
     }
 
     #[test]
