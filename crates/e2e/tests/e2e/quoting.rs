@@ -11,7 +11,13 @@ use {
     futures::FutureExt,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
-        quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        quote::{
+            OrderQuoteRequest,
+            OrderQuoteResponse,
+            OrderQuoteSide,
+            QuoteSigningScheme,
+            SellAmount,
+        },
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, units::EthUnit},

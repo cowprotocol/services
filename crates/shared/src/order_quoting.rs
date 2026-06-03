@@ -449,7 +449,10 @@ impl OrderQuoter {
         }
     }
 
-    pub fn with_streaming_estimator(mut self, estimator: Arc<dyn StreamingPriceEstimating>) -> Self {
+    pub fn with_streaming_estimator(
+        mut self,
+        estimator: Arc<dyn StreamingPriceEstimating>,
+    ) -> Self {
         self.streaming_price_estimator = Some(estimator);
         self
     }
@@ -609,7 +612,10 @@ pub trait StreamingQuoting: Send + Sync {
     async fn calculate_quote_stream(
         &self,
         parameters: QuoteParameters,
-    ) -> Result<futures::stream::BoxStream<'static, Result<Quote, CalculateQuoteError>>, CalculateQuoteError>;
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<Quote, CalculateQuoteError>>,
+        CalculateQuoteError,
+    >;
 }
 
 #[async_trait::async_trait]
@@ -617,16 +623,16 @@ impl StreamingQuoting for OrderQuoter {
     async fn calculate_quote_stream(
         &self,
         parameters: QuoteParameters,
-    ) -> Result<futures::stream::BoxStream<'static, Result<Quote, CalculateQuoteError>>, CalculateQuoteError>
-    {
-        let estimator = self
-            .streaming_price_estimator
-            .clone()
-            .ok_or_else(|| CalculateQuoteError::Other(anyhow::anyhow!("streaming estimator not configured")))?;
+    ) -> Result<
+        futures::stream::BoxStream<'static, Result<Quote, CalculateQuoteError>>,
+        CalculateQuoteError,
+    > {
+        let estimator = self.streaming_price_estimator.clone().ok_or_else(|| {
+            CalculateQuoteError::Other(anyhow::anyhow!("streaming estimator not configured"))
+        })?;
 
-        let trade_query = Arc::new(
-            parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout),
-        );
+        let trade_query =
+            Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
 
         let (effective_gas_price, sell_token_price, _buy_token_price) = futures::try_join!(
             self.gas_estimator
@@ -2051,29 +2057,28 @@ mod tests {
         );
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
-        streaming_estimator
-            .expect_estimate_stream()
-            .returning(|_| {
-                stream! {
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(500),
-                        gas: 10,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(600),
-                        gas: 20,
-                        solver: Address::repeat_byte(2),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                }
-                .boxed()
-            });
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream! {
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(500),
+                    gas: 10,
+                    solver: Address::repeat_byte(1),
+                    verified: false,
+                    execution: Default::default(),
+                });
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(600),
+                    gas: 20,
+                    solver: Address::repeat_byte(2),
+                    verified: false,
+                    execution: Default::default(),
+                });
+            }
+            .boxed()
+        });
 
-        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
         let mut stream = quoter
             .calculate_quote_stream(params)
             .await
@@ -2106,37 +2111,39 @@ mod tests {
         );
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
-        streaming_estimator
-            .expect_estimate_stream()
-            .returning(|_| {
-                stream! {
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(400),
-                        gas: 10,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                    // zero out_amount - must be dropped silently
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::ZERO,
-                        gas: 10,
-                        solver: Address::repeat_byte(2),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                }
-                .boxed()
-            });
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream! {
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(400),
+                    gas: 10,
+                    solver: Address::repeat_byte(1),
+                    verified: false,
+                    execution: Default::default(),
+                });
+                // zero out_amount - must be dropped silently
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::ZERO,
+                    gas: 10,
+                    solver: Address::repeat_byte(2),
+                    verified: false,
+                    execution: Default::default(),
+                });
+            }
+            .boxed()
+        });
 
-        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
         let mut stream = quoter
             .calculate_quote_stream(params)
             .await
             .expect("stream setup must succeed");
 
         let q1 = stream.next().await.expect("first quote").expect("ok");
-        assert!(stream.next().await.is_none(), "second estimate must be dropped");
+        assert!(
+            stream.next().await.is_none(),
+            "second estimate must be dropped"
+        );
 
         assert_eq!(q1.data.quoted_buy_amount, AlloyU256::from(400));
     }
@@ -2183,37 +2190,39 @@ mod tests {
         );
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
-        streaming_estimator
-            .expect_estimate_stream()
-            .returning(|_| {
-                stream! {
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(400),
-                        gas: 10,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                    // gas == 0 with nonzero out_amount - must be dropped silently
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(400),
-                        gas: 0,
-                        solver: Address::repeat_byte(2),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                }
-                .boxed()
-            });
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream! {
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(400),
+                    gas: 10,
+                    solver: Address::repeat_byte(1),
+                    verified: false,
+                    execution: Default::default(),
+                });
+                // gas == 0 with nonzero out_amount - must be dropped silently
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(400),
+                    gas: 0,
+                    solver: Address::repeat_byte(2),
+                    verified: false,
+                    execution: Default::default(),
+                });
+            }
+            .boxed()
+        });
 
-        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
         let mut stream = quoter
             .calculate_quote_stream(params)
             .await
             .expect("stream setup must succeed");
 
         let q1 = stream.next().await.expect("first quote").expect("ok");
-        assert!(stream.next().await.is_none(), "gas==0 estimate must be dropped");
+        assert!(
+            stream.next().await.is_none(),
+            "gas==0 estimate must be dropped"
+        );
 
         assert_eq!(q1.data.quoted_buy_amount, AlloyU256::from(400));
     }
@@ -2251,22 +2260,21 @@ mod tests {
         );
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
-        streaming_estimator
-            .expect_estimate_stream()
-            .returning(|_| {
-                stream! {
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(500),
-                        gas: 10,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                }
-                .boxed()
-            });
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream! {
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(500),
+                    gas: 10,
+                    solver: Address::repeat_byte(1),
+                    verified: false,
+                    execution: Default::default(),
+                });
+            }
+            .boxed()
+        });
 
-        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
         let mut s = quoter
             .calculate_quote_stream(params)
             .await
@@ -2312,22 +2320,21 @@ mod tests {
         );
 
         let mut streaming_estimator = price_estimation::MockStreamingPriceEstimating::new();
-        streaming_estimator
-            .expect_estimate_stream()
-            .returning(|_| {
-                stream! {
-                    yield Ok(price_estimation::Estimate {
-                        out_amount: AlloyU256::from(500),
-                        gas: 2000,
-                        solver: Address::repeat_byte(1),
-                        verified: false,
-                        execution: Default::default(),
-                    });
-                }
-                .boxed()
-            });
+        streaming_estimator.expect_estimate_stream().returning(|_| {
+            stream! {
+                yield Ok(price_estimation::Estimate {
+                    out_amount: AlloyU256::from(500),
+                    gas: 2000,
+                    solver: Address::repeat_byte(1),
+                    verified: false,
+                    execution: Default::default(),
+                });
+            }
+            .boxed()
+        });
 
-        let quoter = make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
+        let quoter =
+            make_streaming_quoter(streaming_estimator, native_price_estimator, gas_price, now);
         let mut s = quoter
             .calculate_quote_stream(params)
             .await

@@ -80,24 +80,23 @@ impl SanitizedPriceEstimator {
     /// to be applied to the resulting estimate.
     fn adjust_query(&self, query: &Query) -> (Query, Option<Modification>) {
         let mut adjusted_query = Query::clone(query);
-        let modification = if query.sell_token != self.native_token
-            && query.buy_token == BUY_ETH_ADDRESS
-        {
-            tracing::debug!(?query, "estimate price for buying native asset");
-            adjusted_query.buy_token = self.native_token;
-            Some(Modification::AddGas(GAS_PER_WETH_UNWRAP))
-        } else if query.sell_token == BUY_ETH_ADDRESS && query.buy_token != self.native_token {
-            tracing::debug!(?query, "estimate price for selling native asset");
-            adjusted_query.sell_token = self.native_token;
-            Some(Modification::AddGas(GAS_PER_WETH_WRAP))
-        } else {
-            None
-        };
+        let modification =
+            if query.sell_token != self.native_token && query.buy_token == BUY_ETH_ADDRESS {
+                tracing::debug!(?query, "estimate price for buying native asset");
+                adjusted_query.buy_token = self.native_token;
+                Some(Modification::AddGas(GAS_PER_WETH_UNWRAP))
+            } else if query.sell_token == BUY_ETH_ADDRESS && query.buy_token != self.native_token {
+                tracing::debug!(?query, "estimate price for selling native asset");
+                adjusted_query.sell_token = self.native_token;
+                Some(Modification::AddGas(GAS_PER_WETH_WRAP))
+            } else {
+                None
+            };
         (adjusted_query, modification)
     }
 
-    /// Applies the gas adjustment computed by [`Self::adjust_query`] to a single
-    /// estimate returned by the inner estimator.
+    /// Applies the gas adjustment computed by [`Self::adjust_query`] to a
+    /// single estimate returned by the inner estimator.
     fn apply_modification(
         modification: &Option<Modification>,
         mut estimate: Estimate,
@@ -134,7 +133,8 @@ impl StreamingPriceEstimating for OneShotStream {
 impl SanitizedPriceEstimator {
     /// Handles the deny-list check and the trivial 1:1 cases shared by
     /// `estimate` and `estimate_stream`. Returns `Some(result)` when the query
-    /// can be answered without consulting the inner estimator, `None` otherwise.
+    /// can be answered without consulting the inner estimator, `None`
+    /// otherwise.
     fn try_trivial_estimate(&self, query: &Query) -> Option<PriceEstimateResult> {
         if let Err(err) = self.handle_deny_listed_tokens(query) {
             return Some(Err(err));
@@ -740,10 +740,10 @@ mod tests {
             .await;
 
         assert_eq!(results.len(), 2);
-        let gases: Vec<_> = results
-            .into_iter()
-            .map(|r| r.unwrap().gas)
-            .collect();
-        assert_eq!(gases, vec![100 + GAS_PER_WETH_WRAP, 200 + GAS_PER_WETH_WRAP]);
+        let gases: Vec<_> = results.into_iter().map(|r| r.unwrap().gas).collect();
+        assert_eq!(
+            gases,
+            vec![100 + GAS_PER_WETH_WRAP, 200 + GAS_PER_WETH_WRAP]
+        );
     }
 }

@@ -151,14 +151,11 @@ impl QuoteHandler {
     {
         let params = self.build_quote_params(request).await?;
 
-        let streaming = self
-            .streaming_quoter
-            .clone()
-            .ok_or_else(|| {
-                OrderQuoteError::CalculateQuote(
-                    anyhow::anyhow!("streaming quoter not configured").into(),
-                )
-            })?;
+        let streaming = self.streaming_quoter.clone().ok_or_else(|| {
+            OrderQuoteError::CalculateQuote(
+                anyhow::anyhow!("streaming quoter not configured").into(),
+            )
+        })?;
 
         let inner = streaming.calculate_quote_stream(params).await?;
 
