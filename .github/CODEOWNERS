@@ -1,5 +1,2 @@
-# GitHub Actions workflows
-.github/workflows/ @cowprotocol/devops
-
 * @cowprotocol/backend
-
+.github/workflows/ @cowprotocol/devops @cowprotocol/backend
