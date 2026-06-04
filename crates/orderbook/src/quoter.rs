@@ -110,7 +110,7 @@ impl QuoteHandler {
         &self,
         request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
-        let params = self.build_quote_params(request).await?;
+        let (params, valid_to) = self.build_quote_params(request).await?;
 
         let quote = match request.price_quality {
             PriceQuality::Optimal | PriceQuality::Verified => {
@@ -139,7 +139,7 @@ impl QuoteHandler {
         )
         .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
 
-        let response = build_order_quote_response(request, &quote, &adjusted, quote.id)?;
+        let response = build_order_quote_response(request, &quote, &adjusted, quote.id, valid_to)?;
         tracing::debug!(?response, "finished computing quote");
         Ok(response)
     }
@@ -149,7 +149,7 @@ impl QuoteHandler {
         request: &OrderQuoteRequest,
     ) -> Result<BoxStream<'static, Result<OrderQuoteResponse, OrderQuoteError>>, OrderQuoteError>
     {
-        let params = self.build_quote_params(request).await?;
+        let (params, valid_to) = self.build_quote_params(request).await?;
 
         let streaming = self.streaming_quoter.clone().ok_or_else(|| {
             OrderQuoteError::CalculateQuote(
@@ -185,7 +185,8 @@ impl QuoteHandler {
                                 continue;
                             }
                         };
-                        match build_order_quote_response(&request, &quote, &adjusted, None) {
+                        match build_order_quote_response(&request, &quote, &adjusted, None, valid_to)
+                        {
                             Ok(resp) => yield Ok(resp),
                             Err(err) => yield Err(err),
                         }
@@ -201,7 +202,7 @@ impl QuoteHandler {
     async fn build_quote_params(
         &self,
         request: &OrderQuoteRequest,
-    ) -> Result<QuoteParameters, OrderQuoteError> {
+    ) -> Result<(QuoteParameters, u32), OrderQuoteError> {
         let (sell_token_info, buy_token_info) = join!(
             self.token_info_fetcher.get_token_info(request.sell_token),
             self.token_info_fetcher.get_token_info(request.buy_token),
@@ -225,21 +226,27 @@ impl QuoteHandler {
             .validate_app_data(&request.app_data, &full_app_data_override)?;
 
         let order = PreOrderData::from(request);
+        // Capture valid_to once so the value validated here is the exact value
+        // returned in the response (and, for streaming, shared by all events).
+        let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
 
-        Ok(QuoteParameters {
-            sell_token: request.sell_token,
-            buy_token: request.buy_token,
-            side: request.side,
-            verification: Verification {
-                from: request.from,
-                receiver: request.receiver.unwrap_or(request.from),
-                app_data: Arc::new(app_data.inner.document.clone()),
+        Ok((
+            QuoteParameters {
+                sell_token: request.sell_token,
+                buy_token: request.buy_token,
+                side: request.side,
+                verification: Verification {
+                    from: request.from,
+                    receiver: request.receiver.unwrap_or(request.from),
+                    app_data: Arc::new(app_data.inner.document.clone()),
+                },
+                signing_scheme: request.signing_scheme,
+                additional_gas: app_data.inner.protocol.hooks.gas_limit(),
+                timeout: request.timeout,
             },
-            signing_scheme: request.signing_scheme,
-            additional_gas: app_data.inner.protocol.hooks.gas_limit(),
-            timeout: request.timeout,
-        })
+            valid_to,
+        ))
     }
 }
 
@@ -248,8 +255,8 @@ fn build_order_quote_response(
     quote: &Quote,
     adjusted: &AdjustedQuoteData,
     id: Option<model::quote::QuoteId>,
+    valid_to: u32,
 ) -> Result<OrderQuoteResponse, OrderQuoteError> {
-    let valid_to = request.validity.actual_valid_to();
     Ok(OrderQuoteResponse {
         quote: OrderQuote {
             sell_token: request.sell_token,
