@@ -1772,6 +1772,10 @@ components:
             - AppdataFromMismatch
             - MetadataSerializationFailed
             - OldOrderActivelyBidOn
+            - MarketClosed
+            - TradingPaused
+            - NoRouteFound
+            - InsufficientLiquidity
         description:
           type: string
       required:
