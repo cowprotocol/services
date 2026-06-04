@@ -44,11 +44,10 @@ pub async fn post_quote_stream_handler(
             // No solver produced a usable quote. Signal the same "no route found"
             // body the regular endpoint returns, routed through the shared mapping.
             let (_, Json(body)) = super::price_estimation_error_response(PriceEstimationError::NoLiquidity);
-            let event = Event::default()
-                .event("error")
-                .json_data(&body)
-                .expect("static error body serializes");
-            yield Ok::<_, Infallible>(event);
+            match Event::default().event("error").json_data(&body) {
+                Ok(event) => yield Ok::<_, Infallible>(event),
+                Err(err) => tracing::error!(?err, "failed to serialize no-quote error event"),
+            }
         }
     };
 
