@@ -551,6 +551,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PriceEstimationError"
+        "404":
+          description: No route was found for the specified order.
+        "422":
+          description: Unable to parse request body as valid JSON.
         "429":
           description: Too many order quotes.
         "500":

@@ -644,6 +644,9 @@ impl StreamingQuoting for OrderQuoter {
             self.native_price_estimator
                 .estimate_native_price(parameters.sell_token, trade_query.timeout)
                 .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeSell, err))),
+            // We don't care about the native price of the buy_token for the quote but we need it
+            // when we build the auction. To prevent creating orders which we can't settle later on
+            // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
                 .estimate_native_price(parameters.buy_token, trade_query.timeout)
                 .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeBuy, err))),
