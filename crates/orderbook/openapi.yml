@@ -1775,8 +1775,7 @@ components:
             - TradingOutsideAllowedWindow
             - TokenTemporarilySuspended
             - InsufficientLiquidity
-            - UnauthorizedTrader
-            - Other
+            - CustomSolverError
         description:
           type: string
       required:
