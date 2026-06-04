@@ -11,6 +11,7 @@ use {
     },
     futures::StreamExt,
     model::quote::OrderQuoteRequest,
+    price_estimation::PriceEstimationError,
     std::{convert::Infallible, sync::Arc},
 };
 
@@ -40,12 +41,20 @@ pub async fn post_quote_stream_handler(
             }
         }
         if !any_ok {
-            // No solver produced a usable quote. Signal the same "no route found"
-            // body the regular endpoint returns for NoLiquidity.
-            let Json(body) = super::error("NoLiquidity", "no route found");
-            match Event::default().event("error").json_data(&body) {
-                Ok(event) => yield Ok::<_, Infallible>(event),
-                Err(err) => tracing::error!(?err, "failed to serialize no-quote error event"),
+            // No solver produced a usable quote. Reuse the regular endpoint's
+            // error mapping for NoLiquidity instead of reconstructing the body.
+            let response =
+                super::PriceEstimationErrorWrapper(PriceEstimationError::NoLiquidity).into_response();
+            // The body is our own small JSON error, so reading it fully is safe.
+            match axum::body::to_bytes(response.into_body(), usize::MAX).await {
+                Ok(bytes) => {
+                    yield Ok::<_, Infallible>(
+                        Event::default()
+                            .event("error")
+                            .data(String::from_utf8_lossy(&bytes)),
+                    )
+                }
+                Err(err) => tracing::error!(?err, "failed to read no-quote error event body"),
             }
         }
     };
