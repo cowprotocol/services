@@ -521,6 +521,13 @@ paths:
         elapses or all solvers have responded. Each event's `id` is always
         `null`. Clients can use this to show progressive quote updates in real
         time.
+
+
+        The `priceQuality` field of the request body is ignored: this endpoint
+        always queries all solvers and attempts verification, emitting each
+        result with its own `verified` flag. If no solver returns a usable
+        quote, a terminal event named `error` is sent with a
+        `PriceEstimationError` body before the stream closes.
       requestBody:
         description: The order parameters to compute quotes for.
         required: true
