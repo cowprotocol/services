@@ -11,6 +11,7 @@ use {
     },
     futures::StreamExt,
     model::quote::OrderQuoteRequest,
+    price_estimation::PriceEstimationError,
     std::{convert::Infallible, sync::Arc},
 };
 
@@ -40,10 +41,14 @@ pub async fn post_quote_stream_handler(
             }
         }
         if !any_ok {
-            let body = serde_json::json!({"errorType": "NoLiquidity", "description": "no route found"});
-            if let Ok(event) = Event::default().event("error").json_data(&body) {
-                yield Ok(event);
-            }
+            // No solver produced a usable quote. Signal the same "no route found"
+            // body the regular endpoint returns, routed through the shared mapping.
+            let (_, Json(body)) = super::price_estimation_error_response(PriceEstimationError::NoLiquidity);
+            let event = Event::default()
+                .event("error")
+                .json_data(&body)
+                .expect("static error body serializes");
+            yield Ok::<_, Infallible>(event);
         }
     };
 

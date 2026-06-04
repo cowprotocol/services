@@ -451,55 +451,62 @@ pub fn internal_error_reply() -> Response {
 // (orphan rules prevent implementing IntoResponse directly on external types)
 pub(crate) struct PriceEstimationErrorWrapper(pub(crate) PriceEstimationError);
 
+/// Maps a price estimation error to the HTTP status and JSON body. Shared by
+/// the regular quote endpoint (via `PriceEstimationErrorWrapper`) and the
+/// streaming quote endpoint's terminal error event so both report errors
+/// identically.
+pub(crate) fn price_estimation_error_response(
+    err: PriceEstimationError,
+) -> (StatusCode, Json<Error>) {
+    match err {
+        PriceEstimationError::UnsupportedToken { token, reason } => (
+            StatusCode::BAD_REQUEST,
+            error(
+                "UnsupportedToken",
+                format!("Token {token:?} is unsupported: {reason:}"),
+            ),
+        ),
+        PriceEstimationError::UnsupportedOrderType(order_type) => (
+            StatusCode::BAD_REQUEST,
+            error(
+                "UnsupportedOrderType",
+                format!("{order_type} not supported"),
+            ),
+        ),
+        PriceEstimationError::NoLiquidity
+        | PriceEstimationError::RateLimited
+        | PriceEstimationError::EstimatorInternal(_) => (
+            StatusCode::NOT_FOUND,
+            error("NoLiquidity", "no route found"),
+        ),
+        PriceEstimationError::TradingOutsideAllowedWindow { message } => (
+            StatusCode::BAD_REQUEST,
+            error("TradingOutsideAllowedWindow", message),
+        ),
+        PriceEstimationError::TokenTemporarilySuspended { message } => (
+            StatusCode::BAD_REQUEST,
+            error("TokenTemporarilySuspended", message),
+        ),
+        PriceEstimationError::InsufficientLiquidity { message } => (
+            StatusCode::BAD_REQUEST,
+            error("InsufficientLiquidity", message),
+        ),
+        PriceEstimationError::CustomSolverError { message } => {
+            (StatusCode::BAD_REQUEST, error("CustomSolverError", message))
+        }
+        PriceEstimationError::ProtocolInternal(err) => {
+            tracing::error!(?err, "PriceEstimationError::Other");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                error("InternalServerError", ""),
+            )
+        }
+    }
+}
+
 impl IntoResponse for PriceEstimationErrorWrapper {
     fn into_response(self) -> Response {
-        match self.0 {
-            PriceEstimationError::UnsupportedToken { token, reason } => (
-                StatusCode::BAD_REQUEST,
-                error(
-                    "UnsupportedToken",
-                    format!("Token {token:?} is unsupported: {reason:}"),
-                ),
-            )
-                .into_response(),
-            PriceEstimationError::UnsupportedOrderType(order_type) => (
-                StatusCode::BAD_REQUEST,
-                error(
-                    "UnsupportedOrderType",
-                    format!("{order_type} not supported"),
-                ),
-            )
-                .into_response(),
-            PriceEstimationError::NoLiquidity
-            | PriceEstimationError::RateLimited
-            | PriceEstimationError::EstimatorInternal(_) => (
-                StatusCode::NOT_FOUND,
-                error("NoLiquidity", "no route found"),
-            )
-                .into_response(),
-            PriceEstimationError::TradingOutsideAllowedWindow { message } => (
-                StatusCode::BAD_REQUEST,
-                error("TradingOutsideAllowedWindow", message),
-            )
-                .into_response(),
-            PriceEstimationError::TokenTemporarilySuspended { message } => (
-                StatusCode::BAD_REQUEST,
-                error("TokenTemporarilySuspended", message),
-            )
-                .into_response(),
-            PriceEstimationError::InsufficientLiquidity { message } => (
-                StatusCode::BAD_REQUEST,
-                error("InsufficientLiquidity", message),
-            )
-                .into_response(),
-            PriceEstimationError::CustomSolverError { message } => {
-                (StatusCode::BAD_REQUEST, error("CustomSolverError", message)).into_response()
-            }
-            PriceEstimationError::ProtocolInternal(err) => {
-                tracing::error!(?err, "PriceEstimationError::Other");
-                internal_error_reply()
-            }
-        }
+        price_estimation_error_response(self.0).into_response()
     }
 }
 
