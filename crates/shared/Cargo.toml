@@ -13,8 +13,8 @@ account-balances = { workspace = true }
 alloy = { workspace = true, features = ["provider-trace-api", "rand", "signer-local", "sol-types"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
-async-stream = { workspace = true }
 arc-swap = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
