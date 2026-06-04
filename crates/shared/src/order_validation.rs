@@ -705,8 +705,8 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Hash { hash } => {
                 // Eventually we're not going to accept orders that set only a
                 // hash and where we can't find full app data elsewhere.
-                let protocol = if let Some(full) = full_app_data_override {
-                    validate(full)?.protocol
+                let validated = if let Some(full) = full_app_data_override {
+                    validate(full)?
                 } else {
                     return Err(AppDataValidationError::Invalid(anyhow!(
                         "Unknown pre-image for app data hash {:?}",
@@ -714,10 +714,14 @@ impl OrderValidating for OrderValidator {
                     )));
                 };
 
+                // Keep the validated document, since the order creation simulator re-parses
+                // this document to rebuild the pre/post hooks, so dropping it
+                // makes the simulation skip the hooks (e.g. a permit approval)
+                // and revert spuriously.
                 ValidatedAppData {
                     hash: *hash,
-                    document: "{}".to_string(),
-                    protocol,
+                    document: validated.document,
+                    protocol: validated.protocol,
                 }
             }
             OrderCreationAppData::Full { full } => validate(full)?,
@@ -1236,6 +1240,71 @@ mod tests {
     };
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
+
+    #[test]
+    fn hash_app_data_keeps_full_document_for_simulation() {
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validity_configuration = OrderValidPeriodConfiguration {
+            min: Duration::from_secs(1),
+            max_market: Duration::from_secs(100),
+            max_limit: Duration::from_secs(200),
+        };
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::from_set(Default::default())),
+            validity_configuration,
+            false,
+            DenyListedTokens::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(limit_order_counter),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+        );
+
+        // App data with a pre-hook (a gasless approval, the shape that surfaced
+        // this bug), submitted as a bare hash plus a full-app-data override.
+        let full = r#"{"version":"1.1.0","appCode":"test","metadata":{"hooks":{"pre":[{"target":"0x0000000000000000000000000000000000000001","callData":"0x12345678","gasLimit":"21000"}]}}}"#;
+
+        let app_data = validator
+            .validate_app_data(
+                &OrderCreationAppData::Hash {
+                    hash: Default::default(),
+                },
+                &Some(full.to_string()),
+            )
+            .unwrap();
+
+        // The `Hash` branch used to hardcode the document to `"{}"`, which made
+        // the order creation simulator re-parse empty app data and drop the
+        // hooks. The document must survive.
+        assert_ne!(app_data.inner.document, "{}");
+
+        // Re-parsing the kept document, as the simulator does, must still yield
+        // the pre-hook.
+        let reparsed = validator
+            .validate_app_data(
+                &OrderCreationAppData::Full {
+                    full: app_data.inner.document.clone(),
+                },
+                &None,
+            )
+            .unwrap();
+        assert!(!reparsed.interactions.pre.is_empty());
+    }
 
     #[tokio::test]
     async fn pre_validate_err() {
