@@ -1824,9 +1824,6 @@ components:
         * 403: `Forbidden`
         * 404: `NoLiquidity`
         * 500: `InternalServerError`
-
-        This schema is generated from the orderbook source code by
-        `scripts/sync_quote_errors.py`; do not edit it manually.
       type: object
       properties:
         errorType:
