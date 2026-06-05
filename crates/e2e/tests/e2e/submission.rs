@@ -976,10 +976,13 @@ async fn test_solver_pays_for_pre_hook_on_same_token_order(web3: Web3) {
     // the whole settlement — including the pre-hook.
     assert_eq!(tx.to, Some(*onchain.contracts().gp_settlement.address()));
 
-    // The pre-hook ran exactly once as part of that settlement.
-    let hook_ran =
-        || async { counter.counters("pre".to_string()).call().await.unwrap() == U256::from(1) };
-    wait_for_condition(TIMEOUT, hook_ran).await.unwrap();
+    // The pre-hook ran exactly once as part of that settlement, which is already
+    // mined at this point.
+    assert_eq!(
+        counter.counters("pre".to_string()).call().await.unwrap(),
+        U256::from(1),
+        "pre-hook must have run exactly once as part of the settlement"
+    );
 
     // And the trader paid for the order (the spread the solver kept).
     let final_balance = weth.balanceOf(trader.address()).call().await.unwrap();
