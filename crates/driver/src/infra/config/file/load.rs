@@ -145,6 +145,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 )
                 .await,
                 max_solutions_to_propose: solver_config.max_solutions_to_propose,
+                post_processing_concurrency_limit: solver_config.post_processing_concurrency_limit,
             }
         }))
         .await,

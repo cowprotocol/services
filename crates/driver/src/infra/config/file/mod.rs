@@ -238,6 +238,10 @@ fn default_max_solutions_to_propose() -> NonZeroUsize {
     NonZeroUsize::new(1).unwrap()
 }
 
+fn default_post_processing_concurrency_limit() -> NonZeroUsize {
+    NonZeroUsize::MAX
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -329,6 +333,13 @@ struct SolverConfig {
     /// to start otherwise.
     #[serde(default = "default_max_solutions_to_propose")]
     max_solutions_to_propose: NonZeroUsize,
+
+    /// How many solutions the driver may post-process (i.e. validate)
+    /// concurrently. When the RPC node is experiencing very high latency
+    /// this number can be lowered if the usual throughput can not be
+    /// sustained anymore.
+    #[serde(default = "default_post_processing_concurrency_limit")]
+    post_processing_concurrency_limit: NonZeroUsize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
