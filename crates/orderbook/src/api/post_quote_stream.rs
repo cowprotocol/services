@@ -27,7 +27,6 @@ pub async fn post_quote_stream_handler(
 
     let events = async_stream::stream! {
         let mut any_ok = false;
-        let mut errors: Vec<String> = Vec::new();
         futures::pin_mut!(stream);
         while let Some(item) = stream.next().await {
             match item {
@@ -38,21 +37,14 @@ pub async fn post_quote_stream_handler(
                     }
                     Err(err) => tracing::error!(?err, "failed to serialize streamed quote"),
                 },
-                Err(err) => {
-                    tracing::debug!(%err, "dropping failed streamed quote");
-                    errors.push(err.to_string());
-                }
+                Err(err) => tracing::debug!(%err, "dropping failed streamed quote"),
             }
         }
         if !any_ok {
-            // Per-solver errors are dropped above, so log the aggregated reasons
-            // once here for operators (the client only sees a generic event).
-            tracing::warn!(?errors, "streaming quote produced no usable quote");
-            // No solver produced a usable quote. Reuse the regular endpoint's
-            // error mapping for NoLiquidity instead of reconstructing the body.
+            // No solver produced a usable quote. Emit the same NoLiquidity error
+            // the regular endpoint returns.
             let response =
                 super::PriceEstimationErrorWrapper(PriceEstimationError::NoLiquidity).into_response();
-            // The body is our own small JSON error, so reading it fully is safe.
             match axum::body::to_bytes(response.into_body(), usize::MAX).await {
                 Ok(bytes) => {
                     yield Ok::<_, Infallible>(

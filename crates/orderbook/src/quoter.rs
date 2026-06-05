@@ -185,11 +185,7 @@ impl QuoteHandler {
                                 continue;
                             }
                         };
-                        match build_order_quote_response(&request, &quote, &adjusted, None, valid_to)
-                        {
-                            Ok(resp) => yield Ok(resp),
-                            Err(err) => yield Err(err),
-                        }
+                        yield build_order_quote_response(&request, &quote, &adjusted, None, valid_to);
                     }
                     Err(err) => yield Err(OrderQuoteError::CalculateQuote(err)),
                 }
