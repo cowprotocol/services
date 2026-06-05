@@ -2,6 +2,7 @@
 //! improve the observability of a system. That includes initialization logic
 //! for metrics and logging as well as logging helper functions.
 pub mod config;
+pub mod event_bus;
 pub mod future;
 #[cfg(unix)]
 pub mod heap_dump_handler;

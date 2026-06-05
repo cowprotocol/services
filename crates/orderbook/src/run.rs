@@ -29,7 +29,10 @@ use {
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
-    observe::metrics::{DEFAULT_METRICS_PORT, serve_metrics},
+    observe::{
+        config::EventBusConfig,
+        metrics::{DEFAULT_METRICS_PORT, serve_metrics},
+    },
     order_validation,
     price_estimation::{
         PriceEstimating,
@@ -39,7 +42,7 @@ use {
     },
     shared::{
         order_quoting::{self, OrderQuoter},
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator},
+        order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -50,7 +53,9 @@ pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
     let config = Configuration::from_path(&args.config)
         .await
-        .expect("failed to load configuration file");
+        .expect("failed to load configuration file")
+        .validate()
+        .expect("failed to validate configuration file");
     let tracing_config = config
         .shared
         .tracing
@@ -74,6 +79,16 @@ pub async fn start(args: impl Iterator<Item = String>) {
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
+    if let Some(event_bus) = &config.shared.event_bus {
+        observe::event_bus::init(EventBusConfig {
+            url: event_bus.url.clone(),
+            stream_name: event_bus.channel.clone(),
+            // Presence of `chain-id` alongside `event_bus` is enforced by
+            // `SharedConfig::validate` at startup.
+            chain_id: config.shared.chain_id.unwrap(),
+        })
+        .await;
+    }
     #[cfg(unix)]
     observe::heap_dump_handler::spawn_heap_dump_handler();
     tracing::info!("file configuration:\n{:#?}", config);
@@ -377,10 +392,30 @@ pub async fn run(config: Configuration) {
     let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
         .await
         .ok();
+
+    let order_simulator = price_estimator_factory.settlement_simulator().cloned();
+
+    let validator_simulator = order_simulator.clone().map(|settlement_simulator| {
+        let simulator: Arc<dyn shared::order_creation_simulation::OrderSimulating> = Arc::new(
+            shared::order_creation_simulation::OrderCreationSimulator::new(settlement_simulator),
+        );
+        OrderSimulator {
+            simulator,
+            timeout: config.order_simulation_timeout,
+        }
+    });
+
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
+            config.banned_users.hermod.clone().map(|hermod| {
+                order_validation::banned::HermodConfig {
+                    url: hermod.url,
+                    hmac_key: hermod.hmac_key,
+                    api_key: hermod.api_key,
+                }
+            }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         )),
@@ -391,6 +426,7 @@ pub async fn run(config: Configuration) {
         optimal_quoter.clone(),
         balance_fetcher,
         signature_validator,
+        validator_simulator,
         Arc::new(postgres_write.clone()),
         config.order_validation.max_limit_orders_per_user,
         app_data_validator.clone(),
@@ -411,33 +447,6 @@ pub async fn run(config: Configuration) {
         postgres_write.clone(),
         ipfs,
     ));
-
-    let order_simulator = if let Some(config) = config.order_simulation {
-        let tenderly: Option<Arc<dyn simulator::tenderly::Api>> =
-            config.tenderly.as_ref().map(|tenderly_config| {
-                Arc::new(simulator::tenderly::TenderlyApi::new(
-                    tenderly_config,
-                    &http_factory,
-                    chain.id().to_string(),
-                )) as _
-            });
-        Some(
-            simulator::simulation_builder::SettlementSimulator::new(
-                settlement_contract.clone(),
-                flashloan_router_address,
-                hooks_trampoline_address,
-                *native_token.address(),
-                config.gas_limit.saturating_to(),
-                balance_overrider.clone(),
-                current_block_stream.clone(),
-                tenderly,
-            )
-            .await
-            .expect("failed to initialize SettlementSimulator"),
-        )
-    } else {
-        None
-    };
 
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,

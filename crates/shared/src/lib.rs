@@ -9,6 +9,7 @@ pub mod external_prices;
 pub mod fee;
 pub mod http_solver;
 pub mod interaction;
+pub mod order_creation_simulation;
 pub mod order_quoting;
 pub mod order_validation;
 pub mod remaining_amounts;

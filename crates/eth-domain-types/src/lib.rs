@@ -134,11 +134,8 @@ pub struct Tx {
 }
 
 impl Tx {
-    pub fn set_access_list(self, access_list: AccessList) -> Self {
-        Self {
-            access_list,
-            ..self
-        }
+    pub fn set_access_list(&mut self, access_list: AccessList) {
+        self.access_list = access_list;
     }
 }
 

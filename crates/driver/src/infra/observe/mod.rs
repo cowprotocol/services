@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{Ethereum, Mempool, solver::Timeouts},
+    super::{Mempool, solver::Timeouts},
     crate::{
         boundary,
         domain::{
@@ -22,9 +22,8 @@ use {
         infra::solver,
         util::http,
     },
-    eth_domain_types::{self as eth, Gas},
+    eth_domain_types as eth,
     ethrpc::block_stream::BlockInfo,
-    num::Saturating,
     std::{
         collections::{BTreeMap, HashSet},
         time::Duration,
@@ -360,80 +359,49 @@ pub fn solver_response(
         .observe(compute_time.as_secs_f64());
 }
 
-/// Observe the result of mempool transaction execution.
-pub fn mempool_executed(
+/// Log a single mempool submission attempt. Called inline from the racing
+/// task so that errors from mempools that later get superseded are still
+/// visible in logs. Metrics are emitted separately from `update_metrics`
+/// once the race outcome is known.
+pub fn mempool_log(
     mempool: &Mempool,
     settlement: &Settlement,
-    res: &Result<SubmissionSuccess, mempools::Error>,
+    result: &Result<SubmissionSuccess, mempools::Error>,
 ) {
-    match res {
-        Ok(submission) => {
-            tracing::info!(
-                txid = ?submission.tx_hash,
-                %mempool,
-                ?settlement,
-                "sending transaction via mempool succeeded",
-            );
-        }
-        Err(mempools::Error::Disabled) => {
-            tracing::debug!(
-                %mempool,
-                "sending transaction via mempool disabled",
-            );
-        }
-        Err(err) => {
-            tracing::warn!(
-                ?err,
-                %mempool,
-                ?settlement,
-                "sending transaction via mempool failed",
-            );
-        }
+    match result {
+        Ok(submission) => tracing::info!(
+            txid = ?submission.tx_hash,
+            %mempool,
+            ?settlement,
+            "sending transaction via mempool succeeded",
+        ),
+        Err(mempools::Error::Disabled) => tracing::debug!(
+            %mempool,
+            "mempool disabled, not sending transaction",
+        ),
+        Err(err) => tracing::warn!(
+            ?err,
+            %mempool,
+            ?settlement,
+            "sending transaction via mempool failed",
+        ),
     }
-    let result = match res {
-        Ok(_) => "Success",
-        Err(mempools::Error::Revert { .. } | mempools::Error::SimulationRevert { .. }) => "Revert",
-        Err(mempools::Error::Expired { .. }) => "Expired",
-        Err(mempools::Error::Other(_)) => "Other",
-        Err(mempools::Error::Disabled) => "Disabled",
-    };
+}
+
+/// Emit per-mempool race counters with the final, reclassified label
+/// (`Success` / `Revert` / `Expired` / `Other` / `Superseded` / `Disabled`).
+/// Called once per mempool after the race resolves.
+pub fn mempool_submission_result(mempool: &Mempool, label: &str, blocks_passed: Option<u64>) {
+    let name = mempool.to_string();
     metrics::get()
         .mempool_submission
-        .with_label_values(&[mempool.to_string().as_str(), result])
+        .with_label_values(&[name.as_str(), label])
         .inc();
-
-    // For some of the errors we are interested in observing the exact block numbers
-    // passed since the first submission.
-    let blocks_passed = match res {
-        Ok(SubmissionSuccess {
-            submitted_at_block,
-            included_in_block,
-            ..
-        }) => Some(("Success", submitted_at_block, included_in_block)),
-        Err(mempools::Error::Revert {
-            tx_id: _,
-            submitted_at_block,
-            reverted_at_block,
-        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
-        Err(mempools::Error::SimulationRevert {
-            submitted_at_block,
-            reverted_at_block,
-        }) => Some(("Revert", submitted_at_block, reverted_at_block)),
-        Err(mempools::Error::Expired {
-            tx_id: _,
-            submitted_at_block,
-            submission_deadline,
-        }) => Some(("Expired", submitted_at_block, submission_deadline)),
-        Err(mempools::Error::Other(_)) => None,
-        Err(mempools::Error::Disabled) => None,
-    };
-
-    if let Some((label, start, end)) = blocks_passed {
-        let blocks_passed = end.saturating_sub(*start);
+    if let Some(blocks) = blocks_passed {
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[mempool.to_string().as_str(), label])
-            .inc_by(blocks_passed.0);
+            .with_label_values(&[name.as_str(), label])
+            .inc_by(blocks);
     }
 }
 
@@ -487,13 +455,4 @@ pub fn order_excluded_from_auction(
     reason: OrderExcludedFromAuctionReason,
 ) {
     tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
-}
-
-/// Observe that a settlement was simulated
-pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: &Result<Gas, simulator::Error>) {
-    let block: eth::BlockNo = eth.current_block().borrow().number.into();
-    match gas {
-        Ok(gas) => tracing::debug!(block = ?block, gas = ?gas.0, ?tx, "simulated settlement"),
-        Err(err) => tracing::debug!(block = ?block, ?err, "simulated settlement"),
-    }
 }

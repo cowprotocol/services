@@ -100,6 +100,10 @@ impl SettlementSimulator {
         self.0.vault_relayer
     }
 
+    pub fn tenderly(&self) -> Option<Arc<dyn tenderly::Api>> {
+        self.0.tenderly.clone()
+    }
+
     pub fn new_simulation_builder(&self) -> SimulationBuilder {
         SimulationBuilder {
             simulator: self.clone(),

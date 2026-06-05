@@ -1,0 +1,53 @@
+name: Claude PR Review
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    # Gate the job so it only runs when:
+    #   (a) a non-draft PR is opened or marked ready-for-review, OR
+    #   (b) someone posts an `@claude` comment on a PR (not on an issue).
+    # Also skip bot authors and PRs explicitly labelled `skip-claude-review`,
+    # so authors have an escape hatch for trivial changes.
+    # External contributors are excluded from both triggers by requiring an
+    # internal `author_association` (OWNER/MEMBER).
+    if: >
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false &&
+        github.event.pull_request.user.type != 'Bot' &&
+        !contains(github.event.pull_request.labels.*.name, 'skip-claude-review') &&
+        contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association)
+      ) || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # Full history lets the action compute an accurate diff vs the base
+          # branch instead of just the latest commit.
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@51ea8ea73a139f2a74ff649e3092c25a904aed7e # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: "@claude"
+          track_progress: true
+          claude_args: |
+            --model claude-opus-4-7
+            --max-turns 30
+          prompt: "Review this PR. Use the pr-review skill if available."

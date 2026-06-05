@@ -133,6 +133,7 @@ mod tests {
         let strategy = Strategy::SolidityMapping {
             target_contract: cow,
             map_slot: U256::from(0),
+            shift_bits: 0,
         };
 
         let result = strategy
@@ -184,6 +185,7 @@ mod tests {
         let amount = U256::from(0x42);
         let strategy = Strategy::SoladyMapping {
             target_contract: address!("0000000000c5dc95539589fbd24be07c6c14eca4"),
+            shift_bits: 0,
         };
 
         let result = strategy
@@ -223,6 +225,7 @@ mod tests {
         let strategy = Strategy::SolidityMapping {
             target_contract,
             map_slot: U256::from(3),
+            shift_bits: 0,
         };
 
         let mock_web3 = mock::web3();
@@ -259,10 +262,12 @@ mod tests {
         let strategy_h1 = Strategy::DirectSlot {
             target_contract,
             slot: B256::repeat_byte(1),
+            shift_bits: 0,
         };
         let strategy_h2 = Strategy::DirectSlot {
             target_contract,
             slot: B256::repeat_byte(2),
+            shift_bits: 0,
         };
 
         let mock_web3 = mock::web3();
