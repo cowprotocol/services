@@ -13,8 +13,8 @@ pub enum SameTokensPolicy {
     Disallow,
     /// Allow sell orders where buy token equals sell token.
     AllowSell,
-    // Allow, TODO: Allow sell and buy orders with the same tokens
-    // (https://github.com/cowprotocol/services/issues/3963)
+    /// Allow both sell and buy orders where buy token equals sell token.
+    Allow,
 }
 
 const fn default_min_order_validity_period() -> Duration {

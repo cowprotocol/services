@@ -23,7 +23,7 @@ use {
     anyhow::Context as _,
     axum::{body::Body, http::Request},
     eth_domain_types as eth,
-    futures::{FutureExt, StreamExt, stream::FuturesUnordered},
+    futures::{FutureExt, StreamExt},
     itertools::Itertools,
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
@@ -444,9 +444,7 @@ impl Competition {
             SolutionMerging::Forbidden => solutions.collect(),
         };
 
-        // Encode solutions into settlements (streamed).
-        let encoded = all_solutions
-            .into_iter()
+        let encoded = futures::stream::iter(all_solutions)
             .map(|solution| async move {
                 observe::encoding(solution.id());
                 let settlement = solution
@@ -460,7 +458,7 @@ impl Competition {
                     .await;
                 (solution, settlement)
             })
-            .collect::<FuturesUnordered<_>>()
+            .buffer_unordered(self.solver.config().post_processing_concurrency_limit.get())
             .filter_map(|(solution, result)| async move {
                 let id = solution.id().clone();
                 let orders: Vec<_> = solution
@@ -964,7 +962,7 @@ impl Competition {
     /// Returns whether the settlement can be executed or would revert.
     async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
         let tx = settlement.transaction(settlement::Internalization::Enable);
-        let gas_needed_for_tx = self.simulator.gas(tx).await?;
+        let gas_needed_for_tx = self.simulator.gas(tx.clone()).await?;
         if gas_needed_for_tx > settlement.gas.limit {
             return Err(simulator::Error::Revert(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
