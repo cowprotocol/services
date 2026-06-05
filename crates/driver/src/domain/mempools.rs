@@ -264,7 +264,23 @@ impl Mempools {
                         }
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
-                            if err.is_revert() {
+                            /// Revert data encoding `GPv2: order filled`
+                            const ORDER_FILLED: &[u8] = &alloy::hex!("08c379a0\
+                                0000000000000000000000000000000000000000000000000000000000000020\
+                                0000000000000000000000000000000000000000000000000000000000000012\
+                                475076323a206f726465722066696c6c65640000000000000000000000000000");
+
+                            // We want to simulate on the `pending` block to be able to react to an
+                            // incoming revert BEFORE it happens. However, the tx we submitted earlier
+                            // which is already sitting in the mempool can cause this simulation to
+                            // fail. If the simulation fails because our pending tx interfered with
+                            // us the revert will complain about the order already being filled.
+                            // Since the autopilot only distributes orders while no one else is
+                            // trying to submit txs for it this error is extremely likely a false
+                            // positive so we ignore it.
+                            if err.revert_bytes().is_some_and(|bytes| &bytes == ORDER_FILLED) {
+                                tracing::debug!(?err, "ignoring revert as it's likely a false positive");
+                            } else if err.is_revert() {
                                 tracing::info!(
                                     settle_tx_hash = ?hash,
                                     ?err,
