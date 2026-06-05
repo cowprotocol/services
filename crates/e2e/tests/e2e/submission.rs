@@ -7,6 +7,7 @@ use {
             types::{Transaction, TransactionReceipt},
         },
     },
+    app_data::Hook,
     configs::{
         autopilot::Configuration,
         orderbook::order_validation::OrderValidationConfig,
@@ -16,11 +17,12 @@ use {
     ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     futures::StreamExt,
     model::{
-        order::{BUY_ETH_ADDRESS, OrderCreation, OrderKind},
+        order::{BUY_ETH_ADDRESS, OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     number::{nonzero::NonZeroU256, testing::ApproxEq, units::EthUnit},
+    serde_json::json,
     shared::web3::Web3,
     std::time::Duration,
 };
@@ -53,6 +55,12 @@ async fn local_node_execute_same_sell_and_buy_native_token() {
 #[ignore]
 async fn local_node_execute_same_sell_and_buy_native_token_buy_order() {
     run_test(test_execute_same_sell_and_buy_native_token_buy_order).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_solver_pays_for_pre_hook_on_same_token_order() {
+    run_test(test_solver_pays_for_pre_hook_on_same_token_order).await;
 }
 
 async fn test_cancel_on_expiry(web3: Web3) {
@@ -819,6 +827,166 @@ async fn test_execute_same_sell_and_buy_native_token_buy_order(web3: Web3) {
     assert!(
         final_balance < initial_balance,
         "Final WETH balance should be smaller than initial balance due to sell"
+    );
+}
+
+/// Use-case test for `SameTokensPolicy::Allow`: a trader submits a same-token
+/// **Buy** order (sell token == buy token, here WETH -> WETH) whose real
+/// purpose is not the swap — which is economically a no-op — but to get an
+/// arbitrary **pre-hook** executed and paid for by the solver as part of the
+/// settlement.
+///
+/// The trader signs a small spread (`sell_amount` slightly above `buy_amount`)
+/// which the solver keeps to cover the settlement gas, including the pre-hook.
+/// We prove the hook actually ran by pointing it at a `Counter` contract and
+/// asserting the counter advanced — the same approach used by the hook e2e
+/// tests in `hooks.rs`.
+async fn test_solver_pays_for_pre_hook_on_same_token_order(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(10u64.eth()).await;
+    let [trader] = onchain.make_accounts(10u64.eth()).await;
+
+    // Same token on both sides of the order: WETH -> WETH. We fund the trader by
+    // wrapping ETH into WETH and approving the allowance manager.
+    let weth = onchain.contracts().weth.clone();
+    weth.deposit()
+        .from(trader.address())
+        .value(5u64.eth())
+        .send_and_watch()
+        .await
+        .unwrap();
+    weth.approve(onchain.contracts().allowance, 5u64.eth())
+        .from(trader.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
+    // Arbitrary on-chain action the trader wants executed (and paid for) by the
+    // solver. `Counter::incrementCounter` lets us prove afterwards that it ran.
+    let counter = contracts::test::Counter::Instance::deploy(web3.provider.clone())
+        .await
+        .unwrap();
+    let increment = counter.incrementCounter("pre".to_string());
+    let pre_hook = Hook {
+        target: *counter.address(),
+        call_data: increment.calldata().to_vec(),
+        gas_limit: increment.estimate_gas().await.unwrap(),
+    };
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services
+        .start_protocol_with_args(
+            Configuration::test("test_solver", solver.address()),
+            configs::orderbook::Configuration {
+                order_validation: OrderValidationConfig {
+                    same_tokens_policy: shared::order_validation::SameTokensPolicy::Allow,
+                    ..Default::default()
+                },
+                ..configs::orderbook::Configuration::test_default()
+            },
+            solver.clone(),
+        )
+        .await;
+
+    // Disable auto-mine so we don't accidentally mine a settlement
+    web3.provider
+        .evm_set_automine(false)
+        .await
+        .expect("Must be able to disable automine");
+
+    assert_eq!(
+        counter.counters("pre".to_string()).call().await.unwrap(),
+        U256::ZERO,
+        "pre-hook must not have run before settlement"
+    );
+
+    let initial_balance = weth.balanceOf(trader.address()).call().await.unwrap();
+    assert_eq!(initial_balance, 5u64.eth());
+
+    tracing::info!("Placing same-token buy order with a pre-hook");
+    // Same token priced 1:1, so the bare cost equals `buy_amount`; the extra
+    // 1% spread is the headroom the solver keeps to pay for the settlement
+    // (gas + the pre-hook). Without it the limit would be exactly 1:1 and no
+    // solution could cover any cost.
+    let buy_amount = 1u64.eth();
+    let sell_amount = buy_amount + buy_amount / U256::from(100); // buy_amount + 1%
+    let weth_address = *weth.address();
+    let order = OrderCreation {
+        kind: OrderKind::Buy,
+        sell_token: weth_address,
+        sell_amount,
+        buy_token: weth_address,
+        buy_amount,
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        app_data: OrderCreationAppData::Full {
+            full: json!({
+                "metadata": {
+                    "hooks": {
+                        "pre": [pre_hook],
+                        "post": [],
+                    },
+                },
+            })
+            .to_string(),
+        },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        &trader.signer,
+    );
+    services.create_order(&order).await.unwrap();
+
+    // Start tracking confirmed blocks so we can find the transaction later
+    let block_stream = web3
+        .provider
+        .watch_blocks()
+        .await
+        .expect("must be able to create blocks filter")
+        .into_stream();
+
+    tracing::info!("Waiting for trade.");
+    onchain.mint_block().await;
+
+    // Wait for settlement tx to appear in txpool
+    wait_for_condition(TIMEOUT, || async {
+        get_pending_tx(solver.address(), &web3).await.is_some()
+    })
+    .await
+    .unwrap();
+
+    // Continue mining to confirm the settlement
+    web3.provider
+        .evm_set_automine(true)
+        .await
+        .expect("Must be able to enable automine");
+
+    // Wait for the settlement to be confirmed on chain
+    let tx = tokio::time::timeout(
+        Duration::from_secs(5),
+        get_confirmed_transaction(solver.address(), &web3, block_stream),
+    )
+    .await
+    .unwrap();
+
+    // The solver settled the order (not a cancellation), so it bore the gas for
+    // the whole settlement — including the pre-hook.
+    assert_eq!(tx.to, Some(*onchain.contracts().gp_settlement.address()));
+
+    // The pre-hook ran exactly once as part of that settlement.
+    let hook_ran =
+        || async { counter.counters("pre".to_string()).call().await.unwrap() == U256::from(1) };
+    wait_for_condition(TIMEOUT, hook_ran).await.unwrap();
+
+    // And the trader paid for the order (the spread the solver kept).
+    let final_balance = weth.balanceOf(trader.address()).call().await.unwrap();
+    tracing::info!(?initial_balance, ?final_balance, "Trade completed");
+    assert!(
+        final_balance < initial_balance,
+        "Trader balance should decrease by the amount paid for the same-token buy order"
     );
 }
 
