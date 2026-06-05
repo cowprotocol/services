@@ -1,0 +1,27 @@
+// This file follows JSON5 syntax, to make it
+// easier to maintain.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  // Disable every built-in manager (npm, dockerfile, ...) except github-actions.
+  enabledManagers: ["github-actions"],
+  // PR titles use Conventional Commits: `deps(<action>): ...`
+  semanticCommits: "enabled",
+  semanticCommitType: "deps",
+  packageRules: [
+    // GitHub Actions updates: run weekly, skip releases newer than 2 weeks
+    // to avoid picking up freshly published versions that may be unstable or
+    // compromised, and pin to full commit SHAs (with the version as a
+    // trailing comment) rather than mutable tags.
+    // When both major and minor releases exist, propose only the latest bump
+    // (typically major) instead of a separate minor PR.
+    {
+      matchManagers: ["github-actions"],
+      schedule: ["on monday"],
+      minimumReleaseAge: "14 days",
+      pinDigests: true,
+      separateMajorMinor: false,
+      semanticCommitScope: "{{depName}}",
+      commitMessageTopic: "{{depName}}",
+    },
+  ],
+}
