@@ -993,6 +993,17 @@ async fn quote_stream_smoke(web3: Web3) {
         "expected 200 from /api/v1/quote/stream"
     );
 
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content_type.starts_with("text/event-stream"),
+        "expected text/event-stream, got {content_type:?}"
+    );
+
     let body = response.text().await.expect("failed to read SSE body");
     tracing::info!(%body, "SSE response body");
 
@@ -1011,11 +1022,20 @@ async fn quote_stream_smoke(web3: Web3) {
         "expected at least one valid OrderQuoteResponse in SSE stream, body was: {body}"
     );
 
-    for quote in &parsed {
+    let weth = *onchain.contracts().weth.address();
+    let buy_token = *token.address();
+    for response in &parsed {
         assert!(
-            quote.id.is_none(),
+            response.id.is_none(),
             "streaming quotes should have id == null, got {:?}",
-            quote.id
+            response.id
+        );
+        assert_eq!(response.from, trader.address());
+        assert_eq!(response.quote.sell_token, weth);
+        assert_eq!(response.quote.buy_token, buy_token);
+        assert!(
+            !response.quote.buy_amount.is_zero(),
+            "streamed quote should have a non-zero buy amount, got {response:?}"
         );
     }
 }
