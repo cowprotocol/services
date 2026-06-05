@@ -56,8 +56,8 @@ impl Stream for ByteStream {
             let _span = this.span.enter();
             let first_poll = this.first_polled_at.expect("initialized at first poll");
             tracing::debug!(
-                to_transmission_start_ms = ?first_poll.duration_since(this.created_at).as_millis(),
-                transmission_ms = ?first_poll.elapsed().as_millis(),
+                to_transmission_start_ms = first_poll.duration_since(this.created_at).as_millis(),
+                transmission_ms = first_poll.elapsed().as_millis(),
                 "finished streaming http request body"
             );
             Poll::Ready(None)
