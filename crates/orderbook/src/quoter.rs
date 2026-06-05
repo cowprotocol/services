@@ -4,7 +4,7 @@ use {
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
     configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
-    futures::stream::BoxStream,
+    futures::stream::{BoxStream, StreamExt},
     model::{
         order::OrderCreationAppData,
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
@@ -166,33 +166,21 @@ impl QuoteHandler {
         let sell_token = request.sell_token;
         let side = request.side;
 
-        let stream = async_stream::stream! {
-            futures::pin_mut!(inner);
-            while let Some(item) = futures::StreamExt::next(&mut inner).await {
-                match item {
-                    Ok(quote) => {
-                        let adjusted = match get_vol_fee_adjusted_quote_data(
-                            &quote,
-                            &side,
-                            volume_fee.as_ref(),
-                            &volume_fee_policy,
-                            buy_token,
-                            sell_token,
-                        ) {
-                            Ok(a) => a,
-                            Err(err) => {
-                                yield Err(OrderQuoteError::CalculateQuote(err.into()));
-                                continue;
-                            }
-                        };
-                        yield build_order_quote_response(&request, &quote, &adjusted, None, valid_to);
-                    }
-                    Err(err) => yield Err(OrderQuoteError::CalculateQuote(err)),
-                }
-            }
-        };
+        let stream = inner.map(move |item| {
+            let quote = item.map_err(OrderQuoteError::CalculateQuote)?;
+            let adjusted = get_vol_fee_adjusted_quote_data(
+                &quote,
+                &side,
+                volume_fee.as_ref(),
+                &volume_fee_policy,
+                buy_token,
+                sell_token,
+            )
+            .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
+            build_order_quote_response(&request, &quote, &adjusted, None, valid_to)
+        });
 
-        Ok(Box::pin(stream))
+        Ok(stream.boxed())
     }
 
     async fn build_quote_params(
