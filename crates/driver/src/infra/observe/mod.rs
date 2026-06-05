@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{Ethereum, Mempool, solver::Timeouts},
+    super::{Mempool, solver::Timeouts},
     crate::{
         boundary,
         domain::{
@@ -22,7 +22,7 @@ use {
         infra::solver,
         util::http,
     },
-    eth_domain_types::{self as eth, Gas},
+    eth_domain_types as eth,
     ethrpc::block_stream::BlockInfo,
     std::{
         collections::{BTreeMap, HashSet},
@@ -455,13 +455,4 @@ pub fn order_excluded_from_auction(
     reason: OrderExcludedFromAuctionReason,
 ) {
     tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
-}
-
-/// Observe that a settlement was simulated
-pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: &Result<Gas, simulator::Error>) {
-    let block: eth::BlockNo = eth.current_block().borrow().number.into();
-    match gas {
-        Ok(gas) => tracing::debug!(block = ?block, gas = ?gas.0, ?tx, "simulated settlement"),
-        Err(err) => tracing::debug!(block = ?block, ?err, "simulated settlement"),
-    }
 }
