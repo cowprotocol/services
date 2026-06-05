@@ -522,7 +522,12 @@ paths:
         "429":
           description: Too many order quotes.
         "500":
-          description: Unexpected error quoting an order.
+          description: >-
+            Unexpected error (`errorType`: `InternalServerError`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceEstimationError"
   "/api/v2/solver_competition/{auction_id}":
     get:
       operationId: getSolverCompetitionByAuctionIdV2
@@ -1851,6 +1856,7 @@ components:
         description:
           type: string
         data:
+          type: object
           description: >-
             Optional error-specific payload: `SellAmountDoesNotCoverFee`
             returns an object with `fee_amount`.
