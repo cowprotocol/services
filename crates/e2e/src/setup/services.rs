@@ -161,11 +161,11 @@ impl<'a> Services<'a> {
     /// Allows to externally control the shutdown of autopilot.
     pub async fn start_autopilot_with_shutdown_controller(
         &self,
-        solve_deadline: Option<Duration>,
+        min_solve_time: Option<Duration>,
         config: configs::autopilot::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
-        let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
+        let min_solve_time = min_solve_time.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
             .contracts
             .ethflows
@@ -184,7 +184,7 @@ impl<'a> Services<'a> {
                 ..config.ethflow
             },
             run_loop: RunLoopConfig {
-                solve_deadline,
+                min_solve_time,
                 ..config.run_loop
             },
             ..config
