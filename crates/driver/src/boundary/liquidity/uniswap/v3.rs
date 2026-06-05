@@ -8,7 +8,7 @@ use {
                 uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
             },
         },
-        infra::{self, blockchain::Ethereum},
+        infra::{self, blockchain::Ethereum, liquidity::config::UniswapV3PoolSource},
     },
     anyhow::Context,
     eth_domain_types as eth,
@@ -148,7 +148,6 @@ async fn build_pool_data_source(
     eth: &Ethereum,
     config: &infra::liquidity::config::UniswapV3,
 ) -> anyhow::Result<Arc<dyn V3PoolDataSource>> {
-    use infra::liquidity::config::UniswapV3PoolSource;
     let http = boundary::liquidity::http_client();
 
     match &config.pool_source {
