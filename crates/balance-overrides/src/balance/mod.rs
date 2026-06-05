@@ -245,14 +245,13 @@ impl Detector {
         web3: Web3,
         probing_depth: u8,
         verification_timeout: Duration,
-        cache_size: usize,
+        cache_size: u64,
     ) -> Self {
-        let max_capacity = u64::try_from(cache_size).expect("cache_size is not a valid u64");
         Self {
             web3,
             probing_depth,
             verification_timeout,
-            cache: Cache::builder().max_capacity(max_capacity).build(),
+            cache: Cache::builder().max_capacity(cache_size).build(),
         }
     }
 

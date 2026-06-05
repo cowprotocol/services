@@ -44,7 +44,7 @@ impl StateOverrides {
         web3: ethrpc::Web3,
         probing_depth: u8,
         verification_timeout: std::time::Duration,
-        cache_size: usize,
+        cache_size: u64,
     ) -> Self {
         Self {
             balance_detector: balance::Detector::new(
