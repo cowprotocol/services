@@ -219,6 +219,8 @@ pub struct Config {
     /// Maximum number of solutions the driver proposes to the autopilot per
     /// auction. When 1 (the default), only the best-scoring solution is sent.
     pub max_solutions_to_propose: std::num::NonZeroUsize,
+    /// How many solutions the driver is allowed to post-process concurrently.
+    pub post_processing_concurrency_limit: std::num::NonZeroUsize,
 }
 
 impl Config {
@@ -607,6 +609,7 @@ mod tests {
             haircut_bps: 0,
             submission_accounts: vec![],
             max_solutions_to_propose: NonZeroUsize::new(1).unwrap(),
+            post_processing_concurrency_limit: NonZeroUsize::MAX,
         }
     }
 

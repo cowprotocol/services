@@ -83,6 +83,14 @@ const RAY: U256 = U256::from_limbs([0x9fd0803ce8000000, 0x33b2e3c, 0, 0]);
 /// Source: <https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/tokenization/base/IncentivizedERC20.sol>
 const USER_STATE_SLOT: u64 = 52;
 
+/// Small sentinel for verifying an aToken override, the counterpart to the
+/// detector's full-width sentinel. aTokens scale the balance and pack it into a
+/// `uint128` (see `pack_user_state`), so the full-width value would overflow
+/// the ray multiply and not fit the slot. This stays small enough to round-trip
+/// through both.
+pub(crate) const SENTINEL: [u8; 32] =
+    alloy_primitives::hex!("0x0000000000000000000000000000000000000000000000000102030405060708");
+
 /// Ray-division: `(a * RAY + b/2) / b`, round-half-up. Matches Aave's
 /// `WadRayMath.rayDiv` bit-for-bit so the scaled amount we write into
 /// storage equals the one Aave will itself compute during a subsequent

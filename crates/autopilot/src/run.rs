@@ -753,7 +753,7 @@ async fn shadow_mode(config: Configuration) -> ! {
         orderbook,
         drivers,
         trusted_tokens,
-        config.run_loop.solve_deadline,
+        config.run_loop.min_solve_time,
         config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
