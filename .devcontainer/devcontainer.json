@@ -16,7 +16,7 @@
         },
         "ghcr.io/devcontainers/features/rust:1": {},
 		"ghcr.io/devcontainers/features/git:1": {},
-		"ghcr.io/nlordell/features/foundry": {},
+		"ghcr.io/nlordell/features/foundry": { "version": "v1.7.1" },
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {
             "dockerDashComposeVersion": "v2"
         },
@@ -37,7 +37,11 @@
         "PGHOST": "localhost",
         "PGPORT": "5432",
         "PGUSER": "vscode",
-        "PGDATABASE": "vscode"
+        "PGDATABASE": "vscode",
+        // Drop debug info from dev/test builds: the e2e test binary's debug info
+        // is large enough to get the linker OOM-killed on a stock setup.
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0"
     },
 
     "customizations": {
@@ -58,7 +62,7 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "rustup toolchain install nightly --component rustfmt && cargo install flamegraph && cargo install cargo-nextest --locked && bash .devcontainer/setup-e2e.sh",
+	"postCreateCommand": "rustup toolchain install nightly --component rustfmt && cargo install flamegraph && cargo install cargo-nextest --locked && cargo install just --locked && bash .devcontainer/setup-e2e.sh",
 
 	// (Re)start the local Postgres cluster on every container start.
 	"postStartCommand": "bash .devcontainer/start-postgres.sh",

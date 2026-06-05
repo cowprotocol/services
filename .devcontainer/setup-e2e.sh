@@ -3,9 +3,10 @@
 # Provisions the one thing the e2e test suite needs but the base image can't
 # provide out of the box:
 #
-#   * Postgres server – the Docker daemon can't start in this container, so the
-#              docker-compose Postgres isn't available. We run a native server and
-#              apply the flyway migrations the harness expects to already exist.
+#   * Postgres server – we run a native server (rather than the docker-compose
+#              one) so it survives container restarts and is up before any test
+#              runs, then apply the flyway migrations the harness expects to
+#              already exist.
 #
 # anvil/forge come from the foundry devcontainer feature; their prebuilt binaries
 # run directly on the bookworm base image (glibc >= 2.32), so nothing to do here.
@@ -27,12 +28,8 @@ fi
 PG_VERSION="$(ls /etc/postgresql | sort -n | tail -1)"
 echo "    using cluster ${PG_VERSION}/main"
 
-# Start the cluster (there is no init system to do it for us). `start` errors if
-# the cluster is already running, so only start it when it isn't online; a
-# genuine start failure then surfaces instead of being swallowed.
-if ! pg_lsclusters -h "$PG_VERSION" main | grep -q online; then
-    sudo pg_ctlcluster "$PG_VERSION" main start
-fi
+# Start the cluster (shared with postStart so the two can't drift).
+bash "$REPO_ROOT/.devcontainer/start-postgres.sh"
 
 # Trust auth for local connections (development container only).
 HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
@@ -44,27 +41,29 @@ EOF
 sudo pg_ctlcluster "$PG_VERSION" main reload
 
 # The e2e harness connects with the bare url `postgresql://`, which resolves to a
-# role and database named after the OS user (see containerEnv in devcontainer.json
-# and DatabasePoolConfig::test_default).
+# role and database named after $PGUSER/$PGDATABASE (see containerEnv in
+# devcontainer.json and DatabasePoolConfig::test_default).
 psql -h 127.0.0.1 -U postgres -d postgres -tAc \
-    "SELECT 1 FROM pg_roles WHERE rolname='${USER}'" | grep -q 1 \
+    "SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'" | grep -q 1 \
     || psql -h 127.0.0.1 -U postgres -d postgres -c \
-        "CREATE ROLE \"${USER}\" LOGIN SUPERUSER;"
+        "CREATE ROLE \"${PGUSER}\" LOGIN SUPERUSER;"
 psql -h 127.0.0.1 -U postgres -d postgres -tAc \
-    "SELECT 1 FROM pg_database WHERE datname='${USER}'" | grep -q 1 \
+    "SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'" | grep -q 1 \
     || psql -h 127.0.0.1 -U postgres -d postgres -c \
-        "CREATE DATABASE \"${USER}\" OWNER \"${USER}\";"
+        "CREATE DATABASE \"${PGDATABASE}\" OWNER \"${PGUSER}\";"
 
-# Apply the flyway migrations once (the harness only truncates tables, it does not
-# create the schema). Skip if the schema is already present.
-if psql -h 127.0.0.1 -U "$USER" -d "$USER" -tAc \
-        "SELECT to_regclass('public.orders')" | grep -q orders; then
-    echo "    schema already present, skipping migrations"
-else
-    echo "    applying $(ls "$REPO_ROOT"/database/sql/V*.sql | wc -l) migrations..."
-    for f in $(ls "$REPO_ROOT"/database/sql/V*.sql | sort); do
-        psql -v ON_ERROR_STOP=1 -q -h 127.0.0.1 -U "$USER" -d "$USER" -f "$f"
-    done
-fi
+# Apply the migrations with the same flyway image the rest of the repo uses
+# (see docker-compose.yaml). Flyway tracks what it has already applied, so this is
+# incremental and idempotent: re-running only applies new migrations and fails
+# loudly if one is incompatible with the current schema. The native server runs
+# on the host network namespace, so `--network=host` lets flyway reach it on
+# 127.0.0.1:${PGPORT}.
+echo "    applying flyway migrations..."
+docker run --rm --network=host \
+    -v "$REPO_ROOT/database/sql:/flyway/sql:ro" \
+    -v "$REPO_ROOT/database/conf:/flyway/conf:ro" \
+    flyway/flyway:10.7.1 \
+    -url="jdbc:postgresql://127.0.0.1:${PGPORT}/${PGDATABASE}?user=${PGUSER}&password=" \
+    migrate
 
 echo "==> e2e environment ready (postgres)"
