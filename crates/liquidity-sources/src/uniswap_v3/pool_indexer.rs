@@ -23,7 +23,7 @@ use {
     num::BigInt,
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
-    serde::Deserialize,
+    serde::{Deserialize, Deserializer, de},
     serde_with::{DisplayFromStr, serde_as},
     std::{collections::HashMap, time::Duration},
 };
@@ -109,13 +109,33 @@ struct IndexerToken {
 
 #[derive(Deserialize)]
 struct BulkTicksResponse {
-    pools: Vec<IndexerPoolTicks>,
+    /// Deserialised from the wire `pools: [{ pool, ticks }, …]` array into a
+    /// `HashMap` keyed by pool address. A duplicate `pool` key fails the
+    /// deserialisation rather than silently overwriting — the server-side
+    /// API contract is one entry per requested pool.
+    #[serde(deserialize_with = "deserialize_ticks_by_pool")]
+    pools: HashMap<Address, Vec<IndexerTick>>,
 }
 
 #[derive(Deserialize)]
 struct IndexerPoolTicks {
     pool: Address,
     ticks: Vec<IndexerTick>,
+}
+
+fn deserialize_ticks_by_pool<'de, D: Deserializer<'de>>(
+    de: D,
+) -> Result<HashMap<Address, Vec<IndexerTick>>, D::Error> {
+    let entries = Vec::<IndexerPoolTicks>::deserialize(de)?;
+    let mut out = HashMap::with_capacity(entries.len());
+    for IndexerPoolTicks { pool, ticks } in entries {
+        if out.insert(pool, ticks).is_some() {
+            return Err(de::Error::custom(format!(
+                "pool-indexer returned duplicate ticks for pool {pool:#x}",
+            )));
+        }
+    }
+    Ok(out)
 }
 
 #[serde_as]
@@ -134,13 +154,10 @@ struct IndexerTick {
 /// which every page can carry hundreds of decimals-missing pools — so we
 /// aggregate the drops into a single `debug!` per call rather than logging
 /// `warn!` per pool. Steady-state this should be a no-op.
-fn drop_pools_missing_decimals(pools: Vec<IndexerPool>) -> Vec<IndexerPool> {
+fn drop_pools_missing_decimals(mut pools: Vec<IndexerPool>) -> Vec<IndexerPool> {
     let total = pools.len();
-    let kept: Vec<_> = pools
-        .into_iter()
-        .filter(|p| p.token0.decimals.is_some() && p.token1.decimals.is_some())
-        .collect();
-    let dropped = total - kept.len();
+    pools.retain(|p| p.token0.decimals.is_some() && p.token1.decimals.is_some());
+    let dropped = total - pools.len();
     if dropped > 0 {
         tracing::debug!(
             dropped,
@@ -148,7 +165,7 @@ fn drop_pools_missing_decimals(pools: Vec<IndexerPool>) -> Vec<IndexerPool> {
             "pool-indexer returned pools missing token decimals; filtered out",
         );
     }
-    kept
+    pools
 }
 
 impl TryFrom<IndexerPool> for PoolData {
@@ -284,11 +301,8 @@ impl V3PoolDataSource for PoolIndexerClient {
 
             fetched_block_number.get_or_insert(page.block_number);
             // Skip zero-liquidity pools (fully-burned LP, never-minted, etc.)
-            let liq_filtered: Vec<_> = page
-                .pools
-                .into_iter()
-                .filter(|p| !p.liquidity.is_zero())
-                .collect();
+            let mut liq_filtered = page.pools;
+            liq_filtered.retain(|p| !p.liquidity.is_zero());
             let filtered = drop_pools_missing_decimals(liq_filtered)
                 .into_iter()
                 .map(PoolData::try_from)
@@ -399,10 +413,12 @@ async fn fetch_ticks_by_pool_ids(
         .json()
         .await
         .context("bulk-ticks body")?;
-    let mut out: HashMap<Address, Vec<TickData>> = HashMap::new();
-    for IndexerPoolTicks { pool, ticks } in resp.pools {
-        let mapped: Vec<_> = ticks.into_iter().map(|t| t.into_tick_data(pool)).collect();
-        out.insert(pool, mapped);
-    }
-    Ok(out)
+    Ok(resp
+        .pools
+        .into_iter()
+        .map(|(pool, ticks)| {
+            let mapped: Vec<_> = ticks.into_iter().map(|t| t.into_tick_data(pool)).collect();
+            (pool, mapped)
+        })
+        .collect())
 }

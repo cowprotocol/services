@@ -6,7 +6,10 @@ pub mod pools_list;
 use {
     crate::db::uniswap_v3 as db,
     alloy_primitives::Address,
-    axum::{Json, response::Response},
+    axum::{
+        Json,
+        response::{IntoResponse, Response},
+    },
     bigdecimal::{BigDecimal, num_bigint::ToBigInt},
     serde::{Deserialize, Deserializer, Serialize},
 };
@@ -123,12 +126,12 @@ impl From<&db::PoolRow> for PoolResponse {
             token0: TokenInfo {
                 id: r.token0,
                 decimals: r.token0_decimals,
-                symbol: non_empty(&r.token0_symbol),
+                symbol: non_empty(r.token0_symbol.as_deref()),
             },
             token1: TokenInfo {
                 id: r.token1,
                 decimals: r.token1_decimals,
-                symbol: non_empty(&r.token1_symbol),
+                symbol: non_empty(r.token1_symbol.as_deref()),
             },
             fee_tier: r.fee,
             liquidity: r.liquidity.clone(),
@@ -141,8 +144,8 @@ impl From<&db::PoolRow> for PoolResponse {
 
 /// Empty strings are a "tried-and-failed" sentinel written by the symbol
 /// backfill task; surface them as missing rather than as `""`.
-pub(super) fn non_empty(s: &Option<String>) -> Option<String> {
-    s.as_ref().filter(|s| !s.is_empty()).cloned()
+pub(super) fn non_empty(s: Option<&str>) -> Option<String> {
+    s.filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
 /// Converts a slice of DB rows into the on-the-wire [`PoolsResponse`]
@@ -153,7 +156,6 @@ pub(super) fn pools_response(
     rows: &[db::PoolRow],
     next_cursor: Option<String>,
 ) -> Response {
-    use axum::response::IntoResponse;
     Json(PoolsResponse {
         block_number,
         pools: rows.iter().map(PoolResponse::from).collect(),
