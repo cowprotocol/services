@@ -207,6 +207,35 @@ pub async fn batch_update_pool_liquidity(
     Ok(())
 }
 
+/// Returns the subset of `candidates` that are already persisted pools
+/// belonging to `factory`. Used to gate event dispatch — only emitters
+/// previously created by our factory should affect indexed state, otherwise
+/// a malicious contract emitting the same event signatures could spoof
+/// pool updates. New pools created in the current chunk's `PoolCreated`
+/// events must be tracked separately by the caller; this lookup only
+/// reflects committed DB state.
+pub async fn known_pool_addresses(
+    db: &PgPool,
+    factory: &Address,
+    candidates: &[Address],
+) -> Result<std::collections::HashSet<Address>> {
+    if candidates.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let rows = sqlx::query(
+        "SELECT address FROM uniswap_v3_pools WHERE factory = $1 AND address = ANY($2)",
+    )
+    .bind(factory.as_slice())
+    .bind(address_bytes_list(candidates))
+    .fetch_all(db)
+    .await
+    .context("known_pool_addresses")?;
+
+    rows.into_iter()
+        .map(|r| bytes_to_addr(r.get("address")))
+        .collect()
+}
+
 /// Bulk-loads `(tick, liquidity)` for pools the caller is about to touch with
 /// `Mint`/`Burn` events. Pools absent from `uniswap_v3_pool_states` (not yet
 /// initialised) are omitted from the result — callers must treat absence as

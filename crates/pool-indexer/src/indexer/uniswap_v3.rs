@@ -18,7 +18,7 @@ use {
     futures::{StreamExt, TryStreamExt},
     itertools::Itertools,
     sqlx::PgPool,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
     tracing::instrument,
 };
 
@@ -206,7 +206,7 @@ impl UniswapV3Indexer {
                 Ok::<_, anyhow::Error>((chunk, logs))
             })
             .buffered(self.fetch_concurrency)
-            .try_for_each(|(chunk, logs)| self.commit_chunk(chunk, logs))
+            .try_for_each(|(chunk, logs)| self.commit_chunk(chunk, logs, finalized_block))
             .await?;
 
         tracing::info!(
@@ -256,12 +256,13 @@ impl UniswapV3Indexer {
         // address list (tens of thousands on mainnet) would blow past most
         // RPCs' filter-size caps. `eth_getLogs` applies the address filter
         // across all events at once, so we can't scope each topic
-        // independently. Instead, we filter client-side:
-        //   - PoolCreated is matched against `self.factory` in
-        //     `LogAccumulator::handle_pool_created`.
-        //   - Mint/Burn/Swap/Initialize from unknown pools are silently dropped by the
-        //     SQL `WHERE EXISTS (... uniswap_v3_pools ...)` guards in the batch
-        //     writers.
+        // independently. Instead, we filter client-side in
+        // `collect_log_changes`:
+        //   - PoolCreated must be emitted by `self.factory`.
+        //   - Mint/Burn/Swap/Initialize must be emitted by a pool either committed to
+        //     the DB or freshly created earlier in this chunk by the same factory.
+        // The SQL `WHERE EXISTS (… uniswap_v3_pools …)` guards on the batch
+        // writers are kept as defense-in-depth.
         bisecting_get_logs(
             &self.provider,
             from,
@@ -279,23 +280,38 @@ impl UniswapV3Indexer {
     }
 
     #[instrument(skip(self, logs), fields(chunk_start = chunk.start, chunk_end = chunk.end))]
-    async fn commit_chunk(&self, chunk: ChunkRange, logs: Vec<Log>) -> Result<()> {
-        // Pre-fetch `decimals` via eth_call and load base pool states from the
-        // DB in parallel before opening the chunk transaction. Symbols are
-        // intentionally excluded — a hung `symbol()` call must never block
-        // pool inserts; they're populated later by the async backfill task.
+    async fn commit_chunk(
+        &self,
+        chunk: ChunkRange,
+        logs: Vec<Log>,
+        target_block: u64,
+    ) -> Result<()> {
+        // Pre-fetch `decimals` via eth_call and load base pool states + known
+        // pools from the DB in parallel before opening the chunk transaction.
+        // Symbols are intentionally excluded — a hung `symbol()` call must
+        // never block pool inserts; they're populated later by the async
+        // backfill task.
         use crate::metrics::HistogramVecExt;
 
         let metrics = crate::metrics::Metrics::get();
         let chunk_timer_labels = [self.network.as_str()];
         let _chunk_timer = metrics.chunk_commit_seconds.timer(&chunk_timer_labels);
         let mint_burn_pools = mint_burn_pool_addresses(&logs);
-        let (decimals, base_states) = tokio::join!(
+        let pool_event_emitters = pool_event_emitters(&logs);
+        let (decimals, base_states, known_pools_db) = tokio::join!(
             self.prefetch_decimals(&logs),
             db::get_base_pool_states(&self.db, &self.factory, &mint_burn_pools),
+            db::known_pool_addresses(&self.db, &self.factory, &pool_event_emitters),
         );
         let base_states = base_states?;
-        let changes = collect_log_changes(self.factory, &logs, &base_states, &decimals);
+        let known_pools_db = known_pools_db?;
+        let changes = collect_log_changes(
+            self.factory,
+            &logs,
+            &base_states,
+            &decimals,
+            &known_pools_db,
+        );
 
         tracing::debug!(
             chunk_start = chunk.start,
@@ -327,6 +343,15 @@ impl UniswapV3Indexer {
             .indexed_block
             .with_label_values(&[network])
             .set(i64::try_from(chunk.end).unwrap_or(i64::MAX));
+        // `target_block` was the finalized tip at the start of the enclosing
+        // `run_once`; refreshing this metric per-chunk lets dashboards watch
+        // the lag shrink in real time during a multi-chunk catch-up instead
+        // of only seeing the initial value.
+        let lag = target_block.saturating_sub(chunk.end);
+        metrics
+            .indexer_lag_blocks
+            .with_label_values(&[network])
+            .set(i64::try_from(lag).unwrap_or(i64::MAX));
         Ok(())
     }
 
@@ -388,6 +413,26 @@ fn mint_burn_pool_addresses(logs: &[Log]) -> Vec<Address> {
         .filter_map(|log| {
             let t = log.topic0()?;
             (*t == Mint::SIGNATURE_HASH || *t == Burn::SIGNATURE_HASH).then(|| log.address())
+        })
+        .unique()
+        .collect()
+}
+
+/// Returns the de-duplicated set of contract addresses that emitted any of
+/// the per-pool event types (`Initialize`/`Swap`/`Mint`/`Burn`) in the chunk.
+/// Used to gate dispatch — only emitters that the DB recognises as pools
+/// created by our factory are accepted. The wire `eth_getLogs` doesn't filter
+/// by address (see [`UniswapV3Indexer::fetch_logs_bisecting`]), so this
+/// candidate set is what we ask the DB to confirm.
+fn pool_event_emitters(logs: &[Log]) -> Vec<Address> {
+    logs.iter()
+        .filter_map(|log| {
+            let t = log.topic0()?;
+            (*t == Initialize::SIGNATURE_HASH
+                || *t == Swap::SIGNATURE_HASH
+                || *t == Mint::SIGNATURE_HASH
+                || *t == Burn::SIGNATURE_HASH)
+                .then(|| log.address())
         })
         .unique()
         .collect()
@@ -748,12 +793,16 @@ impl LogAccumulator {
     /// call must never block pool inserts, and symbol is informational only
     /// (decimals is what's price-critical). The async backfill task picks
     /// them up out-of-band.
-    fn handle_pool_created(&mut self, log: &Log, dec_cache: &DecimalsCache) {
+    ///
+    /// Returns the new pool's address so the caller can add it to the set
+    /// of emitters accepted for downstream events in the same chunk; `None`
+    /// if the log failed to decode.
+    fn handle_pool_created(&mut self, log: &Log, dec_cache: &DecimalsCache) -> Option<Address> {
         let decoded = match PoolCreated::decode_log(&log.inner) {
             Ok(d) => d,
             Err(err) => {
                 tracing::warn!(?err, pool = %log.address(), block = ?log.block_number, "failed to decode PoolCreated log");
-                return;
+                return None;
             }
         };
         let e = &decoded.data;
@@ -776,6 +825,7 @@ impl LogAccumulator {
                 created_block,
             },
         );
+        Some(pool)
     }
 
     /// Records the initial price and tick from an `Initialize` event.
@@ -911,13 +961,11 @@ impl LogAccumulator {
     /// `liq_only[pool]` (a prior `Mint`/`Burn` in this chunk) →
     /// `base_states[pool]` (loaded from `uniswap_v3_pool_states`).
     ///
-    /// When none of the three has the pool we silently return: this is the
-    /// steady-state case for events fired by *other* Uniswap V3 forks on the
-    /// same chain (we fetch `eth_getLogs` without an address filter — see
-    /// [`Self::fetch_logs_bisecting`] for why — so foreign-factory events do
-    /// reach this method). Mint/Burn before `Initialize` for *our* pool is
-    /// impossible per Uniswap V3 contract semantics, so the "silent skip"
-    /// doesn't hide a real bug.
+    /// When none of the three has the pool we silently return. Foreign-factory
+    /// events are now filtered at dispatch (see [`collect_log_changes`]'s
+    /// known-pools gate), so reaching this method without state implies
+    /// Mint/Burn before `Initialize` for *our* pool — impossible per Uniswap
+    /// V3 contract semantics, so the "silent skip" doesn't hide a real bug.
     fn apply_position_delta_to_pool_liq(
         &mut self,
         pool: Address,
@@ -989,14 +1037,41 @@ fn collect_log_changes(
     logs: &[Log],
     base_states: &BasePoolStates,
     dec_cache: &DecimalsCache,
+    known_pools_db: &HashSet<Address>,
 ) -> ChunkChanges {
     let mut acc = LogAccumulator::default();
+    // Pools created earlier in this same chunk. Combined with `known_pools_db`
+    // (committed state) this gives the set of legitimate emitters for the
+    // per-pool events that follow. Skipping events from foreign emitters here
+    // is defense-in-depth: the persistence-side SQL `WHERE EXISTS (… pools
+    // WHERE factory=$1)` guards would drop them at write time anyway, but
+    // gating at dispatch saves the wasted in-memory bookkeeping and makes
+    // the security contract local to one place.
+    let mut known_pools_chunk: HashSet<Address> = HashSet::new();
+
     for log in logs {
         let Some(t) = log.topic0() else { continue };
-        match *t {
-            t if t == PoolCreated::SIGNATURE_HASH && log.address() == factory => {
-                acc.handle_pool_created(log, dec_cache);
+        let topic = *t;
+
+        if topic == PoolCreated::SIGNATURE_HASH {
+            // PoolCreated must be emitted *by* our factory contract.
+            if log.address() != factory {
+                continue;
             }
+            if let Some(pool) = acc.handle_pool_created(log, dec_cache) {
+                known_pools_chunk.insert(pool);
+            }
+            continue;
+        }
+
+        // Per-pool events: the emitter must be a pool created by our factory,
+        // either committed to the DB or discovered earlier in this chunk.
+        let emitter = log.address();
+        if !known_pools_db.contains(&emitter) && !known_pools_chunk.contains(&emitter) {
+            continue;
+        }
+
+        match topic {
             t if t == Initialize::SIGNATURE_HASH => acc.handle_initialize(log),
             t if t == Swap::SIGNATURE_HASH => acc.handle_swap(log),
             t if t == Mint::SIGNATURE_HASH => acc.handle_mint(log, base_states),
@@ -1051,9 +1126,23 @@ mod tests {
         }
     }
 
+    /// Test helper: builds a `known_pools_db` set containing the listed
+    /// addresses. Tests pass this to gate `collect_log_changes`'s per-pool
+    /// event dispatch; passing an empty set is equivalent to "no pools
+    /// committed yet, only freshly-created in-chunk pools count."
+    fn known(pools: &[Address]) -> HashSet<Address> {
+        pools.iter().copied().collect()
+    }
+
     #[test]
     fn empty_logs_produce_empty_changes() {
-        let c = collect_log_changes(FACTORY, &[], &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &[],
+            &Default::default(),
+            &Default::default(),
+            &known(&[]),
+        );
         assert!(c.new_pools.is_empty());
         assert!(c.pool_states.is_empty());
         assert!(c.liquidity_updates.is_empty());
@@ -1070,7 +1159,13 @@ mod tests {
             pool: POOL,
         };
         let log = make_log(FACTORY, 100, event);
-        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &[log],
+            &Default::default(),
+            &Default::default(),
+            &known(&[]),
+        );
         assert_eq!(c.new_pools.len(), 1);
         assert_eq!(c.new_pools[0].address, POOL);
         assert_eq!(c.new_pools[0].fee, 500);
@@ -1086,7 +1181,13 @@ mod tests {
             pool: POOL,
         };
         let log = make_log(Address::repeat_byte(0xBB), 100, event);
-        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &[log],
+            &Default::default(),
+            &Default::default(),
+            &known(&[]),
+        );
         assert!(c.new_pools.is_empty());
     }
 
@@ -1097,7 +1198,13 @@ mod tests {
             tick: t(0),
         };
         let log = make_log(POOL, 100, event);
-        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &[log],
+            &Default::default(),
+            &Default::default(),
+            &known(&[POOL]),
+        );
         assert_eq!(c.pool_states.len(), 1);
         assert_eq!(c.pool_states[0].pool_address, POOL);
         assert_eq!(c.pool_states[0].block_number, 100);
@@ -1117,7 +1224,13 @@ mod tests {
             tick: t(42),
         };
         let log = make_log(POOL, 200, event);
-        let c = collect_log_changes(FACTORY, &[log], &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &[log],
+            &Default::default(),
+            &Default::default(),
+            &known(&[POOL]),
+        );
         assert_eq!(c.pool_states.len(), 1);
         assert_eq!(c.pool_states[0].tick, 42);
         assert_eq!(c.pool_states[0].liquidity, 500_000);
@@ -1141,7 +1254,13 @@ mod tests {
         // liquidity grows by `amount`.
         let base_states: BasePoolStates = HashMap::from([(POOL, (0i32, 0u128))]);
         let log = make_log(POOL, 100, event);
-        let c = collect_log_changes(FACTORY, &[log], &base_states, &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &[log],
+            &base_states,
+            &Default::default(),
+            &known(&[POOL]),
+        );
 
         assert_eq!(c.tick_deltas.len(), 2);
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
@@ -1182,7 +1301,13 @@ mod tests {
         // with liquidity=500_000, tick=0, so the Mint applies its delta
         // against that in-memory state.
         let logs = vec![make_log(POOL, 200, swap), make_log(POOL, 201, mint)];
-        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &Default::default(),
+            &Default::default(),
+            &known(&[POOL]),
+        );
 
         assert_eq!(c.pool_states.len(), 1);
         // Swap established full_state; Mint added 100_000 to active liquidity
@@ -1213,7 +1338,13 @@ mod tests {
             amount1: U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
-        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &Default::default(),
+            &Default::default(),
+            &known(&[POOL]),
+        );
         assert!(c.tick_deltas.is_empty(), "zero-net ticks must be pruned");
     }
 
@@ -1239,7 +1370,13 @@ mod tests {
             amount1: U256::ZERO,
         };
         let logs = vec![make_log(POOL, 100, mint), make_log(POOL, 101, burn)];
-        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &Default::default(),
+            &Default::default(),
+            &known(&[POOL]),
+        );
 
         let expected = (mint_amount - burn_amount).cast_signed();
         let lower = c.tick_deltas.iter().find(|d| d.tick_idx == -100).unwrap();
@@ -1262,9 +1399,50 @@ mod tests {
             tick: t(0),
         };
         let logs = vec![make_log(FACTORY, 100, created), make_log(POOL, 100, init)];
-        let c = collect_log_changes(FACTORY, &logs, &Default::default(), &Default::default());
+        // Empty `known_pools_db` — POOL becomes a known emitter via the
+        // chunk's own PoolCreated event, so the subsequent Initialize is
+        // accepted from the chunk-local set.
+        let c = collect_log_changes(
+            FACTORY,
+            &logs,
+            &Default::default(),
+            &Default::default(),
+            &known(&[]),
+        );
         assert_eq!(c.new_pools.len(), 1);
         assert_eq!(c.pool_states.len(), 1);
         assert_eq!(c.pool_states[0].pool_address, POOL);
+    }
+
+    #[test]
+    fn event_from_unknown_emitter_is_dropped() {
+        // A foreign contract (not in `known_pools_db`, not created by our
+        // factory in this chunk) emitting a per-pool event must not affect
+        // indexed state. Without the dispatch-time gate, the resulting Swap
+        // would land in `pool_states` and bypass the DB-side `WHERE EXISTS`
+        // guard until write time.
+        let foreign = Address::repeat_byte(0xEE);
+        let swap = Swap {
+            sender: Address::ZERO,
+            recipient: Address::ZERO,
+            amount0: I256::ZERO,
+            amount1: I256::ZERO,
+            sqrtPriceX96: U160::from(SQRT_PRICE_1),
+            liquidity: 500_000u128,
+            tick: t(42),
+        };
+        let log = make_log(foreign, 100, swap);
+        let c = collect_log_changes(
+            FACTORY,
+            &[log],
+            &Default::default(),
+            &Default::default(),
+            &known(&[POOL]),
+        );
+        assert!(
+            c.pool_states.is_empty(),
+            "foreign-emitter Swap must be dropped"
+        );
+        assert!(c.tick_deltas.is_empty());
     }
 }
