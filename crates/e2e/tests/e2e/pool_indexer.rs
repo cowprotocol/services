@@ -24,7 +24,6 @@ use {
         MetricsConfig,
         NetworkConfig,
         NetworkName,
-        Networks,
     },
     serde::Deserialize,
     sqlx::PgPool,
@@ -194,7 +193,7 @@ async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task:
             url: LOCAL_DB_URL.parse().unwrap(),
             max_connections: NonZeroU32::new(5).unwrap(),
         },
-        networks: Networks::try_new(vec![NetworkConfig {
+        network: NetworkConfig {
             name: NetworkName::new("mainnet"),
             chain_id: 1,
             rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
@@ -206,8 +205,7 @@ async fn spawn_pool_indexer(factory: Address, metrics_port: u16) -> tokio::task:
             seed_block: None,
             fetch_concurrency: 8,
             prefetch_concurrency: 50,
-        }])
-        .unwrap(),
+        },
         api: ApiConfig {
             bind_address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, POOL_INDEXER_PORT)),
         },

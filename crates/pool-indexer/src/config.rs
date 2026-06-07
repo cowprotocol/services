@@ -1,9 +1,8 @@
 use {
     alloy_primitives::Address,
     anyhow::{Context, Result},
-    serde::{Deserialize, Deserializer},
+    serde::Deserialize,
     std::{
-        collections::HashSet,
         fmt,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         num::NonZeroU32,
@@ -129,6 +128,19 @@ impl NetworkConfig {
             prefetch_concurrency: self.prefetch_concurrency,
         }
     }
+
+    /// Sanity-checks called after TOML parsing. Per-network validation
+    /// only — cross-network uniqueness no longer applies because each
+    /// process owns its own DB and serves a single network.
+    fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.factories.len() == 1,
+            "network {}: exactly one factory per network is supported in this release, got {}",
+            self.name,
+            self.factories.len(),
+        );
+        Ok(())
+    }
 }
 
 /// A single factory under [`NetworkConfig::factories`]. Each entry gets
@@ -185,8 +197,7 @@ impl Default for MetricsConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Configuration {
     pub database: DatabaseConfig,
-    #[serde(rename = "network")]
-    pub networks: Networks,
+    pub network: NetworkConfig,
     #[serde(default)]
     pub api: ApiConfig,
     #[serde(default)]
@@ -197,76 +208,8 @@ impl Configuration {
     pub fn from_path(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading config file {}", path.display()))?;
-        toml::from_str(&content).context("parsing config file")
+        let parsed: Self = toml::from_str(&content).context("parsing config file")?;
+        parsed.network.validate()?;
+        Ok(parsed)
     }
-}
-
-/// Validated list of [`NetworkConfig`]. Construction enforces cross-network
-/// uniqueness (names and chain_ids) and the exactly-one-factory invariant —
-/// so the rest of the codebase can iterate without re-checking.
-#[derive(Debug)]
-pub struct Networks(Vec<NetworkConfig>);
-
-impl Networks {
-    pub fn try_new(networks: Vec<NetworkConfig>) -> Result<Self> {
-        validate_networks(&networks)?;
-        Ok(Self(networks))
-    }
-
-    pub fn as_slice(&self) -> &[NetworkConfig] {
-        &self.0
-    }
-}
-
-impl IntoIterator for Networks {
-    type IntoIter = std::vec::IntoIter<NetworkConfig>;
-    type Item = NetworkConfig;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a Networks {
-    type IntoIter = std::slice::Iter<'a, NetworkConfig>;
-    type Item = &'a NetworkConfig;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
-
-impl<'de> Deserialize<'de> for Networks {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        let networks = Vec::<NetworkConfig>::deserialize(de)?;
-        Self::try_new(networks).map_err(serde::de::Error::custom)
-    }
-}
-
-fn validate_networks(networks: &[NetworkConfig]) -> Result<()> {
-    anyhow::ensure!(
-        !networks.is_empty(),
-        "at least one [[network]] must be configured",
-    );
-    let mut names = HashSet::new();
-    let mut chain_ids = HashSet::new();
-    for n in networks {
-        anyhow::ensure!(
-            names.insert(n.name.as_str()),
-            "duplicate network name: {}",
-            n.name,
-        );
-        anyhow::ensure!(
-            chain_ids.insert(n.chain_id),
-            "duplicate chain_id: {}",
-            n.chain_id,
-        );
-        anyhow::ensure!(
-            n.factories.len() == 1,
-            "network {}: exactly one factory per network is supported in this release, got {}",
-            n.name,
-            n.factories.len(),
-        );
-    }
-    Ok(())
 }

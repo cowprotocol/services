@@ -55,8 +55,8 @@ async fn health() -> impl IntoResponse {
 /// Emits per-request `api_requests` (count) and `api_request_seconds`
 /// (latency) metrics labelled by the matched route template (e.g.
 /// `/api/v1/{network}/uniswap/v3/pools`) rather than the concrete URL — so
-/// the cardinality stays bounded no matter how many networks / addresses
-/// flow through.
+/// the cardinality stays bounded regardless of how many pool addresses
+/// flow through the address-parameterised routes.
 async fn record_request_metrics(req: Request, next: Next) -> Response {
     use crate::metrics::HistogramVecExt;
 

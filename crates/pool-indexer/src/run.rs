@@ -27,17 +27,16 @@ pub async fn start(args: impl Iterator<Item = String>) {
 
 pub async fn run(config: Configuration) {
     let db = connect_db(&config).await;
-    let api_state = build_api_state(&db, config.networks.as_slice());
+    let api_state = build_api_state(&db, &config.network);
 
     // Startup probe: 200 once every configured factory has completed its
     // initial seed + catch-up. Until then, `/pools` returns 503 anyway
-    // (no checkpoint yet)
+    // (no checkpoint yet).
     let startup = Arc::new(Some(AtomicBool::new(false)));
-    let total_factories: usize = (&config.networks)
-        .into_iter()
-        .map(|n| n.factories.len())
-        .sum();
-    let barrier = Arc::new(StartupBarrier::new(startup.clone(), total_factories));
+    let barrier = Arc::new(StartupBarrier::new(
+        startup.clone(),
+        config.network.factories.len(),
+    ));
 
     observe::metrics::serve_metrics(
         Arc::new(AlwaysAlive),
@@ -50,15 +49,10 @@ pub async fn run(config: Configuration) {
     let api_router = crate::api::router(api_state);
     let api_addr = config.api.bind_address;
     set.spawn(async move { serve(api_router, api_addr).await });
+    set.spawn(run_network_indexer(db, config.network, barrier));
 
-    for network in config.networks {
-        let db = db.clone();
-        let barrier = barrier.clone();
-        set.spawn(async move { run_network_indexer(db, network, barrier).await });
-    }
-
-    // All spawned tasks (API server + per-network indexers) are infinite
-    // loops; any completion is a bug, so we crash the process and let the
+    // All spawned tasks (API server + network indexer) are infinite loops;
+    // any completion is a bug, so we crash the process and let the
     // orchestrator restart the pod.
     if let Some(result) = set.join_next().await {
         panic!("pool-indexer task exited (expected infinite loop): {result:?}");
@@ -109,12 +103,10 @@ fn initialize_observability(args: &Arguments) {
     observe::panic_hook::install();
 }
 
-fn build_api_state(db: &PgPool, networks: &[NetworkConfig]) -> Arc<AppState> {
-    let networks = networks.iter().map(|n| n.name.clone()).collect();
-
+fn build_api_state(db: &PgPool, network: &NetworkConfig) -> Arc<AppState> {
     Arc::new(AppState {
         db: db.clone(),
-        networks,
+        network: network.name.clone(),
     })
 }
 
@@ -163,12 +155,12 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
         ));
     }
 
-    // Symbol/decimals backfill is per-network (iterates all tokens missing the
-    // field, regardless of which factory owns the pool that referenced them),
-    // so a single pair per network is enough. Spawned into the same
-    // `factory_set` so a panic in either task surfaces through the same
-    // supervisor as the live indexers and crashes the process — kubernetes
-    // restarts the pod, and the existing `restarts` metric pages on-call.
+    // Symbol/decimals backfill iterates *all* tokens missing the field,
+    // regardless of which factory owns the pool that referenced them — so a
+    // single pair per process is enough. Spawned into the same `factory_set`
+    // so a panic in either task surfaces through the same supervisor as the
+    // live indexers and crashes the process — kubernetes restarts the pod,
+    // and the existing `restarts` metric pages on-call.
     let backfill_concurrency = network.prefetch_concurrency;
     let backfill_interval = network.poll_interval();
     factory_set.spawn(crate::indexer::uniswap_v3::backfill_symbols(

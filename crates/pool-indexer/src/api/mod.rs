@@ -10,22 +10,20 @@ use {
         response::{IntoResponse, Response},
     },
     sqlx::PgPool,
-    std::collections::HashSet,
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    /// The set of network names this process is configured to serve.
-    /// Each process indexes a single chain into a dedicated DB, so a URL
-    /// whose `{network}` segment isn't in this set yields a 404. The DB
-    /// itself is no longer partitioned by `chain_id`.
-    pub networks: HashSet<NetworkName>,
+    /// The single network this process indexes. A URL whose `{network}`
+    /// segment doesn't match yields a 404 — one process per network, one
+    /// DB per network.
+    pub network: NetworkName,
 }
 
 impl AppState {
     pub fn is_network_configured(&self, name: &str) -> bool {
-        self.networks.contains(&NetworkName::new(name))
+        self.network.as_str() == name
     }
 }
 
