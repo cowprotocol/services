@@ -109,6 +109,11 @@ struct IndexerToken {
 
 #[derive(Deserialize)]
 struct BulkTicksResponse {
+    /// Indexer's response-envelope block. Used to detect cross-call drift
+    /// against the paired `/pools/by-ids` response in [`PoolIndexerClient::
+    /// fetch_batch_consistent`] so the caller never sees pool state + tick
+    /// state from different blocks.
+    block_number: u64,
     /// Deserialised from the wire `pools: [{ pool, ticks }, …]` array into a
     /// `HashMap` keyed by pool address. A duplicate `pool` key fails the
     /// deserialisation rather than silently overwriting — the server-side
@@ -139,7 +144,7 @@ fn deserialize_ticks_by_pool<'de, D: Deserializer<'de>>(
 }
 
 #[serde_as]
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct IndexerTick {
     tick_idx: i32,
     #[serde_as(as = "DisplayFromStr")]
@@ -168,33 +173,36 @@ fn drop_pools_missing_decimals(mut pools: Vec<IndexerPool>) -> Vec<IndexerPool> 
     pools
 }
 
-impl TryFrom<IndexerPool> for PoolData {
-    type Error = anyhow::Error;
-
-    fn try_from(pool: IndexerPool) -> Result<Self> {
-        let token0_decimals = pool
+impl IndexerPool {
+    /// Converts a wire-format pool into [`PoolData`], stamping the
+    /// `block_number` of the response envelope so the driver can anchor
+    /// per-pool event replay. Bails if `decimals` is missing on either
+    /// token — callers should run [`drop_pools_missing_decimals`] first.
+    fn into_pool_data(self, block_number: u64) -> Result<PoolData> {
+        let token0_decimals = self
             .token0
             .decimals
-            .context("BUG: missing token0 decimals after pools_tokens_have_decimals filter")?;
-        let token1_decimals = pool
+            .context("BUG: missing token0 decimals after drop_pools_missing_decimals filter")?;
+        let token1_decimals = self
             .token1
             .decimals
-            .context("BUG: missing token1 decimals after pools_tokens_have_decimals filter")?;
-        Ok(Self {
-            id: pool.id,
+            .context("BUG: missing token1 decimals after drop_pools_missing_decimals filter")?;
+        Ok(PoolData {
+            id: self.id,
             token0: Token {
-                id: pool.token0.id,
+                id: self.token0.id,
                 decimals: token0_decimals,
             },
             token1: Token {
-                id: pool.token1.id,
+                id: self.token1.id,
                 decimals: token1_decimals,
             },
-            fee_tier: pool.fee_tier,
-            liquidity: pool.liquidity,
-            sqrt_price: pool.sqrt_price,
-            tick: BigInt::from(pool.tick),
+            fee_tier: self.fee_tier,
+            liquidity: self.liquidity,
+            sqrt_price: self.sqrt_price,
+            tick: BigInt::from(self.tick),
             ticks: None,
+            block_number,
         })
     }
 }
@@ -286,9 +294,12 @@ impl PoolIndexerClient {
 impl V3PoolDataSource for PoolIndexerClient {
     async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
         self.wait_until(target_block).await?;
-        // We pin the snapshot to the first page's block_number; later pages
-        // may report a higher block — bounded drift, picked up by the
-        // driver's event replay.
+        // Each page reports its own `block_number`; the indexer may advance
+        // between pages. Per-pool `block_number` is stamped from the page
+        // the pool came in, so the driver can replay per-pool from there.
+        // The envelope `fetched_block_number` mirrors the first page's
+        // block — the conservative lower bound, kept for callers that only
+        // need a global "we got at least this fresh" guarantee.
         let mut cursor: Option<String> = None;
         let mut pools: Vec<PoolData> = Vec::new();
         let mut fetched_block_number: Option<u64> = None;
@@ -298,13 +309,14 @@ impl V3PoolDataSource for PoolIndexerClient {
                 .await?
                 .context("pool-indexer returned 503 after wait_until")?;
 
-            fetched_block_number.get_or_insert(page.block_number);
+            let page_block = page.block_number;
+            fetched_block_number.get_or_insert(page_block);
             // Skip zero-liquidity pools (fully-burned LP, never-minted, etc.)
             let mut liq_filtered = page.pools;
             liq_filtered.retain(|p| !p.liquidity.is_zero());
             let filtered = drop_pools_missing_decimals(liq_filtered)
                 .into_iter()
-                .map(PoolData::try_from)
+                .map(|p| p.into_pool_data(page_block))
                 .collect::<Result<Vec<_>>>()?;
             pools.extend(filtered);
             match page.next_cursor {
@@ -335,38 +347,86 @@ impl V3PoolDataSource for PoolIndexerClient {
         let mut out: Vec<PoolData> = Vec::with_capacity(ids.len());
         let mut fetched_block_number: Option<u64> = None;
         for batch in ids.chunks(POOL_IDS_PER_REQUEST) {
-            let (pools_page, ticks_by_pool) = futures::try_join!(
-                fetch_pools_by_ids(self, batch),
-                fetch_ticks_by_pool_ids(self, batch),
-            )?;
+            let (pools_page, ticks_response) = self.fetch_batch_consistent(batch).await?;
 
-            fetched_block_number.get_or_insert(pools_page.block_number);
-            for mut pool in pools_page.pools {
-                if let Some(ticks) = ticks_by_pool.get(&pool.id) {
-                    pool.ticks = Some(ticks.clone());
+            let batch_block = pools_page.block_number;
+            fetched_block_number.get_or_insert(batch_block);
+            for indexer_pool in pools_page.pools {
+                let pool_id = indexer_pool.id;
+                let mut pool = indexer_pool.into_pool_data(batch_block)?;
+                if let Some(ticks) = ticks_response.pools.get(&pool_id) {
+                    pool.ticks = Some(
+                        ticks
+                            .iter()
+                            .map(|t| t.clone().into_tick_data(pool_id))
+                            .collect(),
+                    );
                 }
                 out.push(pool);
             }
         }
         Ok(PoolsWithTicks {
-            // For non-empty `ids` the loop always runs at least once, so
-            // `fetched_block_number` is always populated. Fall back to
-            // `target_block` defensively rather than panicking.
-            fetched_block_number: fetched_block_number.unwrap_or(target_block),
+            fetched_block_number: fetched_block_number.context(
+                "BUG: pool-indexer returned no batches for non-empty `ids` — empty short-circuits \
+                 above",
+            )?,
             pools: out,
         })
     }
 }
 
-/// First-page result of a `pools/by-ids` fetch, plus the indexer's response
-/// envelope block_number captured for the caller's event-replay anchor.
+/// Maximum number of times [`PoolIndexerClient::fetch_batch_consistent`]
+/// retries the parallel pools + ticks fetch when the indexer advances
+/// between the two calls. A chunk commits every poll-interval (3-12s) and
+/// the two HTTP calls complete in 10s-of-ms, so mismatch is rare and
+/// resolves on the next attempt; capping at 3 prevents indefinite retry
+/// if the indexer is rapidly catching up on a cold start.
+const BATCH_CONSISTENCY_MAX_RETRIES: usize = 3;
+
+/// Result of a `pools/by-ids` fetch in wire form. The caller stamps
+/// `block_number` onto each pool when converting to [`PoolData`] so the
+/// driver can anchor per-pool event replay.
 struct PoolsByIdsPage {
     block_number: u64,
-    pools: Vec<PoolData>,
+    pools: Vec<IndexerPool>,
 }
 
 fn ids_param(ids: &[Address]) -> String {
     ids.iter().map(const_hex::encode_prefixed).join(",")
+}
+
+impl PoolIndexerClient {
+    /// Fetches a batch of pools and their ticks at a single indexer block.
+    /// The two HTTP endpoints can drift if a chunk commits between the
+    /// requests, so this retries on mismatch up to
+    /// [`BATCH_CONSISTENCY_MAX_RETRIES`]. After a successful return both
+    /// responses agree on `block_number`, eliminating the
+    /// pool-state-vs-tick-state cross-block window that previously surfaced
+    /// inconsistent snapshots to the driver.
+    async fn fetch_batch_consistent(
+        &self,
+        ids: &[Address],
+    ) -> Result<(PoolsByIdsPage, BulkTicksResponse)> {
+        for attempt in 0..BATCH_CONSISTENCY_MAX_RETRIES {
+            let (pools_page, ticks_response) = futures::try_join!(
+                fetch_pools_by_ids(self, ids),
+                fetch_ticks_by_pool_ids(self, ids),
+            )?;
+            if pools_page.block_number == ticks_response.block_number {
+                return Ok((pools_page, ticks_response));
+            }
+            tracing::warn!(
+                attempt,
+                pools_block = pools_page.block_number,
+                ticks_block = ticks_response.block_number,
+                "pool-indexer block mismatch between pools and ticks responses; retrying",
+            );
+        }
+        anyhow::bail!(
+            "pool-indexer returned mismatched pools-vs-ticks blocks after \
+             {BATCH_CONSISTENCY_MAX_RETRIES} retries"
+        )
+    }
 }
 
 async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Result<PoolsByIdsPage> {
@@ -384,24 +444,20 @@ async fn fetch_pools_by_ids(client: &PoolIndexerClient, ids: &[Address]) -> Resu
         .json()
         .await
         .context("pools-by-ids body")?;
-    let pools = drop_pools_missing_decimals(resp.pools)
-        .into_iter()
-        .map(PoolData::try_from)
-        .collect::<Result<Vec<_>>>()?;
     Ok(PoolsByIdsPage {
         block_number: resp.block_number,
-        pools,
+        pools: drop_pools_missing_decimals(resp.pools),
     })
 }
 
 async fn fetch_ticks_by_pool_ids(
     client: &PoolIndexerClient,
     ids: &[Address],
-) -> Result<HashMap<Address, Vec<TickData>>> {
+) -> Result<BulkTicksResponse> {
     let mut url = client.path("pools/ticks");
     url.query_pairs_mut()
         .append_pair("pool_ids", &ids_param(ids));
-    let resp: BulkTicksResponse = client
+    client
         .http
         .get(url)
         .send()
@@ -411,13 +467,5 @@ async fn fetch_ticks_by_pool_ids(
         .context("bulk-ticks HTTP status")?
         .json()
         .await
-        .context("bulk-ticks body")?;
-    Ok(resp
-        .pools
-        .into_iter()
-        .map(|(pool, ticks)| {
-            let mapped: Vec<_> = ticks.into_iter().map(|t| t.into_tick_data(pool)).collect();
-            (pool, mapped)
-        })
-        .collect())
+        .context("bulk-ticks body")
 }

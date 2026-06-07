@@ -114,14 +114,17 @@ impl UniV3SubgraphClient {
     }
 
     /// Retrieves the pool data for all existing pools from the subgraph as of
-    /// `target_block`. The subgraph supports historical queries, so the
-    /// returned snapshot is at exactly `target_block`.
+    /// `target_block`. The subgraph supports historical queries, so every
+    /// returned pool is consistently anchored at `target_block`.
     pub async fn get_registered_pools(&self, target_block: u64) -> Result<RegisteredPools> {
         let variables = json_map! {
             "block" => target_block,
         };
         let query = Self::all_pools_query(self.use_liquidity_net_filter);
-        let pools = self.get_pools(query, variables).await?;
+        let mut pools = self.get_pools(query, variables).await?;
+        for pool in &mut pools {
+            pool.block_number = target_block;
+        }
         Ok(RegisteredPools {
             fetched_block_number: target_block,
             pools,
@@ -194,6 +197,10 @@ impl UniV3SubgraphClient {
             .filter_map(|mut pool| {
                 ticks_mapped.get(&pool.id).map(|ticks| {
                     pool.ticks = Some(ticks.clone());
+                    // Subgraph honors `block: { number: target_block }`
+                    // on both queries, so all data is consistent at the
+                    // anchor block.
+                    pool.block_number = target_block;
                     pool
                 })
             })
@@ -320,7 +327,15 @@ pub struct PoolsWithTicks {
     pub pools: Vec<PoolData>,
 }
 
-/// Pool data from the Uniswap V3 subgraph.
+/// Pool data from the Uniswap V3 subgraph or the pool-indexer service.
+///
+/// `block_number` is the block at which the pool's authoritative state
+/// (`liquidity` / `sqrt_price` / `tick`) was sampled. Sources stamp it
+/// post-deserialization because the wire format doesn't carry a per-pool
+/// block (the subgraph anchors at a single `target_block` for all pools;
+/// the pool-indexer reports it per-response). Drivers can use this to
+/// drive per-pool event replay rather than relying on a single global
+/// anchor.
 #[serde_as]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -337,6 +352,10 @@ pub struct PoolData {
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
     pub ticks: Option<Vec<TickData>>,
+    /// Not serialised — sources populate this after deserialisation. See
+    /// the struct doc for why.
+    #[serde(default, skip_deserializing)]
+    pub block_number: u64,
 }
 
 impl ContainsId for PoolData {
@@ -464,6 +483,7 @@ mod tests {
                         sqrt_price: U256::from(792216481398733702759960397_u128),
                         tick: BigInt::from(-92110),
                         ticks: None,
+                        block_number: 0,
                     },
                     PoolData {
                         id: address!("0x0002e63328169d7feea121f1e32e4f620abf0352"),
@@ -480,6 +500,7 @@ mod tests {
                         sqrt_price: U256::from(5986323062404391218190509_u128),
                         tick: BigInt::from(-189822),
                         ticks: None,
+                        block_number: 0,
                     },
                 ],
             }

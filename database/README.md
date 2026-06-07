@@ -534,24 +534,22 @@ Indexes:
 
 ### pool\_indexer\_checkpoints
 
-Highest finalized block processed per `(chain_id, contract_address)` by the `pool-indexer` service. `contract_address` is the factory address.
+Highest finalized block processed per `contract_address` by the `pool-indexer` service. `contract_address` is the factory address. The pool-indexer runs one process per network, each with its own dedicated database, so there is no `chain_id` column.
 
  Column             | Type   | Nullable | Details
 --------------------|--------|----------|--------
- chain\_id          | bigint | not null |
  contract\_address  | bytea  | not null | Factory or pool address (20 bytes)
  block\_number      | bigint | not null |
 
 Indexes:
-- PRIMARY KEY: btree (`chain_id`, `contract_address`)
+- PRIMARY KEY: btree (`contract_address`)
 
 ### uniswap\_v3\_pools
 
-One row per Uniswap V3 pool discovered from `PoolCreated` events. `token{0,1}_{decimals,symbol}` are nullable and populated by the backfill task.
+One row per Uniswap V3 pool discovered from `PoolCreated` events. `token{0,1}_{decimals,symbol}` are nullable and populated by the backfill task. `factory` partitions the table so each indexer writes only to its own rows when multiple V3-compatible factories are configured for this network.
 
  Column            | Type     | Nullable | Details
 -------------------|----------|----------|--------
- chain\_id         | bigint   | not null |
  address           | bytea    | not null | Pool address (20 bytes)
  factory           | bytea    | not null | Address of the V3 factory that emitted `PoolCreated`
  token0            | bytea    | not null |
@@ -564,38 +562,53 @@ One row per Uniswap V3 pool discovered from `PoolCreated` events. `token{0,1}_{d
  created\_block    | bigint   | not null | Block in which the pool was created on-chain
 
 Indexes:
-- PRIMARY KEY: btree (`chain_id`, `address`)
-- Four partial indexes on `(chain_id, token{0,1})` with predicate `token{0,1}_{symbol,decimals} IS NULL` to power the backfill scan.
+- PRIMARY KEY: btree (`address`)
+- Four partial indexes on `(token{0,1})` with predicate `token{0,1}_{symbol,decimals} IS NULL` to power the backfill scan.
 
 ### uniswap\_v3\_pool\_states
 
-Current `(sqrtPriceX96, liquidity, tick)` of each pool, updated on every `Swap` or `Initialize` event. FK → `uniswap_v3_pools`.
+Current pool state (price, liquidity, tick), updated on every `Swap` or `Initialize` event. FK → `uniswap_v3_pools`.
+
+**Uniswap V3 pool-state primer.** A V3 pool's instantaneous state is captured by three values that together determine the swap math:
+
+- `sqrt_price_x96` — the square root of the price ratio (`token1/token0`) in Q64.96 fixed-point (`sqrt(price) * 2^96`). Storing the *square root* keeps the swap formula additive and bounds precision loss across the full uint160 range. Matches the on-chain `slot0.sqrtPriceX96` value.
+- `tick` — the discrete log-price coordinate, equal to `floor(log_{1.0001}(price))`. Each tick represents ~0.01% price step; the current tick is the bucket the live price falls into. Routers use it to determine which liquidity positions are currently in-range.
+- `liquidity` — the sum of every position's `liquidity` whose `tickLower <= current_tick < tickUpper`. This is the `L` in the V3 constant-product invariant (`Δsqrt_price = Δamount / L`). Updates on every `Swap` (the event payload supplies the new value directly) and on `Mint` / `Burn` events whose position spans the current tick.
+
+For the per-tick liquidity deltas that mutate `liquidity` when the price crosses a tick boundary, see [`uniswap_v3_ticks`](#uniswap_v3_ticks) below.
 
  Column            | Type    | Nullable | Details
 -------------------|---------|----------|--------
- chain\_id         | bigint  | not null |
- pool\_address     | bytea   | not null | FK → `uniswap_v3_pools(chain_id, address)`
- block\_number     | bigint  | not null | Block at which this state was captured (last Swap/Initialize)
- sqrt\_price\_x96  | numeric | not null | uint160 — pool price as `sqrt(price) * 2^96`
- liquidity         | numeric | not null | uint128 — in-range liquidity
- tick              | int     | not null | Current tick (signed int24)
+ pool\_address     | bytea   | not null | FK → `uniswap_v3_pools(address)`
+ block\_number     | bigint  | not null | Block at which this state was captured (last `Swap`/`Initialize`)
+ sqrt\_price\_x96  | numeric | not null | uint160 — see primer above
+ liquidity         | numeric | not null | uint128 — see primer above
+ tick              | int     | not null | signed int24 — see primer above
 
 Indexes:
-- PRIMARY KEY: btree (`chain_id`, `pool_address`)
+- PRIMARY KEY: btree (`pool_address`)
 
 ### uniswap\_v3\_ticks
 
-Active liquidity-delta ticks per pool. Rows with `liquidity_net = 0` are pruned. FK → `uniswap_v3_pools`.
+Per-tick liquidity deltas for each pool. Rows with `liquidity_net = 0` are pruned. FK → `uniswap_v3_pools`.
+
+**Why per-tick deltas, not per-tick totals.** A V3 position covers a range `[tickLower, tickUpper)` and contributes its `liquidity` to the pool's in-range total only when the current tick falls within that range. The delta encoding is:
+
+- At `tickLower`: `liquidity_net += position.liquidity` (entering range)
+- At `tickUpper`: `liquidity_net -= position.liquidity` (exiting range)
+
+When a swap moves the price across a tick boundary, the pool's `liquidity` value is updated by `± tick.liquidity_net` (direction depends on the swap direction). This encoding lets the contract sum all positions' contributions to a tick in O(1) at swap time without iterating per-position state.
+
+Routers and quoters consult these rows to predict liquidity changes at tick crossings during swap simulation — without them, large swaps would be priced as if all liquidity stayed at its current level, producing wildly wrong quotes.
 
  Column         | Type    | Nullable | Details
 ----------------|---------|----------|--------
- chain\_id      | bigint  | not null |
- pool\_address  | bytea   | not null | FK → `uniswap_v3_pools(chain_id, address)`
- tick\_idx      | int     | not null | Tick coordinate (signed int24)
- liquidity\_net | numeric | not null | int128, signed — net liquidity delta when the price crosses this tick
+ pool\_address  | bytea   | not null | FK → `uniswap_v3_pools(address)`
+ tick\_idx      | int     | not null | Tick coordinate (signed int24); same domain as [`uniswap_v3_pool_states.tick`](#uniswap_v3_pool_states)
+ liquidity\_net | numeric | not null | int128, signed — net liquidity entering (+) / exiting (-) at this tick
 
 Indexes:
-- PRIMARY KEY: btree (`chain_id`, `pool_address`, `tick_idx`)
+- PRIMARY KEY: btree (`pool_address`, `tick_idx`)
 
 ### cow\_amms
 
