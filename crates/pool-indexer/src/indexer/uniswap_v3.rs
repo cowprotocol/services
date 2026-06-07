@@ -146,8 +146,8 @@ impl UniswapV3Indexer {
         }
     }
 
-    /// Bootstrap helper: brings a fresh (chain, factory) up to the current
-    /// finalized block in one shot, then returns. Loops until no further
+    /// Bootstrap helper: brings a fresh factory up to the current finalized
+    /// block in one shot, then returns. Loops until no further
     /// blocks remain (handles new blocks finalizing during a long catch-up).
     /// Intended to run exactly once, right after seeding completes.
     ///
@@ -161,17 +161,16 @@ impl UniswapV3Indexer {
     /// Errors if a checkpoint already exists — overwriting would silently
     /// regress progress and re-index history.
     pub async fn catch_up(&self, from_block: u64) -> Result<()> {
-        if db::get_checkpoint(&self.db, self.chain_id, &self.factory)
-            .await?
-            .is_some()
-        {
+        if db::get_checkpoint(&self.db, &self.factory).await?.is_some() {
             anyhow::bail!(
                 "catch_up called but checkpoint already exists for chain {} factory {}",
                 self.chain_id,
                 self.factory,
             );
         }
-        db::set_checkpoint(&self.db, self.chain_id, &self.factory, from_block).await?;
+        let mut tx = self.db.begin().await.context("begin checkpoint tx")?;
+        db::set_checkpoint(&mut tx, &self.factory, from_block).await?;
+        tx.commit().await.context("commit checkpoint tx")?;
 
         loop {
             let finalized_block = self.finalized_block().await?;
@@ -230,7 +229,7 @@ impl UniswapV3Indexer {
     }
 
     async fn last_indexed_block(&self) -> Result<u64> {
-        Ok(db::get_checkpoint(&self.db, self.chain_id, &self.factory)
+        Ok(db::get_checkpoint(&self.db, &self.factory)
             .await?
             .unwrap_or(0))
     }
@@ -293,7 +292,7 @@ impl UniswapV3Indexer {
         let mint_burn_pools = mint_burn_pool_addresses(&logs);
         let (decimals, base_states) = tokio::join!(
             self.prefetch_decimals(&logs),
-            db::get_base_pool_states(&self.db, self.chain_id, &self.factory, &mint_burn_pools),
+            db::get_base_pool_states(&self.db, &self.factory, &mint_burn_pools),
         );
         let base_states = base_states?;
         let changes = collect_log_changes(self.factory, &logs, &base_states, &decimals);
@@ -333,17 +332,11 @@ impl UniswapV3Indexer {
 
     async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<()> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
-        db::insert_pools(&mut tx, self.chain_id, &self.factory, &changes.new_pools).await?;
-        db::upsert_pool_states(&mut tx, self.chain_id, &self.factory, &changes.pool_states).await?;
-        db::batch_update_pool_liquidity(
-            &mut tx,
-            self.chain_id,
-            &self.factory,
-            &changes.liquidity_updates,
-        )
-        .await?;
-        db::batch_update_ticks(&mut tx, self.chain_id, &self.factory, &changes.tick_deltas).await?;
-        db::set_checkpoint(&mut *tx, self.chain_id, &self.factory, chunk.end).await?;
+        db::insert_pools(&mut tx, &self.factory, &changes.new_pools).await?;
+        db::upsert_pool_states(&mut tx, &self.factory, &changes.pool_states).await?;
+        db::batch_update_pool_liquidity(&mut tx, &self.factory, &changes.liquidity_updates).await?;
+        db::batch_update_ticks(&mut tx, &self.factory, &changes.tick_deltas).await?;
+        db::set_checkpoint(&mut tx, &self.factory, chunk.end).await?;
         tx.commit().await.context("commit transaction")?;
 
         Ok(())
@@ -425,7 +418,6 @@ pub(crate) async fn backfill_symbols(
     provider: AlloyProvider,
     db: sqlx::PgPool,
     network: NetworkName,
-    chain_id: u64,
     prefetch_concurrency: usize,
     poll_interval: std::time::Duration,
 ) {
@@ -434,7 +426,7 @@ pub(crate) async fn backfill_symbols(
     loop {
         interval.tick().await;
         if let Err(err) =
-            run_symbol_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency).await
+            run_symbol_backfill_pass(&provider, &db, &network, prefetch_concurrency).await
         {
             tracing::error!(?err, "token symbol backfill pass failed");
         }
@@ -445,10 +437,9 @@ async fn run_symbol_backfill_pass(
     provider: &AlloyProvider,
     db: &sqlx::PgPool,
     network: &NetworkName,
-    chain_id: u64,
     prefetch_concurrency: usize,
 ) -> Result<()> {
-    let tokens = db::get_tokens_missing_symbols(db, chain_id)
+    let tokens = db::get_tokens_missing_symbols(db)
         .await
         .context("get_tokens_missing_symbols")?;
     let network = network.as_str();
@@ -484,7 +475,7 @@ async fn run_symbol_backfill_pass(
     while let Some(symbols) = stream.next().await {
         let batch_len = symbols.len();
         let metrics = crate::metrics::Metrics::get();
-        match db::batch_set_token_symbols(db, chain_id, &symbols).await {
+        match write_symbols_batch(db, &symbols).await {
             Ok(()) => {
                 for (_, symbol) in &symbols {
                     updated += 1;
@@ -519,7 +510,6 @@ pub(crate) async fn backfill_decimals(
     provider: AlloyProvider,
     db: sqlx::PgPool,
     network: NetworkName,
-    chain_id: u64,
     prefetch_concurrency: usize,
     poll_interval: std::time::Duration,
 ) {
@@ -528,8 +518,7 @@ pub(crate) async fn backfill_decimals(
     loop {
         interval.tick().await;
         if let Err(err) =
-            run_decimals_backfill_pass(&provider, &db, &network, chain_id, prefetch_concurrency)
-                .await
+            run_decimals_backfill_pass(&provider, &db, &network, prefetch_concurrency).await
         {
             tracing::error!(?err, "token decimals backfill pass failed");
         }
@@ -540,10 +529,9 @@ async fn run_decimals_backfill_pass(
     provider: &AlloyProvider,
     db: &sqlx::PgPool,
     network: &NetworkName,
-    chain_id: u64,
     prefetch_concurrency: usize,
 ) -> Result<()> {
-    let tokens = db::get_tokens_missing_decimals(db, chain_id)
+    let tokens = db::get_tokens_missing_decimals(db)
         .await
         .context("get_tokens_missing_decimals")?;
     let network = network.as_str();
@@ -578,7 +566,7 @@ async fn run_decimals_backfill_pass(
     while let Some(decimals) = stream.next().await {
         let batch_len = decimals.len();
         let metrics = crate::metrics::Metrics::get();
-        match db::batch_set_token_decimals(db, chain_id, &decimals).await {
+        match write_decimals_batch(db, &decimals).await {
             Ok(()) => {
                 for (_, dec) in &decimals {
                     updated += 1;
@@ -606,6 +594,20 @@ async fn run_decimals_backfill_pass(
     }
 
     tracing::info!(updated, total, "token decimals backfill pass complete");
+    Ok(())
+}
+
+async fn write_symbols_batch(db: &sqlx::PgPool, entries: &[(Address, String)]) -> Result<()> {
+    let mut tx = db.begin().await.context("begin symbols batch tx")?;
+    db::batch_set_token_symbols(&mut tx, entries).await?;
+    tx.commit().await.context("commit symbols batch tx")?;
+    Ok(())
+}
+
+async fn write_decimals_batch(db: &sqlx::PgPool, entries: &[(Address, i16)]) -> Result<()> {
+    let mut tx = db.begin().await.context("begin decimals batch tx")?;
+    db::batch_set_token_decimals(&mut tx, entries).await?;
+    tx.commit().await.context("commit decimals batch tx")?;
     Ok(())
 }
 

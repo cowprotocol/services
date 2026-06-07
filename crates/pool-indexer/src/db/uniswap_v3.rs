@@ -20,16 +20,10 @@ fn decode_pool_rows(rows: Vec<PgRow>) -> Result<Vec<PoolRow>> {
     rows.into_iter().map(PoolRow::try_from).collect()
 }
 
-pub async fn get_checkpoint(
-    pool: &PgPool,
-    chain_id: u64,
-    contract: &Address,
-) -> Result<Option<u64>> {
+pub async fn get_checkpoint(pool: &PgPool, contract: &Address) -> Result<Option<u64>> {
     let row = sqlx::query(
-        "SELECT block_number FROM pool_indexer_checkpoints WHERE chain_id = $1 AND \
-         contract_address = $2",
+        "SELECT block_number FROM pool_indexer_checkpoints WHERE contract_address = $1",
     )
-    .bind(chain_id.cast_signed())
     .bind(contract.as_slice())
     .fetch_optional(pool)
     .await
@@ -39,21 +33,18 @@ pub async fn get_checkpoint(
 }
 
 pub async fn set_checkpoint(
-    executor: impl sqlx::PgExecutor<'_>,
-    chain_id: u64,
+    tx: &mut Transaction<'_, Postgres>,
     contract: &Address,
     block_number: u64,
 ) -> Result<()> {
     sqlx::query(
-        "INSERT INTO pool_indexer_checkpoints (chain_id, contract_address, block_number)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (chain_id, contract_address) DO UPDATE SET block_number = \
-         EXCLUDED.block_number",
+        "INSERT INTO pool_indexer_checkpoints (contract_address, block_number)
+         VALUES ($1, $2)
+         ON CONFLICT (contract_address) DO UPDATE SET block_number = EXCLUDED.block_number",
     )
-    .bind(chain_id.cast_signed())
     .bind(contract.as_slice())
     .bind(block_number.cast_signed())
-    .execute(executor)
+    .execute(&mut **tx)
     .await
     .context("set_checkpoint")?;
     Ok(())
@@ -61,7 +52,6 @@ pub async fn set_checkpoint(
 
 pub async fn insert_pools(
     tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
     factory: &Address,
     pools: &[NewPoolData],
 ) -> Result<()> {
@@ -92,15 +82,14 @@ pub async fn insert_pools(
 
     sqlx::query(
         "INSERT INTO uniswap_v3_pools
-             (chain_id, address, factory, token0, token1, fee, token0_decimals, token1_decimals,
+             (address, factory, token0, token1, fee, token0_decimals, token1_decimals,
               token0_symbol, token1_symbol, created_block)
-         SELECT $1, t.addr, $2, t.t0, t.t1, t.fee, t.t0d, t.t1d, t.t0s, t.t1s, t.cblk
-         FROM UNNEST($3::BYTEA[], $4::BYTEA[], $5::BYTEA[], $6::INT4[], $7::INT2[], $8::INT2[],
-                     $9::TEXT[], $10::TEXT[], $11::INT8[])
+         SELECT t.addr, $1, t.t0, t.t1, t.fee, t.t0d, t.t1d, t.t0s, t.t1s, t.cblk
+         FROM UNNEST($2::BYTEA[], $3::BYTEA[], $4::BYTEA[], $5::INT4[], $6::INT2[], $7::INT2[],
+                     $8::TEXT[], $9::TEXT[], $10::INT8[])
               AS t(addr, t0, t1, fee, t0d, t1d, t0s, t1s, cblk)
-         ON CONFLICT (chain_id, address) DO NOTHING",
+         ON CONFLICT (address) DO NOTHING",
     )
-    .bind(chain_id.cast_signed())
     .bind(factory.as_slice())
     .bind(addresses)
     .bind(token0s)
@@ -119,7 +108,6 @@ pub async fn insert_pools(
 
 pub async fn upsert_pool_states(
     tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
     factory: &Address,
     states: &[PoolStateData],
 ) -> Result<()> {
@@ -143,25 +131,24 @@ pub async fn upsert_pool_states(
     sqlx::query(
         "WITH latest AS (
              SELECT DISTINCT ON (addr) addr, blk, sqrt, liq, tick
-             FROM UNNEST($3::BYTEA[], $4::INT8[], $5::NUMERIC[], $6::NUMERIC[], $7::INT4[])
+             FROM UNNEST($2::BYTEA[], $3::INT8[], $4::NUMERIC[], $5::NUMERIC[], $6::INT4[])
                   AS t(addr, blk, sqrt, liq, tick)
              ORDER BY addr, blk DESC
          )
          INSERT INTO uniswap_v3_pool_states
-             (chain_id, pool_address, block_number, sqrt_price_x96, liquidity, tick)
-         SELECT $1, l.addr, l.blk, l.sqrt, l.liq, l.tick
+             (pool_address, block_number, sqrt_price_x96, liquidity, tick)
+         SELECT l.addr, l.blk, l.sqrt, l.liq, l.tick
          FROM latest l
          WHERE EXISTS (
              SELECT 1 FROM uniswap_v3_pools
-             WHERE chain_id = $1 AND address = l.addr AND factory = $2
+             WHERE address = l.addr AND factory = $1
          )
-         ON CONFLICT (chain_id, pool_address) DO UPDATE
+         ON CONFLICT (pool_address) DO UPDATE
              SET block_number   = EXCLUDED.block_number,
                  sqrt_price_x96 = EXCLUDED.sqrt_price_x96,
                  liquidity      = EXCLUDED.liquidity,
                  tick           = EXCLUDED.tick",
     )
-    .bind(chain_id.cast_signed())
     .bind(factory.as_slice())
     .bind(addresses)
     .bind(block_numbers)
@@ -176,7 +163,6 @@ pub async fn upsert_pool_states(
 
 pub async fn batch_update_pool_liquidity(
     tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
     factory: &Address,
     updates: &[LiquidityUpdateData],
 ) -> Result<()> {
@@ -199,19 +185,18 @@ pub async fn batch_update_pool_liquidity(
     sqlx::query(
         "WITH latest AS (
              SELECT DISTINCT ON (addr) addr, liq, blk
-             FROM UNNEST($3::BYTEA[], $4::NUMERIC[], $5::INT8[]) AS t(addr, liq, blk)
+             FROM UNNEST($2::BYTEA[], $3::NUMERIC[], $4::INT8[]) AS t(addr, liq, blk)
              ORDER BY addr, blk DESC
          )
          UPDATE uniswap_v3_pool_states s
          SET liquidity = l.liq, block_number = l.blk
          FROM latest l
-         WHERE s.chain_id = $1 AND s.pool_address = l.addr
+         WHERE s.pool_address = l.addr
            AND EXISTS (
                SELECT 1 FROM uniswap_v3_pools p
-               WHERE p.chain_id = $1 AND p.address = l.addr AND p.factory = $2
+               WHERE p.address = l.addr AND p.factory = $1
            )",
     )
-    .bind(chain_id.cast_signed())
     .bind(factory.as_slice())
     .bind(addresses)
     .bind(liquidities)
@@ -228,7 +213,6 @@ pub async fn batch_update_pool_liquidity(
 /// "skip the liquidity update for this pool."
 pub async fn get_base_pool_states(
     db: &PgPool,
-    chain_id: u64,
     factory: &Address,
     addresses: &[Address],
 ) -> Result<std::collections::HashMap<Address, (i32, u128)>> {
@@ -238,13 +222,10 @@ pub async fn get_base_pool_states(
     let rows = sqlx::query(
         "SELECT s.pool_address, s.tick, s.liquidity
          FROM uniswap_v3_pool_states s
-         JOIN uniswap_v3_pools p
-             ON p.chain_id = s.chain_id AND p.address = s.pool_address
-         WHERE s.chain_id = $1
-           AND p.factory = $2
-           AND s.pool_address = ANY($3)",
+         JOIN uniswap_v3_pools p ON p.address = s.pool_address
+         WHERE p.factory = $1
+           AND s.pool_address = ANY($2)",
     )
-    .bind(chain_id.cast_signed())
     .bind(factory.as_slice())
     .bind(address_bytes_list(addresses))
     .fetch_all(db)
@@ -266,7 +247,6 @@ pub async fn get_base_pool_states(
 
 pub async fn batch_update_ticks(
     tx: &mut Transaction<'_, Postgres>,
-    chain_id: u64,
     factory: &Address,
     deltas: &[TickDeltaData],
 ) -> Result<()> {
@@ -303,30 +283,28 @@ pub async fn batch_update_ticks(
     sqlx::query(
         "WITH input AS (
              SELECT t.addr, t.tick_idx, SUM(t.delta) AS total_delta
-             FROM UNNEST($3::BYTEA[], $4::INT4[], $5::NUMERIC[]) AS t(addr, tick_idx, delta)
+             FROM UNNEST($2::BYTEA[], $3::INT4[], $4::NUMERIC[]) AS t(addr, tick_idx, delta)
              GROUP BY t.addr, t.tick_idx
          ),
          upserted AS (
-             INSERT INTO uniswap_v3_ticks (chain_id, pool_address, tick_idx, liquidity_net)
-             SELECT $1, i.addr, i.tick_idx, i.total_delta
+             INSERT INTO uniswap_v3_ticks (pool_address, tick_idx, liquidity_net)
+             SELECT i.addr, i.tick_idx, i.total_delta
              FROM input i
              WHERE i.total_delta <> 0
                AND EXISTS (
                    SELECT 1 FROM uniswap_v3_pools
-                   WHERE chain_id = $1 AND address = i.addr AND factory = $2
+                   WHERE address = i.addr AND factory = $1
                )
-             ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
+             ON CONFLICT (pool_address, tick_idx) DO UPDATE
                  SET liquidity_net = uniswap_v3_ticks.liquidity_net + EXCLUDED.liquidity_net
-             RETURNING chain_id, pool_address, tick_idx, liquidity_net
+             RETURNING pool_address, tick_idx, liquidity_net
          )
          DELETE FROM uniswap_v3_ticks ticks
          USING upserted
-         WHERE ticks.chain_id   = upserted.chain_id
-           AND ticks.pool_address = upserted.pool_address
+         WHERE ticks.pool_address = upserted.pool_address
            AND ticks.tick_idx   = upserted.tick_idx
            AND upserted.liquidity_net = 0",
     )
-    .bind(chain_id.cast_signed())
     .bind(factory.as_slice())
     .bind(addresses)
     .bind(tick_idxs)
@@ -341,8 +319,7 @@ pub async fn batch_update_ticks(
 /// Used by the subgraph seeder where the subgraph value IS the authoritative
 /// net.
 pub async fn batch_seed_ticks(
-    executor: impl sqlx::PgExecutor<'_>,
-    chain_id: u64,
+    tx: &mut Transaction<'_, Postgres>,
     factory: &Address,
     ticks: &[TickDeltaData],
 ) -> Result<()> {
@@ -362,50 +339,45 @@ pub async fn batch_seed_ticks(
     sqlx::query(
         "WITH input AS (
              SELECT t.addr, t.tick_idx, SUM(t.val) AS net
-             FROM UNNEST($3::BYTEA[], $4::INT4[], $5::NUMERIC[]) AS t(addr, tick_idx, val)
+             FROM UNNEST($2::BYTEA[], $3::INT4[], $4::NUMERIC[]) AS t(addr, tick_idx, val)
              GROUP BY t.addr, t.tick_idx
          )
-         INSERT INTO uniswap_v3_ticks (chain_id, pool_address, tick_idx, liquidity_net)
-         SELECT $1, i.addr, i.tick_idx, i.net
+         INSERT INTO uniswap_v3_ticks (pool_address, tick_idx, liquidity_net)
+         SELECT i.addr, i.tick_idx, i.net
          FROM input i
          WHERE EXISTS (
              SELECT 1 FROM uniswap_v3_pools
-             WHERE chain_id = $1 AND address = i.addr AND factory = $2
+             WHERE address = i.addr AND factory = $1
          )
            AND i.net <> 0
-         ON CONFLICT (chain_id, pool_address, tick_idx) DO UPDATE
+         ON CONFLICT (pool_address, tick_idx) DO UPDATE
              SET liquidity_net = EXCLUDED.liquidity_net",
     )
-    .bind(chain_id.cast_signed())
     .bind(factory.as_slice())
     .bind(addresses)
     .bind(tick_idxs)
     .bind(values)
-    .execute(executor)
+    .execute(&mut **tx)
     .await
     .context("batch_seed_ticks")?;
     Ok(())
 }
 
-/// Deletes ticks for all pools owned by `factory` on `chain_id`. Used by the
-/// subgraph seeder to clear stale state before reseeding. Scoped to this
-/// factory so a reseed on one factory doesn't wipe another's ticks.
+/// Deletes ticks for all pools owned by `factory`. Used by the subgraph
+/// seeder to clear stale state before reseeding. Scoped to this factory so a
+/// reseed on one factory doesn't wipe another's ticks.
 pub async fn delete_ticks_for_factory(
-    executor: impl sqlx::PgExecutor<'_>,
-    chain_id: u64,
+    tx: &mut Transaction<'_, Postgres>,
     factory: &Address,
 ) -> Result<()> {
     sqlx::query(
         "DELETE FROM uniswap_v3_ticks t
          USING uniswap_v3_pools p
-         WHERE t.chain_id     = $1
-           AND p.chain_id     = $1
-           AND p.address      = t.pool_address
-           AND p.factory      = $2",
+         WHERE p.address = t.pool_address
+           AND p.factory = $1",
     )
-    .bind(chain_id.cast_signed())
     .bind(factory.as_slice())
-    .execute(executor)
+    .execute(&mut **tx)
     .await
     .context("delete_ticks_for_factory")?;
     Ok(())
@@ -456,26 +428,18 @@ impl TryFrom<PgRow> for PoolRow {
 /// Fetches a page of pools ordered by address with their current state. Pass
 /// `cursor = None` for the first page, or the previous page's last address for
 /// keyset pagination.
-pub async fn get_pools(
-    pool: &PgPool,
-    chain_id: u64,
-    cursor: Option<Vec<u8>>,
-    limit: u64,
-) -> Result<Vec<PoolRow>> {
+pub async fn get_pools(pool: &PgPool, cursor: Option<Vec<u8>>, limit: u64) -> Result<Vec<PoolRow>> {
     let rows = sqlx::query(
         "SELECT p.address, p.token0, p.token1, p.fee,
                 p.token0_decimals, p.token1_decimals,
                 p.token0_symbol, p.token1_symbol,
                 s.sqrt_price_x96, s.liquidity, s.tick
          FROM uniswap_v3_pools p
-         JOIN uniswap_v3_pool_states s
-             ON s.chain_id = p.chain_id AND s.pool_address = p.address
-         WHERE p.chain_id = $1
-           AND ($2::BYTEA IS NULL OR p.address > $2)
+         JOIN uniswap_v3_pool_states s ON s.pool_address = p.address
+         WHERE ($1::BYTEA IS NULL OR p.address > $1)
          ORDER BY p.address
-         LIMIT $3",
+         LIMIT $2",
     )
-    .bind(chain_id.cast_signed())
     .bind(cursor)
     .bind(limit.cast_signed())
     .fetch_all(pool)
@@ -501,11 +465,7 @@ pub struct PoolTickRow {
 /// Fetches pools matching any of `addresses` with their current state. Returns
 /// fewer rows than requested when some addresses are unknown. Ordered by
 /// address to give callers a stable iteration order.
-pub async fn get_pools_by_ids(
-    pool: &PgPool,
-    chain_id: u64,
-    addresses: &[Address],
-) -> Result<Vec<PoolRow>> {
+pub async fn get_pools_by_ids(pool: &PgPool, addresses: &[Address]) -> Result<Vec<PoolRow>> {
     if addresses.is_empty() {
         return Ok(Vec::new());
     }
@@ -515,13 +475,10 @@ pub async fn get_pools_by_ids(
                 p.token0_symbol, p.token1_symbol,
                 s.sqrt_price_x96, s.liquidity, s.tick
          FROM uniswap_v3_pools p
-         JOIN uniswap_v3_pool_states s
-             ON s.chain_id = p.chain_id AND s.pool_address = p.address
-         WHERE p.chain_id = $1
-           AND p.address = ANY($2)
+         JOIN uniswap_v3_pool_states s ON s.pool_address = p.address
+         WHERE p.address = ANY($1)
          ORDER BY p.address",
     )
-    .bind(chain_id.cast_signed())
     .bind(address_bytes_list(addresses))
     .fetch_all(pool)
     .await
@@ -541,21 +498,16 @@ pub async fn get_pools_by_ids(
 /// caller (e.g. a `truncated: bool` per pool in the API response) rather than
 /// silently drop tick rows — silently truncated tick data produces an
 /// incorrect price curve that the driver can't detect.
-pub async fn get_ticks_for_pools(
-    pool: &PgPool,
-    chain_id: u64,
-    addresses: &[Address],
-) -> Result<Vec<PoolTickRow>> {
+pub async fn get_ticks_for_pools(pool: &PgPool, addresses: &[Address]) -> Result<Vec<PoolTickRow>> {
     if addresses.is_empty() {
         return Ok(Vec::new());
     }
     let rows = sqlx::query(
         "SELECT pool_address, tick_idx, liquidity_net
          FROM uniswap_v3_ticks
-         WHERE chain_id = $1 AND pool_address = ANY($2)
+         WHERE pool_address = ANY($1)
          ORDER BY pool_address, tick_idx",
     )
-    .bind(chain_id.cast_signed())
     .bind(address_bytes_list(addresses))
     .fetch_all(pool)
     .await
@@ -572,19 +524,13 @@ pub async fn get_ticks_for_pools(
         .collect()
 }
 
-pub async fn get_ticks(
-    pool: &PgPool,
-    chain_id: u64,
-    pool_address: &Address,
-) -> Result<Vec<TickRow>> {
+pub async fn get_ticks(pool: &PgPool, pool_address: &Address) -> Result<Vec<TickRow>> {
     sqlx::query(
         "SELECT tick_idx, liquidity_net
          FROM uniswap_v3_ticks
-         WHERE chain_id = $1
-           AND pool_address = $2
+         WHERE pool_address = $1
          ORDER BY tick_idx",
     )
-    .bind(chain_id.cast_signed())
     .bind(pool_address.as_slice())
     .fetch_all(pool)
     .await
@@ -600,17 +546,14 @@ pub async fn get_ticks(
 }
 
 /// Returns all distinct token addresses that have no symbol recorded yet.
-pub async fn get_tokens_missing_symbols(pool: &PgPool, chain_id: u64) -> Result<Vec<Address>> {
+pub async fn get_tokens_missing_symbols(pool: &PgPool) -> Result<Vec<Address>> {
     let rows = sqlx::query(
         "SELECT DISTINCT token FROM (
-             SELECT token0 AS token FROM uniswap_v3_pools
-             WHERE chain_id = $1 AND token0_symbol IS NULL
+             SELECT token0 AS token FROM uniswap_v3_pools WHERE token0_symbol IS NULL
              UNION
-             SELECT token1 AS token FROM uniswap_v3_pools
-             WHERE chain_id = $1 AND token1_symbol IS NULL
+             SELECT token1 AS token FROM uniswap_v3_pools WHERE token1_symbol IS NULL
          ) t",
     )
-    .bind(chain_id.cast_signed())
     .fetch_all(pool)
     .await
     .context("get_tokens_missing_symbols")?;
@@ -621,17 +564,14 @@ pub async fn get_tokens_missing_symbols(pool: &PgPool, chain_id: u64) -> Result<
 }
 
 /// Returns all distinct token addresses that have no decimals recorded yet.
-pub async fn get_tokens_missing_decimals(pool: &PgPool, chain_id: u64) -> Result<Vec<Address>> {
+pub async fn get_tokens_missing_decimals(pool: &PgPool) -> Result<Vec<Address>> {
     let rows = sqlx::query(
         "SELECT DISTINCT token FROM (
-             SELECT token0 AS token FROM uniswap_v3_pools
-             WHERE chain_id = $1 AND token0_decimals IS NULL
+             SELECT token0 AS token FROM uniswap_v3_pools WHERE token0_decimals IS NULL
              UNION
-             SELECT token1 AS token FROM uniswap_v3_pools
-             WHERE chain_id = $1 AND token1_decimals IS NULL
+             SELECT token1 AS token FROM uniswap_v3_pools WHERE token1_decimals IS NULL
          ) t",
     )
-    .bind(chain_id.cast_signed())
     .fetch_all(pool)
     .await
     .context("get_tokens_missing_decimals")?;
@@ -651,8 +591,7 @@ pub async fn get_tokens_missing_decimals(pool: &PgPool, chain_id: u64) -> Result
 /// one side would get set). Splitting into two separate UPDATEs keyed on each
 /// side avoids that.
 pub async fn batch_set_token_decimals(
-    pool: &PgPool,
-    chain_id: u64,
+    tx: &mut Transaction<'_, Postgres>,
     entries: &[(Address, i16)],
 ) -> Result<()> {
     if entries.is_empty() {
@@ -663,28 +602,25 @@ pub async fn batch_set_token_decimals(
 
     sqlx::query(
         "WITH input AS (
-             SELECT * FROM UNNEST($2::BYTEA[], $3::INT2[]) AS t(tok, dec)
+             SELECT * FROM UNNEST($1::BYTEA[], $2::INT2[]) AS t(tok, dec)
          ),
          update_t0 AS (
              UPDATE uniswap_v3_pools p
              SET token0_decimals = i.dec
              FROM input i
-             WHERE p.chain_id = $1
-               AND p.token0 = i.tok
+             WHERE p.token0 = i.tok
                AND p.token0_decimals IS NULL
              RETURNING 1
          )
          UPDATE uniswap_v3_pools p
          SET token1_decimals = i.dec
          FROM input i
-         WHERE p.chain_id = $1
-           AND p.token1 = i.tok
+         WHERE p.token1 = i.tok
            AND p.token1_decimals IS NULL",
     )
-    .bind(chain_id.cast_signed())
     .bind(tokens)
     .bind(decimals)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .context("batch_set_token_decimals")?;
 
@@ -696,8 +632,7 @@ pub async fn batch_set_token_decimals(
 /// "tried, failed" so the next backfill pass's `IS NULL` filter skips them.
 /// See [`batch_set_token_decimals`] for the writeable-CTE rationale.
 pub async fn batch_set_token_symbols(
-    pool: &PgPool,
-    chain_id: u64,
+    tx: &mut Transaction<'_, Postgres>,
     entries: &[(Address, String)],
 ) -> Result<()> {
     if entries.is_empty() {
@@ -708,42 +643,36 @@ pub async fn batch_set_token_symbols(
 
     sqlx::query(
         "WITH input AS (
-             SELECT * FROM UNNEST($2::BYTEA[], $3::TEXT[]) AS t(tok, sym)
+             SELECT * FROM UNNEST($1::BYTEA[], $2::TEXT[]) AS t(tok, sym)
          ),
          update_t0 AS (
              UPDATE uniswap_v3_pools p
              SET token0_symbol = i.sym
              FROM input i
-             WHERE p.chain_id = $1
-               AND p.token0 = i.tok
+             WHERE p.token0 = i.tok
                AND p.token0_symbol IS NULL
              RETURNING 1
          )
          UPDATE uniswap_v3_pools p
          SET token1_symbol = i.sym
          FROM input i
-         WHERE p.chain_id = $1
-           AND p.token1 = i.tok
+         WHERE p.token1 = i.tok
            AND p.token1_symbol IS NULL",
     )
-    .bind(chain_id.cast_signed())
     .bind(tokens)
     .bind(symbols)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .context("batch_set_token_symbols")?;
 
     Ok(())
 }
 
-pub async fn get_latest_indexed_block(pool: &PgPool, chain_id: u64) -> Result<Option<u64>> {
-    let row = sqlx::query(
-        "SELECT MAX(block_number) AS max_block FROM pool_indexer_checkpoints WHERE chain_id = $1",
-    )
-    .bind(chain_id.cast_signed())
-    .fetch_one(pool)
-    .await
-    .context("get_latest_indexed_block")?;
+pub async fn get_latest_indexed_block(pool: &PgPool) -> Result<Option<u64>> {
+    let row = sqlx::query("SELECT MAX(block_number) AS max_block FROM pool_indexer_checkpoints")
+        .fetch_one(pool)
+        .await
+        .context("get_latest_indexed_block")?;
 
     Ok(row
         .get::<Option<i64>, _>("max_block")

@@ -10,19 +10,22 @@ use {
         response::{IntoResponse, Response},
     },
     sqlx::PgPool,
-    std::collections::HashMap,
+    std::collections::HashSet,
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    /// Maps network name → chain_id for all configured networks.
-    pub networks: HashMap<NetworkName, u64>,
+    /// The set of network names this process is configured to serve.
+    /// Each process indexes a single chain into a dedicated DB, so a URL
+    /// whose `{network}` segment isn't in this set yields a 404. The DB
+    /// itself is no longer partitioned by `chain_id`.
+    pub networks: HashSet<NetworkName>,
 }
 
 impl AppState {
-    pub fn resolve_network(&self, name: &str) -> Option<u64> {
-        self.networks.get(&NetworkName::new(name)).copied()
+    pub fn is_network_configured(&self, name: &str) -> bool {
+        self.networks.contains(&NetworkName::new(name))
     }
 }
 
@@ -80,14 +83,15 @@ fn bad_request(message: impl Into<String>) -> Response {
         .into_response()
 }
 
-pub(super) fn resolve_chain_id(state: &AppState, network: &str) -> Result<u64, ApiError> {
+pub(super) fn ensure_network_configured(state: &AppState, network: &str) -> Result<(), ApiError> {
     state
-        .resolve_network(network)
+        .is_network_configured(network)
+        .then_some(())
         .ok_or(ApiError::NetworkNotFound)
 }
 
-pub(super) async fn latest_indexed_block(state: &AppState, chain_id: u64) -> Result<u64, ApiError> {
-    crate::db::uniswap_v3::get_latest_indexed_block(&state.db, chain_id)
+pub(super) async fn latest_indexed_block(state: &AppState) -> Result<u64, ApiError> {
+    crate::db::uniswap_v3::get_latest_indexed_block(&state.db)
         .await?
         .ok_or(ApiError::NotReady)
 }

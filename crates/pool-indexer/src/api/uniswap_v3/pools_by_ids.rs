@@ -4,7 +4,7 @@
 use {
     super::{PoolIds, pools_response},
     crate::{
-        api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
+        api::{ApiError, AppState, ensure_network_configured, latest_indexed_block},
         db::uniswap_v3 as db,
     },
     axum::{
@@ -35,8 +35,8 @@ pub async fn get_pools_by_ids(
     Path(network): Path<String>,
     Query(BulkLookupQuery { pool_ids }): Query<BulkLookupQuery>,
 ) -> Result<Response, ApiError> {
-    let chain_id = resolve_chain_id(&state, &network)?;
-    let block = latest_indexed_block(&state, chain_id).await?;
-    let pools = db::get_pools_by_ids(&state.db, chain_id, &pool_ids.0).await?;
+    ensure_network_configured(&state, &network)?;
+    let block = latest_indexed_block(&state).await?;
+    let pools = db::get_pools_by_ids(&state.db, &pool_ids.0).await?;
     Ok(pools_response(block, &pools, None))
 }

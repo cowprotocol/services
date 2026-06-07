@@ -375,8 +375,8 @@ impl<'a> SubgraphSeeder<'a> {
         }
 
         let mut tx = self.db.begin().await.context("begin pool tx")?;
-        db::insert_pools(&mut tx, self.chain_id, &self.factory, &new_pools).await?;
-        db::upsert_pool_states(&mut tx, self.chain_id, &self.factory, &pool_states).await?;
+        db::insert_pools(&mut tx, &self.factory, &new_pools).await?;
+        db::upsert_pool_states(&mut tx, &self.factory, &pool_states).await?;
         tx.commit().await.context("commit pool tx")?;
 
         Ok(pool_ids)
@@ -385,8 +385,7 @@ impl<'a> SubgraphSeeder<'a> {
     async fn seed_ticks(&self, pool_ids: &[String]) -> Result<usize> {
         // All delete + insert work happens inside one transaction so the
         // API never observes an empty tick set mid-reseed. Scoped to
-        // `self.factory` so a reseed doesn't wipe another factory's ticks
-        // on the same chain.
+        // `self.factory` so a reseed doesn't wipe another factory's ticks.
         //
         // Subgraph fetches run outside the transaction — the result is
         // buffered and only the final DB writes are transactional, which
@@ -401,9 +400,9 @@ impl<'a> SubgraphSeeder<'a> {
 
         let total_ticks = all_ticks.len();
         let mut tx = self.db.begin().await.context("begin tick reseed tx")?;
-        db::delete_ticks_for_factory(&mut *tx, self.chain_id, &self.factory).await?;
+        db::delete_ticks_for_factory(&mut tx, &self.factory).await?;
         if !all_ticks.is_empty() {
-            db::batch_seed_ticks(&mut *tx, self.chain_id, &self.factory, &all_ticks).await?;
+            db::batch_seed_ticks(&mut tx, &self.factory, &all_ticks).await?;
         }
         tx.commit().await.context("commit tick reseed tx")?;
 

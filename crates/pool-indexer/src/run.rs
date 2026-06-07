@@ -110,10 +110,7 @@ fn initialize_observability(args: &Arguments) {
 }
 
 fn build_api_state(db: &PgPool, networks: &[NetworkConfig]) -> Arc<AppState> {
-    let networks = networks
-        .iter()
-        .map(|network| (network.name.clone(), network.chain_id))
-        .collect();
+    let networks = networks.iter().map(|n| n.name.clone()).collect();
 
     Arc::new(AppState {
         db: db.clone(),
@@ -133,8 +130,8 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
 
     // Verify the configured chain_id matches the RPC. A misconfigured
     // deployment (e.g. chain_id = 1 pointed at an Arbitrum RPC) would
-    // otherwise silently index Arbitrum events into the mainnet partition
-    // of the shared DB.
+    // otherwise silently index Arbitrum events into a DB whose schema
+    // assumes a different network.
     let actual_chain_id = provider
         .get_chain_id()
         .await
@@ -149,7 +146,7 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
 
     // One indexer task per factory, sharing the same provider and DB pool.
     // Seeder + catch-up are per-factory because their checkpoints are keyed
-    // by `(chain_id, contract)`.
+    // by `contract_address`.
     let mut factory_set = JoinSet::new();
     for factory in network.factories.iter().copied() {
         let indexer = UniswapV3Indexer::new(
@@ -178,7 +175,6 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
         provider.clone(),
         db.clone(),
         network.name.clone(),
-        network.chain_id,
         backfill_concurrency,
         backfill_interval,
     ));
@@ -186,7 +182,6 @@ async fn run_network_indexer(db: PgPool, network: NetworkConfig, barrier: Arc<St
         provider.clone(),
         db.clone(),
         network.name.clone(),
-        network.chain_id,
         backfill_concurrency,
         backfill_interval,
     ));
@@ -221,8 +216,8 @@ async fn run_factory_indexer(
     indexer.run(network.poll_interval()).await;
 }
 
-/// Seed + catch-up for a fresh `(chain, factory)`. A pre-existing checkpoint
-/// means this pair has already been bootstrapped (e.g. a prior run seeded
+/// Seed + catch-up for a fresh factory. A pre-existing checkpoint means
+/// this factory has already been bootstrapped (e.g. a prior run seeded
 /// it), in which case we skip straight to live indexing.
 async fn bootstrap_factory(
     db: &PgPool,
@@ -230,7 +225,7 @@ async fn bootstrap_factory(
     network: &NetworkConfig,
     factory: &crate::config::FactoryConfig,
 ) {
-    let checkpoint = crate::db::uniswap_v3::get_checkpoint(db, network.chain_id, &factory.address)
+    let checkpoint = crate::db::uniswap_v3::get_checkpoint(db, &factory.address)
         .await
         .expect("failed to read checkpoint");
     if let Some(block) = checkpoint {

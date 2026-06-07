@@ -4,7 +4,7 @@
 use {
     super::{PoolIds, TickEntry},
     crate::{
-        api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
+        api::{ApiError, AppState, ensure_network_configured, latest_indexed_block},
         db::uniswap_v3 as db,
     },
     alloy_primitives::Address,
@@ -49,11 +49,11 @@ pub async fn get_ticks_bulk(
     Path(network): Path<String>,
     Query(BulkTicksQuery { pool_ids }): Query<BulkTicksQuery>,
 ) -> Result<Response, ApiError> {
-    let chain_id = resolve_chain_id(&state, &network)?;
+    ensure_network_configured(&state, &network)?;
 
     let (block, ticks) = tokio::join!(
-        latest_indexed_block(&state, chain_id),
-        db::get_ticks_for_pools(&state.db, chain_id, &pool_ids.0),
+        latest_indexed_block(&state),
+        db::get_ticks_for_pools(&state.db, &pool_ids.0),
     );
 
     Ok(Json(BulkTicksResponse {

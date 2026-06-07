@@ -4,7 +4,7 @@
 use {
     super::pools_response,
     crate::{
-        api::{ApiError, AppState, latest_indexed_block, resolve_chain_id},
+        api::{ApiError, AppState, ensure_network_configured, latest_indexed_block},
         db::uniswap_v3 as db,
     },
     alloy_primitives::Address,
@@ -64,12 +64,12 @@ pub async fn get_pools(
     Path(network): Path<String>,
     Query(query): Query<ListPoolsQuery>,
 ) -> Result<Response, ApiError> {
-    let chain_id = resolve_chain_id(&state, &network)?;
-    let block_number = latest_indexed_block(&state, chain_id).await?;
+    ensure_network_configured(&state, &network)?;
+    let block_number = latest_indexed_block(&state).await?;
     let limit = query.page_limit();
     let cursor = query.cursor()?;
 
-    let mut rows = db::get_pools(&state.db, chain_id, cursor, limit + 1).await?;
+    let mut rows = db::get_pools(&state.db, cursor, limit + 1).await?;
 
     let has_next = rows.len() > limit as usize;
     rows.truncate(limit as usize);

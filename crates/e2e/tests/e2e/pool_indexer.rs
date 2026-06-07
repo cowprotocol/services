@@ -175,10 +175,9 @@ async fn clear_pool_indexer_tables(db: &PgPool) {
 
 async fn seed_checkpoint(db: &PgPool, factory: Address, block: u64) {
     sqlx::query(
-        "INSERT INTO pool_indexer_checkpoints (chain_id, contract_address, block_number)
-         VALUES (1, $1, $2)
-         ON CONFLICT (chain_id, contract_address) DO UPDATE SET block_number = \
-         EXCLUDED.block_number",
+        "INSERT INTO pool_indexer_checkpoints (contract_address, block_number)
+         VALUES ($1, $2)
+         ON CONFLICT (contract_address) DO UPDATE SET block_number = EXCLUDED.block_number",
     )
     .bind(factory.as_slice())
     .bind(block.cast_signed())
@@ -271,15 +270,14 @@ async fn wait_for_indexer(head: u64, min_pools: usize) {
 
 /// Samples `(pool_count, sqrt_price_x96, tick, liquidity)` for a single pool.
 async fn snapshot_pool_state(db: &PgPool, pool_addr: Address) -> (i64, String, i32, String) {
-    let pool_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
-            .fetch_one(db)
-            .await
-            .unwrap();
+    let pool_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools")
+        .fetch_one(db)
+        .await
+        .unwrap();
     let (sqrt_price, tick, liquidity): (String, i32, String) = sqlx::query_as(
         "SELECT sqrt_price_x96::TEXT, tick, liquidity::TEXT
          FROM uniswap_v3_pool_states
-         WHERE chain_id = 1 AND pool_address = $1",
+         WHERE pool_address = $1",
     )
     .bind(pool_addr.as_slice())
     .fetch_one(db)
@@ -423,8 +421,8 @@ async fn driver_integration(web3: Web3) {
         // Mock tokens have no real `decimals()`; backfill plausible values so
         // the driver's `pools_tokens_have_decimals` filter doesn't drop them.
         sqlx::query(
-            "UPDATE uniswap_v3_pools SET token0_decimals = 18, token1_decimals = 6 WHERE chain_id \
-             = 1 AND address = $1",
+            "UPDATE uniswap_v3_pools SET token0_decimals = 18, token1_decimals = 6 WHERE address \
+             = $1",
         )
         .bind(pool_addr.as_slice())
         .execute(&db)
@@ -474,11 +472,10 @@ max-pools-to-initialize = 10
         .await
         .expect("driver did not complete pool + tick fetch from pool-indexer within timeout");
 
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
-                .fetch_one(&db)
-                .await
-                .unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools")
+            .fetch_one(&db)
+            .await
+            .unwrap();
         assert!(count > 0, "expected pools persisted to DB");
 
         driver_handle.abort();
@@ -510,8 +507,7 @@ async fn checkpoint_resume(web3: Web3) {
     assert_eq!(before, after, "indexer state changed across restart");
 
     let checkpoint: i64 = sqlx::query_scalar(
-        "SELECT block_number FROM pool_indexer_checkpoints
-         WHERE chain_id = 1 AND contract_address = $1",
+        "SELECT block_number FROM pool_indexer_checkpoints WHERE contract_address = $1",
     )
     .bind(factory_addr.as_slice())
     .fetch_one(&db)
@@ -636,11 +632,10 @@ async fn pagination(web3: Web3) {
             }
         }
 
-        let db_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools WHERE chain_id = 1")
-                .fetch_one(&db)
-                .await
-                .unwrap();
+        let db_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM uniswap_v3_pools")
+            .fetch_one(&db)
+            .await
+            .unwrap();
         assert_eq!(
             i64::try_from(all_ids.len()).unwrap(),
             db_count,

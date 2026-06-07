@@ -84,8 +84,8 @@ pub struct NetworkConfig {
     #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
     pub rpc_url: Url,
     /// One or more Uniswap V3 factories to index. Each factory runs its own
-    /// seed + live-indexing loop; pools from all factories share the per-chain
-    /// namespace in the DB and API.
+    /// seed + live-indexing loop; pools from all factories share the same
+    /// DB namespace (one DB instance per network).
     pub factories: Vec<FactoryConfig>,
     /// The number of pools to index in a single batch.
     #[serde(default = "default_chunk_size")]
