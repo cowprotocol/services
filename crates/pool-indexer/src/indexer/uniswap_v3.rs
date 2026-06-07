@@ -16,6 +16,7 @@ use {
     },
     ethrpc::{AlloyProvider, alloy::errors::ContractErrorExt},
     futures::{StreamExt, TryStreamExt},
+    itertools::Itertools,
     sqlx::PgPool,
     std::collections::HashMap,
     tracing::instrument,
@@ -193,7 +194,7 @@ impl UniswapV3Indexer {
         crate::metrics::Metrics::get()
             .indexer_lag_blocks
             .with_label_values(&[self.network.as_str()])
-            .set(i64::try_from(lag).unwrap_or(0));
+            .set(i64::try_from(lag).unwrap_or(i64::MAX));
 
         if last_indexed_block >= finalized_block {
             return Ok(());
@@ -326,7 +327,7 @@ impl UniswapV3Indexer {
         metrics
             .indexed_block
             .with_label_values(&[network])
-            .set(i64::try_from(chunk.end).unwrap_or(0));
+            .set(i64::try_from(chunk.end).unwrap_or(i64::MAX));
         Ok(())
     }
 
@@ -395,8 +396,7 @@ fn mint_burn_pool_addresses(logs: &[Log]) -> Vec<Address> {
             let t = log.topic0()?;
             (*t == Mint::SIGNATURE_HASH || *t == Burn::SIGNATURE_HASH).then(|| log.address())
         })
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
+        .unique()
         .collect()
 }
 
@@ -742,8 +742,10 @@ struct LogAccumulator {
 
 impl LogAccumulator {
     /// Records a newly discovered pool, filling decimals from the prefetch
-    /// cache. Symbols are left `None` here and populated later by the
-    /// background backfill task.
+    /// cache. Symbols are deliberately left `None` here — a hung `symbol()`
+    /// call must never block pool inserts, and symbol is informational only
+    /// (decimals is what's price-critical). The async backfill task picks
+    /// them up out-of-band.
     fn handle_pool_created(&mut self, log: &Log, dec_cache: &DecimalsCache) {
         let decoded = match PoolCreated::decode_log(&log.inner) {
             Ok(d) => d,

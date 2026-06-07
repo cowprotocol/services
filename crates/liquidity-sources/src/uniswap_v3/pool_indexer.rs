@@ -202,7 +202,6 @@ impl TryFrom<IndexerPool> for PoolData {
 impl IndexerTick {
     fn into_tick_data(self, pool_address: Address) -> TickData {
         TickData {
-            id: format!("{pool_address:#x}#{}", self.tick_idx),
             tick_idx: BigInt::from(self.tick_idx),
             liquidity_net: self.liquidity_net,
             pool_address,

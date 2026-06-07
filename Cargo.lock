@@ -6427,6 +6427,7 @@ dependencies = [
  "contracts",
  "ethrpc",
  "futures",
+ "itertools 0.14.0",
  "mimalloc",
  "num",
  "number",

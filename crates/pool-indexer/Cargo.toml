@@ -30,6 +30,7 @@ configs = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
+itertools = { workspace = true }
 mimalloc = { workspace = true, optional = true }
 num = { workspace = true }
 number = { workspace = true }

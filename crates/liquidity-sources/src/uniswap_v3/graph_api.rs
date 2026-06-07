@@ -350,7 +350,6 @@ impl ContainsId for PoolData {
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TickData {
-    pub id: String,
     #[serde_as(as = "DisplayFromStr")]
     pub tick_idx: BigInt,
     #[serde_as(as = "DisplayFromStr")]
@@ -359,8 +358,11 @@ pub struct TickData {
 }
 
 impl ContainsId for TickData {
+    /// Recomputes the subgraph's `id` (`<poolAddress>#<tickIdx>`) on demand
+    /// rather than carrying it through the struct. Used by the subgraph
+    /// pagination cursor; the pool-indexer path doesn't paginate ticks.
     fn get_id(&self) -> String {
-        self.id.clone()
+        format!("{:#x}#{}", self.pool_address, self.tick_idx)
     }
 }
 
@@ -507,13 +509,11 @@ mod tests {
             Data {
                 inner: vec![
                     TickData {
-                        id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#0".to_string(),
                         tick_idx: BigInt::from(0),
                         liquidity_net: BigInt::from(-303015134493562686441i128),
                         pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
                     },
                     TickData {
-                        id: "0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28#-92200".to_string(),
                         tick_idx: BigInt::from(-92200),
                         liquidity_net: BigInt::from(303015134493562686441i128),
                         pool_address: address!("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28")
