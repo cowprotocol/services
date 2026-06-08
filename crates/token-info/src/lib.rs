@@ -15,7 +15,7 @@ use {
         sync::{Arc, Mutex},
     },
 };
-const TOKEN_INFO_FETCH_CONCURRENCY: usize = 20;
+const TOKEN_INFO_FETCH_CONCURRENCY: usize = 32;
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
 #[derive(Clone, Debug, Default)]
