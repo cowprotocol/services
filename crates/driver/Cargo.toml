@@ -16,10 +16,15 @@ path = "src/main.rs"
 
 [dependencies]
 account-balances = { workspace = true }
-alloy = {
-  workspace = true,
-  features = ["json-rpc", "provider-anvil-api", "provider-txpool-api", "rand", "rpc-types", "signer-aws", "sol-types"]
-}
+alloy = { workspace = true, features = [
+  "json-rpc",
+  "provider-anvil-api",
+  "provider-txpool-api",
+  "rand",
+  "rpc-types",
+  "signer-aws",
+  "sol-types"
+] }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }

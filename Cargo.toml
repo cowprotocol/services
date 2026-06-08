@@ -119,15 +119,18 @@ signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-indexer = { path = "crates/solana-indexer" }
 solana-sdk = "4"
-yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
-sqlx = {
-  version = "0.8",
-  default-features = false,
-  features = ["bigdecimal", "chrono", "derive", "macros", "postgres", "runtime-tokio", "tls-native-tls"]
-}
+sqlx = { version = "0.8", default-features = false, features = [
+  "bigdecimal",
+  "chrono",
+  "derive",
+  "macros",
+  "postgres",
+  "runtime-tokio",
+  "tls-native-tls"
+] }
 strum = { version = "0.27.2", features = ["derive"] }
 syn = "2.0.108"
 tempfile = "3.10.1"
@@ -148,6 +151,7 @@ tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
 vergen = "8"
 winner-selection = { path = "crates/winner-selection" }
+yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
