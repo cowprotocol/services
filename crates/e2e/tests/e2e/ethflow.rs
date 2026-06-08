@@ -418,8 +418,6 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     .await
     .unwrap();
 
-    // The post-hook (the bridge action) ran exactly once as part of that
-    // settlement.
     assert_eq!(
         counter.counters("post".to_string()).call().await.unwrap(),
         U256::from(1),
