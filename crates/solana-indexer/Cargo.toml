@@ -20,6 +20,7 @@ observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 solana-sdk = { workspace = true }
+solana-client = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }

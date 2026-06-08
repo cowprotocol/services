@@ -119,6 +119,7 @@ signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-indexer = { path = "crates/solana-indexer" }
 solana-sdk = "4"
+solana-client = "4"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }

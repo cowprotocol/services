@@ -1,8 +1,6 @@
 //! Recovery-flow types: PDA snapshots and the options struct for
 //! `getSignaturesForAddress` backfills.
 
-use solana_sdk::pubkey::Pubkey;
-
 /// Current on-chain snapshot of an order PDA, read by `getAccountInfo` for
 /// reconciliation.
 #[derive(Debug, Clone)]
@@ -26,9 +24,6 @@ pub struct GetSignaturesOpts {
     pub from_slot: Option<u64>,
     /// End slot (inclusive). `None` means "to the tip".
     pub to_slot: Option<u64>,
-    /// Cap on the number of signatures returned.
+    /// Cap on the number of transaction signatures returned.
     pub limit: Option<usize>,
-    /// Optional address filter (used when back-filling both programs
-    /// in a single pass).
-    pub address: Option<Pubkey>,
 }
