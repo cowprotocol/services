@@ -184,6 +184,13 @@ impl ApprovalStrategy {
     }
 }
 
+// NOTE(jmg-duarte): ideally these would be new types, but this is simpler in
+// the current context (PR #4418) and doesn't require large refactors
+type Token = Address;
+type Holder = Address;
+type Spender = Address;
+type OverrideDetectorCacheKey = (Token, Option<(Holder, Spender)>);
+
 /// Heuristic approval override detector with integrated caching.
 ///
 /// Owns the Web3 handle, detection parameters, and the per-token strategy
@@ -195,7 +202,7 @@ pub(crate) struct Detector {
     web3: Web3,
     probing_depth: u8,
     verification_timeout: Duration,
-    pub(crate) cache: Cache<(Address, Option<(Address, Address)>), Option<ApprovalStrategy>>,
+    pub(crate) cache: Cache<OverrideDetectorCacheKey, Option<ApprovalStrategy>>,
 }
 
 impl Detector {
